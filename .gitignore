@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.env
+*.env.local
+*.env.production
+
+# 컨트랙트 빌드 산출물
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/typechain-types/
+
+# 프라이빗 키 관련 파일 — 절대 커밋 금지
+*.pem
+*.key
+keystore/
+
+# OS
+.DS_Store
+Thumbs.db
