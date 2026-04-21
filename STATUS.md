@@ -7,16 +7,16 @@
 | 교육 시작 | 4/27 (웅진씽크빅) |
 | 계약 | 미확정 — 이종건 계약서 일정 확인 필요 |
 
-## 마지막 작업 (2026-04-21)
-- **전체 아키텍처 스켈레톤 설계**: 5개 추상화 레이어 (Chain/Token/VASP/Compliance/CoreBanking)
-- **Phase 1 구현체**: KyoboNFT, NFTIssuer, ActivityOracle, EVMAdapter, ChainEventListener, WebhookServer, RetryHandler, IdempotencyGuard, ExternalVASPAdapter
-- **Phase 2/3/4 stub**: KRWStablecoin, SecurityToken, KyoboVASPAdapter, XRPLAdapter
-- **ADR 4개 작성**: Chain Abstraction / VASP External-First / Token Standard 진화 / Event-Driven
-- **인프라**: DMZ Nginx 설정, docker-compose, hardhat 설정, 배포 스크립트
+## 마지막 작업 (2026-04-22)
+- **커리큘럼 HTML 2종 완성**: kyobo_curriculum_overview.html (원본) / kyobo_curriculum_overview_refined.html (용어 정제본)
+- **세션 내용 전면 재작성**: 개념 나열 → "이걸 알게 된다/할 수 있게 된다" 프레임으로 9일치 전환
+- **선행 연결 블록 추가**: B-Harvest 패스트캠퍼스 과정 기준 — 각 Day별 선행 학습과의 연계 설명
+- **Block E 제목 중립화**: XRP Ledger 단독 → "외부 파트너 연동 비교 + 전체 아키텍처 리뷰"
+- **교보생명 메일 드래프트 작성**: 김경렬 통화 후 커리큘럼 재설계 내용 Gmail 임시보관함 저장
 
 ## 다음 작업
 - [ ] 교보DTS와 Core Banking API 스펙 협의 (연동 방식 A/B 결정)
 - [ ] 이종건 계약서 일정 확인
-- [ ] 교육 커리큘럼 재편 (9일 × 3h, 스켈레톤 기반 실습 흐름)
+- [ ] 교보생명 메일 발송 (Gmail 임시보관함 → 첨부파일 추가 후 발송)
 - [ ] PermissiveCompliance 컨트랙트 작성 (Phase 1 배포 완성)
 - [ ] VASP 파트너사 선정 기준 교보DTS 제시
