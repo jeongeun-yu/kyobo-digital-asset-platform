@@ -3,19 +3,20 @@
 ## 현재 상태
 | 항목 | 내용 |
 |---|---|
-| 단계 | **12일차 커리큘럼 + 스켈레톤 코드 완성** |
-| 교육 시작 | 4/27 (웅진씽크빅) |
-| 계약 | 미확정 — 이종건 계약서 일정 확인 필요 |
+| 단계 | **Phase 3 대비 스켈레톤 완성 (Track A 완료)** |
+| 교육 시작 | 4/27 (웅진씽크빅) — 교보생명 50시간 확정 |
+| 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
-## 마지막 작업 (2026-04-22)
-- **day10~12.md 추가**: 내부 원장·감사로그 / VASP 변동 처리·이중채널 / 키 거버넌스·E2E 완성
-- **스켈레톤 코드 추가**: LedgerService.ts / AuditLogService.ts / VaspRecoveryService.ts / KeyGovernanceService.ts
-- **kyobo_curriculum_12day.html 생성**: v5 기반 + 블록 6 추가, 12일 36시간 체계로 확장
-- **설계 방향 확정**: Phase 1 구현 + Phase 2·3 확장 고려한 추상화 레이어 (A안)
+## 마지막 작업 (2026-04-23)
+- **Track A 완료**: Phase 3 고려 스켈레톤 전 레이어 확장
+- **Solidity**: ISecurityToken / IInvestorRegistry / IDividendDistributor / PermissiveCompliance / InvestorCompliance / KRWStablecoin(ERC-20) / SecurityToken(ERC-1400) 완성
+- **TypeScript**: PermissiveComplianceAdapter / InvestorRegistryService / LockupPolicyService / KDEPAdapter / ReconcileService / TokenIssuerFactory 추가
+- **배포 스크립트**: deploy-phase1.ts PermissiveCompliance TODO 해결 / deploy-phase3.ts 신규 작성
+- **ADR**: 005(파티션구조) / 006(투자자레지스트리) / 007(컴플라이언스레이어링) 추가
 
 ## 다음 작업
 - [ ] 이종건 계약서 일정 확인
-- [ ] PermissiveCompliance 컨트랙트 작성 (Phase 1 배포 완성)
-- [ ] ReconcileService.ts 스켈레톤 추가 (Day 10 실습 3)
-- [ ] VASP 파트너사 선정 기준 교보DTS 제시
 - [ ] 교보DTS와 Core Banking API 스펙 협의
+- [ ] VASP 파트너사 선정 기준 교보DTS 제시
+- [ ] InvestorRegistry.sol 구현체 작성 (Phase 3 실구현 시)
+- [ ] DividendDistributor.sol 구현체 작성 (Phase 3 실구현 시)

@@ -25,9 +25,12 @@ async function main() {
   await oracle.waitForDeployment();
   console.log('ActivityOracle:', await oracle.getAddress());
 
-  // 2. PermissiveCompliance (Phase 1 최소 컴플라이언스)
-  // TODO: PermissiveCompliance 컨트랙트 작성 후 배포
-  const complianceAddr = ethers.ZeroAddress;  // Phase 1 임시
+  // 2. PermissiveCompliance (Phase 1 최소 컴플라이언스 — 모든 전송 허용)
+  const Compliance = await ethers.getContractFactory('PermissiveCompliance');
+  const compliance = await Compliance.deploy();
+  await compliance.waitForDeployment();
+  const complianceAddr = await compliance.getAddress();
+  console.log('PermissiveCompliance:', complianceAddr);
 
   // 3. KyoboNFT
   const NFT = await ethers.getContractFactory('KyoboNFT');
@@ -54,6 +57,7 @@ async function main() {
   console.log(`NFT_CONTRACT_ADDR=${await nft.getAddress()}`);
   console.log(`NFT_ISSUER_ADDR=${await issuer.getAddress()}`);
   console.log(`ORACLE_ADDR=${await oracle.getAddress()}`);
+  console.log(`PERMISSIVE_COMPLIANCE_ADDR=${complianceAddr}`);
   console.log('→ .env에 위 주소 기록 후 issuer-service 재시작');
 }
 
