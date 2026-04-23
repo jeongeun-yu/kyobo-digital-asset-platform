@@ -1,4 +1,4 @@
-import type { IChainAdapter }        from '@kyobo/chain-adapters';
+import type { IBlockchainAdapter }   from '@kyobo/chain-adapters';
 import type { IVASPAdapter }          from '@kyobo/vasp';
 import type { ICoreBankingAdapter }   from '@kyobo/core-banking';
 import type { IdempotencyGuard }      from '@kyobo/event-engine/webhook';
@@ -15,7 +15,7 @@ import NFT_ISSUER_ABI                 from '../abi/NFTIssuer.json';
  */
 export class IssuerService {
   constructor(private readonly deps: {
-    chainAdapter:  IChainAdapter;
+    chainAdapter:  IBlockchainAdapter;
     vaspAdapter:   IVASPAdapter;
     coreBanking:   ICoreBankingAdapter;
     idempotency:   IdempotencyGuard;
