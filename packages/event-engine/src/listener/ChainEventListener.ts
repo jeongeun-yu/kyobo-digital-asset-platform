@@ -1,23 +1,31 @@
-import type { IChainAdapter } from '@kyobo/chain-adapters';
+import type { IBlockchainAdapter } from '@kyobo/chain-adapters';
 import type { IEventHandler } from '../interfaces/IEventHandler';
 
 /**
- * ChainEventListener — 온체인 이벤트 구독 및 핸들러 디스패치
+ * ChainEventListener — 온체인 이벤트 구독 → DMZ 파이프라인 입구
  *
  * 동작 방식:
  *   1. 시작 시 DB의 마지막 처리 블록 조회
  *   2. queryEvents()로 missed event 먼저 처리 (재시작 안전성)
  *   3. subscribeEvents()로 실시간 구독 시작
- *   4. 이벤트 수신 → 핸들러 디스패치 → 처리 블록 DB 업데이트
+ *   4. 이벤트 수신 → RedisStreamPublisher.publish() → 202 패턴 반환
+ *      → ConsumerGroupWorker가 비동기로 원장/감사로그 처리
  *
- * 체인 어댑터를 교체해도 이 클래스는 변경 없음 (IChainAdapter 의존).
+ * IBlockchainAdapter 의존 — 체인 교체 시 이 클래스 변경 없음 (M4 S17 핵심).
+ *
+ * M7 DMZ 파이프라인 연동:
+ *   ChainEventListener → RedisStreamPublisher → Redis Streams
+ *                                             ↓
+ *                                    ConsumerGroupWorker → LedgerService
+ *                                                        → AuditLogService
+ *                                    DLQHandler (3회 실패 시)
  */
 export class ChainEventListener {
   private unsubscribers: Array<() => void> = [];
   private running = false;
 
   constructor(
-    private readonly adapter:   IChainAdapter,
+    private readonly adapter:   IBlockchainAdapter,
     private readonly handlers:  IEventHandler[],
     private readonly contracts: Array<{
       addr:       string;

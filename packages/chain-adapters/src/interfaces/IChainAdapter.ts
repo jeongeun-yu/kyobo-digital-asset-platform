@@ -1,11 +1,12 @@
 /**
- * IChainAdapter — 체인 추상화 인터페이스
+ * IChainAdapter — IBlockchainAdapter 호환 별칭 (하위 호환성 유지)
  *
- * 모든 체인 연동은 이 인터페이스를 통한다.
- * Phase 1: EVMAdapter (Ethereum/Polygon)
- * Phase 2+: XRPLAdapter, UTXOAdapter, BFTAdapter 교체·추가 가능.
- * 상위 레이어(event-engine, issuer-service)는 체인을 모른다.
+ * @deprecated IBlockchainAdapter 를 직접 사용하세요.
+ *   커리큘럼 기준 명칭: IBlockchainAdapter (M4 S16 참조)
+ *   이 파일은 기존 import 경로 보호용으로만 유지됩니다.
  */
+// Re-export everything from IBlockchainAdapter
+export * from './IBlockchainAdapter';
 
 export interface TransactionReceipt {
   txHash:      string;
