@@ -24,12 +24,21 @@
 2. DI 컨테이너 바인딩 변경: `ExternalVASPAdapter` → `KyoboVASPAdapter`
 3. 상위 레이어(issuer-service 등) **코드 변경 없음**
 
+## 유력 VASP 파트너 (2026-04-24 현재)
+
+| 업체 | 상태 | 비고 |
+|---|---|---|
+| **월렛원 (WalletOne)** | 유력 후보 (미확정) | 교보생명 측 유선 언급 — 계약 확정 전 |
+
+> 확정 시 이 ADR 업데이트 및 `ExternalVASPAdapter` 주석에 반영할 것.
+
 ## VASP 파트너 선정 기준 (Phase 1)
 
 - 금융위원회 VASP 신고 완료 법인
 - Travel Rule (특금법 §8의4) 시스템 구비
 - HSM/MPC 기반 수탁 지갑 관리
 - API SLA: 가용성 99.9% 이상
+- REST API 제공 (Node.js DMZ 서비스에서 직접 호출)
 
 ## 내재화 전환 조건 (교보생명 내부 결정 사항)
 
