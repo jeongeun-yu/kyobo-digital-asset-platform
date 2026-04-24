@@ -12,26 +12,26 @@
 
 ## 결정
 
-**Phase 1: 외부 인가 VASP 파트너 연동 (`ExternalVASPAdapter`)**  
-**Phase 4: 교보생명 자체 VASP 인가 후 내재화 (`KyoboVASPAdapter`)**  
+**Phase 1 (확정): 외부 인가 VASP 파트너 연동 (`ExternalVASPAdapter`)**  
+**향후 내재화 시 (미확정): 교보생명 자체 VASP 운영 (`KyoboVASPAdapter`)**  
 두 구현체는 동일한 `IVASPAdapter` 인터페이스를 구현한다.
 
 ## 교체 시나리오
 
-교보생명이 VASP 인가를 취득하면:
+교보생명이 향후 직접 VASP를 운영하게 되면:
 
 1. `KyoboVASPAdapter` 구현 완성
 2. DI 컨테이너 바인딩 변경: `ExternalVASPAdapter` → `KyoboVASPAdapter`
 3. 상위 레이어(issuer-service 등) **코드 변경 없음**
 
-## VASP 파트너 선정 기준
+## VASP 파트너 선정 기준 (Phase 1)
 
 - 금융위원회 VASP 신고 완료 법인
 - Travel Rule (특금법 §8의4) 시스템 구비
 - HSM/MPC 기반 수탁 지갑 관리
 - API SLA: 가용성 99.9% 이상
 
-## 내재화 조건 (Phase 4 트리거)
+## 내재화 전환 조건 (교보생명 내부 결정 사항)
 
 - 교보생명 VASP 신고 수리
 - ISMS-P 범위에 가상자산 수탁 포함

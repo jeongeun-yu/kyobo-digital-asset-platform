@@ -1,7 +1,7 @@
 // =============================================================================
-// Phase 4 STUB — 교보생명 자체 VASP 내재화 어댑터
+// 향후 내재화 STUB — 교보생명 자체 VASP 운영 시 구현
 // =============================================================================
-// 구현 시점: 교보생명 금융위원회 VASP 신고/인가 취득 후
+// 구현 시점: 교보생명 금융위원회 VASP 신고/인가 취득 후 (일정 미확정)
 //
 // 내재화 시 구현 항목:
 //   1. HSM (Hardware Security Module) 또는 MPC 기반 지갑 생성·서명
@@ -27,9 +27,9 @@
 import type { IVASPAdapter, WalletInfo, TransferRequest, TransferResult } from '../interfaces/IVASPAdapter';
 
 export class KyoboVASPAdapter implements IVASPAdapter {
-  async createWallet(_userId: string): Promise<WalletInfo> { throw new Error('KyoboVASPAdapter: not implemented — Phase 4'); }
-  async getWallet(_userId: string): Promise<WalletInfo | null> { throw new Error('KyoboVASPAdapter: not implemented — Phase 4'); }
-  async transfer(_req: TransferRequest): Promise<TransferResult> { throw new Error('KyoboVASPAdapter: not implemented — Phase 4'); }
-  async getTransferStatus(_txHash: string): Promise<TransferResult> { throw new Error('KyoboVASPAdapter: not implemented — Phase 4'); }
-  async screenAddress(_address: string): Promise<{ flagged: boolean; reason?: string }> { throw new Error('KyoboVASPAdapter: not implemented — Phase 4'); }
+  async createWallet(_userId: string): Promise<WalletInfo> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
+  async getWallet(_userId: string): Promise<WalletInfo | null> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
+  async transfer(_req: TransferRequest): Promise<TransferResult> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
+  async getTransferStatus(_txHash: string): Promise<TransferResult> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
+  async screenAddress(_address: string): Promise<{ flagged: boolean; reason?: string }> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
 }

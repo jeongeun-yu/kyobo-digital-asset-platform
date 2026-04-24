@@ -1,7 +1,7 @@
 // =============================================================================
-// Phase 2+ STUB — XRP Ledger 어댑터
+// 향후 확장 STUB — XRP Ledger 어댑터
 // =============================================================================
-// 구현 시점: 교보 Phase 2 (KRW 스테이블코인) 또는 Phase 3 (STO) 진입 시
+// 구현 시점: 교보생명 내부 결정에 따라 XRPL 연동이 필요한 시점
 //
 // XRPL 특성 고려 사항 (구현 전 반드시 검토):
 //   - UTXO 모델이 아닌 계정 기반 원장 (EVM과 유사하나 스마트컨트랙트 없음)
@@ -19,7 +19,7 @@ export class XRPLAdapter implements IChainAdapter {
   readonly chainId  = 'xrpl-mainnet';
   readonly chainType = 'XRPL' as const;
 
-  // TODO Phase 2+: xrpl.js Client 초기화
+  // TODO 향후: xrpl.js Client 초기화
   constructor(_config: { wsUrl: string; seed?: string }) {}
 
   async isConnected(): Promise<boolean> { throw new Error('XRPLAdapter: not implemented'); }

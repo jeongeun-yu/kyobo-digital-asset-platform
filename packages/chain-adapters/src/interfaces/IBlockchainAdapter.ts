@@ -7,9 +7,9 @@
  *   비즈니스 로직(VASP, 원장)은 이 인터페이스만 의존 — 체인 교체 시 무변경.
  *
  * 구현체:
- *   EVMAdapter    — Ethereum / Polygon (Phase 1)
- *   XRPLAdapter   — XRP Ledger (Phase 2+)
- *   CircleAdapter — Circle ARC / CCTP (Phase 3+)
+ *   EVMAdapter    — Ethereum / EVM 호환 체인 (Phase 1)
+ *   XRPLAdapter   — XRP Ledger (향후 확장용 stub)
+ *   CircleAdapter — Circle ARC / CCTP (향후 확장용 stub)
  *
  * 의존 방향:
  *   IssuerService → IBlockchainAdapter ← EVMAdapter
