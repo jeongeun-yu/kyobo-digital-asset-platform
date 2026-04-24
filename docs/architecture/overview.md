@@ -95,12 +95,12 @@
 
 | 모듈 | 레이어 | 핵심 파일 |
 |---|---|---|
-| M2 (ERC-1155) | contracts/phase1 | `KyoboNFT.sol` — UUPS + tokenId 인코딩 |
-| M3 (보안 감사) | contracts/phase1 | `KyoboNFTV2.sol` — Storage layout 검증 |
-| M4 (VASP 추상화) | packages/vasp, chain-adapters | `TxStateMachineService`, `IBlockchainAdapter` |
+| M2 (DMZ 파이프라인) | packages/event-engine/dmz | `RedisStreamPublisher`, `ConsumerGroupWorker`, `DLQHandler` |
+| M3 (VASP 추상화) | packages/vasp, chain-adapters | `TxStateMachineService`, `IBlockchainAdapter` |
+| M4 (원장·감사) | packages/core-banking | `LedgerService`, `AuditLogService` |
 | M5 (비즈니스 로직) | apps/issuer-service | `EventConditionService`, `WalletMappingService`, `BulkIssueService` |
-| M6 (원장·감사) | packages/core-banking | `LedgerService`, `AuditLogService` |
-| M7 (DMZ 파이프라인) | packages/event-engine/dmz | `RedisStreamPublisher`, `ConsumerGroupWorker`, `DLQHandler` |
+| M6 (ERC-1155) | contracts/phase1 | `KyoboNFT.sol` — UUPS + tokenId 인코딩 |
+| M7 (보안 감사) | contracts/phase1 | `KyoboNFTV2.sol` — Storage layout 검증 |
 | M8 (키 거버넌스) | packages/vasp | `KeyGovernanceService` — EIP-712 SafeTx, Travel Rule |
 
 ---
