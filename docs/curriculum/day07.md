@@ -10,7 +10,7 @@
 | 시간 | 내용 |
 |---|---|
 | 00:00~00:25 | 1부: 테스트넷 vs 로컬 — 무엇이 달라지는가 |
-| 00:25~01:15 | 실습 1: Polygon Amoy 배포 + Polygonscan 확인 |
+| 00:25~01:15 | 실습 1: Ethereum Sepolia 배포 + Etherscan 확인 |
 | 01:15~01:45 | 2부: 운용 모니터링 — 무엇을 보아야 하는가 |
 | 01:45~02:30 | 실습 2: 테스트넷 NFT 발행 + 트랜잭션 추적 |
 | 02:30~03:00 | 실습 3: 비상 정지 + 복구 절차 |
@@ -25,12 +25,12 @@
 
 > "로컬 Hardhat 노드는 개발에는 완벽하지만 실제 환경과 다른 점이 있습니다."
 
-| 항목 | 로컬 Hardhat | Polygon Amoy 테스트넷 |
+| 항목 | 로컬 Hardhat | Ethereum Sepolia 테스트넷 |
 |---|---|---|
 | 블록 생성 | 트랜잭션 즉시 | ~2초 대기 |
 | 네트워크 지연 | 없음 | RPC 응답 지연 |
 | Gas 가격 | 0 | 실제 gas price 적용 |
-| 블록 탐색기 | 없음 | Polygonscan Amoy |
+| 블록 탐색기 | 없음 | Etherscan Sepolia |
 | 컨트랙트 검증 | 불가 | Etherscan 검증 가능 |
 | 재시작 시 | 상태 초기화 | 영구 기록 |
 
@@ -43,7 +43,7 @@
 **배포 전 체크리스트:**
 ```
 □ Hardhat 로컬에서 모든 시나리오 테스트 완료
-□ 배포 계정에 테스트넷 MATIC 충분히 확보
+□ 배포 계정에 테스트넷 Sepolia ETH 충분히 확보
 □ ORACLE_SIGNER_ADDRESS 주소 확정
 □ BASE_METADATA_URI 서버 준비 (메타데이터 서버 응답 확인)
 □ 배포 스크립트의 파라미터 재확인
@@ -52,29 +52,30 @@
 
 ---
 
-## 실습 1: Polygon Amoy 배포 + Polygonscan 확인 (00:25~01:15)
+## 실습 1: Ethereum Sepolia 배포 + Etherscan 확인 (00:25~01:15)
 
-### Step 1 — 테스트넷 MATIC 확보 (10분)
+### Step 1 — 테스트넷 ETH 확보 (10분)
 
 ```
-Polygon Amoy Faucet: https://faucet.polygon.technology/
-→ Amoy 선택 → 지갑 주소 입력 → 0.5 MATIC 수령
+Sepolia Faucet: https://sepoliafaucet.com/
+또는: https://www.alchemy.com/faucets/ethereum-sepolia
+→ 지갑 주소 입력 → 0.5 ETH 수령
 ```
 
 `.env` 설정:
 ```bash
-AMOY_RPC_URL=https://rpc-amoy.polygon.technology
+SEPOLIA_RPC_URL=https://rpc.sepolia.org
 DEPLOYER_PRIVATE_KEY=[테스트 전용 지갑 키]
 ORACLE_SIGNER_ADDRESS=[오라클 서명 계정 주소]
 BASE_METADATA_URI=https://meta-test.kyobo-da.internal/nft
-POLYGONSCAN_API_KEY=[Polygonscan API 키]
+ETHERSCAN_API_KEY=[Etherscan API 키]
 ```
 
 ### Step 2 — 배포 실행 (15분)
 
 ```bash
 cd packages/contracts
-npx hardhat run scripts/deploy/deploy-phase1.ts --network polygon_amoy
+npx hardhat run scripts/deploy/deploy-phase1.ts --network sepolia
 ```
 
 **예상 출력:**
@@ -91,9 +92,9 @@ NFT_ISSUER_ADDR=0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
 ORACLE_ADDR=0x5FbDB2315678afecb367f032d93F642f64180aa3
 ```
 
-### Step 3 — Polygonscan Amoy 탐색 (25분)
+### Step 3 — Etherscan Sepolia 탐색 (25분)
 
-`https://amoy.polygonscan.com/address/[NFT_CONTRACT_ADDR]`
+`https://sepolia.etherscan.io/address/[NFT_CONTRACT_ADDR]`
 
 확인 항목별 설명:
 
@@ -101,7 +102,7 @@ ORACLE_ADDR=0x5FbDB2315678afecb367f032d93F642f64180aa3
 > "소스 코드가 표시되지 않는다면 컨트랙트가 Verify되지 않은 것입니다. Verify하면 누구나 소스 코드를 확인할 수 있습니다."
 
 ```bash
-npx hardhat verify --network polygon_amoy [NFT_CONTRACT_ADDR] [deployer] [complianceAddr]
+npx hardhat verify --network sepolia [NFT_CONTRACT_ADDR] [deployer] [complianceAddr]
 ```
 
 **[Events 탭]**
@@ -146,7 +147,7 @@ npx hardhat verify --network polygon_amoy [NFT_CONTRACT_ADDR] [deployer] [compli
 
 **토킹포인트:**
 
-> "Polygon Mainnet에서 NFT 발행 1건당 Gas 비용이 0.01 MATIC이라고 가정합시다. 월 10만 건 발행이면 1,000 MATIC. 현재 MATIC 가격 기준 얼마인가요? 운영 예산에 Gas 비용이 포함되어야 합니다."
+> "EVM 호환 체인에서 NFT 발행 1건당 Gas 비용을 측정해 봅시다. 프로덕션 체인이 결정되면 이 수치를 바탕으로 월간 Gas 예산을 산정해야 합니다. 운영 예산에 Gas 비용이 반드시 포함되어야 합니다."
 
 ```typescript
 // 배포 스크립트에서 Gas 측정
@@ -154,7 +155,7 @@ const receipt = await tx.wait();
 console.log('gasUsed:', receipt.gasUsed.toString());
 console.log('gasPrice:', receipt.gasPrice?.toString(), 'wei');
 const cost = receipt.gasUsed * (receipt.gasPrice ?? 0n);
-console.log('cost:', ethers.formatEther(cost), 'MATIC');
+console.log('cost:', ethers.formatEther(cost), 'ETH');
 ```
 
 ---
@@ -164,7 +165,7 @@ console.log('cost:', ethers.formatEther(cost), 'MATIC');
 ### Step 1 — 테스트넷 발행 (20분)
 
 ```bash
-npx hardhat run scripts/issue-nft-full.ts --network polygon_amoy
+npx hardhat run scripts/issue-nft-full.ts --network sepolia
 ```
 
 **출력 예시:**
@@ -183,9 +184,9 @@ npx hardhat run scripts/issue-nft-full.ts --network polygon_amoy
   발행 시각: 2026-04-21T...
 ```
 
-### Step 2 — Polygonscan에서 트랜잭션 분석 (25분)
+### Step 2 — Etherscan에서 트랜잭션 분석 (25분)
 
-`https://amoy.polygonscan.com/tx/[txHash]`
+`https://sepolia.etherscan.io/tx/[txHash]`
 
 분석 항목:
 
@@ -216,13 +217,13 @@ const nft = await ethers.getContractAt('KyoboNFT', process.env.NFT_CONTRACT_ADDR
 const tx  = await nft.pause();
 await tx.wait();
 console.log('컨트랙트 일시 정지 완료');
-console.log('Polygonscan에서 pause 이벤트 확인:', tx.hash);
+console.log('Etherscan에서 pause 이벤트 확인:', tx.hash);
 ```
 
 ### Step 2 — 피해 범위 파악 (10분)
 ```typescript
 // pause 이전 블록부터 유출 의심 시점까지의 Issued 이벤트 조회
-const adapter = new EVMAdapter({ rpcUrl: process.env.AMOY_RPC_URL!, chainId: '80002' });
+const adapter = new EVMAdapter({ rpcUrl: process.env.SEPOLIA_RPC_URL!, chainId: '11155111' });
 const suspiciousEvents = await adapter.queryEvents(
   process.env.NFT_CONTRACT_ADDR!,
   ABI,
@@ -264,7 +265,7 @@ console.log('서비스 재개');
 ## 마무리
 
 **오늘의 핵심 3줄:**
-1. 테스트넷 배포 후 Polygonscan이 공개 감사 로그가 된다
+1. 테스트넷 배포 후 Etherscan이 공개 감사 로그가 된다
 2. 운용 책임자는 매일 7개 항목을 확인해야 한다
 3. 비상 정지는 30초 안에 실행 가능해야 한다 — PAUSER_ROLE 소유자가 항상 대기 가능해야 한다
 

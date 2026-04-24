@@ -294,7 +294,7 @@ console.log('unpause 후 발행: 성공');
 3. 예외 상황(중복, 위조 서명, pause)은 모두 코드로 검증되어 revert 된다
 
 **Day 07 예고:**  
-테스트넷에 실제 배포한다. Polygonscan에서 내가 배포한 컨트랙트를 직접 확인한다.
+테스트넷(Sepolia)에 실제 배포한다. Etherscan Sepolia에서 내가 배포한 컨트랙트를 직접 확인한다.
 
 ---
 

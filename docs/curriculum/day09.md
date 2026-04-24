@@ -91,8 +91,8 @@ cat packages/chain-adapters/src/xrpl/XRPLAdapter.ts
 | NFT 발행 | ERC-721 ✓ 성숙 | XLS-20 (2022 도입, 성장 중) | |
 | 스마트컨트랙트 | Solidity ✓ 에코시스템 풍부 | Hooks (C, 제한적, 실험 단계) | |
 | KRW 스테이블코인 | ERC-20 ✓ 표준 | IOU (신뢰 기반, 게이트웨이 필요) | |
-| 거래 속도 | ~2초 (Polygon) | ~3-5초 (XRPL) | |
-| 거래 비용 | ~0.01 MATIC/tx | ~0.00001 XRP/tx | |
+| 거래 속도 | ~12초 (Ethereum L1) / ~1-2초 (L2) | ~3-5초 (XRPL) | |
+| 거래 비용 | ~$1-3/tx (L1) / ~$0.01-0.1/tx (L2) | ~$0.00001/tx | |
 | Travel Rule | 별도 구현 필요 | Memo 필드 활용 가능 | |
 | 한국 VASP 파트너 | 多 (두나무, 빗썸 등) | 제한적 | |
 | 개발 인력 | Solidity 개발자 多 | XRPL 전문가 희소 | |
@@ -530,7 +530,7 @@ Day 03: 폴링은 확인이고 이벤트 구독은 신뢰다 — Missed Event �
 Day 04: 금융 Webhook은 HMAC + 멱등성 + DLQ 세 가지가 다 있어야 한다
 Day 05: 배포된 컨트랙트는 수정 불가 — RBAC, Pause, Compliance 훅은 처음부터 설계돼야 한다
 Day 06: 발행은 오프체인(KYC/AML)과 온체인(오라클/중복) 이중 검증이다
-Day 07: 테스트넷 배포 후 Polygonscan이 공개 감사 로그다 — 비상 정지는 30초 안에
+Day 07: 테스트넷 배포 후 Etherscan Sepolia가 공개 감사 로그다 — 비상 정지는 30초 안에
 Day 08: ISMS-P는 문서가 아닌 코드로 구현해야 지속 가능하다
 Day 09: 추상화 레이어가 제대로 설계됐다면 체인 교체는 한 줄이다
 ```

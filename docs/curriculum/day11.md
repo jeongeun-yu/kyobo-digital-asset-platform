@@ -169,7 +169,7 @@ audit_log: REORG_DETECTED 기록
 const FINALITY_DEPTH: Record<string, number> = {
   'ethereum-mainnet': 12,   // ~2.5분
   'polygon-mainnet': 128,   // ~3.5분
-  'polygon-amoy': 5,        // testnet: 느슨하게
+  'sepolia': 5,              // testnet: 느슨하게
   'xrpl-mainnet': 1,        // XRPL: 즉시 finality (3-5초)
 };
 ```
