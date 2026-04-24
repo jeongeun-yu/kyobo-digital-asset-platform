@@ -2,7 +2,7 @@
 
 **설계**: CoinCraft (Sharon Kim)  
 **최초 작성**: 2026-04-21  
-**버전**: 1.1.0 (2026-04-23 업데이트 — ERC-1155/UUPS, IBlockchainAdapter 반영)
+**버전**: 1.2.0 (2026-04-24 업데이트 — 교보DTS 유선 확인, 런타임 아키텍처 반영)
 
 ---
 
@@ -19,6 +19,27 @@
 > Phase 1 표준 변경 이유 (ADR-003 참조):
 > ERC-721 → **ERC-1155**: 쿠폰 종류별 mintBatch 가스 절감.
 > **UUPS Proxy**: 규제 대응 로직 업그레이드 가능.
+
+---
+
+## 런타임 아키텍처 (2026-04-24 확인)
+
+```
+[교보생명 내부망]
+  Java Spring / WAS 기반 레거시
+  Core Banking, 내부 DB, 감사 로그
+        ↕ REST API (WAS 경유)
+[DMZ — 이 스켈레톤의 범위]
+  Node.js / TypeScript 마이크로서비스
+  블록체인 인터페이스, VASP 연동, 이벤트 파이프라인
+        ↕
+[외부]
+  VASP 파트너사 API  /  EVM 블록체인
+```
+
+- 교보DTS 레거시가 Java 기반이므로 내부망은 Java Spring 유지
+- DMZ 블록체인 서비스만 Node.js — REST API로 내부 Java와 연결
+- 내부망 → 외부 통신이 WAS 경유로 제한될 가능성 있음 → 네트워크 정책 추가 확인 필요
 
 ---
 
