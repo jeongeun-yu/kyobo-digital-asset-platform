@@ -285,13 +285,52 @@ ERC-1155에는 `ownerOf`가 없다. ERC-721은 각 토큰이 단 한 명의 소�
 
 교보생명 케이스에서는 같은 "걷기달성" 쿠폰을 10만 명이 각각 1개씩 보유한다. ERC-1155의 `balanceOf(user, walkingTokenId) == 1`로 보유 확인.
 
-**이론적 배경 — ERC 표준 제안 프로세스와 semi-fungible의 개념**
+**이론적 배경 — ERC-1155의 탄생 배경**
 
-ERC(Ethereum Request for Comment)는 이더리움 커뮤니티의 표준 제안 프로세스다. EIP(Ethereum Improvement Proposal) 중 스마트컨트랙트 인터페이스에 관한 것들이 ERC로 분류된다. 표준화의 핵심 가치는 **상호운용성(interoperability)**이다: 어떤 지갑이든, 어떤 NFT 마켓플레이스든 ERC-721 컨트랙트라면 동일한 방식으로 토큰을 다룰 수 있다.
+**ERC 표준 제안 프로세스**
 
-ERC-1155는 Enjin(게임 아이템 플랫폼)이 제안한 표준이다(EIP-1155). 게임 아이템의 특성에서 나온 설계다: "금화 1000개"는 개별 고유성이 없는 fungible이고, "전설 검 #42"는 고유한 non-fungible이다. 하나의 게임에 두 유형이 공존하는데, ERC-20과 ERC-721을 각각 쓰면 컨트랙트가 2배로 늘고 상호작용이 복잡해진다. ERC-1155는 **semi-fungible** 개념으로 이를 단일 컨트랙트에서 처리한다.
+ERC(Ethereum Request for Comment)는 이더리움 커뮤니티의 표준 제안 프로세스다. EIP(Ethereum Improvement Proposal) 중 스마트컨트랙트 인터페이스에 관한 것들이 ERC로 분류된다. 누구나 EIP를 제안할 수 있고, 커뮤니티 검토와 핵심 개발자 승인을 거쳐 "Final" 상태가 되면 사실상 표준이 된다. 표준화의 핵심 가치는 **상호운용성(interoperability)**이다: 어떤 지갑이든, 어떤 마켓플레이스든 ERC-721 컨트랙트라면 동일한 인터페이스로 다룰 수 있다.
 
-Semi-fungible의 의미: 같은 tokenId 내에서는 fungible(교환 가능), 다른 tokenId끼리는 non-fungible(교환 불가). 교보생명 쿠폰으로 예시하면: 같은 "걷기달성 1분기" tokenId의 쿠폰은 서로 교환 가능(어차피 동일하므로), 다른 종류의 쿠폰끼리는 교환 불가.
+**ERC-721의 문제 — 게임 산업이 먼저 부딪혔다**
+
+2017~2018년, 블록체인 게임이 등장하면서 ERC-721의 한계가 구체적으로 드러났다. 대표적 사례가 크립토키티(CryptoKitties)다. 크립토키티는 ERC-721 NFT로 고양이를 거래하는 게임이었는데, 2017년 12월 이더리움 네트워크를 마비시킬 정도로 트래픽을 유발했다. 이유는 간단하다: 고양이 한 마리 이전 = TX 1건, 100마리 이전 = TX 100건. 게임 아이템 시스템에서 이는 치명적이다.
+
+게임 아이템 구조를 생각해보면 문제가 더 명확해진다:
+- "금화" — 개수가 있고 서로 교환 가능 (fungible) → ERC-20 필요
+- "일반 철 갑옷" — 수량은 여러 개지만 각각 동일 (semi-fungible) → ERC-20으로는 부족, ERC-721은 낭비
+- "전설 검 #42" — 세상에 하나뿐인 고유 아이템 (non-fungible) → ERC-721 필요
+- "마을 귀환 스크롤 ×10" — 소모성 아이템, 수량 있음 (semi-fungible)
+
+ERC-20과 ERC-721만 쓴다면 게임 하나에 아이템 종류 수만큼 컨트랙트가 필요하다. 컨트랙트가 50개면 "칼+갑옷+포션" 일괄 거래 시 TX 3건을 따로 보내야 한다. 각 TX는 독립적으로 실패할 수 있다 — 칼 전송은 성공했는데 갑옷 전송이 실패하면? 자산이 의도치 않게 쪼개진다. 이것이 **원자적 교환(atomic swap) 문제**다.
+
+**Enjin과 Witek Radomski — EIP-1155 제안자**
+
+ERC-1155는 Enjin의 CTO **Witek Radomski**가 주도해 제안했다. 공동 제안자: Andrew Cooke, Philippe Castonguay, James Therien, Eric Binet, Ronan Sandford.
+
+Enjin은 게임 개발자들이 블록체인 아이템을 쉽게 발행하고 거래할 수 있게 해주는 플랫폼이었다. 2018년 당시 Enjin은 이미 수십 개의 파트너 게임을 운영 중이었고, 게임마다 수백 종의 아이템을 다루면서 ERC-20/ERC-721의 한계를 실제 운영 데이터로 경험했다.
+
+EIP-1155는 2018년 6월 제안, 2019년 6월 Final 상태로 확정되었다. 제안서 원문에 명시된 동기:
+
+> "Tokens standards like ERC-20 and ERC-721 require a separate contract to be deployed for each token type or collection. This places a lot of redundant bytecode on the Ethereum blockchain and separates each token contract into its own permissioned address which limits certain blockchain capabilities."
+
+— EIP-1155 Abstract 중
+
+핵심 동기를 세 가지로 요약하면:
+1. **컨트랙트 수 폭증 방지** — 종류마다 컨트랙트 배포하는 비효율 제거
+2. **가스 절감** — `safeBatchTransferFrom`으로 여러 아이템 일괄 이전
+3. **원자적 교환** — 여러 토큰 타입을 단일 TX로 교환, 부분 실패 없음
+
+**Semi-fungible의 개념적 의미**
+
+ERC-1155는 fungible과 non-fungible을 이분법으로 나누지 않는다. **같은 tokenId 내에서는 fungible, 다른 tokenId끼리는 구별된다**는 원리다.
+
+- tokenId `1` → "금화". 총 발행량 100만 개, 각각 동일. 보유자 수만 명.
+- tokenId `2` → "전설 검". 총 발행량 1개, 보유자 1명.
+- tokenId `3` → "일반 갑옷". 총 발행량 5만 개, 각각 동일.
+
+tokenId `2`는 사실상 ERC-721과 동일하게 동작한다. 발행량이 1이면 비대칭성이 없다. tokenId `1`은 ERC-20처럼 동작한다. 즉 ERC-1155는 **ERC-20과 ERC-721을 모두 포함하는 상위 집합**이다.
+
+교보생명 케이스에서의 semi-fungible: "걷기달성 1분기 캠페인 쿠폰"은 10만 명이 각각 1개씩 보유한다. 이 쿠폰들은 서로 동일하므로 교환할 필요가 없다 — 어차피 같은 것이다. 하지만 "걷기달성 1분기"와 "건강검진 2분기"는 서로 다른 tokenId로 구별되고, 혼용되면 안 된다. 이 구조가 semi-fungible의 실용적 의미다.
 
 **`setApprovalForAll` — 위임 모델**
 
