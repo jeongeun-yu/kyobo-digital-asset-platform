@@ -7,17 +7,14 @@
 | 교육 시작 | 4/27 (웅진씽크빅) — 교보생명 50시간 확정 |
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
-## 마지막 작업 (2026-04-23)
-- **TxStateMachineService**: TX 상태 전이 REQUESTED→SUBMITTED→MINED→CONFIRMED/FAILED/REORGED + TIMEOUT/REORG 복구 (M4)
-- **EventConditionService**: Strategy 패턴 조건 판단 (ActivityCondition / CouponCondition 플러그인) (M5)
-- **WalletMappingService**: userId↔walletAddr 매핑, VASP별 분기, EIP-191 소유권 증명 (M5)
-- **BulkIssueService**: 500건 청크 분할, 부분 실패 처리, retryFailedChunks (M5)
-- **문서 정렬**: overview.md v1.1.0 (ERC-1155/UUPS/IBlockchainAdapter 반영), ADR-003 업데이트
-- **IssuerService.ts**: IChainAdapter → IBlockchainAdapter import 수정
+## 마지막 작업 (2026-04-24)
+- **M1 강의 노트 S1 작성**: `docs/lecture-notes/M1_architecture_setup.md` 신규
+- S1: 선행 과정(패스트캠퍼스 B-Harvest 37h) 기반 8개 연결 지점 기술 레퍼런스
+- 이론 보강: delegatecall/ERC-1967/C3 선형화, Casper FFG/FBA/Finality, ECDSA/HSM/MPC, SHA-256 3특성/Merkle/규제 조항 등
+- S2~S4는 기존 작성 완료 상태
 
 ## 다음 작업
+- [ ] M1 S1 공부하며 내용 보완 (공부 병행)
+- [ ] M1 통과 후 M2 강의 노트 작성
 - [ ] 이종건 계약서 일정 확인
 - [ ] 교보DTS와 Core Banking API 스펙 협의
-- [ ] VASP 파트너사 선정 기준 교보DTS 제시
-- [ ] InvestorRegistry.sol 구현체 작성 (Phase 3 실구현 시)
-- [ ] DividendDistributor.sol 구현체 작성 (Phase 3 실구현 시)
