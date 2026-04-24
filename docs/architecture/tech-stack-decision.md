@@ -52,9 +52,19 @@ Node.js + TypeScript
 
 반대로 Java로 전환하면 블록체인 인터페이스 레이어(ethers.js → web3j 전환) 작업이 추가로 필요하다.
 
+### CoinCraft 추천
+
+**Node.js / TypeScript 유지** — 단, 독립 마이크로서비스로 격리 운영
+
+블록체인 인터페이스 레이어(VASP 연동, 체인 이벤트 처리, 컨트랙트 호출)는 ethers.js 생태계에 직접 의존한다. 이 레이어를 Java로 전환하면 web3j의 기능 공백을 직접 메워야 하는 리스크가 생기고, 외부 VASP SDK가 JS/TS만 제공하는 경우 대응이 불가능해진다.
+
+대신 **기존 Java Spring 시스템과의 연동은 REST API 경계**로 명확히 분리한다. 블록체인 플랫폼 서비스가 독립된 마이크로서비스로 운영되면, 교보 내부 Java 팀이 Java 영역을 유지하면서 블록체인 서비스는 별도로 관리할 수 있다.
+
+교육 과정에서 수강자들이 이 TypeScript 코드베이스를 직접 구현하게 되므로, 과정 종료 후 그대로 인수인계가 가능하다는 점도 장점이다.
+
 ### 결정
 
-- [ ] Node.js / TypeScript 유지
+- [ ] Node.js / TypeScript 유지 ← CoinCraft 추천
 - [ ] Java로 전환 (web3j 기반)
 - [ ] 하이브리드 — 블록체인 인터페이스는 TS, Core Banking 연동은 Java
 
@@ -85,11 +95,19 @@ Node.js + TypeScript
 
 현재 스켈레톤은 프레임워크 없이 순수 클래스로 작성되어 있어, 어떤 프레임워크도 적용 가능하다.
 
+### CoinCraft 추천
+
+**NestJS** (Node.js 유지 시)
+
+교보DTS 개발자들의 주력이 Java Spring이라면 NestJS가 가장 빠르게 적응할 수 있는 선택이다. `@Injectable()`, `@Controller()`, `@Module()` 데코레이터와 DI 컨테이너 구조가 Spring의 `@Service`, `@RestController`, `@Configuration`과 거의 1:1로 대응된다. 엔터프라이즈 수준의 모듈화와 테스트 구조도 Spring과 유사하게 가져갈 수 있다.
+
+단, 현재 스켈레톤 교육 과정에서는 프레임워크 없이 순수 클래스로 진행한다. 핵심 비즈니스 로직과 인터페이스 구조를 먼저 이해한 후, 프레임워크는 이후 프로덕션 전환 시 적용하는 것이 학습 순서상 맞다.
+
 ### 결정
 
-- [ ] 프레임워크 없음 유지
+- [ ] 프레임워크 없음 유지 (교육 과정 중)
 - [ ] Fastify
-- [ ] NestJS (Spring 유사 구조)
+- [ ] NestJS (Spring 유사 구조) ← CoinCraft 추천 (프로덕션 전환 시)
 - [ ] Express
 
 **결정 주체**: 교보DTS 아키텍처팀  
@@ -126,10 +144,20 @@ interface DatabaseClient {
 
 교보생명 기존 Core Banking 시스템이 사용하는 DB가 있다면, 일관성을 위해 같은 DB를 사용하는 것이 운영 측면에서 유리할 수 있다. 단, 블록체인 플랫폼 DB는 기존 Core Banking DB와 **분리 운영**을 권장한다 (장애 격리, 감사 추적 독립성).
 
+### CoinCraft 추천
+
+**교보 내부에 Oracle이 표준이면 Oracle, 그렇지 않으면 PostgreSQL**
+
+원칙은 하나다: **블록체인 플랫폼 DB는 기존 Core Banking DB와 분리하되, DB 엔진 종류는 교보 내부 운영 표준을 따른다.** 두 가지를 섞어 운영하면 DBA 부담이 커진다.
+
+교보DTS 내부에 이미 Oracle DBA 조직이 있고 Oracle이 표준이라면 Oracle을 쓰는 것이 맞다. 만약 신규 시스템에 오픈소스 스택을 도입하는 방향을 고려한다면 PostgreSQL을 추천한다. PostgreSQL은 `JSONB` 타입으로 온체인 이벤트 원본 데이터를 그대로 저장할 수 있고, 감사 로그용 `APPEND ONLY` 패턴 구현에 적합하며, 라이선스 비용이 없다.
+
+MySQL은 감사 로그 무결성 보장(행 수준 잠금, WAL 구조) 측면에서 PostgreSQL에 비해 약하다. 금융 감사 로그 용도로는 비추천.
+
 ### 결정
 
-- [ ] PostgreSQL
-- [ ] Oracle
+- [ ] Oracle (교보 내부 표준이면 이쪽)
+- [ ] PostgreSQL ← CoinCraft 추천 (신규 스택 도입 시)
 - [ ] MySQL / MariaDB
 - [ ] 기타: ___________
 
@@ -163,11 +191,23 @@ Redis Streams (Consumer Group + DLQ 구조)
 
 교보생명의 클라우드 환경(AWS/Azure/온프레미스)이 어떻게 구성되어 있는지에 따라 선택이 달라진다. 이미 Kafka를 운영 중이라면 Kafka가, AWS 환경이라면 SQS가 자연스러운 선택이다. Redis Streams는 추가 인프라 없이 사용할 수 있다는 장점이 있다.
 
+### CoinCraft 추천
+
+**Phase 1: Redis Streams 유지 → 향후 트래픽·조직 규모에 따라 Kafka 검토**
+
+Phase 1 규모(일 수만 건)에서 Redis Streams는 충분하다. Kafka는 강력하지만 클러스터 운영 전담 인력이 필요하고, 잘못 운영하면 오히려 장애 요인이 된다. 추가 인프라 없이 Redis 하나로 캐시와 이벤트 파이프라인을 함께 처리할 수 있다는 것이 Phase 1에서는 실질적인 이점이다.
+
+단, 교보DTS가 이미 Kafka 클러스터를 운영 중이라면 그쪽을 쓰는 것이 맞다. 새로 배워서 운영하는 것보다 기존 운영 조직이 있는 시스템이 안전하다.
+
+AWS 환경이라면 SQS도 좋은 선택이다. 매니지드 서비스라 운영 부담이 없고, DLQ도 기본 제공된다.
+
+결론: **이미 쓰고 있는 게 있으면 그걸 쓴다. 없으면 Redis Streams로 시작한다.**
+
 ### 결정
 
-- [ ] Redis Streams 유지
-- [ ] Apache Kafka
-- [ ] AWS SQS
+- [ ] Redis Streams 유지 ← CoinCraft 추천 (기존 인프라 없을 때)
+- [ ] Apache Kafka (이미 운영 중인 경우)
+- [ ] AWS SQS (AWS 환경인 경우)
 - [ ] RabbitMQ
 - [ ] 기타: ___________
 
@@ -187,6 +227,20 @@ EVM 호환 체인을 사용하는 한 Solidity가 유일한 현실적 선택이�
 ## 6. 블록체인 선택 — 별도 협의 필요
 
 체인 선택(이더리움 L1 / L2 / 사이드체인)은 VASP 파트너사 선정과 연동되는 사안으로, 이 문서와 별도로 협의가 필요하다. 관련 기술 비교는 강의 노트 M1 배경 섹션 참조.
+
+---
+
+## CoinCraft 추천 요약
+
+| 항목 | CoinCraft 추천 | 조건 |
+|---|---|---|
+| 백엔드 런타임 | **Node.js / TypeScript** | 블록체인 생태계 호환성 우선 |
+| 백엔드 프레임워크 | **NestJS** (프로덕션 전환 시) | Spring 배경 팀 적응 용이 |
+| 데이터베이스 | **Oracle** 또는 **PostgreSQL** | 교보 내부 표준 따름 / 신규 도입이면 PostgreSQL |
+| 메시지 큐 | **Redis Streams** (기존 없을 때) | 기존 Kafka·SQS 있으면 그쪽 우선 |
+| 스마트컨트랙트 언어 | **Solidity** | 사실상 고정 |
+
+이 추천은 블록체인 플랫폼 특성과 교보생명의 일반적 금융기관 환경을 고려한 것이다. 교보DTS의 실제 인프라 현황, 기존 운영 조직, 내부 보안 정책에 따라 최종 결정이 달라질 수 있으며, **최종 결정 권한은 교보생명/교보DTS에 있다.**
 
 ---
 
