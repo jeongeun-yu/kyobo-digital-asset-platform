@@ -62,7 +62,7 @@ REORGED ──► 재제출 ──► SUBMITTED (재시작)
 ### Step 1 — VaspRecoveryService 스켈레톤 확인 (10분)
 
 ```bash
-cat packages/vasp/src/recovery/VaspRecoveryService.ts
+cat dmz/packages/vasp/src/recovery/VaspRecoveryService.ts
 ```
 
 **구현할 3개 시나리오:**
@@ -73,7 +73,7 @@ cat packages/vasp/src/recovery/VaspRecoveryService.ts
 ### Step 2 — REVERT 처리 구현 (20분)
 
 ```typescript
-// packages/vasp/src/recovery/VaspRecoveryService.ts
+// dmz/packages/vasp/src/recovery/VaspRecoveryService.ts
 async handleTxRevert(requestId: string, txHash: string, reason: string): Promise<void> {
   // TODO: 구현
   // 1. mint_requests WHERE request_id = requestId AND status = 'SUBMITTED' 조회
@@ -135,7 +135,7 @@ if (block.hash !== knownBlockHash) {
 ### Step 2 — Reorg 복구 흐름 구현 (30분)
 
 ```bash
-cat packages/vasp/src/recovery/VaspRecoveryService.ts
+cat dmz/packages/vasp/src/recovery/VaspRecoveryService.ts
 # handleReorg() 메서드 찾기
 ```
 
@@ -201,13 +201,13 @@ VASP/체인 이벤트
 ### Step 2 — PollingService 구현 (25분)
 
 ```bash
-cat packages/vasp/src/polling/PollingService.ts
+cat dmz/packages/vasp/src/polling/PollingService.ts
 ```
 
 **핵심 구현:**
 
 ```typescript
-// packages/vasp/src/polling/PollingService.ts
+// dmz/packages/vasp/src/polling/PollingService.ts
 export class PollingService {
   private intervalId?: NodeJS.Timeout;
 

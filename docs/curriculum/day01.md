@@ -131,7 +131,7 @@ cd kyobo-digital-asset-platform
 > "이 레포의 `docs/architecture/overview.md`를 보면 Phase가 4개입니다. 오늘부터 9일은 Phase 1만 다룹니다. 근데 코드 안에 Phase 2/3/4 파일이 이미 있어요. 왜일까요?"
 
 ```
-packages/contracts/src/
+blockchain/src/
 ├── phase1/  KyoboNFT.sol        ← 9일 동안 다루는 것
 ├── phase2/  KRWStablecoin.sol   ← 빈 파일
 └── phase3/  SecurityToken.sol   ← 빈 파일
@@ -209,5 +209,5 @@ DMZ Nginx 설정 파일을 직접 수정하고, 로컬 노드에 처음으로 �
 - `docs/architecture/overview.md`
 - `docs/adr/001-chain-abstraction-layer.md`
 - `docs/adr/002-vasp-external-first.md`
-- `packages/vasp/src/interfaces/IVASPAdapter.ts`
-- `packages/chain-adapters/src/interfaces/IChainAdapter.ts`
+- `dmz/packages/vasp/src/interfaces/IVASPAdapter.ts`
+- `dmz/packages/chain-adapters/src/interfaces/IChainAdapter.ts`

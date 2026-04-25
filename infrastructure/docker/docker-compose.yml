@@ -12,7 +12,7 @@ services:
     image: node:20-alpine
     working_dir: /app
     volumes:
-      - ../../packages/contracts:/app
+      - ../../blockchain:/app
     command: npx hardhat node --hostname 0.0.0.0
     ports:
       - "8545:8545"  # RPC
@@ -22,10 +22,27 @@ services:
       interval: 5s
       retries: 10
 
+  # ── 내부망 Java 게이트웨이 ────────────────────────────────────────────────────
+  blockchain-gateway:
+    build:
+      context: ../../internal/blockchain-gateway
+      dockerfile: Dockerfile
+    image: kyobo/blockchain-gateway:local
+    container_name: kyobo-blockchain-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/kyobo_internal
+      DB_USERNAME: kyobo
+      DB_PASSWORD: kyobo
+      CORE_BANKING_URL: http://host.docker.internal:9090
+    depends_on:
+      - postgres
+
   # ── NFT 발행 서비스 ───────────────────────────────────────────────────────────
   issuer-service:
     build:
-      context: ../../apps/issuer-service
+      context: ../../dmz/apps/issuer-service
       dockerfile: Dockerfile
     environment:
       RPC_URL:                    http://hardhat-node:8545

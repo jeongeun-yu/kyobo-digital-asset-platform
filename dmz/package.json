@@ -1,0 +1,8 @@
+{
+  "name": "@kyobo/dmz-workspace",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

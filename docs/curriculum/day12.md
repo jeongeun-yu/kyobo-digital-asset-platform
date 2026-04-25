@@ -68,7 +68,7 @@
 ### Step 1 — Gnosis Safe 배포 확인 (10분)
 
 ```bash
-cat packages/contracts/src/phase1/KyoboSafe.sol
+cat blockchain/src/phase1/KyoboSafe.sol
 ```
 
 > "KyoboSafe는 Gnosis Safe의 GnosisSafe 컨트랙트를 래핑합니다. 우리가 추가한 것은 감사 로그 훅과 Travel Rule 검증뿐입니다."
@@ -129,7 +129,7 @@ pnpm ts-node scripts/executeTx.ts --txHash <pending-tx-hash>
 ### Step 1 — 스켈레톤 확인 (10분)
 
 ```bash
-cat packages/vasp/src/governance/KeyGovernanceService.ts
+cat dmz/packages/vasp/src/governance/KeyGovernanceService.ts
 ```
 
 **구현할 메서드:**
@@ -141,7 +141,7 @@ cat packages/vasp/src/governance/KeyGovernanceService.ts
 ### Step 2 — proposeTx 구현 (25분)
 
 ```typescript
-// packages/vasp/src/governance/KeyGovernanceService.ts
+// dmz/packages/vasp/src/governance/KeyGovernanceService.ts
 async proposeTx(params: ProposeTxParams): Promise<PendingTx> {
   // TODO:
   // 1. Safe SDK로 TX 데이터 인코딩

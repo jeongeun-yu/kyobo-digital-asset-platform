@@ -74,7 +74,7 @@ ETHERSCAN_API_KEY=[Etherscan API 키]
 ### Step 2 — 배포 실행 (15분)
 
 ```bash
-cd packages/contracts
+cd blockchain
 npx hardhat run scripts/deploy/deploy-phase1.ts --network sepolia
 ```
 
@@ -276,7 +276,7 @@ ISMS-P 체크리스트 직접 실행. 스마트컨트랙트 취약점을 실제 
 
 ## 참조 파일
 
-- `packages/contracts/scripts/deploy/deploy-phase1.ts`
-- `packages/contracts/src/base/BaseToken.sol`
-- `packages/chain-adapters/src/evm/EVMAdapter.ts`
+- `blockchain/scripts/deploy/deploy-phase1.ts`
+- `blockchain/src/base/BaseToken.sol`
+- `dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
 - `.env.example`

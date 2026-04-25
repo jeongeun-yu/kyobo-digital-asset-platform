@@ -4,16 +4,17 @@
   "private": true,
   "description": "교보생명 디지털 자산 플랫폼 — Phase 1~4 전체 아키텍처",
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "dmz/apps/*",
+    "dmz/packages/*",
+    "blockchain"
   ],
   "scripts": {
     "build":      "npm run build --workspaces",
     "test":       "npm run test --workspaces",
     "typecheck":  "npm run typecheck --workspaces",
-    "node:local": "cd packages/contracts && npx hardhat node",
-    "deploy:local": "cd packages/contracts && npx hardhat run scripts/deploy/deploy-phase1.ts --network localhost",
-    "isms:check": "cd apps/issuer-service && npx ts-node src/scripts/isms-check.ts"
+    "node:local": "cd blockchain && npx hardhat node",
+    "deploy:local": "cd blockchain && npx hardhat run scripts/deploy/deploy-phase1.ts --network localhost",
+    "isms:check": "cd dmz/apps/issuer-service && npx ts-node src/scripts/isms-check.ts"
   },
   "devDependencies": {
     "typescript":      "^5.4.0",

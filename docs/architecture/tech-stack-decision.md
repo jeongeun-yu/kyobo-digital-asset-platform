@@ -42,8 +42,10 @@
 | 4 | DMZ 프레임워크 | 🔲 미결정 | — |
 | 5 | 메시지 큐 | 🔲 미결정 | — |
 | 6 | 스마트컨트랙트 언어 | ⚪ 고정 | Solidity |
-| 7 | 블록체인 | 🔲 별도 협의 | — |
-| 8 | 보안점검 Node.js 허용 | ⚠️ 확인 필요 | 서면 확인 전 리스크 열려있음 |
+| 7 | 블록체인 (Phase 1) | ✅ **확정** | Ethereum Mainnet (월렛원 연동) |
+| 7-2 | 블록체인 (Phase 2+) | 🔲 추상화 대비 | XRPL, Circle ARC |
+| 8 | VASP 파트너 | ✅ **내부 확정** | 월렛원 (WalletOne) |
+| 9 | 보안점검 Node.js 허용 | ⚠️ 확인 필요 | 서면 확인 전 리스크 열려있음 |
 
 ---
 
@@ -283,23 +285,73 @@ EVM 호환 체인을 사용하는 한 Solidity가 유일한 현실적 선택이�
 
 ---
 
-## 6. VASP 파트너 현황 (2026-04-24)
+## 6. VASP 파트너 현황 (2026-04-25 확정)
 
 | 업체 | 상태 | SDK | Travel Rule | 비고 |
 |---|---|---|---|---|
-| **월렛원 (WalletOne)** | **유력 후보** | REST API (JS/TS 중심) | 지원 | 교보생명 측 유선 언급 — 계약 미확정 |
-| 코다 (KODA) | 대안 | REST API | 지원 | KB국민은행 계열 수탁사 |
-| EQBR | 대안 | REST API | 지원 | |
+| **월렛원 (WalletOne)** | ✅ **내부 확정** | REST API (JS/TS 중심) | 지원 | Phase 1 VASP — 내부 결정 완료 |
+| 코다 (KODA) | 보류 | REST API | 지원 | KB국민은행 계열 수탁사 |
+| EQBR | 보류 | REST API | 지원 | |
 
-> **월렛원 Java SDK**: 공식 Java SDK 미제공 가능성 높음 — Java 내부망에서 직접 연동 불가, **DMZ Node.js 서비스가 VASP 연동을 담당하는 구조의 추가 근거**.
+> **월렛원 Java SDK**: 공식 Java SDK 미제공 — Java 내부망에서 직접 연동 불가, **DMZ Node.js 서비스가 VASP 연동을 담당하는 구조의 추가 근거**.
 
-> 파트너 확정 시 ADR-002 업데이트 및 `ExternalVASPAdapter`의 baseUrl 환경변수 문서화 필요.
+> 파트너 확정 → ADR-002 업데이트 및 `ExternalVASPAdapter`의 baseUrl 환경변수 문서화 필요.
 
 ---
 
-## 7. 블록체인 선택 — 별도 협의 필요
+## 7. 블록체인 선택 (2026-04-25 확정)
 
-체인 선택(이더리움 L1 / L2 / 사이드체인)은 VASP 파트너사 선정과 연동되는 사안으로, 이 문서와 별도로 협의가 필요하다. 관련 기술 비교는 강의 노트 M1 배경 섹션 참조.
+### Phase 1 — 이더리움 메인넷 ✅ 확정
+
+월렛원이 이더리움 메인넷을 사용하므로 Phase 1은 이더리움 메인넷으로 확정.
+
+| 항목 | 값 |
+|---|---|
+| 체인 | Ethereum Mainnet |
+| 런타임 라이브러리 | ethers.js v6 |
+| 블록 Finality | 12 컨펌 (약 2.4분) |
+| 컨트랙트 언어 | Solidity |
+| 토큰 표준 | ERC-20 (기본), ERC-1155 (멀티자산 시 검토) |
+
+### Phase 2+ — 멀티체인 확장 (추상화 레이어 기반)
+
+향후 XRPL, Circle ARC 도입을 대비해 스켈레톤에 `ChainAdapter` 추상화 레이어를 설계한다.
+
+```
+                    ┌─────────────────────────┐
+                    │   BlockchainService      │
+                    │  (체인 무관 비즈니스 로직) │
+                    └──────────┬──────────────┘
+                               │ ChainAdapter interface
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+   EthereumAdapter      XRPLAdapter       CircleArcAdapter
+   (Phase 1 구현)       (Phase 2 예정)    (Phase 2 예정)
+   ethers.js v6         xrpl.js           Circle API
+```
+
+**`ChainAdapter` 인터페이스 (추상화 대상 메서드)**:
+```typescript
+interface ChainAdapter {
+  getBalance(address: string, tokenContract?: string): Promise<bigint>;
+  transfer(params: TransferParams): Promise<TransactionReceipt>;
+  getTransaction(txHash: string): Promise<TransactionDetail>;
+  waitForConfirmation(txHash: string, confirmations?: number): Promise<void>;
+  subscribeToTransfers(address: string, callback: TransferEventCallback): Unsubscribe;
+  estimateFee(params: TransferParams): Promise<FeeEstimate>;
+  validateAddress(address: string): boolean;
+}
+```
+
+**체인별 차이점 (추상화로 숨겨야 할 것들)**:
+
+| 항목 | Ethereum | XRPL | Circle ARC |
+|---|---|---|---|
+| 주소 형식 | 0x hex | r... (base58) | 정책 기반 |
+| 수수료 | gas (ETH) | drops (XRP) | API 수수료 |
+| Finality | ~2.4분 (12 확인) | ~3-5초 | 즉시 |
+| 스마트컨트랙트 | Solidity EVM | Hooks (제한적) | Circle 관리 |
+| Travel Rule 연동 | VASP 직접 | XRPL AMM / DEX | Circle Compliance API |
 
 ---
 
@@ -312,6 +364,9 @@ EVM 호환 체인을 사용하는 한 Solidity가 유일한 현실적 선택이�
 | 데이터베이스 | **Oracle** 또는 **PostgreSQL** | 교보 내부 표준 따름 / 신규 도입이면 PostgreSQL |
 | 메시지 큐 | **Redis Streams** (기존 없을 때) | 기존 Kafka·SQS 있으면 그쪽 우선 |
 | 스마트컨트랙트 언어 | **Solidity** | 사실상 고정 |
+| VASP | **월렛원** | Phase 1 확정 |
+| 블록체인 (Phase 1) | **Ethereum Mainnet** | 월렛원 연동 |
+| 블록체인 (Phase 2+) | **ChainAdapter 추상화** | XRPL / Circle ARC 확장 대비 |
 
 이 추천은 블록체인 플랫폼 특성과 교보생명의 일반적 금융기관 환경을 고려한 것이다. 교보DTS의 실제 인프라 현황, 기존 운영 조직, 내부 보안 정책에 따라 최종 결정이 달라질 수 있으며, **최종 결정 권한은 교보생명/교보DTS에 있다.**
 

@@ -1,0 +1,25 @@
+{
+  "name": "@kyobo/blockchain",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "node": "npx hardhat node --hostname 0.0.0.0",
+    "deploy:local": "npx hardhat run scripts/deploy/deploy-phase1.ts --network localhost",
+    "deploy:sepolia": "npx hardhat run scripts/deploy/deploy-phase1.ts --network sepolia"
+  },
+  "devDependencies": {
+    "hardhat": "^2.22.0",
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/hardhat-upgrades": "^3.0.0",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "@openzeppelin/contracts-upgradeable": "^5.0.0"
+  }
+}

@@ -48,7 +48,7 @@ Phase 1의 핵심 서비스는 **행동 보상 NFT**다. 교보생명 앱 사용
   │
   ▼
 [KyoboNFT 스마트컨트랙트]       ← M2·M3 구현 영역
-  │ (블록체인 — 미결정, 교육용 실습은 Ethereum Sepolia 테스트넷)
+  │ (Phase 1: Ethereum Mainnet — WalletOne 확정, 교육용 실습은 Ethereum Sepolia 테스트넷)
   ▼
 [내부 원장 + 감사 로그]         ← M6 구현 영역
 [DMZ 이벤트 파이프라인]         ← M7 구현 영역
@@ -69,7 +69,7 @@ Phase 1 프로덕션에서 교보생명이 직접 하는 것과 하지 않는 �
 | **키 서명 · TX 브로드캐스트** | **❌ 직접 수행 안 함** | VASP 외부 위탁 |
 | **지갑 생성 · MPC/HSM 관리** | **❌ 직접 수행 안 함** | VASP 외부 위탁 |
 
-즉, **Phase 1에서 교보는 컨트랙트를 직접 배포·배포하고 오너십은 갖지만, 실제 TX 실행(키 서명·브로드캐스트)은 외부 인가 VASP(월렛원·코다·EQBR 중 미확정)에 API로 위탁한다.** 스켈레톤 코드에서 이 구조는 `ExternalVASPAdapter`가 담당한다.
+즉, **Phase 1에서 교보는 컨트랙트를 직접 배포하고 오너십은 갖지만, 실제 TX 실행(키 서명·브로드캐스트)은 외부 인가 VASP(월렛원 — Phase 1 내부 확정)에 API로 위탁한다.** 스켈레톤 코드에서 이 구조는 `ExternalVASPAdapter`가 담당한다.
 
 그렇다면 왜 이 커리큘럼은 스마트 컨트랙트 직접 구현(M2·M3)부터 키 거버넌스(M8)까지 전 레이어를 직접 구현하는가?
 
@@ -295,15 +295,253 @@ Solidity 소스코드를 컴파일하면 두 가지 산출물이 나온다: **by
 
 *bytecode*는 EVM(Ethereum Virtual Machine)이 실행하는 저수준 명령어 집합이다. EVM은 스택 기반 가상머신으로, 256비트 단어(word)를 기본 연산 단위로 쓴다. `ADD`, `MUL`, `SSTORE`(스토리지 저장), `SLOAD`(스토리지 읽기), `CALL`(외부 호출) 같은 opcode들이 순서대로 나열된 것이 bytecode다. 이 bytecode가 컨트랙트 배포 TX의 `data` 필드에 담겨 전송되고, 블록에 포함되면 그 주소에 영구히 저장된다. 이후 해당 주소로 TX를 보내면 EVM이 저장된 bytecode를 실행한다.
 
-*ABI(Application Binary Interface)*는 컨트랙트의 함수 시그니처와 인자 타입을 JSON으로 기술한 명세서다. `contract.mint(userAddress, tokenId, 1)` 같은 호출을 EVM이 이해할 수 있는 바이너리 형태로 인코딩하는 데 사용된다. 함수 셀렉터(function selector)는 함수 시그니처의 keccak256 해시 앞 4바이트다:
+bytecode의 두 단계
+
+컨트랙트 배포 시 bytecode는 두 부분으로 나뉜다:
 
 ```
-mint(address,uint256,uint256) → keccak256 → 앞 4바이트 → 0x6a627842
+[creation bytecode] + [runtime bytecode] + [constructor args]
 ```
+
+- **creation bytecode**: 배포 시점에 한 번만 실행된다. constructor 로직을 실행하고, 최종적으로 runtime bytecode를 반환한다.
+- **runtime bytecode**: EVM이 컨트랙트 주소에 영구 저장하는 부분. 이후 모든 호출은 이걸 실행한다.
+
+`eth_getCode(address)`로 조회하면 runtime bytecode만 나온다. constructor 로직은 체인에 남지 않는다.
+
+스택 기반 실행 예시
+
+`a + b`를 계산하는 최소 bytecode:
+
+```
+PUSH1 0x03    ← 스택: [3]
+PUSH1 0x05    ← 스택: [3, 5]
+ADD           ← 스택: [8]
+```
+
+EVM은 레지스터가 없다. 모든 연산이 스택에서 일어나고, 최대 깊이는 1024다.
+
+Gas 비용
+
+opcode마다 gas 비용이 다르다:
+
+```
+ADD        = 3 gas
+MUL        = 5 gas
+SLOAD      = 2100 gas (cold) / 100 gas (warm)
+SSTORE     = 20000 gas (신규) / 5000 gas (수정) / -15000 gas refund (삭제)
+CALL       = 2600 gas (cold) + 실행 비용
+CREATE2    = 32000 gas + 코드 크기 비용
+```
+
+스토리지 I/O가 압도적으로 비싸다. 가스 최적화의 80%는 `SSTORE`/`SLOAD`를 줄이는 일이다.
+
+bytecode → opcode 디컴파일
+
+```bash
+# 배포된 컨트랙트의 runtime bytecode 조회
+cast code 0xContractAddress --rpc-url $RPC
+
+# opcode로 디스어셈블
+cast disassemble 0x6080604052...
+```
+
+소스코드 없이도 이 수준까지는 누구나 볼 수 있다. **소스코드는 숨겨도 로직은 숨길 수 없다** — Etherscan verify가 없어도 bytecode는 공개된다.
+
+함수 셀렉터와의 연결
+
+runtime bytecode 시작부는 거의 항상 **function dispatcher**다:
+
+```
+PUSH1 0x00
+CALLDATALOAD       ← calldata 첫 32바이트 로드
+PUSH1 0xe0
+SHR                ← 상위 4바이트만 추출 = function selector
+DUP1
+PUSH4 0x156e29f6   ← mint(address,uint256,uint256) 셀렉터
+EQ
+PUSH2 0x0042       ← 일치하면 이 주소로 점프
+JUMPI
+...
+```
+
+calldata의 첫 4바이트를 셀렉터와 비교해서 JUMPI로 분기한다. 앞서 설명한 ABI 셀렉터가 **런타임에 실제로 어떻게 작동하는지**가 여기서 드러난다.
+
+Custody 설계 관점 체크포인트
+
+- **CREATE2 주소 예측**: `keccak256(0xff ++ deployer ++ salt ++ keccak256(init_code))[12:]` — 배포 전에 주소 계산 가능. 카운터팩추얼 지갑의 핵심.
+- **EXTCODEHASH**: 컨트랙트 bytecode 해시 조회. 프록시가 예상한 구현을 가리키는지 검증할 때 쓴다.
+- **SELFDESTRUCT**: Cancun 업그레이드(2024.3) 이후 같은 TX 내 CREATE2 배포분만 삭제 가능. 기존 컨트랙트는 잔액 이전만 되고 bytecode는 유지된다.
+
+
+**ABI(Application Binary Interface)**는 컨트랙트의 함수 시그니처와 인자 타입을 JSON으로 기술한 명세서다. `contract.mint(userAddress, tokenId, 1)` 같은 호출을 EVM이 이해할 수 있는 바이너리 형태로 인코딩하는 데 사용된다. 함수 셀렉터(function selector)는 함수 시그니처의 keccak256 해시 앞 4바이트다:
+
+함수 셀렉터 계산
+
+```
+mint(address,uint256,uint256)
+  → keccak256("mint(address,uint256,uint256)")
+  → 0x156e29f6...
+  → 앞 4바이트: 0x156e29f6
+```
+
+EVM은 함수 이름을 모른다. calldata 첫 4바이트로 "어떤 함수 호출인지" 구분한다.
+
+calldata 구조
+
+```
+0x156e29f6                                                         ← selector (4 bytes)
+000000000000000000000000aBcDeF1234567890aBcDeF1234567890aBcDeF12   ← address (32 bytes)
+0000000000000000000000000000000000000000000000000000000000000001   ← tokenId (32 bytes)
+0000000000000000000000000000000000000000000000000000000000000001   ← amount (32 bytes)
+```
+
+모든 인자는 32바이트로 패딩된다 (`address`는 왼쪽 0 패딩, `uint256`은 자연스럽게 32바이트).
+
+ABI의 실제 모습
+
+```json
+{
+  "inputs": [
+    { "name": "to",      "type": "address" },
+    { "name": "tokenId", "type": "uint256" },
+    { "name": "amount",  "type": "uint256" }
+  ],
+  "name": "mint",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+}
+```
+
+ethers.js / web3.js / viem은 이 JSON을 보고 calldata 인코딩/디코딩을 자동 처리한다.
+
+ERC-1155 mint 실전 예시
+
+```solidity
+function mint(address to, uint256 id, uint256 amount, bytes memory data) external;
+```
+
+셀렉터: `keccak256("mint(address,uint256,uint256,bytes)")[0:4]` = `0x731133e9`
+
+`bytes` 같은 **동적 타입**이 포함되면 인코딩이 복잡해진다 — 동적 타입은 head 영역에 offset만 쓰고, 실제 데이터는 tail 영역에 저장된다. 이 부분이 calldata 디코딩 버그의 주요 원인이고, Slither가 잡아주는 영역이기도 하다.
+
+셀렉터 충돌 (Selector Collision)
+
+4바이트밖에 안 되므로 이론상 다른 함수 시그니처가 같은 셀렉터를 가질 수 있다. 프록시 패턴에서 구현 컨트랙트와 프록시 컨트랙트 함수가 같은 셀렉터를 가지면 의도치 않은 함수가 호출된다 — Transparent Proxy 패턴이 이걸 막기 위해 admin만 프록시 함수에 접근하게 하는 이유다.
 
 호출 데이터(calldata)의 첫 4바이트가 이 셀렉터이고, EVM은 이것으로 어느 함수를 실행할지 결정한다. ABI 없이는 외부에서 컨트랙트 함수를 호출할 방법이 없다.
 
 금융 시스템에서 ABI가 중요한 이유: 컨트랙트가 업그레이드될 때 함수 시그니처(이름, 파라미터 타입)가 바뀌면 기존 클라이언트 코드가 모두 깨진다. ABI를 일종의 공개 API 계약(contract)으로 관리해야 한다.
+
+**bytecode와 ABI의 관계**  
+
+bytecode는 EVM이 실행하는 것, ABI는 외부가 bytecode를 호출하기 위한 설명서다.
+
+둘은 같은 컨트랙트를 다른 관점에서 기술한다. bytecode가 없으면 컨트랙트가 존재하지 않고, ABI가 없으면 아무도 그 컨트랙트를 호출할 수 없다 (정확히는, 호출하려면 셀렉터와 인코딩 규칙을 수동으로 맞춰야 한다).
+
+생성 흐름
+
+```
+Solidity 소스코드
+    │
+    │  solc 컴파일
+    │
+    ├──────────────► bytecode (체인에 배포됨)
+    │                └─ EVM이 실행
+    │
+    └──────────────► ABI (JSON, 오프체인 보관)
+                     └─ 클라이언트가 호출 인코딩에 사용
+```
+
+`solc Contract.sol --bin --abi` 한 번에 둘 다 나온다. **같은 소스에서 나온 쌍둥이**다.
+
+호출 시점에 둘이 만나는 지점
+
+```
+[오프체인: 클라이언트]                    [온체인: EVM]
+                                          
+ethers.Contract(addr, ABI)                
+    │                                     
+    │ contract.mint(to, id, 1)            
+    │                                     
+    ▼                                     
+ABI 참조                                  
+    → 함수 시그니처 조립                     
+    → keccak256 → selector                
+    → 인자 ABI 인코딩                       
+    │                                     
+    ▼                                     
+calldata: 0x156e29f6 + 인코딩된 인자       
+    │                                     
+    │ eth_sendTransaction                 
+    │                                     
+    ├─────────────────────────────────►  bytecode 실행
+                                          ├─ dispatcher가 selector 비교
+                                          ├─ 해당 함수로 JUMPI
+                                          └─ 로직 실행
+```
+
+ABI는 **calldata를 만드는 쪽**, bytecode는 **calldata를 해석하는 쪽**이다. 둘이 selector(4바이트)로 악수한다.
+
+비대칭성: bytecode는 ABI를 모른다
+
+중요한 포인트 — **bytecode 안에 ABI는 없다.** bytecode는 "이 selector면 이 주소로 점프" 정도만 안다. 함수 이름(`mint`), 인자 이름(`to`, `tokenId`), 인자 타입 주석(`address`, `uint256`)은 bytecode에 없다.
+
+그래서:
+- Etherscan "Verify Contract" = 소스를 올려서 **컴파일 결과가 배포된 bytecode와 일치하는지 증명** → ABI가 복원되어 공개됨
+- Unverified 컨트랙트는 bytecode만 있고 ABI가 없음 → 호출하려면 selector를 역추적하거나 `cast 4byte-decode` 같은 도구로 추측
+
+역방향: bytecode에서 ABI 복원
+
+완벽하진 않지만 부분 복원은 가능하다:
+
+```bash
+# selector 목록 추출
+cast selectors 0x6080604052...
+
+# 각 selector를 공개 DB에서 역조회
+# (4byte.directory에 수집된 시그니처만 매칭)
+cast 4byte 0x156e29f6
+# → mint(address,uint256,uint256)
+```
+
+한계:
+- **public 함수만** 복원 가능 (internal/private는 bytecode에 selector가 없음)
+- **인자 이름은 복원 불가** (ABI JSON의 `"name": "to"` 같은 정보)
+- **커스텀 함수**는 4byte.directory에 등록 안 돼 있으면 역조회 실패
+
+Dedaub, Panoramix 같은 디컴파일러가 bytecode에서 ABI를 추론하지만, 이름은 `func_0x156e29f6` 식으로 찍힌다.
+
+실무 체크포인트
+
+1. ABI/bytecode 버전 불일치
+배포된 bytecode는 v1.2인데 프론트엔드가 v1.3 ABI로 호출 → selector 달라서 revert. Custody 시스템에서 **프록시 업그레이드 시 가장 흔한 사고**.
+
+2. ABI만 보고 컨트랙트 신뢰 금지
+Etherscan에 올라온 ABI는 verify된 것이라면 신뢰 가능하지만, unverified 컨트랙트에 대해 커뮤니티가 올린 ABI는 **bytecode 동작과 다를 수 있다**. 반드시 `EXTCODEHASH`로 bytecode 해시 검증.
+
+3. 프록시 패턴에서의 분리
+```
+Proxy 컨트랙트 (bytecode A, ABI 거의 없음)
+  └─ delegatecall → Implementation (bytecode B, 실제 ABI)
+```
+사용자는 Proxy 주소를 호출하지만 ABI는 Implementation 것을 사용한다. Etherscan이 "Read as Proxy" 버튼을 제공하는 이유.
+
+4. 인코딩 최적화 (교보 ERC-1155 관점)
+`mintBatch(address, uint256[], uint256[], bytes)` 같은 동적 배열 인자는 calldata가 커진다 → L2에서 calldata gas가 곧 수수료이므로 ABI 설계 단계에서 이미 비용이 결정된다. ABI는 단순한 "설명서"가 아니라 **가스 비용 설계도**이기도 하다.
+
+관계 요약표
+
+| 항목         | bytecode                  | ABI                        |
+|--------------|---------------------------|----------------------------|
+| 형태         | hex 바이너리               | JSON                       |
+| 위치         | 온체인 (주소에 저장)        | 오프체인 (깃허브/NPM/DB)    |
+| 목적         | EVM 실행                  | 클라이언트 호출 인코딩       |
+| 크기         | 수 KB ~ 24KB (EIP-170 상한) | 수백 바이트 ~ 수 KB         |
+| 불변성       | 불변 (업그레이드는 프록시로) | 가변 (소스 변경 시 재생성)  |
+| 함수 이름    | 없음 (selector만)          | 있음                        |
+| 검증 방법    | `EXTCODEHASH`             | verify된 소스와 대조        |
+
 
 *재현 가능성(reproducibility)*: 같은 Solidity 소스코드라도 컴파일러 버전, optimizer 설정, viaIR 옵션이 다르면 다른 bytecode가 나온다. 다른 bytecode = 다른 컨트랙트 주소(CREATE 방식의 경우). 금융 시스템에서 "배포된 컨트랙트가 감사받은 소스코드와 동일하다"는 것을 증명하려면 컴파일 환경을 완전히 고정해야 한다. Hardhat이 이를 `hardhat.config.ts` 한 파일로 관리한다.
 
@@ -312,9 +550,15 @@ mint(address,uint256,uint256) → keccak256 → 앞 4바이트 → 0x6a627842
 Hardhat은 Node.js 기반 개발 프레임워크다. 프로젝트 구조:
 
 ```
-packages/contracts/
+blockchain/
 ├── hardhat.config.ts       ← 컴파일러 버전, 네트워크, 플러그인 설정
-├── contracts/              ← .sol 파일 (git 추적)
+├── src/                    ← .sol 파일 (git 추적)
+│   ├── phase1/
+│   ├── phase2/
+│   ├── phase3/
+│   ├── base/
+│   ├── compliance/
+│   └── interfaces/
 ├── scripts/deploy/         ← 배포 스크립트 (재현 가능, git 추적)
 ├── test/                   ← TypeScript 테스트 (Mocha + Chai)
 └── .openzeppelin/          ← UUPS storage layout 기록 (hardhat-upgrades)
@@ -332,6 +576,98 @@ Remix 대비 핵심 차이:
 | CI/CD 연동 | 불가 | GitHub Actions 등 |
 
 **mainnet fork**가 이 과정에서 중요한 이유: 실제 메인넷 상태(배포된 VASP 컨트랙트, 실제 토큰 잔액 등)를 로컬 EVM에서 그대로 복제해서 테스트한다. 테스트넷에는 없는 실제 컨트랙트와 상호작용할 수 있다.
+
+핵심 원리
+
+```
+[실제 메인넷]                    [로컬 포크]
+- 블록 #19,234,567               ← 이 블록 상태를 복제
+- 모든 컨트랙트 배포 상태          ← 그대로 사용
+- 모든 토큰 잔액/스토리지          ← 그대로 읽음
+- gas price, timestamp           ← 그대로 시작
+                                 
+                                 이후부터는 로컬에서만 TX 실행
+                                 (실제 체인에는 영향 없음)
+```
+
+RPC 호출이 오면 **로컬에 변경된 상태는 로컬에서**, 나머지는 **실제 RPC에서 lazy fetch**한다. 전체 상태를 다운로드하지 않는다.
+
+왜 테스트넷으로 부족한가
+
+| 항목 | 테스트넷 (Sepolia) | Mainnet Fork |
+|------|---------------------|---------------|
+| VASP 컨트랙트 | 배포 안 됨 (또는 다른 주소) | 실제 주소 그대로 |
+| Uniswap/Aave 등 | 일부만, 유동성 거의 없음 | 실제 유동성 |
+| 토큰 보유자 | 의미 있는 whale 없음 | 실제 whale 계정 impersonate 가능 |
+| Oracle 가격 | 스텁이거나 멈춤 | 실제 Chainlink 피드 |
+| Gas 패턴 | 비현실적 | 실제 경쟁 환경 재현 |
+| 리셋 | 불가 | 테스트마다 초기화 가능 |
+
+교보/헥토월렛원 같은 VASP 연동 테스트는 **상대방 컨트랙트가 테스트넷에 없다**는 문제가 항상 걸린다. Fork가 유일한 해결책.
+
+실전 사용 (Foundry 기준)
+
+```bash
+# 최신 메인넷 상태로 포크
+anvil --fork-url $MAINNET_RPC
+
+# 특정 블록 고정 (재현 가능한 테스트)
+anvil --fork-url $MAINNET_RPC --fork-block-number 19234567
+```
+
+Foundry 테스트 코드:
+
+```solidity
+contract CustodyIntegrationTest is Test {
+    address constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+    address constant WHALE = 0xF977814e90dA44bFA03b6295A0616a897441aceC; // Binance hot wallet
+
+    function setUp() public {
+        vm.createSelectFork(vm.envString("MAINNET_RPC"), 19234567);
+    }
+
+    function test_custodyDepositUSDT() public {
+        // whale 지갑을 탈취 (impersonate)
+        vm.startPrank(WHALE);
+        IERC20(USDT).transfer(address(custody), 1_000_000e6);
+        vm.stopPrank();
+
+        // 실제 USDT로 custody 로직 검증
+        assertEq(custody.balanceOf(user, USDT), 1_000_000e6);
+    }
+}
+```
+
+`vm.prank` / `vm.deal` / `vm.warp`로 누구든 되고, 얼마든 만들고, 시간도 조작 가능 — **로컬 포크라서 허용되는 치트**다.
+
+Custody 설계 관점의 활용
+
+1. **실제 ERC-20 quirk 테스트**
+   - USDT: `transfer`가 bool 반환 안 함 (비표준)
+   - USDC: blacklist 기능 있음
+   - stETH: rebasing으로 잔액이 블록마다 변함
+   - 이런 걸 Mock으로 흉내내면 실전에서 터진다. 실제 컨트랙트를 포크로 가져와야 한다.
+
+2. **프록시 업그레이드 시뮬레이션**
+   - 현재 메인넷 프록시를 포크
+   - 새 구현 배포 → `upgradeTo()` 호출
+   - 기존 스토리지가 깨지는지 검증 (Storage collision 테스트)
+
+3. **VASP 컨트랙트 상호작용**
+   - 헥토월렛원 컨트랙트 주소를 포크에서 그대로 호출
+   - Travel Rule 이벤트 발행 패턴 확인
+   - 실제 Admin 계정을 `vm.prank`로 탈취해서 권한 흐름 테스트
+
+4. **재진입/MEV 공격 재현**
+   - 과거 해킹 블록 번호로 포크
+   - 공격자 TX를 그대로 replay
+   - 우리 컨트랙트도 당했을지 검증
+
+주의점
+
+- **RPC rate limit**: Alchemy/Infura 무료 티어로는 광범위한 포크 테스트 못 돌린다. 유료 또는 로컬 Erigon/Reth 노드 권장.
+- **상태 drift**: `--fork-block-number` 고정 안 하면 테스트 재실행 때마다 결과 달라진다. CI에서는 반드시 블록 고정.
+- **포크는 보안 감사가 아니다**: 정상 상태에서의 통합 테스트지, 미지의 공격 벡터를 찾지는 못한다. Slither/fuzzing과 병행.
 
 ```typescript
 // hardhat.config.ts — mainnet fork 설정
@@ -363,7 +699,7 @@ Hardhat이 mainnet fork를 할 때 실제로 메인넷 전체 상태(수백 GB)�
 
 **선행 과정에서 배운 것**
 
-B-Harvest 과정에서 ERC-20 토큰을 작성했다. 핵심 구조:
+선행 온라인 코스에서 ERC-20 토큰을 작성했다. 핵심 구조:
 
 ```solidity
 // 선행 과정 수준 ERC-20
@@ -433,6 +769,449 @@ UUPS(Universal Upgradeable Proxy Standard): 프록시 컨트랙트가 실제 로
 
 이 때문에 **Storage Collision(슬롯 충돌)** 문제가 생긴다. EVM storage는 0번 슬롯부터 순서대로 변수를 배치한다. 프록시가 슬롯 0에 `implementation address`를 저장하면, 구현체도 첫 번째 변수를 슬롯 0에 저장한다 — 이 두 값이 충돌한다.
 
+**call vs delegatecall vs Storage Collision 완전 해부**
+
+(1) 비유부터: "누구의 집에서, 누구의 도구로, 누구의 명의로"
+
+세 가지 호출 방식을 집/도구/명의로 비유하면:
+
+```
+A.call(B):    B의 집에 가서, B의 도구로, A의 이름으로 작업
+              → 작업 결과물은 B의 집에 남음
+
+A.delegatecall(B): B의 도구를 A의 집으로 가져와서, A의 이름으로 작업
+              → 작업 결과물은 A의 집에 남음
+
+A.staticcall(B):   B의 집에 가서 구경만 함 (읽기 전용)
+```
+
+여기서:
+- **집** = storage (상태 저장소)
+- **도구** = code (bytecode)
+- **이름** = msg.sender
+- **작업 결과물** = 상태 변경 (SSTORE)
+
+## 2. EVM 컨텍스트 기준 정확한 정의
+
+EVM은 호출마다 다음 **실행 컨텍스트**를 갖는다:
+
+```
+┌─────────────────────────────────────┐
+│ Execution Context                   │
+├─────────────────────────────────────┤
+│ code     ← 어떤 bytecode를 실행?    │
+│ storage  ← 어떤 주소의 storage 사용?│
+│ msg.sender ← 누가 호출했다고 할까?  │
+│ msg.value  ← 얼마 보냈다고 할까?    │
+│ address(this) ← 나는 누구?          │
+└─────────────────────────────────────┘
+```
+
+A가 B를 호출할 때 이 5개가 어떻게 바뀌는지가 핵심이다.
+
+### call
+
+```
+A.call(B):
+  code         = B의 code
+  storage      = B의 storage
+  msg.sender   = A
+  msg.value    = A가 보낸 값
+  address(this) = B
+```
+
+→ **완전히 B의 세계로 진입한다.** B의 코드가 B의 storage를 수정한다. A는 외부 호출자로 보일 뿐.
+
+### delegatecall
+
+```
+A.delegatecall(B):
+  code         = B의 code          ← 빌려옴
+  storage      = A의 storage       ← 유지
+  msg.sender   = (A를 호출한 원래 사용자) ← 유지
+  msg.value    = (원래 값)         ← 유지
+  address(this) = A                ← 유지
+```
+
+→ **B의 코드를 A의 몸으로 실행한다.** B의 로직이 실행되지만, 모든 상태 변경은 A에 기록된다. B 입장에선 "나는 B인 줄 알고 코드 실행했는데, 실제로는 A의 storage에 쓰고 있었음".
+
+## 3. 코드로 직접 비교
+
+```solidity
+contract Logic {
+    uint256 public number;  // slot 0
+    
+    function setNumber(uint256 x) external {
+        number = x;
+    }
+}
+
+contract Caller {
+    uint256 public number;  // slot 0
+    address public logic;
+    
+    // ── call 버전 ──
+    function callSet(uint256 x) external {
+        logic.call(
+            abi.encodeWithSignature("setNumber(uint256)", x)
+        );
+        // 결과: Logic.number 가 x 로 바뀜
+        //       Caller.number 는 그대로 0
+    }
+    
+    // ── delegatecall 버전 ──
+    function delegateSet(uint256 x) external {
+        logic.delegatecall(
+            abi.encodeWithSignature("setNumber(uint256)", x)
+        );
+        // 결과: Caller.number 가 x 로 바뀜
+        //       Logic.number 는 그대로 0
+    }
+}
+```
+
+### 실행 흐름 다이어그램
+
+**call 케이스:**
+
+```
+User ──call──> Caller.callSet(42)
+                   │
+                   │ logic.call(setNumber, 42)
+                   ▼
+              Logic.setNumber(42)
+                   │
+                   │ SSTORE slot 0
+                   ▼
+              Logic의 storage[0] = 42  ← 여기에 씀
+
+Caller의 storage[0]: 그대로 0
+Logic의 storage[0]: 42로 변경
+```
+
+**delegatecall 케이스:**
+
+```
+User ──call──> Caller.delegateSet(42)
+                   │
+                   │ logic.delegatecall(setNumber, 42)
+                   ▼
+         (Logic의 코드를 Caller의 컨텍스트로 가져옴)
+              setNumber(42) 로직 실행
+                   │
+                   │ SSTORE slot 0
+                   ▼
+              Caller의 storage[0] = 42  ← 여기에 씀
+
+Caller의 storage[0]: 42로 변경
+Logic의 storage[0]: 그대로 0
+```
+
+**핵심 혼동 지점**: Logic 컨트랙트의 코드는 `number = x`라고 써 있다. 이 코드는 "내 storage slot 0에 x를 써라"라는 뜻이다. 그런데 delegatecall로 실행하면 "내"가 누구인지가 바뀐다 — 실행 주체가 Caller이므로 Caller의 slot 0에 쓴다.
+
+**Logic 코드를 작성한 개발자의 의도**와 **실제 실행 결과**가 다를 수 있다는 게 delegatecall의 본질적 위험이다.
+
+4. 프록시에서 왜 delegatecall인가
+
+프록시 패턴의 요구사항:
+1. 사용자는 **프록시 주소**만 알면 됨 (영구불변)
+2. 로직은 **교체 가능**해야 함
+3. 데이터는 **프록시에 영구 저장**돼야 함 (업그레이드해도 안 사라짐)
+
+만약 프록시가 `call`을 쓴다면:
+
+```
+User → Proxy.transfer(...)
+         │ call
+         ▼
+       Impl.transfer(...)
+         │
+         ▼
+       Impl의 storage에 기록 ← 잔액이 Impl에 저장됨
+```
+
+→ Impl을 V2로 교체하는 순간 **잔액이 전부 사라진다.** (V1 Impl에 남아있지만 프록시는 이제 V2만 바라봄)
+
+delegatecall을 쓰면:
+
+```
+User → Proxy.transfer(...)
+         │ delegatecall
+         ▼
+       Impl.transfer 코드만 빌려옴
+         │
+         ▼
+       Proxy의 storage에 기록 ← 잔액이 Proxy에 저장됨
+
+Impl을 V2로 교체해도 Proxy의 잔액은 그대로
+```
+
+→ 코드만 교체되고 데이터는 보존된다. **이것이 업그레이드 가능 컨트랙트의 원리.**
+
+5. Storage Collision — 이제 진짜 핵심
+
+EVM Storage의 구조
+
+EVM storage는 **거대한 256비트 슬롯 배열**이다:
+
+```
+slot 0:  [32 bytes]
+slot 1:  [32 bytes]
+slot 2:  [32 bytes]
+...
+slot 2^256 - 1: [32 bytes]
+```
+
+Solidity 컴파일러는 **state variable을 선언 순서대로 slot 0, 1, 2...에 배치**한다 (packing 규칙 제외하고 단순화).
+
+충돌이 발생하는 순간
+
+```solidity
+// Proxy 컨트랙트
+contract Proxy {
+    address public implementation;  // slot 0
+    address public admin;           // slot 1
+    
+    fallback() external {
+        implementation.delegatecall(msg.data);
+    }
+}
+
+// Implementation 컨트랙트
+contract Impl {
+    uint256 public totalSupply;     // slot 0
+    mapping(address => uint256) balances;  // slot 1
+}
+```
+
+사용자가 Proxy를 호출 → delegatecall → Impl 코드 실행 → `totalSupply = 1000` 실행:
+
+```
+Impl 코드는 "slot 0에 1000을 써라"라고 명령
+  ↓ delegatecall
+Proxy의 storage slot 0에 1000이 기록됨
+  ↓
+그런데 Proxy의 slot 0은 implementation 주소였음
+  ↓
+implementation 주소가 0x00000...000003E8 (=1000)로 덮어쓰여짐
+  ↓
+이후 모든 호출이 주소 0x...3E8로 delegatecall
+  ↓
+그 주소에 코드가 없으면 모든 기능 먹통
+있으면 공격자 코드가 Proxy의 storage를 마음대로 조작
+```
+
+**치명적 결과:** 단 한 번의 호출로 프록시 전체가 무너진다.
+
+시각화
+
+```
+          BEFORE                              AFTER totalSupply = 1000
+┌──────────────────────┐              ┌──────────────────────┐
+│ Proxy storage        │              │ Proxy storage        │
+├──────────────────────┤              ├──────────────────────┤
+│ slot 0:              │              │ slot 0:              │
+│   0x1234...Impl주소  │  ─── 충돌 ──> │   0x0000...0000 1000 │  ← 망가짐
+├──────────────────────┤              ├──────────────────────┤
+│ slot 1:              │              │ slot 1:              │
+│   0xAAAA...Admin     │              │   0xAAAA...Admin     │
+└──────────────────────┘              └──────────────────────┘
+
+Impl 코드는 "내 totalSupply(slot 0)에 1000 쓴다"라고 믿었지만
+실제로는 Proxy의 implementation 주소를 덮어씀
+```
+
+6. ERC-1967의 해결책: "아무도 안 쓸 슬롯"에 저장
+
+해결 아이디어: **Proxy의 메타데이터(구현체 주소 등)를 slot 0이 아니라, 일반 Solidity 변수가 절대 도달할 수 없는 슬롯에 저장하자.**
+
+Solidity는 slot 0, 1, 2... 순차적으로 배정한다. 컨트랙트에 state variable이 1억 개 있어도 slot 10^8 정도까지만 쓴다. 그런데:
+
+```
+keccak256("eip1967.proxy.implementation") - 1
+= 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
+```
+
+이 슬롯 번호는 **약 2^255 근처**다. Solidity가 순차 배정으로는 **우주 끝날 때까지 도달 불가능**한 위치.
+
+### ERC-1967 적용 후 구조
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Proxy storage                                              │
+├────────────────────────────────────────────────────────────┤
+│ slot 0:  (Impl이 사용할 totalSupply)                       │
+│ slot 1:  (Impl이 사용할 balances mapping base)             │
+│ slot 2:  (Impl이 사용할 다음 변수)                          │
+│ ...                                                        │
+│                                                            │
+│ slot 0x360894...382bbc:  Implementation 주소               │
+│ slot 0xb53127...103    :  Admin 주소                       │
+│ slot 0xa3f0ad...143    :  Beacon 주소                      │
+└────────────────────────────────────────────────────────────┘
+   ↑                        ↑
+   일반 변수 영역            ERC-1967 예약 슬롯 (도달 불가)
+```
+
+Proxy는 구현체 주소를 읽을 때 **assembly로 직접 그 슬롯을 지정**한다:
+
+```solidity
+bytes32 private constant _IMPLEMENTATION_SLOT = 
+    0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+function _getImplementation() internal view returns (address impl) {
+    assembly {
+        impl := sload(_IMPLEMENTATION_SLOT)
+    }
+}
+
+function _setImplementation(address newImpl) internal {
+    assembly {
+        sstore(_IMPLEMENTATION_SLOT, newImpl)
+    }
+}
+```
+
+Solidity가 관리하는 slot 0, 1, 2... 와 완전히 분리된 영역.
+
+`- 1`을 하는 진짜 이유
+
+```
+keccak256("eip1967.proxy.implementation") - 1
+```
+
+이건 **preimage 저항성 확보**를 위한 표준 패턴이다.
+
+Solidity의 mapping은 슬롯을 `keccak256(key, baseSlot)`으로 계산한다. 만약 예약 슬롯 값이 순수 `keccak256(something)`이면, 이론적으로 어떤 mapping의 어떤 key가 그 슬롯과 겹칠 수 있다 (preimage를 찾아야 하므로 사실상 불가능하지만 표준은 안전 마진을 둠).
+
+`- 1`을 하면 그 값은 **어떤 keccak256 결과와도 같을 수 없다** (keccak256의 preimage를 알아내야 하므로). 즉 "이 슬롯 번호를 만들어낼 방법은 표준 문서를 보는 것뿐"이라는 보증.
+
+실무적으로는 단순히 "OpenZeppelin이 그렇게 쓰니까 따른다" 수준으로 외워도 충분하다. 중요한 건 **명시적으로 예약된 슬롯이라는 계약**.
+
+7. 실제 공격 시나리오: Parity Wallet 사고 (2017)
+
+```solidity
+// 단순화된 Parity Multisig Library (구현체 역할)
+contract WalletLibrary {
+    address[] owners;  // slot 0부터
+    
+    function initWallet(address[] _owners) public {
+        owners = _owners;  // 초기화
+    }
+    
+    function kill() public {
+        require(isOwner(msg.sender));
+        selfdestruct(msg.sender);
+    }
+}
+
+// 실제 지갑 (프록시 역할)
+contract Wallet {
+    // WalletLibrary를 delegatecall로 사용
+}
+```
+
+**사고 흐름:**
+
+1. 공격자가 **WalletLibrary 자체**(프록시가 아님)에 `initWallet([attacker])` 호출
+2. `call`이므로 **WalletLibrary의 storage**에 attacker가 owner로 기록
+3. 공격자가 `kill()` 호출 → `msg.sender == attacker == owner` 통과
+4. `selfdestruct` 실행 → **WalletLibrary bytecode 삭제**
+5. 이 Library를 delegatecall로 참조하던 **모든 Parity 지갑이 한순간에 벽돌화**
+6. **$150M 동결** (해킹이 아니라 동결 — 돈은 있는데 꺼낼 코드가 사라짐)
+
+교훈: **구현체 컨트랙트 자체를 초기화되지 않은 상태로 두지 말 것.** 앞서 본 `_disableInitializers()`가 이걸 막기 위해 존재한다.
+
+8. Storage Collision의 또 다른 형태: 업그레이드 간 충돌
+
+프록시-구현체 간 충돌(ERC-1967로 해결) 말고, **V1 → V2 업그레이드 시 구현체끼리 충돌**도 있다:
+
+```solidity
+// V1
+contract CustodyV1 {
+    address public admin;           // slot 0
+    uint256 public totalLocked;     // slot 1
+    mapping(address => uint256) balances;  // slot 2
+}
+
+// V2 — ❌ 잘못된 업그레이드
+contract CustodyV2 {
+    address public admin;           // slot 0
+    address public feeRecipient;    // slot 1  ← 원래 totalLocked 자리
+    uint256 public totalLocked;     // slot 2  ← 원래 balances 자리
+    mapping(address => uint256) balances;  // slot 3
+}
+```
+
+V1 → V2 업그레이드 후:
+
+```
+Proxy storage slot 1:
+  V1 시절: 총 락업된 양 (예: 10,000 ETH)
+  V2 코드: "이건 feeRecipient 주소다"라고 해석
+  → feeRecipient = 0x0000...00002710 (=10000)
+  → 수수료가 이상한 주소로 전송되기 시작
+
+Proxy storage slot 2:
+  V1 시절: balances mapping의 base
+  V2 코드: "이건 totalLocked 값이다"라고 해석
+  → totalLocked 값이 의미 없는 숫자가 됨
+  → balances mapping은 이제 slot 3부터 시작한다고 믿음
+  → 기존 사용자 잔액이 전부 "사라진 것처럼" 보임
+```
+
+데이터는 그대로 있는데 **해석이 어긋나서** 시스템이 완전히 망가진다. 이게 가장 악랄한 이유는:
+- 배포 직후에는 멀쩡해 보임
+- 사용자가 입금/출금하면서 점진적으로 손상이 누적
+- 원인 추적이 극도로 어려움
+- 롤백해도 이미 오염된 데이터는 복구 불가
+
+**방어:**
+```solidity
+contract CustodyV1 {
+    address public admin;
+    uint256 public totalLocked;
+    mapping(address => uint256) balances;
+    
+    uint256[47] private __gap;  // 미래 확장용
+}
+
+contract CustodyV2 {
+    address public admin;
+    uint256 public totalLocked;
+    mapping(address => uint256) balances;
+    
+    address public feeRecipient;  // gap 공간에 append
+    uint256[46] private __gap;    // gap 크기 감소
+}
+```
+
+OpenZeppelin Upgrades Plugin이 `npx hardhat validate-upgrade`로 자동 검증해준다.
+
+9. 정리 — 한눈에 보기
+
+| 구분 | call | delegatecall |
+|------|------|--------------|
+| 실행 코드 | 대상 컨트랙트 | 대상 컨트랙트 |
+| Storage | 대상 컨트랙트 | **호출 컨트랙트** |
+| msg.sender | 호출 컨트랙트 | **원래 호출자** |
+| msg.value | 호출 컨트랙트가 보낸 값 | **원래 값** |
+| address(this) | 대상 컨트랙트 | **호출 컨트랙트** |
+| 용도 | 일반 외부 호출 | 프록시 패턴, 라이브러리 |
+| 위험 | 낮음 | **매우 높음** (storage 조작 가능) |
+
+**Storage Collision 발생 조건:**
+- delegatecall 사용 + 두 컨트랙트의 storage layout이 겹침
+
+**해결:**
+- 프록시-구현체 간: **ERC-1967** (예약 슬롯)
+- 구현체 버전 간: **`__gap` 배열** + OZ Upgrades Plugin 검증
+
+**가장 흔한 실수 Top 3:**
+1. 구현체 `_disableInitializers()` 누락 → Parity 사고
+2. `_authorizeUpgrade` 권한 누락 → Audius 사고
+3. 업그레이드 시 slot 중간 삽입 → 잔액 유실
+
 ERC-1967 표준이 이 문제를 해결한다: 구현체 주소를 랜덤처럼 보이는 특수 슬롯에 저장해서 일반 변수와 충돌하지 않게 한다.
 
 ```
@@ -468,6 +1247,558 @@ bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 역할 식별자를 `keccak256("MINTER_ROLE")`로 정의하는 이유: 단순 숫자(0, 1, 2...)로 쓰면 다른 컨트랙트와 역할 ID가 충돌할 수 있다. 문자열의 해시는 사실상 충돌이 불가능하며(SHA-3 계열의 32바이트 출력), 동시에 역할의 의미를 사람이 읽을 수 있는 이름으로 표현한다.
 
 `DEFAULT_ADMIN_ROLE`(= `bytes32(0)`)은 특수 역할로, 다른 역할의 관리자(role admin)다. 기본적으로 `DEFAULT_ADMIN_ROLE`을 가진 주소만 다른 역할을 `grantRole`/`revokeRole` 할 수 있다. 이 역할 자체의 관리자도 `DEFAULT_ADMIN_ROLE`이다 — 즉, 이 역할을 가진 주소 하나가 분실되면 역할 체계 전체가 동결될 수 있어 별도 키 관리 정책이 필요하다.
+
+
+다중 상속 · AccessControl · Pausable 심화
+
+(1) C3 선형화 — 상속 순서가 왜 중요한가
+
+다이아몬드 문제
+
+```
+       A
+      / \
+     B   C
+      \ /
+       D
+```
+
+D가 B와 C를 상속받는데, 둘 다 A의 같은 함수를 오버라이드했다면, D.func() 호출 시 어느 쪽이 실행되는가?
+
+C3 선형화 알고리즘
+
+Solidity(Python과 동일)는 C3 알고리즘으로 상속 그래프를 **선형 리스트**로 평탄화한다. 이 리스트가 **MRO(Method Resolution Order)** 다.
+
+규칙:
+
+① 자기 자신 먼저
+② 직접 부모들의 MRO를 순서대로 병합
+③ 병합 시 **자식은 부모보다 앞에**, **먼저 선언된 부모는 나중 선언된 부모보다 앞에**
+
+**규칙 1: 자식이 부모보다 앞**
+
+```
+B는 A를 상속받는다  →  B가 A의 자식
+```
+
+줄 세우면: `[B, A]` (자식이 앞, 부모가 뒤)
+
+자식이 부모를 오버라이드하니까, 함수 찾을 때 자식부터 봐야 한다.
+
+**규칙 2: 형제 부모는 선언 순서대로**
+
+```solidity
+contract D is B, C { }
+//          ↑  ↑
+//      먼저  나중
+```
+
+D가 B, C를 둘 다 상속받을 때, **B를 먼저 썼으니 B가 C보다 앞에 선다**.
+
+줄 세우면: `[D, B, C, ...]`
+
+**실제 다이아몬드로 보면**
+
+```
+       A
+      / \
+     B   C    ← B와 C는 둘 다 A의 자식 (형제)
+      \ /
+       D
+```
+
+```solidity
+contract A {}
+contract B is A {}
+contract C is A {}
+contract D is B, C {}  // B 먼저, C 나중
+```
+
+C3 선형화 결과:
+
+```
+[D, B, C, A]
+ │  │  │  │
+ │  │  │  └─ 모두의 조상이니까 맨 뒤
+ │  │  └─ B 다음 (규칙 2: 선언 순서)
+ │  └─ D 다음 (규칙 1: 자식 먼저, 그리고 규칙 2: 먼저 선언됨)
+ └─ 자기 자신이 맨 앞
+```
+
+**순서를 바꾸면?**
+
+```solidity
+contract D is C, B { }  // C 먼저, B 나중
+```
+
+선형화 결과: `[D, C, B, A]`
+
+→ `super.func()` 호출 시 **C가 먼저 실행**된다. 같은 다이아몬드인데 결과가 달라짐.
+
+**KyoboNFT에 적용**
+
+```solidity
+contract KyoboNFT is 
+    ERC1155Upgradeable,        // 먼저
+    AccessControlUpgradeable,  
+    PausableUpgradeable,       
+    UUPSUpgradeable            // 나중
+{ }
+```
+
+규칙 적용:
+- **규칙 1**: KyoboNFT가 가장 앞 (자식)
+- **규칙 2**: 나머지는 선언 순서대로 — ERC1155, AccessControl, Pausable, UUPS
+
+대략적 결과: `[KyoboNFT, ERC1155, AccessControl, Pausable, UUPS, ..., 공통조상들]`
+
+(실제로는 각 부모도 자기 부모를 가지고 있어서 더 복잡하지만, 핵심 원리는 이 두 규칙)
+
+**한 줄 요약**
+
+```
+"자식이 먼저, 형제는 선언 순서대로"
+```
+
+`super`를 호출하면 이 줄에서 **자기 다음 사람**이 실행된다.
+
+KyoboNFT 예시 선형화
+
+```solidity
+contract KyoboNFT is 
+    Initializable,
+    ERC1155Upgradeable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable
+{ ... }
+```
+
+선형화 결과 (단순화):
+
+```
+KyoboNFT
+  → UUPSUpgradeable
+  → PausableUpgradeable
+  → AccessControlUpgradeable
+  → ERC1155Upgradeable
+  → ERC165Upgradeable
+  → ContextUpgradeable
+  → Initializable
+```
+
+**역순**이라는 점이 핵심. 선언 순서는 왼쪽→오른쪽이지만, 선형화된 실행 순서는 **오른쪽부터** 된다고 흔히 설명한다 (정확히는 "가장 나중에 선언된 것이 가장 먼저 실행되는 체인의 끝단"에 위치).
+
+super.func() 의 동작
+
+```solidity
+function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
+    internal
+    override(ERC1155Upgradeable, ERC1155PausableUpgradeable, ERC1155SupplyUpgradeable)
+{
+    super._update(from, to, ids, values);
+}
+```
+
+`super._update(...)`는 **선형화 리스트에서 현재 컨트랙트의 바로 다음**을 호출한다. 각 부모가 자기 로직 실행 후 `super`를 호출하면, 체인 전체가 순차 실행된다.
+
+```
+KyoboNFT._update
+  └─ super → ERC1155SupplyUpgradeable._update (공급량 추적)
+       └─ super → ERC1155PausableUpgradeable._update (paused 체크)
+            └─ super → ERC1155Upgradeable._update (실제 잔액 변경)
+```
+
+**어느 하나라도 `super._update`를 빠뜨리면 체인이 끊어진다.** 공급량 추적이 안 되거나, pause가 무시되거나, 최악의 경우 잔액 변경 자체가 안 된다.
+
+상속 순서가 바뀌면 무엇이 달라지는가
+
+```solidity
+// 버전 A
+contract X is ERC1155Upgradeable, PausableUpgradeable { ... }
+
+// 버전 B  
+contract X is PausableUpgradeable, ERC1155Upgradeable { ... }
+```
+
+C3 선형화 결과가 다르다. 대부분 기능은 같이 작동하지만:
+- `override(A, B)` 선언 순서를 맞춰야 함
+- storage layout 순서가 다를 수 있음 (업그레이드 시 치명적)
+- 드물게 함수 resolution이 달라져서 엉뚱한 부모 함수 호출
+
+**실무 규칙:** OpenZeppelin 공식 예제의 상속 순서를 그대로 복사. 임의 변경 금지.
+
+(2) Initializer 체이닝 — 빠뜨리면 터진다
+
+constructor가 없는 Upgradeable 컨트랙트에서 **모든 부모의 초기화를 수동으로 호출해야 한다**:
+
+```solidity
+function initialize(address admin, string memory uri) external initializer {
+    __ERC1155_init(uri);
+    __AccessControl_init();
+    __Pausable_init();
+    __UUPSUpgradeable_init();
+    
+    _grantRole(DEFAULT_ADMIN_ROLE, admin);
+    _grantRole(MINTER_ROLE, admin);
+    _grantRole(PAUSER_ROLE, admin);
+    _grantRole(UPGRADER_ROLE, admin);
+}
+```
+
+빠뜨리면 생기는 일
+
+**`__AccessControl_init()` 누락:**
+- OpenZeppelin v5 기준 `__AccessControl_init`은 빈 함수 (내부 상태 초기화 없음)
+- 누락해도 당장은 문제없지만, **v6/v7 업그레이드 시 초기화 로직이 추가되면 기존 프록시는 망가짐**
+- → 관례상 항상 호출
+
+**`__Pausable_init()` 누락:**
+- `_paused` 상태 변수가 default(false)로 시작 — 기능상 문제 없음
+- 하지만 미래 버전에서 초기화 로직 추가될 가능성
+
+**`__ERC1155_init(uri)` 누락:**
+- `_uri` 저장 안 됨 → NFT 메타데이터 URI가 빈 문자열
+- **즉시 발현되는 버그** (마켓플레이스에서 이미지 안 보임)
+
+`initializer` vs `onlyInitializing`
+
+```solidity
+// 외부에서 한 번만 호출 가능
+function initialize(...) external initializer { ... }
+
+// 부모 컨트랙트의 __init 함수 내부에서만 호출 가능
+function __ERC1155_init_unchained(string memory uri) internal onlyInitializing { ... }
+```
+
+- `initializer`: 가장 바깥 초기화 함수에 붙임. 재호출 방지.
+- `onlyInitializing`: 부모 초기화 함수에 붙임. initializer가 진행 중일 때만 호출 허용.
+
+**중복 호출 방어 패턴:**
+
+```solidity
+function __ERC1155_init(string memory uri) internal onlyInitializing {
+    __ERC1155_init_unchained(uri);
+}
+
+function __ERC1155_init_unchained(string memory uri) internal onlyInitializing {
+    _uri = uri;
+}
+```
+
+`_init`은 자기와 부모 모두 초기화, `_init_unchained`는 자기만 초기화. 다중 상속 시 **같은 조상이 두 번 초기화되는 것을 방지**하기 위함 (예: ContextUpgradeable은 여러 컨트랙트의 공통 부모).
+
+(3) AccessControl 심화 — RBAC 관리 설계
+
+**AccessControl 심화 — RBAC 관리 설계가 뭐에 대한 얘기인가**
+
+**한 줄 답**
+
+"누구한테 어떤 권한 주고, 그 권한 키를 어떻게 보관/관리할 것인가"에 대한 설계 이야기.
+
+**왜 이게 별도 주제인가**
+
+AccessControl이라는 OpenZeppelin 라이브러리는 단순히 "역할 만들고 부여하는 기능"만 제공한다. 근데 실제 운영에서 터지는 사고는 **기능 자체가 아니라 키를 어떻게 관리했느냐**에서 나온다.
+
+```
+라이브러리: "MINTER_ROLE을 누구한테 줄 수 있다"  ← 기술
+키 관리:    "근데 그 키를 어디다 보관하지?"      ← 정책
+```
+
+이 "정책" 부분이 키 관리 설계.
+
+**구체적으로 뭘 결정하는가**
+
+① **각 역할을 어떤 형태의 주소에 부여할 것인가**
+   - EOA (개인 키 1개) — 빠름, 위험
+   - Multisig (Safe 같은 거, 키 N개 중 M개) — 느림, 안전
+   - Multisig + Timelock (변경 후 N시간 대기) — 더 느림, 더 안전
+   
+② **역할별 보안 수준 차등**
+```
+   PAUSER_ROLE       → EOA 가능 (빠른 대응 필요)
+   MINTER_ROLE       → Multisig 2/3
+   UPGRADER_ROLE     → Multisig 3/5 + 48시간 Timelock
+   DEFAULT_ADMIN     → Multisig 4/7 + 7일 Timelock
+```
+   왜? 사고 났을 때 손실 규모가 다르니까.
+   - 누가 잠깐 mint 잘못함 → 회수 가능
+   - 누가 컨트랙트 통째로 업그레이드함 → 자산 전부 날아감
+
+③ **키 분실/탈취 시나리오 대응**
+   - DEFAULT_ADMIN 키 분실하면 어떻게 할 것인가? (복구 불가)
+   - MINTER 키가 탈취된 게 감지되면 어떻게 회수할 것인가?
+   - Pauser가 악의적으로 시스템을 멈추면?
+
+④ **키 보관 물리적 환경**
+   - 하드웨어 지갑 (Ledger, Trezor)
+   - HSM (Hardware Security Module, 기관급)
+   - MPC (Multi-Party Computation, Fireblocks 같은 솔루션)
+   - 종이 백업 (cold storage)
+
+**왜 Custody에서 특히 중요한가**
+
+일반 NFT 프로젝트: 운영자 1명이 자기 지갑에 MINTER_ROLE 들고 있어도 큰 문제 안 됨.
+
+기관 Custody (교보생명/헥토월렛원): 
+- 고객 자산을 보관하는 책임
+- 키 1개 탈취 = 신문 1면
+- 금융감독원 보고 의무
+- VASP 라이센스 박탈 가능성
+
+→ "코드는 안전한데 키를 EOA에 뒀다" = **법적/규제적 책임 발생**
+
+**기관 Custody 표준 패턴**
+
+```
+DEFAULT_ADMIN_ROLE
+└─ Gnosis Safe 4/7
+   ├─ CEO
+   ├─ CTO
+   ├─ CISO (보안 책임자)
+   ├─ 법무 담당
+   ├─ 외부 감사인
+   ├─ 백업 키 (HSM)
+   └─ 백업 키 (지리적 분리)
+   + Timelock 7일
+
+UPGRADER_ROLE  
+└─ Gnosis Safe 3/5
+   + Timelock 48시간
+
+MINTER_ROLE
+└─ Gnosis Safe 2/3 (운영팀)
+   + Timelock 없음 (운영 효율)
+
+PAUSER_ROLE
+└─ EOA 3개 (보안 모니터링 팀)
+   + Timelock 없음 (즉시 대응)
+```
+
+**핵심**
+
+"AccessControl 심화 — 키 관리 설계"는 **코드 작성 후의 운영 정책**에 대한 얘기다. 
+
+코드는 `_grantRole(MINTER_ROLE, address)` 한 줄이면 끝나지만, 그 `address`가 무엇이어야 하는가, 그 주소의 키를 누가 어떻게 보관하는가, 잃어버리면 어떻게 하는가 — 이게 진짜 설계 작업.
+
+기술이 아니라 **거버넌스와 운영 보안**의 영역이고, Custody 사업의 핵심 차별화 포인트이기도 함.
+
+
+
+역할 계층 구조
+
+```
+DEFAULT_ADMIN_ROLE (0x00)
+  ├─ 관리자: DEFAULT_ADMIN_ROLE (자기 자신)
+  ├─ MINTER_ROLE 부여/회수 가능
+  ├─ PAUSER_ROLE 부여/회수 가능
+  └─ UPGRADER_ROLE 부여/회수 가능
+
+MINTER_ROLE
+  └─ 관리자: DEFAULT_ADMIN_ROLE
+
+PAUSER_ROLE  
+  └─ 관리자: DEFAULT_ADMIN_ROLE
+
+UPGRADER_ROLE
+  └─ 관리자: DEFAULT_ADMIN_ROLE
+```
+
+DEFAULT_ADMIN_ROLE의 치명성
+
+이 역할을 가진 주소가:
+- 어떤 역할이든 누구에게든 부여 가능
+- 자기 자신에게 MINTER/UPGRADER 다 부여해서 전권 장악 가능
+- **분실 시 복구 불가**: 이 역할을 복구할 수 있는 역할은 자기 자신뿐
+
+실무 대책: **DEFAULT_ADMIN_ROLE은 Multisig(Safe)에만 부여**. EOA에 절대 금지.
+
+역할별 관리자 분리 (고급 패턴)
+
+기본 구조로는 모든 역할을 DEFAULT_ADMIN이 관리한다. 이걸 세분화할 수 있다:
+
+```solidity
+bytes32 public constant MINTER_ADMIN_ROLE = keccak256("MINTER_ADMIN_ROLE");
+
+function initialize(...) external initializer {
+    // ...
+    _setRoleAdmin(MINTER_ROLE, MINTER_ADMIN_ROLE);
+    _grantRole(MINTER_ADMIN_ROLE, mintOpsMultisig);
+    _grantRole(DEFAULT_ADMIN_ROLE, governanceMultisig);
+}
+```
+
+결과:
+- `governanceMultisig`: 구조적 권한 (업그레이드, 역할 체계 변경)
+- `mintOpsMultisig`: 운영 권한 (민터 추가/제거만)
+- 운영팀 키가 탈취돼도 업그레이드 권한은 안 넘어감
+
+**교보급 기관 Custody에서는 이 수준의 분리가 표준.**
+
+DEFAULT_ADMIN_ROLE 개선: `AccessControlDefaultAdminRulesUpgradeable`
+
+OZ 4.9+ 부터 제공되는 확장. `DEFAULT_ADMIN_ROLE` 전송에 **Timelock + 단일 admin 강제**:
+
+```solidity
+function initialize(uint48 delay, address initialAdmin) external initializer {
+    __AccessControlDefaultAdminRules_init(delay, initialAdmin);
+}
+```
+
+효과:
+- DEFAULT_ADMIN은 **항상 1명**으로 제한 (다중 admin 금지)
+- 변경 시 `beginDefaultAdminTransfer(newAdmin)` → `delay` 경과 후 `acceptDefaultAdminTransfer()`
+- 키 탈취 발견 시 `cancelDefaultAdminTransfer()`로 긴급 중단 가능
+
+Custody에서는 **이 확장을 쓰는 것이 현재 표준**. 원본 `AccessControlUpgradeable`은 legacy.
+
+Role 식별자 해시의 실전 의미
+
+```solidity
+bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+// = 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6
+```
+
+컴파일 타임 상수이므로 **bytecode에 박힌다**. 이 해시값을 안다고 해서 역할을 얻는 건 아니고, `hasRole(MINTER_ROLE, msg.sender)`로 **해당 해시에 대한 권한이 msg.sender에게 매핑**돼 있는지 검사.
+
+다른 컨트랙트에서 같은 문자열 `"MINTER_ROLE"`을 쓰면 같은 해시가 나오지만, **각 컨트랙트의 `_roles` mapping은 독립**이므로 권한이 공유되지 않는다. 해시는 식별자일 뿐, 권한 저장소가 아님.
+
+(4) Pausable의 함정
+
+`_update` 훅에 Pause 걸기 (ERC-1155 기준)
+
+```solidity
+function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
+    internal
+    override(ERC1155Upgradeable, ERC1155PausableUpgradeable)
+    whenNotPaused  // ❌ 이렇게 쓰면 안 됨
+{
+    super._update(from, to, ids, values);
+}
+```
+
+이미 `ERC1155PausableUpgradeable`이 내부에서 `whenNotPaused`를 체크한다. 중복 modifier는 gas만 낭비. **`super._update`만 제대로 호출**하면 pause 체크가 체인에 포함됨.
+
+긴급 출금은 Pause 걸리면 안 된다
+
+```solidity
+function emergencyWithdraw() external onlyRole(EMERGENCY_ROLE) {
+    // whenNotPaused 절대 금지
+    // paused 상태에서도 호출 가능해야 함
+}
+```
+
+Pause의 목적은 "공격 중단"이지 "자산 동결"이 아니다. 사용자/관리자의 긴급 인출 경로는 항상 열려 있어야 한다. Custody 감사에서 지적 단골 항목.
+
+Pause 권한 분리
+
+```solidity
+bytes32 public constant PAUSER_ROLE   = keccak256("PAUSER_ROLE");
+bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
+
+function pause() external onlyRole(PAUSER_ROLE) { _pause(); }
+function unpause() external onlyRole(UNPAUSER_ROLE) { _unpause(); }
+```
+
+**Pause는 빠르게, Unpause는 신중하게.**
+
+- `PAUSER_ROLE`: 보안 모니터링 팀 EOA도 가능 (빠른 대응)
+- `UNPAUSER_ROLE`: Multisig + Timelock 필수 (공격이 완전히 해결됐는지 검증 후)
+
+비대칭 설계. 사고 시 **1분 안에 멈추고, 멈춘 상태는 유지**가 기본 원칙.
+
+Pause 가능 범위 세분화
+
+단일 Pause는 전체 마비. ERC-1155에서는 **token id별 pause**가 필요할 수 있다:
+
+```solidity
+mapping(uint256 => bool) private _tokenPaused;
+
+modifier whenTokenNotPaused(uint256 id) {
+    require(!_tokenPaused[id], "Token paused");
+    _;
+}
+
+function pauseToken(uint256 id) external onlyRole(PAUSER_ROLE) {
+    _tokenPaused[id] = true;
+    emit TokenPaused(id);
+}
+```
+
+교보 NFT 보상 시스템에서 특정 상품 NFT에 문제가 생겨도 **다른 상품은 정상 유통**되게 해야 한다. Global pause는 최후의 수단.
+
+(5) 실전 Initializer 완성 예시
+
+교보 ERC-1155 스켈레톤에 들어갈 초기화 함수:
+
+```solidity
+function initialize(
+    string memory uri_,
+    address governance,       // Multisig
+    address operations,       // Multisig
+    address pauser            // EOA (빠른 대응용)
+) external initializer {
+    // 1. 부모 초기화 체이닝 (순서는 선형화 역순 권장)
+    __ERC1155_init(uri_);
+    __ERC1155Supply_init();
+    __ERC1155Pausable_init();
+    __AccessControl_init();
+    __AccessControlDefaultAdminRules_init(2 days, governance);
+    __Pausable_init();
+    __UUPSUpgradeable_init();
+    
+    // 2. 역할 부여 (최소 권한)
+    _grantRole(MINTER_ROLE, operations);
+    _grantRole(PAUSER_ROLE, pauser);
+    _grantRole(UPGRADER_ROLE, governance);  // 업그레이드는 거버넌스만
+    
+    // 3. Role Admin 분리 (선택적)
+    _setRoleAdmin(MINTER_ROLE, OPERATIONS_ADMIN_ROLE);
+    _grantRole(OPERATIONS_ADMIN_ROLE, operations);
+}
+
+constructor() {
+    _disableInitializers();  // 구현체 자체는 초기화 불가
+}
+```
+
+초기화 후 상태 체크
+
+배포 스크립트에 반드시 포함:
+
+```typescript
+// 배포 직후 검증
+const admin = await contract.hasRole(DEFAULT_ADMIN_ROLE, governance);
+const minter = await contract.hasRole(MINTER_ROLE, operations);
+const pauser = await contract.hasRole(PAUSER_ROLE, pauserEOA);
+const deployerHasNothing = !(
+  await contract.hasRole(DEFAULT_ADMIN_ROLE, deployer) ||
+  await contract.hasRole(MINTER_ROLE, deployer)
+);
+
+assert(admin && minter && pauser && deployerHasNothing);
+```
+
+**배포자(deployer)에게 아무 역할도 남아있지 않은지**가 가장 중요한 체크. 배포 스크립트가 초기 설정 후 자기 권한을 회수하지 않으면 **배포자 키가 곧 마스터 키**가 된다.
+
+(6) 정리 — 다중 상속 감사 체크리스트
+
+```
+□ 상속 순서가 OZ 공식 예제와 일치하는가
+□ override(A, B, C) 선언에 모든 부모가 들어가 있는가
+□ 오버라이드된 훅 함수가 super.func()를 호출하는가
+□ 모든 __init() 함수가 initialize()에서 호출되는가
+□ initialize()에 initializer modifier가 붙어 있는가
+□ constructor()에 _disableInitializers()가 있는가
+□ DEFAULT_ADMIN_ROLE이 EOA가 아닌 Multisig에 부여됐는가
+□ UPGRADER_ROLE이 Multisig + Timelock에 부여됐는가
+□ 배포자(deployer)의 모든 역할이 회수됐는가
+□ emergencyWithdraw류 함수가 whenNotPaused에 막히지 않는가
+□ Pause/Unpause 권한이 비대칭 분리됐는가
+```
+
+이 체크리스트를 통과하지 못하면 **기관 Custody로는 배포 불가**. 교보/헥토월렛원 같은 상대는 이 수준을 요구한다.
+
 
 **`PausableUpgradeable` — 긴급 정지**
 
@@ -658,7 +1989,7 @@ function decodeTokenId(uint256 tokenId)
 
 **선행 과정에서 배운 것**
 
-B-Harvest 과정에서 ethers.js로 컨트랙트와 직접 통신했다:
+선행 온라인 과정에서 ethers.js로 컨트랙트와 직접 통신했다:
 
 ```typescript
 // 선행 과정 수준 ethers.js 사용
@@ -761,7 +2092,7 @@ TX가 **dropped** 되는 상황: baseFee가 급등해서 TX의 maxFeePerGas가 �
 
 **선행 과정에서 배운 것**
 
-B-Harvest 과정은 이더리움(EVM) 단일 체인을 가정했다. ethers.js, ABI, gas, Nonce, event log — 이 모두가 EVM 특유의 개념이다.
+선행 온라인 과정은 이더리움(EVM) 단일 체인을 가정했다. ethers.js, ABI, gas, Nonce, event log — 이 모두가 EVM 특유의 개념이다.
 
 **이 과정에서의 확장**
 
@@ -850,7 +2181,7 @@ VASP는 키 관리와 TX 서명을 담당한다. 블록체인 어댑터는 체�
 
 **선행 과정에서 배운 것**
 
-B-Harvest 과정에서 ethers.js 이벤트 리스너를 사용했다:
+선행 온라인 과정에서 ethers.js 이벤트 리스너를 사용했다:
 
 ```typescript
 // 선행 과정 수준 이벤트 처리
@@ -950,7 +2281,7 @@ Redis Streams는 at-least-once를 보장한다. 즉, 이벤트가 중복 처리�
 
 **선행 과정에서 배운 것**
 
-B-Harvest 과정에서 MetaMask 개인키로 서명했다:
+선행 온라인 과정에서 MetaMask 개인키로 서명했다:
 - 개인키(256비트 랜덤값) → ECDSA secp256k1 → 서명
 - 지갑 주소 = keccak256(공개키)의 하위 20바이트
 - MetaMask: 개인키를 암호화해서 브라우저에 저장, 서명 시 팝업
@@ -1164,7 +2495,7 @@ SHA-256의 출력은 항상 256비트(32바이트)다. 입력 크기와 무관�
 
 ### 비즈니스 로직 서브시스템
 
-**이벤트 조건 판단** (`apps/issuer-service/src/services/EventConditionService.ts`)
+**이벤트 조건 판단** (`dmz/apps/issuer-service/src/services/EventConditionService.ts`)
 
 외부 시스템(앱, IoT, 건강 데이터)에서 이벤트가 들어오면 NFT 발행 조건을 평가한다.
 
@@ -1183,7 +2514,7 @@ if (event.activityType === 'WALKING' && event.value >= 10000) {
 }
 ```
 
-**벌크 발행 관리** (`apps/issuer-service/src/services/BulkIssueService.ts`)
+**벌크 발행 관리** (`dmz/apps/issuer-service/src/services/BulkIssueService.ts`)
 
 수만 명에게 동시에 NFT를 발행하는 경우 (예: 이벤트 종료 시 전체 참여자 배포).
 
@@ -1202,13 +2533,13 @@ if (event.activityType === 'WALKING' && event.value >= 10000) {
 
 ### 데이터 관리 서브시스템
 
-**내부 원장** (`packages/core-banking/src/ledger/LedgerService.ts`)
+**내부 원장** (`dmz/packages/core-banking/src/ledger/LedgerService.ts` — DMZ 발행 요청 추적 / 영구 보유 원장은 `internal/blockchain-gateway` Java 레이어)
 
 사용자별 NFT 보유 현황을 내부 DB에 유지한다. 온체인 데이터를 매번 조회하면 느리고 비용이 든다. 내부 원장이 캐시 역할을 하면서 동시에 Reconcile의 기준점이 된다.
 
 상태머신 기반 TX 추적: 각 발행 요청의 상태를 내부 원장에서 추적한다. TX가 REORGED 되어 사라져도 원장에서 이전 상태로 되돌릴 수 있다.
 
-**감사 로그** (`packages/core-banking/src/audit/AuditLogService.ts`)
+**감사 로그 (DMZ)** (`dmz/packages/core-banking/src/audit/AuditLogService.ts` — TX 이벤트 감사 / 영구 금융 감사 로그는 `internal/blockchain-gateway` Java AuditLogService)
 
 모든 원장 변경에 대해 append-only 로그를 남긴다. 위에서 설명한 SHA-256 체인 구조로 변조를 감지한다.
 
@@ -1467,9 +2798,14 @@ Consumer Group Worker → NFTIssuedHandler
 `package.json` 최상위:
 ```json
 {
-  "workspaces": ["packages/*", "apps/*"]
+  "workspaces": ["dmz/apps/*", "dmz/packages/*", "blockchain"]
 }
 ```
+
+> **모노레포 구조 (2차 재설계)**: DMZ(Node.js) + 내부망(Java Spring Boot) + 블록체인(Solidity)으로 분리.
+> - `dmz/` — Node.js 서비스 (ISMS-P DMZ 구간)
+> - `internal/` — Java Spring Boot 내부망 서비스 (교보생명 레거시 내부망)
+> - `blockchain/` — Solidity 컨트랙트 (Hardhat)
 
 **모노레포를 쓰는 이유:**
 
@@ -1488,10 +2824,10 @@ npm workspaces 모노레포는:
 각 패키지의 `package.json`에 이름이 `@kyobo/[패키지명]`으로 되어있다. 워크스페이스 설정에 의해 다른 패키지에서 이 이름으로 import할 수 있다.
 
 ```typescript
-// apps/issuer-service/src/services/IssuerService.ts
+// dmz/apps/issuer-service/src/services/IssuerService.ts
 import { IVASPAdapter } from '@kyobo/vasp';
 import { LedgerService } from '@kyobo/core-banking';
-// 실제 경로: packages/vasp/src/..., packages/core-banking/src/...
+// 실제 경로: dmz/packages/vasp/src/..., dmz/packages/core-banking/src/...
 ```
 
 ---
@@ -1499,83 +2835,126 @@ import { LedgerService } from '@kyobo/core-banking';
 ## 패키지 구조와 레이어 매핑
 
 ```
-packages/
-├── contracts/          → 블록체인 레이어
-│   ├── src/
-│   │   ├── phase1/
-│   │   │   ├── KyoboNFT.sol        ← M2/M3 핵심 구현
-│   │   │   ├── NFTIssuer.sol
-│   │   │   └── ActivityOracle.sol
-│   │   ├── phase2/
-│   │   │   └── KRWStablecoin.sol   ← 빈 파일 (향후 확장용 placeholder)
-│   │   └── interfaces/
-│   │       ├── IToken.sol
-│   │       └── ICompliance.sol
-│   ├── scripts/deploy/
-│   │   └── deploy-phase1.ts        ← M2 배포 스크립트
-│   ├── test/                       ← M2/M3 단위 테스트
-│   └── hardhat.config.ts
-│
-├── chain-adapters/     → IBlockchainAdapter 레이어
-│   └── src/
-│       ├── interfaces/
-│       │   └── IBlockchainAdapter.ts  ← M4 S16 핵심
-│       ├── evm/
-│       │   └── EVMAdapter.ts          ← M4 S17 구현
-│       └── xrpl/
-│           └── XRPLAdapter.ts         ← M4 S17 Mock
-│
-├── vasp/               → VASP 추상화 레이어
-│   └── src/
-│       ├── interfaces/
-│       │   └── IVASPAdapter.ts        ← M4 핵심 인터페이스
-│       ├── external/
-│       │   └── ExternalVASPAdapter.ts ← Phase 1 구현체
-│       ├── internal/
-│       │   └── KyoboVASPAdapter.ts    ← 향후 내재화용 stub
-│       ├── tx/
-│       │   └── TxStateMachineService.ts ← M4 S15 TX 상태머신
-│       ├── recovery/
-│       │   └── VaspRecoveryService.ts   ← M4 S19~S24 복구
-│       └── governance/
-│           └── KeyGovernanceService.ts  ← M8 키 거버넌스
-│
-├── core-banking/       → 내부망 데이터 관리
-│   └── src/
-│       ├── ledger/
-│       │   └── LedgerService.ts       ← M6 내부 원장
-│       ├── audit/
-│       │   └── AuditLogService.ts     ← M6 감사 로그
-│       └── reconcile/
-│           └── ReconcileService.ts    ← M6 Reconcile
-│
-└── event-engine/       → DMZ 레이어
-    └── src/
-        ├── dmz/
-        │   ├── ConsumerGroupWorker.ts ← M7 Consumer
-        │   ├── DLQHandler.ts          ← M7 DLQ
-        │   └── RedisStreamPublisher.ts ← M7 Redis Streams
-        ├── webhook/
-        │   ├── WebhookServer.ts       ← M7 202 패턴
-        │   ├── IdempotencyGuard.ts    ← M7 멱등성
-        │   └── RetryHandler.ts        ← M7 재시도
-        ├── listener/
-        │   └── ChainEventListener.ts  ← M7 이벤트 구독
-        └── handlers/
-            └── NFTIssuedHandler.ts    ← M7 이벤트 처리
+blockchain/             → Solidity 컨트랙트 (Hardhat) — 독립 패키지
+├── src/
+│   ├── phase1/
+│   │   ├── KyoboNFT.sol        ← M6 핵심 구현
+│   │   ├── NFTIssuer.sol
+│   │   └── ActivityOracle.sol
+│   ├── phase2/
+│   │   └── KRWStablecoin.sol   ← 빈 파일 (향후 확장용 placeholder)
+│   ├── phase3/
+│   ├── base/
+│   ├── compliance/
+│   └── interfaces/
+│       ├── IToken.sol
+│       └── ICompliance.sol
+├── scripts/deploy/
+│   └── deploy-phase1.ts        ← M6 배포 스크립트
+├── test/                       ← M6/M7 단위 테스트
+└── hardhat.config.ts
 
-apps/
-└── issuer-service/     → 내부망 비즈니스 로직
-    └── src/
-        ├── services/
-        │   ├── IssuerService.ts          ← M5 단건 발행
-        │   ├── BulkIssueService.ts       ← M5 벌크 발행
-        │   ├── EventConditionService.ts  ← M5 조건 판단
-        │   └── WalletMappingService.ts   ← M5 지갑 매핑
-        ├── api/
-        │   └── ActivityRouter.ts         ← M5 API
-        └── factory/
-            └── TokenIssuerFactory.ts     ← M5 팩토리
+dmz/                    → Node.js 서비스 (ISMS-P DMZ 구간)
+├── packages/
+│   ├── chain-adapters/     → IBlockchainAdapter 레이어
+│   │   └── src/
+│   │       ├── interfaces/
+│   │       │   └── IBlockchainAdapter.ts  ← M3 핵심
+│   │       ├── evm/
+│   │       │   └── EVMAdapter.ts          ← M3 구현
+│   │       └── xrpl/
+│   │           └── XRPLAdapter.ts         ← M3 Mock (Phase 2 stub)
+│   │
+│   ├── vasp/               → VASP 추상화 레이어
+│   │   └── src/
+│   │       ├── interfaces/
+│   │       │   └── IVASPAdapter.ts        ← M3 핵심 인터페이스
+│   │       ├── external/
+│   │       │   └── ExternalVASPAdapter.ts ← Phase 1 구현체 (월렛원)
+│   │       ├── internal/
+│   │       │   └── KyoboVASPAdapter.ts    ← 향후 내재화용 stub
+│   │       ├── tx/
+│   │       │   └── TxStateMachineService.ts ← M3 TX 상태머신
+│   │       ├── recovery/
+│   │       │   └── VaspRecoveryService.ts   ← M3 복구
+│   │       └── governance/
+│   │           └── KeyGovernanceService.ts  ← M8 키 거버넌스
+│   │
+│   ├── core-banking/       → DMZ 발행 상태 추적 + 내부망 RPC
+│   │   └── src/
+│   │       ├── index.ts                   ← 패키지 진입점
+│   │       ├── interfaces/
+│   │       │   └── ICoreBankingAdapter.ts ← 내부망 호출 계약 (인터페이스)
+│   │       ├── adapters/
+│   │       │   ├── InternalGatewayClient.ts    ← HTTP 클라이언트 (→ Java :8080)
+│   │       │   ├── KyoboCoreBankingAdapter.ts  ← ICoreBankingAdapter 구현체
+│   │       │   ├── StubCoreBankingAdapter.ts   ← 테스트·로컬 실습용 인메모리 스텁
+│   │       │   └── KDEPAdapter.ts              ← Phase 3 예탁결제원 stub
+│   │       ├── ledger/
+│   │       │   └── LedgerService.ts       ← M4 mint_requests 상태머신
+│   │       ├── audit/
+│   │       │   └── AuditLogService.ts     ← M4 TX 이벤트 로그 (DMZ 범위)
+│   │       └── reconcile/
+│   │           └── ReconcileService.ts    ← M4 Reconcile
+│   │
+│   ├── event-engine/       → DMZ 이벤트 파이프라인
+│   │   └── src/
+│   │       ├── dmz/
+│   │       │   ├── ConsumerGroupWorker.ts ← M2 Consumer
+│   │       │   ├── DLQHandler.ts          ← M2 DLQ
+│   │       │   └── RedisStreamPublisher.ts ← M2 Redis Streams
+│   │       ├── webhook/
+│   │       │   ├── WebhookServer.ts       ← M2 202 패턴
+│   │       │   ├── IdempotencyGuard.ts    ← M2 멱등성
+│   │       │   └── RetryHandler.ts        ← M2 재시도
+│   │       ├── listener/
+│   │       │   └── ChainEventListener.ts  ← M2 이벤트 구독
+│   │       └── handlers/
+│   │           └── NFTIssuedHandler.ts    ← M2 이벤트 처리
+│   │
+│   └── shared/             → 공통 타입·유틸리티
+│       └── src/
+│           ├── types/
+│           └── errors/
+│
+└── apps/
+    └── issuer-service/     → DMZ 비즈니스 로직 (Node.js)
+        └── src/
+            ├── services/
+            │   ├── IssuerService.ts          ← M5 단건 발행
+            │   ├── BulkIssueService.ts       ← M5 벌크 발행
+            │   ├── EventConditionService.ts  ← M5 조건 판단
+            │   └── WalletMappingService.ts   ← M5 지갑 매핑
+            ├── api/
+            │   └── ActivityRouter.ts         ← M5 API
+            └── factory/
+                └── TokenIssuerFactory.ts     ← M5 팩토리
+
+internal/               → Java Spring Boot 내부망 서비스 (교보생명 내부망)
+└── blockchain-gateway/ → 영구 원장·감사 로그 (Java 17 / Spring Boot 3.2.4)
+    └── src/main/java/io/coincraft/kyobo/gateway/
+        ├── controller/
+        │   └── BlockchainGatewayController.java ← M4 REST 진입점
+        │       GET  /api/internal/users/{userId}
+        │       POST /api/internal/users/{userId}/nft-holdings
+        │       POST /api/internal/audit-log
+        │       POST /api/internal/rewards/notify
+        ├── service/
+        │   ├── AuditLogService.java         ← M4 SHA-256 감사 체인
+        │   └── InternalLedgerService.java   ← M4 NFT 보유 원장
+        ├── entity/
+        │   ├── AuditLogEntry.java           ← append-only + Row Level Security
+        │   └── NftHolding.java              ← 사용자별 NFT 보유 현황
+        ├── dto/
+        │   ├── NftHoldingRequest.java
+        │   ├── AuditLogRequest.java
+        │   ├── RewardNotificationRequest.java
+        │   └── UserAccountResponse.java
+        ├── repository/
+        │   ├── AuditLogRepository.java      ← INSERT only (UPDATE/DELETE 없음)
+        │   └── NftHoldingRepository.java
+        └── client/
+            └── CoreBankingClient.java       ← 교보 레거시 WAS 호출 stub
 ```
 
 ---
@@ -1585,19 +2964,36 @@ apps/
 핵심 규칙: **의존성은 항상 안쪽(더 안정적인 레이어)으로만 향해야 한다.**
 
 ```
-apps/issuer-service
-    ↓ (import)
-packages/vasp, packages/core-banking
-    ↓ (import)
-packages/chain-adapters
-    ↓ (import)
-packages/contracts (ABI만)
+── TypeScript import 의존 방향 (컴파일 타임) ───────────────────────
+
+dmz/apps/issuer-service
+    ↓ import
+dmz/packages/vasp  +  dmz/packages/core-banking
+    ↓ import              ↓ import
+dmz/packages/chain-adapters
+    ↓ import
+blockchain/ (typechain 생성 타입 — ABI 기반)
+
+── 런타임 HTTP 호출 방향 (네트워크) ─────────────────────────────────
+
+dmz/apps/issuer-service
+    → KyoboCoreBankingAdapter
+        → InternalGatewayClient          (fetch, X-Internal-Secret)
+            ──── HTTP POST/GET ────►  internal/blockchain-gateway:8080
+                                           ↓
+                                      Core Banking WAS (레거시 Java)
 ```
+
+**TypeScript import와 HTTP 호출은 완전히 다른 개념이다.**
+
+- `import`는 컴파일 타임에 타입을 공유하는 것. `internal/` Java 코드는 TypeScript에서 절대 import하지 않는다.
+- HTTP 호출은 런타임에 네트워크를 통해 데이터를 교환하는 것. 두 시스템은 JSON DTO로만 계약한다.
+- 이 분리가 "언어가 달라도 함께 동작하는" 마이크로서비스 아키텍처의 핵심이다.
 
 **역방향 의존이 금지되는 이유:**
 
 ```
-chain-adapters가 vasp를 import한다고 가정:
+dmz/packages/chain-adapters가 dmz/packages/vasp를 import한다고 가정:
   - chain-adapters를 빌드하려면 vasp가 먼저 빌드되어야 함
   - vasp는 chain-adapters를 import함
   - chain-adapters도 vasp를 import함
@@ -1642,6 +3038,120 @@ class VaspRecoveryService {
 장점:
 - 테스트 시 MockAdapter로 교체 → 실제 네트워크 없이 테스트 가능
 - 런타임에 어댑터 교체 가능 (예: 장애 시 fallback 체인)
+
+**`ICoreBankingAdapter`도 동일한 패턴이다:**
+
+```typescript
+// 인터페이스 — DMZ가 아는 것은 이것뿐
+interface ICoreBankingAdapter {
+  getUserAccount(userId: string): Promise<UserAccount | null>;
+  recordNftHolding(params: { ... }): Promise<void>;
+  recordAuditLog(entry: { ... }): Promise<void>;
+  notifyReward(notification: RewardNotification): Promise<void>;
+}
+
+// 구현체 1 — 실제 운영: Java Gateway HTTP 호출
+class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
+  constructor(private gateway: InternalGatewayClient) {}
+  async recordNftHolding(params) {
+    await this.gateway.recordNftHolding(params.userId, { ... });
+  }
+}
+
+// 구현체 2 — 테스트·로컬: 인메모리 스텁 (Java 없이 실습 가능)
+class StubCoreBankingAdapter implements ICoreBankingAdapter {
+  private holdings: unknown[] = [];
+  async recordNftHolding(params) { this.holdings.push(params); }
+}
+
+// issuer-service는 어느 구현체인지 모른다
+class IssuerService {
+  constructor(private coreBanking: ICoreBankingAdapter) {}
+}
+```
+
+`ICoreBankingAdapter`가 중요한 이유: DMZ(Node.js)와 내부망(Java)은 **언어가 다르다**. TypeScript에서 Java 클래스를 import할 수 없다. 두 시스템의 계약은 인터페이스 + JSON DTO로만 맺어지고, 런타임에 HTTP로 연결된다. `ICoreBankingAdapter`가 그 계약이고, `InternalGatewayClient`가 그 계약을 이행하는 HTTP 클라이언트다.
+
+---
+
+## DMZ → 내부망 RPC 패턴
+
+`InternalGatewayClient`가 내부 RPC를 처리하는 방식:
+
+```typescript
+// dmz/packages/core-banking/src/adapters/InternalGatewayClient.ts
+
+export class InternalGatewayClient {
+  constructor(private config: {
+    baseUrl: string;  // "http://blockchain-gateway:8080"
+    secret: string;   // INTERNAL_GATEWAY_SECRET 환경변수
+  }) {}
+
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': this.secret,   // 내부망 인증
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new InternalGatewayError(method, path, res.status, ...);
+    return res.json();
+  }
+
+  // Java DTO와 1:1 매핑
+  async recordNftHolding(userId: string, req: GatewayNftHoldingRequest): Promise<void> {
+    await this.request('POST', `/api/internal/users/${userId}/nft-holdings`, req);
+  }
+
+  async recordAuditLog(req: GatewayAuditLogRequest): Promise<void> {
+    await this.request('POST', '/api/internal/audit-log', req);
+  }
+}
+```
+
+**TypeScript DTO ↔ Java record 매핑 관계:**
+
+| TypeScript (`GatewayNftHoldingRequest`) | Java (`NftHoldingRequest` record) |
+|---|---|
+| `tokenId: number` | `Long tokenId` |
+| `contractAddr: string` | `String contractAddr` |
+| `chainId: number` | `Integer chainId` |
+| `acquiredAt: string` (ISO-8601) | `Instant acquiredAt` |
+| `onChainTx: string` | `String onChainTx` |
+
+Java의 `Instant`는 ISO-8601 문자열(`"2026-05-02T14:00:00Z"`)로 직렬화된다. TypeScript에서 `new Date().toISOString()`으로 생성하면 그대로 매핑된다.
+
+**bigint → number 변환 주의점:**
+
+ERC-1155 tokenId는 `uint256`이라 TypeScript에서 `bigint`로 표현한다. Java `Long`의 최대값은 `2^63 - 1`이다. `uint256` 전체 범위를 커버하지 못하므로, `tokenId`가 `2^63`을 넘으면 overflow가 발생한다. Phase 1 NFT tokenId는 순차 증가 방식이라 실제로는 문제없지만, 이 제약은 M4에서 다시 다룬다.
+
+**인증 전략 (Phase별):**
+
+| Phase | 인증 방식 | 비고 |
+|---|---|---|
+| Phase 1 | `X-Internal-Secret` 공유 시크릿 | 내부망 방화벽으로 외부 접근 차단 |
+| Phase 2 | mTLS (상호 인증 TLS) | 클라이언트 인증서 필요 |
+| Phase 3+ | OAuth2 Client Credentials | 토큰 기반, 감사 추적 강화 |
+
+**로컬 개발 시 Java Gateway 없이 실습하는 방법:**
+
+```typescript
+// IssuerService 생성 시 StubCoreBankingAdapter 주입
+const coreBanking = new StubCoreBankingAdapter();
+coreBanking.seedUser({
+  userId: 'user-001',
+  accountId: 'acc-001',
+  walletAddr: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+  status: 'active',
+});
+
+const issuer = new IssuerService(coreBanking, vasp, ledger);
+// Java Gateway 없이 issuer 로직 전체 실습 가능
+```
+
+`StubCoreBankingAdapter`는 인메모리로 동작하고 `getAuditLog()`, `getHoldings()` 등 검증용 메서드를 제공한다. 단위 테스트에서 "auditLog에 정확히 1건이 쌓였는가"를 직접 확인할 수 있다.
 
 ---
 
@@ -1867,22 +3377,27 @@ describe('KyoboNFT', () => {
 
 ---
 
-## packages/contracts 디렉토리 구조
+## blockchain/ 디렉토리 구조
 
 ```
-packages/contracts/
-├── src/                  ← Solidity 소스 (hardhat.config의 paths.sources)
+blockchain/                ← 루트에 독립 배치 (dmz/ 밖)
+├── src/                   ← Solidity 소스 (hardhat.config의 paths.sources)
 │   ├── phase1/
 │   │   ├── KyoboNFT.sol
 │   │   ├── NFTIssuer.sol
 │   │   └── ActivityOracle.sol
+│   ├── phase2/
+│   │   └── KRWStablecoin.sol
+│   ├── phase3/
+│   ├── base/
+│   ├── compliance/
 │   └── interfaces/
-├── test/                 ← 테스트 파일
+├── test/                  ← 테스트 파일
 ├── scripts/
 │   └── deploy/
 │       └── deploy-phase1.ts
-├── artifacts/            ← 컴파일 결과 (ABI + bytecode) — gitignore
-├── .openzeppelin/        ← 업그레이드 storage layout 기록 — gitignore 금지
+├── artifacts/             ← 컴파일 결과 (ABI + bytecode) — gitignore
+├── .openzeppelin/         ← 업그레이드 storage layout 기록 — gitignore 금지
 └── hardhat.config.ts
 ```
 
@@ -1896,13 +3411,17 @@ packages/contracts/
 
 | 개념 | 핵심 내용 | 코드 위치 |
 |---|---|---|
-| 5레이어 아키텍처 | 내부망↔DMZ↔VASP↔블록체인 신뢰 경계 | `docs/architecture/` |
-| IBlockchainAdapter | 체인 교체 시 비즈니스 로직 무변경 보장 | `packages/chain-adapters/src/interfaces/` |
-| IVASPAdapter | VASP 교체 시 비즈니스 로직 무변경 보장 | `packages/vasp/src/interfaces/` |
-| 단방향 의존 | 순환 참조 방지, 변경 파급 최소화 | 모든 packages/ |
+| 3존 아키텍처 | 내부망(Java)↔DMZ(Node.js)↔VASP↔블록체인 | `docs/architecture/` |
+| IBlockchainAdapter | 체인 교체 시 비즈니스 로직 무변경 보장 | `dmz/packages/chain-adapters/src/interfaces/` |
+| IVASPAdapter | VASP 교체 시 비즈니스 로직 무변경 보장 | `dmz/packages/vasp/src/interfaces/` |
+| ICoreBankingAdapter | DMZ → Java 내부망 호출 추상화 | `dmz/packages/core-banking/src/interfaces/` |
+| InternalGatewayClient | Java Gateway HTTP 클라이언트 (`X-Internal-Secret`) | `dmz/packages/core-banking/src/adapters/` |
+| StubCoreBankingAdapter | Java 없이 DMZ 실습·테스트 가능한 인메모리 스텁 | `dmz/packages/core-banking/src/adapters/` |
+| 단방향 의존 | 순환 참조 방지, 변경 파급 최소화 | 모든 dmz/packages/ |
 | Strategy Pattern | 인터페이스 + 교체 가능한 구현체 | chain-adapters, vasp |
-| Hardhat mainnet fork | 로컬에서 메인넷 상태 재현, 결정론적 테스트 | `packages/contracts/hardhat.config.ts` |
-| viaIR + optimizer | 복잡한 상속 구조 컴파일, 가스 최적화 | `hardhat.config.ts` |
-| .openzeppelin/ | Storage layout 기록, upgrade 충돌 검증 | `packages/contracts/.openzeppelin/` |
-| SHA-256 감사 체인 | DB 로그 변조 감지 (블록체인 원리 응용) | `packages/core-banking/src/audit/` |
-| 202 패턴 + DLQ | Webhook 유실 없이 비동기 처리 | `packages/event-engine/src/webhook/` |
+| Hardhat mainnet fork | 로컬에서 메인넷 상태 재현, 결정론적 테스트 | `blockchain/hardhat.config.ts` |
+| viaIR + optimizer | 복잡한 상속 구조 컴파일, 가스 최적화 | `blockchain/hardhat.config.ts` |
+| .openzeppelin/ | Storage layout 기록, upgrade 충돌 검증 | `blockchain/.openzeppelin/` |
+| SHA-256 감사 체인 (DMZ) | TX 이벤트 로그 변조 감지 | `dmz/packages/core-banking/src/audit/` |
+| SHA-256 감사 체인 (Java) | 영구 금융 감사 로그, append-only + Row-level security | `internal/blockchain-gateway/src/.../AuditLogService.java` |
+| 202 패턴 + DLQ | Webhook 유실 없이 비동기 처리 | `dmz/packages/event-engine/src/webhook/` |

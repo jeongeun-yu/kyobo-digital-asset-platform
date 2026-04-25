@@ -103,17 +103,35 @@ CREATE TABLE audit_log (
 
 ## 실습 1: LedgerService 구현 (00:40~01:20)
 
+> **아키텍처 업데이트 (2026-04-25)**: NFT 보유 현황과 감사 로그는
+> `internal/blockchain-gateway` (Java)가 관리한다.
+> DMZ TypeScript는 ICoreBankingAdapter.recordNftHolding() / recordAuditLog()를 호출한다.
+> Day 10 실습에서 Java 구현체(InternalLedgerService.java, AuditLogService.java)도 함께 확인한다.
+
 ### Step 1 — 스켈레톤 확인 (10분)
 
 ```bash
-cat packages/core-banking/src/ledger/LedgerService.ts
+# DMZ TypeScript — 운영 원장 (mint_requests, processed_events)
+cat dmz/packages/core-banking/src/ledger/LedgerService.ts
+
+# Internal Java — 영구 원장 (user_nft_holdings, audit_log)
+cat internal/blockchain-gateway/src/main/java/io/coincraft/kyobo/gateway/service/InternalLedgerService.java
+cat internal/blockchain-gateway/src/main/java/io/coincraft/kyobo/gateway/service/AuditLogService.java
 ```
 
-**구현할 메서드:**
-- `recordNftAcquired()` — Transfer 이벤트 수신 시 NFT 보유 기록
-- `recordNftReleased()` — Transfer OUT 이벤트 수신 시 보유 해제
+**레이어별 역할 분리:**
+- DMZ TypeScript (`LedgerService.ts`): `mint_requests`, `processed_events` — 임시 운영 데이터
+- Internal Java (`InternalLedgerService.java`): `user_nft_holdings` — 영구 금융 원장
+- Internal Java (`AuditLogService.java`): `audit_log` — 규제 감사 로그 (append-only)
+
+**DMZ에서 구현할 메서드:**
 - `getMintRequestStatus()` — 발행 요청 상태 조회
-- `updateMintRequest()` — 상태머신 전이
+- `updateMintRequest()` — 상태머신 전이 (CONFIRMED 시 Java 호출)
+- `recordProcessedEvent()` — 이벤트 중복 방지
+
+**Java에서 구현할 메서드 (실습 후반):**
+- `InternalLedgerService.recordNftHolding()` — NFT 취득 기록
+- `InternalLedgerService.releaseNftHolding()` — NFT 소각/이전 기록
 
 ### Step 2 — 상태머신 전이 규칙 구현 (20분)
 
@@ -173,7 +191,7 @@ if (result.rows.length === 0) {
 ### Step 2 — AuditLogService 구현 (25분)
 
 ```bash
-cat packages/core-banking/src/audit/AuditLogService.ts
+cat dmz/packages/core-banking/src/audit/AuditLogService.ts
 ```
 
 **구현할 메서드:**
@@ -230,7 +248,7 @@ export function auditMiddleware(auditLog: AuditLogService) {
 ### Step 2 — ReconcileService 구현 (30분)
 
 ```bash
-cat packages/core-banking/src/reconcile/ReconcileService.ts
+cat dmz/packages/core-banking/src/reconcile/ReconcileService.ts
 ```
 
 **구현 흐름:**

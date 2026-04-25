@@ -64,7 +64,7 @@ WebSocket 연결 유지
 > "`KyoboNFT.sol`에서 `emit Issued(to, tokenId, activityId)` 를 실행하면 블록체인에 Log가 기록됩니다. 이 Log의 구조를 이해해야 나중에 정확히 파싱할 수 있습니다."
 
 ```bash
-cat packages/contracts/src/phase1/KyoboNFT.sol
+cat blockchain/src/phase1/KyoboNFT.sol
 # Issued 이벤트 찾기:
 # event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason);
 ```
@@ -114,7 +114,7 @@ docker compose -f infrastructure/docker/docker-compose.yml up hardhat-node
 
 터미널 2 (배포):
 ```bash
-cd packages/contracts
+cd blockchain
 npm install
 npx hardhat run scripts/deploy/deploy-phase1.ts --network localhost
 ```
@@ -139,7 +139,7 @@ NFT_ISSUER_ADDR=0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
 터미널 3 (수강자가 직접 작성):
 ```typescript
 // scripts/listen-events.ts
-import { EVMAdapter } from '../packages/chain-adapters/src/evm/EVMAdapter';
+import { EVMAdapter } from '../dmz/packages/chain-adapters/src/evm/EVMAdapter';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -248,7 +248,7 @@ npx hardhat run scripts/test-issue.ts --network localhost
 > "실제 운영 환경에서 issuer-service가 재시작될 수 있습니다. 재시작 중에 NFT가 발행됐다면? 이벤트를 놓치면 Core Banking에 알림이 안 가고, 고객은 NFT를 받았는데 포인트 시스템엔 없는 상태가 됩니다."
 
 ```bash
-cat packages/event-engine/src/listener/ChainEventListener.ts
+cat dmz/packages/event-engine/src/listener/ChainEventListener.ts
 ```
 
 핵심 로직 설명:
@@ -304,7 +304,7 @@ npx hardhat run scripts/test-issue.ts --network localhost
 
 ```typescript
 // scripts/recover-events.ts
-import { EVMAdapter } from '../packages/chain-adapters/src/evm/EVMAdapter';
+import { EVMAdapter } from '../dmz/packages/chain-adapters/src/evm/EVMAdapter';
 
 const ABI = [
   "event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason)"
@@ -363,7 +363,7 @@ main();
 
 ## 참조 파일
 
-- `packages/contracts/src/phase1/KyoboNFT.sol` (Issued 이벤트)
-- `packages/chain-adapters/src/evm/EVMAdapter.ts`
-- `packages/event-engine/src/listener/ChainEventListener.ts`
+- `blockchain/src/phase1/KyoboNFT.sol` (Issued 이벤트)
+- `dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
+- `dmz/packages/event-engine/src/listener/ChainEventListener.ts`
 - `docs/adr/004-event-driven-architecture.md`

@@ -145,7 +145,7 @@ allow ____________;
 ### 2-2. EVMAdapter 코드 구조 (20분)
 
 ```bash
-cat packages/chain-adapters/src/evm/EVMAdapter.ts
+cat dmz/packages/chain-adapters/src/evm/EVMAdapter.ts
 ```
 
 **토킹포인트:**
@@ -193,7 +193,7 @@ curl -X POST http://localhost:8545 \
 
 `scripts/test-adapter.ts` 파일을 직접 작성한다:
 ```typescript
-import { EVMAdapter } from './packages/chain-adapters/src/evm/EVMAdapter';
+import { EVMAdapter } from './dmz/packages/chain-adapters/src/evm/EVMAdapter';
 
 async function main() {
   const adapter = new EVMAdapter({
@@ -270,7 +270,7 @@ const res = await fetch(`${this.baseUrl}${path}`, {
 
 - `infrastructure/dmz/nginx/dmz.conf`
 - `infrastructure/docker/docker-compose.yml`
-- `packages/chain-adapters/src/interfaces/IChainAdapter.ts`
-- `packages/chain-adapters/src/evm/EVMAdapter.ts`
-- `packages/vasp/src/external/ExternalVASPAdapter.ts`
+- `dmz/packages/chain-adapters/src/interfaces/IChainAdapter.ts`
+- `dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
+- `dmz/packages/vasp/src/external/ExternalVASPAdapter.ts`
 - `docs/adr/001-chain-abstraction-layer.md`

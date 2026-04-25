@@ -75,7 +75,7 @@ VASP 레이어
 ### Step 1 — XRPLAdapter stub 읽기 (10분)
 
 ```bash
-cat packages/chain-adapters/src/xrpl/XRPLAdapter.ts
+cat dmz/packages/chain-adapters/src/xrpl/XRPLAdapter.ts
 ```
 
 **토킹포인트:**
@@ -209,7 +209,7 @@ cd packages/chain-adapters
 npm install xrpl
 ```
 
-`packages/chain-adapters/src/xrpl/XRPLAdapter.ts` 의 `isConnected()`만 실제 구현:
+`dmz/packages/chain-adapters/src/xrpl/XRPLAdapter.ts` 의 `isConnected()`만 실제 구현:
 
 ```typescript
 import { Client } from 'xrpl';
@@ -262,7 +262,7 @@ export class XRPLAdapter implements IChainAdapter {
 
 ```typescript
 // scripts/test-xrpl-connect.ts
-import { XRPLAdapter } from '../packages/chain-adapters/src/xrpl/XRPLAdapter';
+import { XRPLAdapter } from '../dmz/packages/chain-adapters/src/xrpl/XRPLAdapter';
 
 async function main() {
   console.log('=== XRP Ledger Testnet 연결 테스트 ===\n');
@@ -297,7 +297,7 @@ npx ts-node scripts/test-xrpl-connect.ts
 `ChainEventListener.ts`를 열고 확인한다:
 
 ```bash
-cat packages/event-engine/src/listener/ChainEventListener.ts
+cat dmz/packages/event-engine/src/listener/ChainEventListener.ts
 ```
 
 **질문:**
@@ -307,7 +307,7 @@ Q: ChainEventListener가 EVMAdapter를 직접 참조하는 코드가 있는가?
    → 없다. IChainAdapter 인터페이스만 참조한다.
 
 Q: XRPLAdapter로 교체하려면 무엇을 바꿔야 하는가?
-   → apps/issuer-service/src/index.ts에서 어댑터 인스턴스 생성 부분 하나만
+   → dmz/apps/issuer-service/src/index.ts에서 어댑터 인스턴스 생성 부분 하나만
    → ChainEventListener, IssuerService 코드는 변경 없음
 
 Q: 이것이 ADR-001의 목표였는가?
@@ -317,7 +317,7 @@ Q: 이것이 ADR-001의 목표였는가?
 **코드 비교:**
 
 ```typescript
-// apps/issuer-service/src/index.ts — 교체 전 (Phase 1)
+// dmz/apps/issuer-service/src/index.ts — 교체 전 (Phase 1)
 const chainAdapter = new EVMAdapter({
   rpcUrl:     process.env.RPC_URL!,
   chainId:    process.env.CHAIN_ID!,
@@ -479,7 +479,7 @@ subscribeEvents(
 > "교보생명이 VASP 인가를 취득했을 때 코드에서 바꿔야 하는 것은 단 하나다. 무엇인가?"
 
 ```
-답: apps/issuer-service/src/index.ts의 어댑터 인스턴스 생성 부분
+답: dmz/apps/issuer-service/src/index.ts의 어댑터 인스턴스 생성 부분
 
 // 현재 (외부 VASP)
 const vaspAdapter = new ExternalVASPAdapter({
@@ -559,13 +559,13 @@ Day 09: 추상화 레이어가 제대로 설계됐다면 체인 교체는 한 �
 
 ## 참조 파일
 
-- `packages/chain-adapters/src/xrpl/XRPLAdapter.ts`
-- `packages/chain-adapters/src/interfaces/IChainAdapter.ts`
-- `packages/contracts/src/phase2/KRWStablecoin.sol`
-- `packages/contracts/src/phase3/SecurityToken.sol`
-- `packages/vasp/src/internal/KyoboVASPAdapter.ts`
-- `packages/vasp/src/external/ExternalVASPAdapter.ts`
-- `packages/compliance/src/isms/ISMSChecklist.ts`
+- `dmz/packages/chain-adapters/src/xrpl/XRPLAdapter.ts`
+- `dmz/packages/chain-adapters/src/interfaces/IChainAdapter.ts`
+- `blockchain/src/phase2/KRWStablecoin.sol`
+- `blockchain/src/phase3/SecurityToken.sol`
+- `dmz/packages/vasp/src/internal/KyoboVASPAdapter.ts`
+- `dmz/packages/vasp/src/external/ExternalVASPAdapter.ts`
+- `dmz/packages/compliance/src/isms/ISMSChecklist.ts`
 - `docs/adr/001-chain-abstraction.md`
 - `docs/adr/002-vasp-external-first.md`
 - `docs/adr/003-token-standard-evolution.md`

@@ -35,7 +35,7 @@
 ### 1-2. 이 프로젝트 컨트랙트 구조 전체 조망 (20분)
 
 ```bash
-ls packages/contracts/src/
+ls blockchain/src/
 ```
 
 ```
@@ -66,7 +66,7 @@ phase2/, phase3/     ← stub
 ### Step 1 — BaseToken.sol 정독 (20분)
 
 ```bash
-cat packages/contracts/src/base/BaseToken.sol
+cat blockchain/src/base/BaseToken.sol
 ```
 
 4개 Role을 찾아 아래 표를 채운다:
@@ -128,7 +128,7 @@ main();
 ### 2-1. KyoboNFT 전송 흐름 추적 (20분)
 
 ```bash
-cat packages/contracts/src/phase1/KyoboNFT.sol
+cat blockchain/src/phase1/KyoboNFT.sol
 # _update() 함수 집중
 ```
 
@@ -168,7 +168,7 @@ function canTransfer(address from, address to, uint256) external view returns (b
 ### 2-2. ICompliance 인터페이스 (15분)
 
 ```bash
-cat packages/contracts/src/interfaces/ICompliance.sol
+cat blockchain/src/interfaces/ICompliance.sol
 ```
 
 **토킹포인트:**
@@ -281,8 +281,8 @@ Storage (영구 저장) >> Memory (함수 실행 중) >> Stack
 
 ## 참조 파일
 
-- `packages/contracts/src/base/BaseToken.sol`
-- `packages/contracts/src/phase1/KyoboNFT.sol`
-- `packages/contracts/src/phase1/NFTIssuer.sol`
-- `packages/contracts/src/interfaces/ICompliance.sol`
+- `blockchain/src/base/BaseToken.sol`
+- `blockchain/src/phase1/KyoboNFT.sol`
+- `blockchain/src/phase1/NFTIssuer.sol`
+- `blockchain/src/interfaces/ICompliance.sol`
 - `docs/adr/003-token-standard-evolution.md`

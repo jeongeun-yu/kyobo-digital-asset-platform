@@ -69,7 +69,7 @@ Core Banking 서버 점검 중 (새벽 2시)
 ### Step 1 — WebhookServer 코드 읽기 (10분)
 
 ```bash
-cat packages/event-engine/src/webhook/WebhookServer.ts
+cat dmz/packages/event-engine/src/webhook/WebhookServer.ts
 ```
 
 핵심 함수 집중:
@@ -95,7 +95,7 @@ private _verifySignature(body: string, signature: string): boolean {
 
 ```typescript
 // scripts/run-webhook-server.ts
-import { WebhookServer } from '../packages/event-engine/src/webhook/WebhookServer';
+import { WebhookServer } from '../dmz/packages/event-engine/src/webhook/WebhookServer';
 
 const server = new WebhookServer({
   port:      3001,
@@ -188,7 +188,7 @@ curl -s -X POST http://localhost:3001 \
 ### 2-2. IdempotencyGuard 설계 (15분)
 
 ```bash
-cat packages/event-engine/src/webhook/IdempotencyGuard.ts
+cat dmz/packages/event-engine/src/webhook/IdempotencyGuard.ts
 ```
 
 ```typescript
@@ -213,7 +213,7 @@ async run(key: string, fn: () => Promise<void>): Promise<boolean> {
 import {
   IdempotencyGuard,
   InMemoryIdempotencyStore,
-} from '../packages/event-engine/src/webhook/IdempotencyGuard';
+} from '../dmz/packages/event-engine/src/webhook/IdempotencyGuard';
 
 async function main() {
   const guard = new IdempotencyGuard(new InMemoryIdempotencyStore());
@@ -305,7 +305,7 @@ while (attempt < this.config.maxAttempts) {
 import {
   RetryHandler,
   DeadLetterQueue,
-} from '../packages/event-engine/src/webhook/RetryHandler';
+} from '../dmz/packages/event-engine/src/webhook/RetryHandler';
 
 async function main() {
   const dlq   = new DeadLetterQueue();
@@ -361,7 +361,7 @@ main();
 
 ## 참조 파일
 
-- `packages/event-engine/src/webhook/WebhookServer.ts`
-- `packages/event-engine/src/webhook/IdempotencyGuard.ts`
-- `packages/event-engine/src/webhook/RetryHandler.ts`
+- `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
+- `dmz/packages/event-engine/src/webhook/IdempotencyGuard.ts`
+- `dmz/packages/event-engine/src/webhook/RetryHandler.ts`
 - `docs/adr/004-event-driven-architecture.md`

@@ -71,7 +71,7 @@
 ## 실습 1: NFTIssuer 코드 리딩 + 흐름 추적 (00:30~01:00)
 
 ```bash
-cat packages/contracts/src/phase1/NFTIssuer.sol
+cat blockchain/src/phase1/NFTIssuer.sol
 ```
 
 ### Step 1 — issueActivityNFT() 실행 순서 채우기 (20분)
@@ -110,7 +110,7 @@ issueActivityNFT(to, activityId, oracleData)
 ### Step 1 — ActivityOracle 서명 생성 이해 (20분)
 
 ```bash
-cat packages/contracts/src/phase1/ActivityOracle.sol
+cat blockchain/src/phase1/ActivityOracle.sol
 # verify() 함수 집중
 ```
 
@@ -212,7 +212,7 @@ npx hardhat run scripts/issue-nft-full.ts --network localhost
 ## 2부: IssuerService 오프체인 검증 흐름 (01:50~02:20)
 
 ```bash
-cat apps/issuer-service/src/services/IssuerService.ts
+cat dmz/apps/issuer-service/src/services/IssuerService.ts
 ```
 
 **토킹포인트:**
@@ -300,7 +300,7 @@ console.log('unpause 후 발행: 성공');
 
 ## 참조 파일
 
-- `packages/contracts/src/phase1/NFTIssuer.sol`
-- `packages/contracts/src/phase1/KyoboNFT.sol`
-- `packages/contracts/src/phase1/ActivityOracle.sol`
-- `apps/issuer-service/src/services/IssuerService.ts`
+- `blockchain/src/phase1/NFTIssuer.sol`
+- `blockchain/src/phase1/KyoboNFT.sol`
+- `blockchain/src/phase1/ActivityOracle.sol`
+- `dmz/apps/issuer-service/src/services/IssuerService.ts`

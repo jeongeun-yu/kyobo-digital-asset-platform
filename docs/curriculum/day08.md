@@ -39,7 +39,7 @@
 ### 1-2. ISMSChecklist 설계 철학 (15분)
 
 ```bash
-cat packages/compliance/src/isms/ISMSChecklist.ts
+cat dmz/packages/compliance/src/isms/ISMSChecklist.ts
 ```
 
 **토킹포인트:**
@@ -66,7 +66,7 @@ setInterval(async () => {
 
 ```typescript
 // scripts/run-isms-check.ts
-import { ISMSChecklist } from '../packages/compliance/src/isms/ISMSChecklist';
+import { ISMSChecklist } from '../dmz/packages/compliance/src/isms/ISMSChecklist';
 
 async function main() {
   const checklist = new ISMSChecklist();
@@ -307,8 +307,8 @@ ARC/XRP Ledger 개요와 9일 전체 아키텍처 리뷰. Sharon이 Phase 2를 �
 
 ## 참조 파일
 
-- `packages/compliance/src/isms/ISMSChecklist.ts`
-- `packages/contracts/src/phase1/NFTIssuer.sol` (ReentrancyGuard)
-- `packages/contracts/src/base/BaseToken.sol` (RBAC)
+- `dmz/packages/compliance/src/isms/ISMSChecklist.ts`
+- `blockchain/src/phase1/NFTIssuer.sol` (ReentrancyGuard)
+- `blockchain/src/base/BaseToken.sol` (RBAC)
 - `.env.example` (키 관리 주석)
 - `docs/adr/002-vasp-external-first.md`
