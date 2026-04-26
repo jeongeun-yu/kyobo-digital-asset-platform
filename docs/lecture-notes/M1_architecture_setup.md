@@ -791,7 +791,7 @@ A.staticcall(B):   B의 집에 가서 구경만 함 (읽기 전용)
 - **이름** = msg.sender
 - **작업 결과물** = 상태 변경 (SSTORE)
 
-## 2. EVM 컨텍스트 기준 정확한 정의
+#### EVM 컨텍스트 기준 정확한 정의
 
 EVM은 호출마다 다음 **실행 컨텍스트**를 갖는다:
 
@@ -809,7 +809,7 @@ EVM은 호출마다 다음 **실행 컨텍스트**를 갖는다:
 
 A가 B를 호출할 때 이 5개가 어떻게 바뀌는지가 핵심이다.
 
-### call
+#### call
 
 ```
 A.call(B):
@@ -822,7 +822,7 @@ A.call(B):
 
 → **완전히 B의 세계로 진입한다.** B의 코드가 B의 storage를 수정한다. A는 외부 호출자로 보일 뿐.
 
-### delegatecall
+#### delegatecall
 
 ```
 A.delegatecall(B):
@@ -835,7 +835,7 @@ A.delegatecall(B):
 
 → **B의 코드를 A의 몸으로 실행한다.** B의 로직이 실행되지만, 모든 상태 변경은 A에 기록된다. B 입장에선 "나는 B인 줄 알고 코드 실행했는데, 실제로는 A의 storage에 쓰고 있었음".
 
-## 3. 코드로 직접 비교
+#### 코드로 직접 비교
 
 ```solidity
 contract Logic {
@@ -870,7 +870,7 @@ contract Caller {
 }
 ```
 
-### 실행 흐름 다이어그램
+#### 실행 흐름 다이어그램
 
 **call 케이스:**
 
@@ -2489,11 +2489,16 @@ SHA-256의 출력은 항상 256비트(32바이트)다. 입력 크기와 무관�
 
 ---
 
-## 레이어 1 — 내부망 (당사 직접 운영)
+## 레이어 1 — 당사 직접 운영 시스템
 
-이 과정에서 구현하는 전부가 이 레이어다.
+이 과정에서 구현하는 전부가 이 범위다. 코드 구조상 두 구간으로 나뉜다:
 
-### 비즈니스 로직 서브시스템
+- **DMZ (Node.js, `dmz/`)**: 비즈니스 로직·이벤트 조건 판단·VASP 연동·DMZ 원장 추적 — ISMS-P DMZ 구간. 외부(VASP·블록체인)와 내부망 사이 완충. 게이트웨이 인프라(Webhook·Redis Streams·DLQ)는 레이어 2 참조.
+- **내부망 (Java Spring Boot, `internal/`)**: 영구 원장·금융 감사 로그 — 교보생명 내부망 직접 운영, 외부 직접 접근 불가
+
+아래 서브시스템 설명에서 파일 경로는 각 구간(`dmz/` vs `internal/`)을 명시한다.
+
+### 비즈니스 로직 서브시스템 — DMZ (Node.js)
 
 **이벤트 조건 판단** (`dmz/apps/issuer-service/src/services/EventConditionService.ts`)
 
@@ -2533,13 +2538,15 @@ if (event.activityType === 'WALKING' && event.value >= 10000) {
 
 ### 데이터 관리 서브시스템
 
-**내부 원장** (`dmz/packages/core-banking/src/ledger/LedgerService.ts` — DMZ 발행 요청 추적 / 영구 보유 원장은 `internal/blockchain-gateway` Java 레이어)
+**DMZ 발행 원장** (`dmz/packages/core-banking/src/ledger/LedgerService.ts` — mint_requests 상태머신, TX 추적)
+**영구 보유 원장** (`internal/blockchain-gateway` — `InternalLedgerService.java`, NFT 보유 현황 최종 기록)
 
 사용자별 NFT 보유 현황을 내부 DB에 유지한다. 온체인 데이터를 매번 조회하면 느리고 비용이 든다. 내부 원장이 캐시 역할을 하면서 동시에 Reconcile의 기준점이 된다.
 
 상태머신 기반 TX 추적: 각 발행 요청의 상태를 내부 원장에서 추적한다. TX가 REORGED 되어 사라져도 원장에서 이전 상태로 되돌릴 수 있다.
 
-**감사 로그 (DMZ)** (`dmz/packages/core-banking/src/audit/AuditLogService.ts` — TX 이벤트 감사 / 영구 금융 감사 로그는 `internal/blockchain-gateway` Java AuditLogService)
+**감사 로그 (DMZ)** (`dmz/packages/core-banking/src/audit/AuditLogService.ts` — TX 이벤트 감사, SHA-256 체인)
+**금융 감사 로그 (내부망)** (`internal/blockchain-gateway` — `AuditLogService.java`, append-only, 5년 보관, Row Level Security)
 
 모든 원장 변경에 대해 append-only 로그를 남긴다. 위에서 설명한 SHA-256 체인 구조로 변조를 감지한다.
 
@@ -2566,9 +2573,11 @@ if (event.activityType === 'WALKING' && event.value >= 10000) {
 
 ---
 
-## 레이어 2 — DMZ (게이트웨이 레이어)
+## 레이어 2 — DMZ 게이트웨이 인프라
 
 DMZ는 외부(블록체인, VASP)와 내부망 사이의 완충 지대다. ISMS-P 인증에서 요구하는 망 분리 원칙을 충족한다.
+
+> 이 섹션은 DMZ의 **게이트웨이 인프라 레이어**(Webhook 수신, 메시징, 이벤트 파이프라인)를 다룬다. DMZ에서 실행되는 비즈니스 서비스(issuer-service 등)는 레이어 1 참조.
 
 ### Webhook Receiver + 202 패턴
 
@@ -3173,55 +3182,33 @@ Hardhat Toolbox: ethers.js, chai, hardhat-network-helpers 번들
 
 ---
 
-## Mainnet Fork 내부 동작
+## Mainnet Fork — Hardhat 설정
 
-Mainnet fork는 Hardhat Network의 특수 모드다.
+> Mainnet fork의 동작 원리(lazy loading, 오버레이 레이어, Foundry 활용 패턴)는 S1 섹션 1 "Solidity 개발환경: Remix → Hardhat" 참조.
 
-**기본 동작 원리:**
+Hardhat에서 mainnet fork를 활성화하는 설정:
 
-```
-Hardhat node --fork [RPC_URL]
-    ↓
-특정 블록 시점의 메인넷 상태를 "원본"으로 설정
-    ↓
-로컬에서 새로운 TX가 들어오면 로컬에서만 처리 (메인넷 영향 없음)
-    ↓
-메인넷 상태가 필요한 경우 (기존 컨트랙트 조회 등) RPC URL로 fetch
-    ↓
-fetch한 데이터는 캐시에 저장 → 같은 데이터 재조회 시 RPC 불필요
-```
-
-**상태 관리:**
-
-```
-로컬 상태 오버레이
-    ↑ (우선순위 높음)
-메인넷 상태 (RPC fetch + 캐시)
+```typescript
+// hardhat.config.ts
+networks: {
+  hardhat: {
+    forking: {
+      url: process.env.MAINNET_RPC_URL!,
+      blockNumber: 19000000,  // 블록 번호 고정 — 재현 가능한 테스트
+    }
+  }
+}
 ```
 
-로컬에서 `transfer()`를 실행하면 로컬 상태에만 반영된다. 메인넷에 실제로 있는 컨트랙트를 조회하면 RPC를 통해 메인넷 상태를 가져온다.
+블록 번호를 고정하지 않으면 매번 최신 블록에서 fork되어 테스트 결과가 날마다 달라진다. CI에서는 반드시 고정.
 
-**캐시 메커니즘:**
+**캐시 경로:**
 
 ```
 ~/.hardhat/cache/ 또는 node_modules/.cache/hardhat-network-fork/
 ```
 
-처음 실행 시 메인넷에서 블록 데이터를 fetch해서 캐시에 저장. 이후 실행 시 캐시에서 로드 → Alchemy API 호출 없음 → 빠른 실행.
-
-**블록 번호 고정의 중요성:**
-
-```typescript
-// hardhat.config.ts
-forking: {
-  url: process.env.MAINNET_RPC_URL!,
-  blockNumber: 19000000,  // 특정 블록에서 fork
-}
-```
-
-블록 번호를 고정하지 않으면: 매번 최신 블록에서 fork → 메인넷 상태가 달라짐 → 테스트가 어떤 날에는 통과하고 어떤 날에는 실패. 재현 불가능한 테스트.
-
-블록 번호를 고정하면: 항상 같은 메인넷 상태에서 시작 → 결정론적 테스트.
+처음 실행 시 메인넷 블록 데이터를 fetch해서 캐시에 저장한다. 이후 실행은 캐시에서 로드 → Alchemy API 호출 없음 → 빠른 실행.
 
 ---
 
@@ -3377,35 +3364,6 @@ describe('KyoboNFT', () => {
 
 ---
 
-## blockchain/ 디렉토리 구조
-
-```
-blockchain/                ← 루트에 독립 배치 (dmz/ 밖)
-├── src/                   ← Solidity 소스 (hardhat.config의 paths.sources)
-│   ├── phase1/
-│   │   ├── KyoboNFT.sol
-│   │   ├── NFTIssuer.sol
-│   │   └── ActivityOracle.sol
-│   ├── phase2/
-│   │   └── KRWStablecoin.sol
-│   ├── phase3/
-│   ├── base/
-│   ├── compliance/
-│   └── interfaces/
-├── test/                  ← 테스트 파일
-├── scripts/
-│   └── deploy/
-│       └── deploy-phase1.ts
-├── artifacts/             ← 컴파일 결과 (ABI + bytecode) — gitignore
-├── .openzeppelin/         ← 업그레이드 storage layout 기록 — gitignore 금지
-└── hardhat.config.ts
-```
-
-`.openzeppelin/` 폴더는 Git에 커밋해야 한다. 이 폴더가 없으면 `upgradeProxy()` 시 이전 storage layout을 알 수 없어서 충돌 검증을 못 한다.
-
-`artifacts/`는 컴파일 시 자동 생성되므로 gitignore해도 된다. CI/CD 파이프라인에서 빌드 시 재생성.
-
----
 
 ## M1 전체 핵심 개념 요약
 

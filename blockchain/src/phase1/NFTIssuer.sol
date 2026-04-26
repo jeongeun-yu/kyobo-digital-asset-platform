@@ -14,6 +14,11 @@ import "./KyoboNFT.sol";
  *   사용자/백엔드 → NFTIssuer → KyoboNFT.mint() / mintBatch()
  *   KyoboNFT 직접 호출 경로를 차단 → 발행 로직 단일화
  *
+ * 이벤트 설계 (M2 S5 핵심):
+ *   Issued 이벤트를 여기서 emit — 프로토콜 이벤트(TransferSingle)가 아닌 비즈니스 이벤트.
+ *   ChainEventListener → NFTIssuedHandler 파이프라인이 이 이벤트를 구독.
+ *   reason 필드: 어떤 활동으로 발행됐는지 오프체인 추적 가능.
+ *
  * Idempotency (M4 S15):
  *   requestId 기반 중복 발행 방지 — 같은 requestId 두 번 제출 시 두 번째는 revert
  *   DB UNIQUE 제약 + 컨트랙트 mapping 이중 방어
@@ -32,6 +37,13 @@ contract NFTIssuer is AccessControl, ReentrancyGuard {
     mapping(bytes32 => bool) public issued;
 
     uint256 public constant MAX_BATCH_SIZE = 500;
+
+    /// @notice 비즈니스 발행 이벤트 — ChainEventListener가 구독
+    ///         TransferSingle(ERC-1155 프로토콜 이벤트)과 달리 reason 포함
+    /// @notice 비즈니스 발행 이벤트 — ChainEventListener가 구독
+    ///         TransferSingle(ERC-1155 프로토콜 이벤트)과 달리 reason 포함
+    ///         reason = activityId (어떤 활동으로 발행됐는지 오프체인 추적)
+    event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason);
 
     constructor(address nft_, address oracle_) {
         nft    = KyoboNFT(nft_);
@@ -64,6 +76,40 @@ contract NFTIssuer is AccessControl, ReentrancyGuard {
         // TODO (M4 S15 실습): TX 상태머신 연동
         //   submitMintRequest() 호출 → SUBMITTED 상태 전이 → 여기서 CONFIRMED 전이
         nft.mint(to, tokenId, amount);
+
+        emit Issued(to, tokenId, oracleData.dataType);
+    }
+
+    /**
+     * @notice 활동 기반 NFT 발행 — 오라클 검증 후 tokenId 자동 계산
+     *
+     * issueNFT()의 활동 보상 특화 래퍼.
+     *   - activityId를 bytes32 reason으로 사용 (이벤트 추적 가능)
+     *   - tokenId = encodeTokenId(ACTIVITY_PRODUCT_CODE, eventCode) 자동 계산
+     *   - ChainEventListener → NFTIssuedHandler 파이프라인의 직접 트리거
+     *
+     * M2 S5 실습: 이 함수 호출 → Issued 이벤트 → EVMAdapter → NFTIssuedHandler
+     *
+     * @param to         수령인 주소
+     * @param tokenId    KyoboNFT.encodeTokenId()로 생성한 ID
+     * @param activityId 활동 식별자 (오프체인 UUID → bytes32) — reason으로 emit
+     * @param oracleData 오라클 서명 데이터 (ActivityOracle.verify() 통과 필요)
+     */
+    function issueActivityNFT(
+        address to,
+        uint256 tokenId,
+        bytes32 activityId,
+        IOracle.OracleData calldata oracleData
+    ) external onlyRole(OPERATOR_ROLE) nonReentrant {
+        require(!issued[activityId], "NFTIssuer: activity already issued");
+        require(oracle.verify(oracleData), "NFTIssuer: invalid oracle data");
+
+        issued[activityId] = true;
+
+        nft.mint(to, tokenId, 1);
+
+        // 비즈니스 이벤트 emit — ChainEventListener가 여기를 구독한다
+        emit Issued(to, tokenId, activityId);
     }
 
     /**
