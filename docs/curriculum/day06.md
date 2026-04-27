@@ -1,306 +1,374 @@
-# Day 06 — NFT 컨트랙트 실제 발행 실습
+# Day 06 — M3 마무리 + M4 전반부: VASP 이중 채널 + 내부 원장 (S21~S24)
 
-**시간**: 3시간 (180분)  
-**핵심 질문**: 교보생명 고객이 걷기 목표를 달성했다. 온체인에서 정확히 무슨 일이 일어나는가?
+**세션**: S21~S24 | **모듈**: M3~M4 | **시간**: 4시간 (4세션 × 1시간)  
+**산출물**: pollStaleRequests + 3종 복구 통합 테스트 + 내부 원장 4테이블 + 상태 전이 가드
 
 ---
 
-## 세션 구조
+## S21: VASP 이중 채널 동기화 아키텍처 설계 원리 (강의 55분)
 
-| 시간 | 내용 |
+### 강의 (이론 세션 — 실습 없음)
+
+**단일 콜백 방식의 취약점:**
+- 콜백 1회 유실 시 상태 갱신 불가
+- VASP 재전송 보장 없는 경우 영구 PENDING 상태 방치
+
+**이중 채널 필요성:**
+- [A] 콜백(빠름, 유실 가능) + [B] 폴링(느림, 확실)
+- 두 채널이 상호 보완 → 멱등성으로 충돌 없음
+
+**30분 타임아웃 기준 근거:**
+- VASP SLA 기준 정상 처리 시간: 평균 2~10분
+- 안전 여유 포함 → 30분
+- 너무 짧으면 오탐, 너무 길면 감지 지연
+
+**폴링 대상 선별 원칙:**
+- PENDING 상태 + 생성 30분 초과 건만
+- 전체 조회 시 DB 부하 → 인덱스 설계 필요
+
+**콜백 누락 경로 전체 분석:**
+1. 네트워크 유실
+2. VASP 재전송 정책 없음
+3. WebhookReceiver 처리 실패
+4. Consumer 장애
+
+**pollStaleRequests 알고리즘:**
+```
+1. PENDING 30분 초과 목록 조회
+2. 각 건에 대해 VASP API 직접 조회
+3. 결과별 전이 적용 (CONFIRMED / FAILED / 여전히 PENDING)
+```
+
+**이중 채널 실제 운영:**
+- 콜백이 처리되면 폴링은 멱등성에 의해 무시 → 추가 비용 없음
+
+### ✅ 완료 기준 (강의 이해 확인)
+- [ ] 이중 채널 필요성 설명 가능
+- [ ] 콜백 누락 시나리오 3가지 나열 가능
+- [ ] pollStaleRequests 알고리즘 설계 설명 가능
+
+---
+
+## S22: 폴링 기반 상태 보정과 3종 복구 전략 통합 검증 (개요 10분 + 실습 50분)
+
+### 개요 (10분)
+
+이중 채널 아키텍처 재확인 + pollStaleRequests 알고리즘 흐름 재확인
+
+### 🔴 실습 (50분) — 수강생 직접 작성
+
+**Step 1**: pollStaleRequests 구현
+```typescript
+// internal/packages/vasp/src/VaspService.ts
+// TODO: 30분 초과 PENDING 목록 조회 → VASP 상태 직접 조회 → 결과 반영
+
+async pollStaleRequests(): Promise<void> {
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+  // TODO: PENDING 상태 + created_at < thirtyMinutesAgo 조회
+  const staleRequests = await this.db('mint_requests')
+    .where({ status: 'PENDING' })
+    .where('created_at', '<', thirtyMinutesAgo);
+
+  for (const request of staleRequests) {
+    // TODO: adapter.verifyTx(request.tx_hash) 호출
+    // TODO: 결과에 따라 전이: confirmed → CONFIRMED / reverted → FAILED
+  }
+}
+```
+
+**Step 2**: 3종 통합 테스트
+```typescript
+// TODO: REVERT 시나리오
+it('REVERT → FAILED 전이', async () => {
+  // Mock: REVERT 응답 설정
+  // vaspService.submitMintRequest() 호출
+  // 결과: FAILED + reason 저장
+});
+
+// TODO: TIMEOUT 시나리오
+it('TIMEOUT → gas bump → CONFIRMED', async () => {
+  // Mock: 3블록 미채굴 → gas bump 후 성공
+  // handleTxTimeout() 호출
+  // 결과: CONFIRMED
+});
+
+// TODO: REORG 시나리오
+it('REORG → 재확인 → CONFIRMED', async () => {
+  // Mock: CONFIRMED 후 REORG → 재조회 시 CONFIRMED
+  // handleReorg() 호출
+  // 결과: CONFIRMED
+});
+```
+
+**Step 3**: 콜백 차단 테스트
+```typescript
+// TODO: WebhookReceiver 응답 막기 → 30분 폴링에서 자동 처리 확인
+it('콜백 차단 → 폴링 자동 처리', async () => {
+  // 1. WebhookReceiver 비활성화
+  // 2. 요청 생성 → PENDING 상태
+  // 3. created_at을 30분 전으로 강제 설정
+  // 4. pollStaleRequests() 실행
+  // 5. 상태가 CONFIRMED로 변경됨 확인
+});
+```
+
+### ✅ 답안
+
+```typescript
+// pollStaleRequests 완성
+async pollStaleRequests(): Promise<void> {
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+  
+  const staleRequests = await this.db('mint_requests')
+    .where({ status: 'PENDING' })
+    .where('created_at', '<', thirtyMinutesAgo);
+
+  for (const request of staleRequests) {
+    try {
+      const result = await this.adapter.verifyTx(request.tx_hash);
+      
+      if (result.confirmed) {
+        await transitionStatus(request.id, 'PENDING', 'CONFIRMED', this.db);
+      } else if (result.reverted) {
+        await this.handleTxRevert(request.id, result.revertReason ?? 'UNKNOWN');
+      }
+      // 여전히 PENDING: 다음 폴링에서 재확인
+    } catch (err) {
+      console.error(`[Poll] 요청 ${request.id} 상태 조회 실패:`, err);
+    }
+  }
+}
+```
+
+### ✅ M3 완료 기준
+- [ ] 3종 복구 통합 테스트 전부 통과
+- [ ] 콜백 차단 후 폴링 동작 확인
+- [ ] 동일 requestId 재전송 → 중복 없음
+
+---
+
+## S23: 온체인만으로 부족한 이유 — 내부 원장 필요성과 데이터 모델 설계 (강의 25분 + 실습 30분)
+
+### 강의
+
+**온체인만으론 부족한 이유:**
+- 조회 비용: 매 balanceOf 호출 → 가스비 또는 RPC 부하
+- 인덱싱 불가: 사용자별 보유 NFT 목록 쿼리 불가
+- 비즈니스 맥락: 보험 계약 연결, 수익자 정보 등
+
+**4개 테이블 역할 분리:**
+| 테이블 | 역할 |
 |---|---|
-| 00:00~00:30 | 1부: 발행 흐름 전체 조망 |
-| 00:30~01:00 | 실습 1: NFTIssuer 코드 리딩 + 흐름 추적 |
-| 01:00~01:50 | 실습 2: 오라클 서명 생성 + 실제 발행 실행 |
-| 01:50~02:20 | 2부: IssuerService 레이어 — 오프체인 검증 흐름 |
-| 02:20~02:55 | 실습 3: 예외 시나리오 처리 |
-| 02:55~03:00 | 마무리 |
+| `user_nft_holdings` | 현재 보유 상태 |
+| `processed_events` | 처리 이력 (UNIQUE 키 = 멱등성) |
+| `mint_requests` | 요청 상태머신 |
+| `audit_log` | 불변 감사 로그 |
 
----
+**규제 요건:**
+- 전금법·가상자산법: 5년 보관 의무
+- 감독원 요청 시 즉시 조회 가능해야 함
 
-## 1부: 발행 흐름 전체 조망 (00:00~00:30)
+### 🔴 실습 (30분) — 수강생 직접 작성
 
-### 1-1. 두 가지 발행 경로 (15분)
+**Step 1**: 4개 테이블 마이그레이션 작성
+```typescript
+// internal/packages/ledger/src/migrations/001_create_tables.ts
+// TODO: 아래 테이블들의 마이그레이션 작성
 
-**토킹포인트:**
+export async function up(knex: Knex): Promise<void> {
+  // user_nft_holdings
+  await knex.schema.createTable('user_nft_holdings', (t) => {
+    // TODO: user_id, token_id, amount, updated_at
+    // TODO: PRIMARY KEY (user_id, token_id)
+  });
 
-> "NFT 발행에는 두 가지 경로가 있습니다. 온체인 경로와 오프체인 검증 후 온체인 경로입니다. 이 프로젝트는 두 번째 방식을 씁니다."
+  // processed_events
+  await knex.schema.createTable('processed_events', (t) => {
+    // TODO: id, tx_hash, log_index, event_type, payload, processed_at
+    // TODO: UNIQUE(tx_hash, log_index) — 멱등성 핵심
+  });
 
-**경로 A — 온체인 자동화:**
-```
-고객이 직접 컨트랙트 호출 → 컨트랙트가 오라클 검증 → NFT 발행
-장점: 완전히 탈중앙화
-단점: 교보 앱 서버와 연동 없음, gas를 고객이 부담
-```
+  // mint_requests
+  await knex.schema.createTable('mint_requests', (t) => {
+    // TODO: id(UUID), user_id, token_id, amount, status, tx_hash,
+    //        failure_reason, gas_price, nonce, created_at, updated_at
+  });
 
-**경로 B — 오프체인 게이트웨이 (이 프로젝트):**
-```
-교보 앱 서버 → Webhook → issuer-service
-  → KYC 확인 (Core Banking)
-  → AML 스크리닝 (VASP)
-  → NFTIssuer.issueActivityNFT() 호출 (오라클 서명 포함)
-    → ActivityOracle 서명 검증
-    → KyboNFT.issue()
-    → Issued 이벤트 발생
-  → ChainEventListener 수신
-  → Core Banking 알림
-```
-
-> "교보생명이 발행 게이트웨이를 통제합니다. KYC 미완료 사용자, AML 블랙리스트 주소는 컨트랙트에 도달하기 전에 차단됩니다."
-
-### 1-2. ActivityOracle의 역할 (15분)
-
-**토킹포인트:**
-
-> "스마트컨트랙트는 외부 데이터를 직접 읽을 수 없습니다. '이 사람이 오늘 10,000보를 걸었다'는 데이터는 교보 헬스앱 서버에 있습니다. 이걸 온체인으로 가져오는 브릿지가 Oracle입니다."
-
-**신뢰 모델:**
-```
-교보 백엔드 서버 (오라클 서명 키 보유)
-  → 걷기 달성 데이터를 ECDSA 서명
-  → 서명 데이터를 issuer-service에 전달
-  → issuer-service가 NFTIssuer 호출 시 서명 포함
-  → ActivityOracle이 서명 검증 (교보 키로 서명됐는지 확인)
-  → 검증 통과 시 NFT 발행
-```
-
-> "서명 검증의 핵심: 교보 키로 서명된 데이터만 유효합니다. 공격자가 가짜 걷기 데이터를 만들어도 교보 키 없이는 서명이 불가능합니다."
-
----
-
-## 실습 1: NFTIssuer 코드 리딩 + 흐름 추적 (00:30~01:00)
-
-```bash
-cat blockchain/src/phase1/NFTIssuer.sol
-```
-
-### Step 1 — issueActivityNFT() 실행 순서 채우기 (20분)
-
-아래 흐름도의 빈칸을 직접 채운다:
-
-```
-issueActivityNFT(to, activityId, oracleData)
-  → (1) require(!issued[activityId], ...) : ___________________
-  → (2) require(oracle.verify(oracleData), ...) : ___________________
-  → (3) require(oracleData.value >= 1, ...) : ___________________
-  → (4) issued[activityId] = true : ___________________
-  → (5) string memory uri = ... : ___________________
-  → (6) nft.issue(to, uri, ACTIVITY, activityId) : ___________________
-         → emit Issued(to, tokenId, activityId)
-```
-
-**답 해설 (강사):**
-1. 중복 발행 방지 체크
-2. 오라클 서명 유효성 검증
-3. 실제로 달성했는지 확인 (value >= 1)
-4. 상태 먼저 변경 (reentrancy 방지)
-5. 메타데이터 URI 생성
-6. 실제 NFT 민팅
-
-### Step 2 — 왜 `issued[activityId] = true`가 nft.issue() 전에 오는가 (10분)
-
-**토킹포인트:**
-
-> "순서를 바꿔서 nft.issue() 먼저 실행하면 어떻게 될까요? nft.issue()가 외부 컨트랙트를 호출합니다. 그 컨트랙트가 다시 issueActivityNFT()를 호출하는 공격이 가능합니다. 이를 reentrancy 공격이라 합니다. 상태를 먼저 변경하면 두 번째 호출 시 already issued로 차단됩니다."
-
----
-
-## 실습 2: 오라클 서명 생성 + 실제 발행 실행 (01:00~01:50)
-
-### Step 1 — ActivityOracle 서명 생성 이해 (20분)
-
-```bash
-cat blockchain/src/phase1/ActivityOracle.sol
-# verify() 함수 집중
-```
-
-```solidity
-function verify(OracleData calldata data) public view override returns (bool) {
-    bytes32 hash = keccak256(abi.encodePacked(
-        data.dataType, data.value, data.timestamp
-    ));
-    bytes32 ethHash = keccak256(abi.encodePacked(
-        "\x19Ethereum Signed Message:\n32", hash
-    ));
-    (uint8 v, bytes32 r, bytes32 s) = _splitSignature(data.signature);
-    address recovered = ecrecover(ethHash, v, r, s);
-    return recovered == trustedSigner;
+  // audit_log
+  await knex.schema.createTable('audit_log', (t) => {
+    // TODO: id, actor, action, resource_id, after_state, checksum,
+    //        created_at (UPDATE/DELETE 금지 — Append-only)
+  });
 }
 ```
 
-**토킹포인트:**
+**Step 2**: 각 테이블의 쓰기 경로 확인
+```
+| 테이블 | 쓰는 주체 | 언제 |
+|---|---|---|
+| user_nft_holdings | EventConsumer | NFTIssued 이벤트 처리 시 |
+| processed_events | EventConsumer | 이벤트 처리 전 멱등성 기록 시 |
+| mint_requests | VaspService | 요청 생성 + 상태 전이 시 |
+| audit_log | 모든 서비스 | 중요 행위 발생 시마다 |
+```
 
-> "`ecrecover`는 서명에서 서명자 주소를 복원합니다. 복원된 주소가 `trustedSigner`(교보 백엔드 키)와 같으면 유효한 서명입니다. 서명 없이 발행하려면 교보 키가 필요합니다."
-
-### Step 2 — 전체 발행 실행 (30분)
+### ✅ 답안
 
 ```typescript
-// scripts/issue-nft-full.ts
-import { ethers } from 'hardhat';
-import * as dotenv from 'dotenv';
-dotenv.config();
+export async function up(knex: Knex): Promise<void> {
+  await knex.schema.createTable('user_nft_holdings', (t) => {
+    t.string('user_id').notNullable();
+    t.string('token_id').notNullable();
+    t.integer('amount').notNullable().defaultTo(0);
+    t.timestamp('updated_at').defaultTo(knex.fn.now());
+    t.primary(['user_id', 'token_id']);
+  });
 
-async function main() {
-  // Hardhat 로컬 환경에서는 index 0 = admin, index 1 = oracle signer
-  const [admin, oracleSigner, recipient] = await ethers.getSigners();
+  await knex.schema.createTable('processed_events', (t) => {
+    t.increments('id');
+    t.string('tx_hash').notNullable();
+    t.integer('log_index').notNullable();
+    t.string('event_type').notNullable();
+    t.jsonb('payload');
+    t.timestamp('processed_at').defaultTo(knex.fn.now());
+    t.unique(['tx_hash', 'log_index']); // 멱등성 핵심
+  });
 
-  console.log('=== NFT 발행 전체 흐름 ===\n');
-  console.log('[1단계] 오라클 데이터 준비');
-  const dataType  = ethers.keccak256(ethers.toUtf8Bytes('ACTIVITY'));
-  const value     = 10000n;  // 걷기 10,000보
-  const timestamp = BigInt(Math.floor(Date.now() / 1000));
-  console.log('  dataType:', dataType);
-  console.log('  value (보):', value.toString());
-  console.log('  timestamp:', new Date(Number(timestamp) * 1000).toISOString());
+  await knex.schema.createTable('mint_requests', (t) => {
+    t.uuid('id').primary();
+    t.string('user_id').notNullable();
+    t.string('token_id').notNullable();
+    t.integer('amount').notNullable();
+    t.string('status').notNullable().defaultTo('REQUESTED');
+    t.string('tx_hash');
+    t.string('failure_reason');
+    t.string('gas_price');
+    t.integer('nonce');
+    t.timestamps(true, true);
+    t.index(['status', 'created_at']); // pollStaleRequests 인덱스
+  });
 
-  console.log('\n[2단계] 오라클 서명 생성 (교보 백엔드 서버 역할)');
-  const hash = ethers.solidityPackedKeccak256(
-    ['bytes32', 'uint256', 'uint256'],
-    [dataType, value, timestamp],
-  );
-  const signature = await oracleSigner.signMessage(ethers.getBytes(hash));
-  console.log('  서명자:', oracleSigner.address);
-  console.log('  서명:', signature.slice(0, 20) + '...');
-
-  console.log('\n[3단계] NFTIssuer.issueActivityNFT() 호출');
-  const activityId = ethers.keccak256(
-    ethers.toUtf8Bytes(`activity-walk-${Date.now()}-${recipient.address}`)
-  );
-
-  const issuer = await ethers.getContractAt(
-    'NFTIssuer', process.env.NFT_ISSUER_ADDR!
-  );
-
-  const tx = await issuer.issueActivityNFT(
-    recipient.address,
-    activityId,
-    { dataType, value, timestamp, signature },
-  );
-
-  console.log('  트랜잭션 전송:', tx.hash);
-  const receipt = await tx.wait();
-  console.log('  블록 확인:', receipt!.blockNumber);
-  console.log('  Gas 사용량:', receipt!.gasUsed.toString());
-
-  console.log('\n[4단계] 발행 결과 확인');
-  const nft     = await ethers.getContractAt('KyoboNFT', process.env.NFT_CONTRACT_ADDR!);
-  const balance = await nft.balanceOf(recipient.address);
-  const tokenId = balance - 1n;  // 마지막 발행된 tokenId
-  const meta    = await nft.tokenMeta(tokenId);
-
-  console.log('  수신자 NFT 잔액:', balance.toString());
-  console.log('  tokenId:', tokenId.toString());
-  console.log('  rewardType:', meta.rewardType.toString(), '(0=ACTIVITY)');
-  console.log('  발행 시각:', new Date(Number(meta.issuedAt) * 1000).toISOString());
-
-  console.log('\n=== 발행 완료 ===');
+  await knex.schema.createTable('audit_log', (t) => {
+    t.increments('id');
+    t.string('actor').notNullable();
+    t.string('action').notNullable();
+    t.string('resource_id');
+    t.jsonb('after_state');
+    t.string('checksum').notNullable();
+    t.timestamp('created_at').defaultTo(knex.fn.now());
+    // UPDATE/DELETE 없음 — 원장 레벨에서 강제
+  });
 }
-
-main().catch(console.error);
 ```
 
-```bash
-npx hardhat run scripts/issue-nft-full.ts --network localhost
-```
-
-**전체 출력 확인 후 토론:**
-- Gas 사용량이 얼마인가? 100만건 발행 시 예상 비용은?
-- `activityId`에 `recipient.address`가 포함된 이유는?
+### ✅ 완료 기준
+- [ ] 4개 테이블 마이그레이션 완성
+- [ ] UNIQUE 제약 + 인덱스 설계
 
 ---
 
-## 2부: IssuerService 오프체인 검증 흐름 (01:50~02:20)
+## S24: 원장 일관성 보장 — 상태 전이 가드와 멱등 이벤트 처리 (강의 20분 + 실습 35분)
 
-```bash
-cat dmz/apps/issuer-service/src/services/IssuerService.ts
+### 강의
+
+**상태머신 전이 가드:**
+- `VALID_TRANSITIONS` 맵 (M3 S13에서 정의한 것과 동일)
+- 허용 안 된 전이 즉시 예외
+
+**이벤트 중복 처리 방지:**
+- 동일 온체인 이벤트 두 번 처리 시 holdings +2
+- `ON CONFLICT DO NOTHING`으로 DB 레벨 차단
+
+### 🔴 실습 (35분) — 수강생 직접 작성
+
+**Step 1**: transitionMintRequest 구현
+```typescript
+// internal/packages/ledger/src/LedgerService.ts
+// TODO: 상태 전이 가드 포함 구현
+
+async transitionMintRequest(
+  id: string,
+  toStatus: TxStatus,
+  trx?: Knex.Transaction,
+): Promise<void> {
+  const db = trx ?? this.db;
+  const request = await db('mint_requests').where({ id }).first();
+
+  if (!request) throw new Error(`Request not found: ${id}`);
+
+  // TODO: VALID_TRANSITIONS 확인 → 허용 안 된 전이 예외
+  // TODO: 허용된 전이 → DB 업데이트
+}
 ```
 
-**토킹포인트:**
+**Step 2**: recordProcessedEvent 구현 (멱등 삽입)
+```typescript
+// TODO: 중복 시 스킵, 처리 성공/스킵 반환
 
-> "컨트랙트에 도달하기 전에 오프체인에서 두 가지 검증을 합니다. KYC와 AML입니다. 둘 다 실패하면 트랜잭션 자체를 보내지 않습니다. Gas 낭비도 없고, 블록체인에 실패 트랜잭션 기록도 남지 않습니다."
+async recordProcessedEvent(
+  txHash: string,
+  logIndex: number,
+  eventType: string,
+  payload: unknown,
+): Promise<boolean> {
+  // TODO: INSERT INTO processed_events ... ON CONFLICT DO NOTHING
+  // 반환: true = 신규 처리 / false = 이미 처리됨 (스킵)
+}
+```
 
-**검증 레이어별 역할:**
+**Step 3**: 테스트
+```typescript
+// 중복 txHash+logIndex 테스트
+it('동일 txHash+logIndex 2회 → 1회만 반영', async () => {
+  const result1 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', {});
+  const result2 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', {});
+  
+  // TODO: result1 = true (신규), result2 = false (스킵)
+});
 
-| 단계 | 위치 | 검증 내용 | 실패 시 |
-|---|---|---|---|
-| KYC | Core Banking API | 실명 확인 완료 여부 | 발행 중단, 로그 기록 |
-| AML | VASP API | 블랙리스트 주소 | 발행 중단, 알람 |
-| 오라클 서명 | ActivityOracle | 교보 키 서명 유효성 | revert |
-| 중복 방지 | NFTIssuer mapping | activityId 재사용 | revert |
-| Compliance | KyoboNFT._update | 전송 가능 여부 | revert |
+// 허용 안 된 전이 테스트
+it('FAILED → CONFIRMED 전이 → 예외', async () => {
+  // TODO: FAILED 상태로 설정 후 CONFIRMED 전이 시도 → throw
+});
+```
 
----
-
-## 실습 3: 예외 시나리오 처리 (02:20~02:55)
-
-### 시나리오 A — 동일 activityId 재발행 시도 (10분)
+### ✅ 답안
 
 ```typescript
-// 같은 activityId로 두 번 호출
-const activityId = ethers.keccak256(ethers.toUtf8Bytes('duplicate-test'));
+// transitionMintRequest 완성
+async transitionMintRequest(id: string, toStatus: TxStatus, trx?: Knex.Transaction): Promise<void> {
+  const db = trx ?? this.db;
+  const request = await db('mint_requests').where({ id }).first();
+  if (!request) throw new Error(`Request not found: ${id}`);
 
-await issuer.issueActivityNFT(recipient.address, activityId, oracleData);
-console.log('첫 번째 발행: 성공');
+  const allowed = VALID_TRANSITIONS[request.status as TxStatus] ?? [];
+  if (!allowed.includes(toStatus)) {
+    throw new Error(`Invalid transition: ${request.status} → ${toStatus} for ${id}`);
+  }
 
-try {
-  await issuer.issueActivityNFT(recipient.address, activityId, oracleData);
-} catch (err: unknown) {
-  console.log('두 번째 발행 차단:', (err as Error).message.includes('already issued'));
+  await db('mint_requests').where({ id }).update({
+    status: toStatus,
+    updated_at: new Date(),
+  });
+}
+
+// recordProcessedEvent 완성
+async recordProcessedEvent(
+  txHash: string,
+  logIndex: number,
+  eventType: string,
+  payload: unknown,
+): Promise<boolean> {
+  const inserted = await this.db('processed_events')
+    .insert({ tx_hash: txHash, log_index: logIndex, event_type: eventType, payload })
+    .onConflict(['tx_hash', 'log_index'])
+    .ignore();
+
+  return inserted.rowCount > 0; // true = 신규, false = 중복 스킵
 }
 ```
 
-### 시나리오 B — 잘못된 오라클 서명 (10분)
-
-```typescript
-const fakeSignature = '0x' + 'aa'.repeat(65);
-try {
-  await issuer.issueActivityNFT(
-    recipient.address, activityId,
-    { dataType, value, timestamp, signature: fakeSignature }
-  );
-} catch (err: unknown) {
-  console.log('서명 검증 실패:', (err as Error).message.includes('invalid oracle data'));
-}
-```
-
-### 시나리오 C — Pause 상태에서 발행 시도 (15분)
-
-```typescript
-const nft = await ethers.getContractAt('KyoboNFT', process.env.NFT_CONTRACT_ADDR!);
-
-// pause 실행
-await nft.connect(admin).pause();
-console.log('컨트랙트 일시정지됨');
-
-try {
-  await issuer.issueActivityNFT(recipient.address, newActivityId, oracleData);
-} catch (err: unknown) {
-  console.log('pause 중 발행 차단:', (err as Error).message.includes('paused'));
-}
-
-// unpause 후 재시도
-await nft.connect(admin).unpause();
-await issuer.issueActivityNFT(recipient.address, newActivityId, oracleData);
-console.log('unpause 후 발행: 성공');
-```
-
----
-
-## 마무리
-
-**오늘의 핵심 3줄:**
-1. 발행은 오프체인(KYC/AML)과 온체인(오라클/중복) 이중 검증을 거친다
-2. 상태 변경(issued=true)은 외부 호출(nft.issue) 전에 해야 reentrancy를 막는다
-3. 예외 상황(중복, 위조 서명, pause)은 모두 코드로 검증되어 revert 된다
-
-**Day 07 예고:**  
-테스트넷(Sepolia)에 실제 배포한다. Etherscan Sepolia에서 내가 배포한 컨트랙트를 직접 확인한다.
-
----
-
-## 참조 파일
-
-- `blockchain/src/phase1/NFTIssuer.sol`
-- `blockchain/src/phase1/KyoboNFT.sol`
-- `blockchain/src/phase1/ActivityOracle.sol`
-- `dmz/apps/issuer-service/src/services/IssuerService.ts`
+### ✅ 완료 기준
+- [ ] 동일 txHash+logIndex 2회 → 1회만 반영
+- [ ] 허용 안 된 전이 → 예외

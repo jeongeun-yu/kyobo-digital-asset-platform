@@ -1,252 +1,396 @@
-# Day 11 — VASP 변동 처리 + 원장 동기화
+# Day 11 — M7: 스마트컨트랙트 보안 감사 + 업그레이드 운영 (S41~S44)
 
-**시간**: 3시간 (180분)  
-**핵심 질문**: TX가 실패하거나 체인 Reorg가 발생했을 때 내부 원장을 어떻게 일관성 있게 복구하는가?
-
----
-
-## 세션 구조
-
-| 시간 | 내용 |
-|---|---|
-| 00:00~00:35 | 1부: TX 생명주기와 실패 분류 |
-| 00:35~01:20 | 실습 1: handleVaspFailure — TX 실패 처리 |
-| 01:20~02:05 | 실습 2: handleReorg — 체인 재편성 복구 |
-| 02:05~02:50 | 실습 3: 이중 채널 동기화 — Webhook + Polling |
-| 02:50~03:00 | 마무리: 장애 상황에서도 일관성을 지키는 설계 |
+**세션**: S41~S44 | **모듈**: M7 | **시간**: 4시간 (4세션 × 1시간)  
+**산출물**: Slither 분석 + HIGH/MEDIUM 전량 제거 + 보안 리포트 + reinitializer 이중 호출 방지
 
 ---
 
-## 1부: TX 생명주기와 실패 분류 (00:00~00:35)
+## S41: 스마트컨트랙트 주요 공격 벡터와 정적 분석 방법론 (강의 25분 + 실습 30분)
 
-### 1-1. 정상 TX 흐름 복습 (10분)
+### 강의
 
-**토킹포인트:**
+**Reentrancy:**
+- 외부 호출 전 상태 미변경 → 재진입 중복 인출
+- CEI 패턴: Check(권한 확인) → Effects(상태 변경) → Interactions(외부 호출)
 
-> "Day 10에서 PENDING → SUBMITTED → CONFIRMED 상태머신을 만들었습니다. 오늘은 그 상태머신에 FAILED와 Reorg 복구 경로를 추가합니다."
+**NFT 소각→환불 순서에서 왜 중요한가:**
+- 잘못된 순서: 환불(외부 호출) → holdings 차감 → 재진입 → 환불 재호출
+- 올바른 순서: holdings 차감(상태 변경) → 환불(외부 호출)
 
-**원장 상태머신 전체:**
+**Access Control 우회:**
+- `onlyRole` 누락 함수
+- public 가시성 실수
+- Slither로 자동 탐지 가능
 
-```
-PENDING
-  │
-  ▼ tx 제출 성공
-SUBMITTED ─────── tx 실패 ──► FAILED (종단)
-  │
-  ▼ 충분한 블록 확정 (≥ 12 blocks)
-CONFIRMED (종단)
-  │
-  ※ Reorg 발생 시
-  ▼
-REORGED ──► 재제출 ──► SUBMITTED (재시작)
+### 🔴 실습 (30분) — 수강생 직접 작성
+
+**Step 1**: Slither 정적 분석 도구 설치
+```bash
+# TODO: Slither 설치
+pip install slither-analyzer
+
+# 버전 확인
+slither --version
 ```
 
-### 1-2. TX 실패 분류 (25분)
+**Step 2**: 컨트랙트 정적 분석 실행
+```bash
+# TODO: KyoboNFT.sol 분석 실행
+slither blockchain/contracts/KyoboNFT.sol
 
-**실패 유형별 대응 전략:**
+# 결과를 HIGH / MEDIUM / LOW / INFORMATIONAL로 분류
+# (분류 결과를 표로 정리)
+```
 
-| 유형 | 원인 | VASP 대응 | 원장 대응 |
-|---|---|---|---|
-| `REVERT` | 컨트랙트 조건 불충족 | TX 해시 반환 | FAILED + error_msg 기록 |
-| `OUT_OF_GAS` | 가스 한도 부족 | TX 해시 반환 | FAILED + 가스 조정 후 재시도 가능 |
-| `NONCE_TOO_LOW` | 논스 충돌 | 에러 반환 | FAILED + nonce 재동기화 필요 |
-| `TIMEOUT` | 체인 혼잡, mempool 탈락 | 에러 반환 | SUBMITTED 유지 + 폴링 |
-| `REORG` | 체인 재편성 | TX 사라짐 | REORGED + 재제출 |
+**Step 3**: HIGH 항목 공격 테스트 케이스 작성
+```typescript
+// blockchain/test/security/ReentrancyAttack.test.ts
+// TODO: HIGH 항목 중 하나 선택 → 실제 공격 시뮬레이션
 
-> "REVERT와 TIMEOUT을 같은 FAILED로 처리하면 안 됩니다. REVERT는 진짜 실패, TIMEOUT은 아직 진행 중일 수 있습니다. 상태머신이 이 차이를 반영해야 합니다."
+// 예: reentrancy 공격 컨트랙트 작성
+// blockchain/contracts/test/AttackerContract.sol
 
----
+// TODO: 공격 시나리오 실행 → revert 확인 (방어 코드가 있으면 자동 방어)
+// TODO: 방어 코드 없으면 공격 성공 → 이후 세션에서 수정
+```
 
-## 실습 1: handleVaspFailure (00:35~01:20)
-
-### Step 1 — VaspRecoveryService 스켈레톤 확인 (10분)
+### ✅ 답안
 
 ```bash
-cat dmz/packages/vasp/src/recovery/VaspRecoveryService.ts
+# Slither 실행
+pip install slither-analyzer
+cd blockchain
+slither contracts/KyoboNFT.sol --config-file slither.config.json 2>&1 | tee slither-report.txt
+
+# 결과 분류 예시:
+# HIGH: reentrancy-eth (burn 함수에서 외부 호출 후 상태 변경)
+# MEDIUM: missing-zero-check (초기화 함수에서 주소 0 체크 없음)
+# LOW: ...
+# INFORMATIONAL: ...
 ```
 
-**구현할 3개 시나리오:**
-1. `handleTxRevert()` — 컨트랙트 REVERT 시 FAILED 전이
-2. `handleTxTimeout()` — 폴링 timeout 시 SUBMITTED 유지 + 알림
-3. `handleNonceConflict()` — nonce 재동기화 후 재제출
+```solidity
+// AttackerContract.sol (취약점 테스트용)
+contract ReentrancyAttacker {
+  KyoboNFT public target;
+  uint256 public attackCount;
 
-### Step 2 — REVERT 처리 구현 (20분)
-
-```typescript
-// dmz/packages/vasp/src/recovery/VaspRecoveryService.ts
-async handleTxRevert(requestId: string, txHash: string, reason: string): Promise<void> {
-  // TODO: 구현
-  // 1. mint_requests WHERE request_id = requestId AND status = 'SUBMITTED' 조회
-  // 2. status → FAILED, error_msg = reason, updated_at = NOW() 업데이트
-  // 3. audit_log에 TX_FAILED 기록 (before: SUBMITTED, after: FAILED)
-  // 4. 사용자 알림 이벤트 발행 (EventEmitter or MQ)
-}
-```
-
-**실습 과제:**
-1. `// TODO` 4단계 구현
-2. 존재하지 않는 requestId 시 `MintRequestNotFoundError` throw
-3. SUBMITTED 상태가 아닌 요청 처리 시 `InvalidStateTransitionError` throw
-
-### Step 3 — 재시도 정책 구현 (15분)
-
-```typescript
-// Exponential backoff 재시도 설정
-const RETRY_POLICY: RetryPolicy = {
-  maxAttempts: 3,
-  initialDelayMs: 1_000,
-  maxDelayMs: 30_000,
-  backoffMultiplier: 2,
-  retryableErrors: ['OUT_OF_GAS', 'NONCE_TOO_LOW', 'NETWORK_ERROR'],
-  nonRetryableErrors: ['REVERT', 'INSUFFICIENT_BALANCE'],
-};
-```
-
-**실습 과제:**
-- `retryWithBackoff(fn, policy)` 유틸리티 함수 구현 (`// TODO` 위치)
-- OUT_OF_GAS 시 gasLimit * 1.2로 조정 후 재시도 로직 추가
-
----
-
-## 실습 2: handleReorg (01:20~02:05)
-
-### Step 1 — Reorg란 무엇인가 (15분)
-
-**토킹포인트:**
-
-> "블록체인에서 두 개의 마이너가 동시에 블록을 생성하면 일시적으로 두 개의 체인이 존재합니다. 네트워크가 긴 체인을 선택하면 짧은 체인의 TX는 사라집니다. 이게 Reorg입니다. 교보생명 NFT 발행 TX가 Reorg에 걸리면 어떻게 됩니까?"
-
-**Reorg 감지 방법:**
-
-```typescript
-// 방법 1: 폴링 중 TX가 사라진 경우
-const receipt = await provider.getTransactionReceipt(txHash);
-if (receipt === null && blockNumber < currentBlock - FINALITY_DEPTH) {
-  // TX가 충분히 오래되었는데 receipt 없음 → Reorg 의심
-}
-
-// 방법 2: 블록 해시 변경 감지
-const block = await provider.getBlock(knownBlockNumber);
-if (block.hash !== knownBlockHash) {
-  // 동일 높이의 블록 해시가 바뀜 → Reorg 확정
-}
-```
-
-### Step 2 — Reorg 복구 흐름 구현 (30분)
-
-```bash
-cat dmz/packages/vasp/src/recovery/VaspRecoveryService.ts
-# handleReorg() 메서드 찾기
-```
-
-**구현할 흐름:**
-
-```
-Reorg 감지
-  │
-  ▼
-CONFIRMED → REORGED 상태 전이
-  │
-  ▼
-audit_log: REORG_DETECTED 기록
-  │
-  ▼
-새 TX로 재제출 시도 (새 nonce, 새 gasPrice)
-  │
-  ├─ 성공 → status = SUBMITTED (새 tx_hash로)
-  └─ 실패 3회 → status = FAILED + 운영팀 알림
-```
-
-**실습 과제:**
-1. `handleReorg(requestId, originalTxHash, detectedAtBlock)` 구현
-2. CONFIRMED 상태에서만 REORGED 전이 허용 (guard 확인)
-3. 재제출 시 원래 requestId 유지 (幂等성)
-
-### Step 3 — Finality Depth 설정 (10분)
-
-```typescript
-// 네트워크별 Finality Depth 설정
-const FINALITY_DEPTH: Record<string, number> = {
-  'ethereum-mainnet': 12,   // ~2.5분
-  'polygon-mainnet': 128,   // ~3.5분
-  'sepolia': 5,              // testnet: 느슨하게
-  'xrpl-mainnet': 1,        // XRPL: 즉시 finality (3-5초)
-};
-```
-
-> "XRPL은 BFT 합의로 즉시 finality가 보장됩니다. EVM 계열 체인과 달리 Reorg 걱정이 없습니다. Phase 3에서 RWA 토큰화에 XRPL을 선택한 이유 중 하나입니다."
-
----
-
-## 실습 3: 이중 채널 동기화 (02:05~02:50)
-
-### Step 1 — 왜 이중 채널인가 (10분)
-
-**토킹포인트:**
-
-> "Webhook은 빠릅니다. 이벤트 발생 즉시 알려줍니다. 그러나 Webhook는 놓칠 수 있습니다. 네트워크 오류, 서버 재시작, VASP 장애. 폴링은 느리지만 절대 놓치지 않습니다. 두 채널을 함께 운영하면 빠름과 안정성을 동시에 얻습니다."
-
-**이중 채널 구조:**
-
-```
-VASP/체인 이벤트
-  │
-  ├──► Webhook (Push)  ─► WebhookServer ─► IdempotencyGuard ─►┐
-  │                                                            │
-  └──► Polling (Pull)  ─► PollingService ─────────────────────┤
-                                                              │
-                                                    LedgerService.update()
-```
-
-### Step 2 — PollingService 구현 (25분)
-
-```bash
-cat dmz/packages/vasp/src/polling/PollingService.ts
-```
-
-**핵심 구현:**
-
-```typescript
-// dmz/packages/vasp/src/polling/PollingService.ts
-export class PollingService {
-  private intervalId?: NodeJS.Timeout;
-
-  start(intervalMs: number = 30_000): void {
-    this.intervalId = setInterval(() => this.poll(), intervalMs);
+  constructor(address _target) {
+    target = KyoboNFT(_target);
   }
 
-  private async poll(): Promise<void> {
-    // TODO:
-    // 1. mint_requests WHERE status = 'SUBMITTED' AND updated_at < NOW() - interval '5 minutes' 조회
-    // 2. 각 요청에 대해 체인에서 receipt 조회
-    // 3. receipt 있음 + confirmations >= FINALITY_DEPTH → CONFIRMED 전이
-    // 4. receipt 없음 + 오래됨 → Reorg 의심, handleReorg() 호출
-    // 5. 결과 audit_log 기록
+  // receive 함수에서 재진입
+  receive() external payable {
+    if (attackCount < 3) {
+      attackCount++;
+      target.burn(address(this), 1001, 1);
+    }
+  }
+
+  function attack() external {
+    target.burn(address(this), 1001, 1);
   }
 }
 ```
 
-### Step 3 — IdempotencyGuard와 연동 (15분)
-
-> "Webhook과 Polling이 동시에 같은 TX를 처리하면 중복 CONFIRMED 처리가 발생합니다. Day 6에서 만든 IdempotencyGuard가 여기서 다시 활약합니다."
-
-**실습 과제:**
-1. `PollingService.poll()` 에서 각 TX 처리 전 `IdempotencyGuard.isProcessed()` 확인
-2. 이미 처리된 TX는 skip + 카운터 증가 (메트릭용)
-3. 전체 흐름 테스트: Webhook 차단 후 Polling이 자동으로 채우는지 확인
+### ✅ 완료 기준
+- [ ] Slither 실행 + 결과 분류 완료
+- [ ] HIGH 항목 공격 테스트 케이스 작성
 
 ---
 
-## 마무리 (02:50~03:00)
+## S42: tx.origin 취약점과 정수 오버플로우 — HIGH 취약점 제거 원칙 (강의 20분 + 실습 35분)
 
-**핵심 3줄:**
+### 강의
 
-> 1. **TX 실패 유형을 구분하라.** REVERT는 종단 실패, TIMEOUT은 재시도 가능, Reorg는 재제출 필요. 모두 FAILED로 퉁치는 설계는 금융 시스템에서 용납되지 않는다.
-> 2. **이중 채널이 안전망이다.** Webhook은 속도, Polling은 신뢰성. 두 채널이 IdempotencyGuard를 통해 만나면 중복 없이 완전한 이벤트 수신이 보장된다.
-> 3. **상태머신이 복잡성을 관리한다.** PENDING→SUBMITTED→CONFIRMED/FAILED/REORGED — 각 전이에 감사 로그가 붙으면 장애 발생 시 정확한 시점과 원인을 추적할 수 있다.
+**tx.origin 피싱 공격:**
+- 피싱 컨트랙트가 tx.origin을 악용하는 시나리오
+- 원래 EOA(사용자)가 피싱 컨트랙트 호출 → 피싱 컨트랙트가 KyoboNFT 호출 → `tx.origin` == 사용자 (통과!)
+- **msg.sender만 써야 하는 이유**: msg.sender는 즉각 호출자, tx.origin은 최초 호출자
+
+**Integer overflow:**
+- Solidity 0.8+ 기본 보호 (SafeMath 불필요)
+- unchecked 블록 사용 시 직접 검증 필요
+
+**Slither HIGH/MEDIUM 판별 기준:**
+- HIGH: 즉각적 자산 손실 가능
+- MEDIUM: 특정 조건에서 악용 가능
+- False Positive: Slither가 잘못 탐지한 경우 → 주석으로 `// slither-disable-next-line`
+
+### 🔴 실습 (35분) — 수강생 직접 작성
+
+**Step 1**: tx.origin 사용 전량 탐지 → msg.sender로 교체
+```bash
+# TODO: tx.origin 사용 위치 탐지
+grep -rn "tx\.origin" blockchain/contracts/
+
+# 발견된 위치를 msg.sender로 교체
+```
+
+**Step 2**: CEI 패턴 적용
+```solidity
+// TODO: burn 함수에서 상태 변경을 외부 호출보다 먼저
+
+// 잘못된 순서 (재진입 취약):
+// function burn(...) {
+//   외부 호출(환불) → _burn(상태 변경) -- 재진입 가능!
+// }
+
+// 올바른 순서 (CEI):
+function burn(address from, uint256 tokenId, uint256 amount) external {
+  // Check
+  require(from == msg.sender || isApprovedForAll(from, msg.sender), "Not authorized");
+  
+  // Effects (상태 변경 먼저)
+  _burn(from, tokenId, amount);
+  
+  // Interactions (외부 호출 마지막)
+  // (환불 로직이 있다면 여기서)
+}
+```
+
+**Step 3**: ReentrancyGuard import + 적용 → Slither 재실행
+```solidity
+// TODO: ReentrancyGuardUpgradeable import + 상속 추가
+// TODO: burn 함수에 nonReentrant modifier 적용
+
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+
+contract KyoboNFT is
+  ERC1155Upgradeable,
+  AccessControlUpgradeable,
+  UUPSUpgradeable,
+  PausableUpgradeable,
+  ReentrancyGuardUpgradeable  // TODO: 추가
+{
+  function burn(...) external nonReentrant { ... }
+}
+```
+
+```bash
+# Slither 재실행 → HIGH 0건 확인
+slither blockchain/contracts/KyoboNFT.sol
+# HIGH 항목: 0
+```
+
+### ✅ 답안
+
+```solidity
+// burn 함수 CEI + nonReentrant 적용
+function burn(address from, uint256 tokenId, uint256 amount)
+  external
+  nonReentrant
+  whenNotPaused
+{
+  // Check
+  require(
+    from == msg.sender || isApprovedForAll(from, msg.sender),
+    "KyoboNFT: not authorized"
+  );
+  
+  // Effects (상태 변경 먼저 — 재진입 방지)
+  _burn(from, tokenId, amount);
+  
+  // Interactions (없음 — 환불이 있다면 여기 위치)
+}
+```
+
+```bash
+# tx.origin 검색 → 없음 확인
+grep -rn "tx\.origin" blockchain/contracts/
+# 출력 없음 = 전량 제거 완료
+
+# Slither 재실행
+slither blockchain/contracts/KyoboNFT.sol 2>&1 | grep "HIGH\|MEDIUM"
+# HIGH: 0건
+```
+
+### ✅ 완료 기준
+- [ ] tx.origin 전량 제거
+- [ ] Slither HIGH 0건
+- [ ] CEI 패턴 적용 확인
 
 ---
 
-## 다음 시간 예고
+## S43: 중간 등급 취약점 패턴과 방어적 테스트 설계 (강의 15분 + 실습 40분)
 
-> "원장과 VASP 변동 처리를 갖췄습니다. 마지막 질문: 이 시스템의 키를 누가 관리하는가? 교보생명과 VASP가 키를 어떻게 나눠 갖는가? Day 12에서 MPC와 Gnosis Safe 멀티시그로 키 거버넌스를 설계합니다."
+### 강의
+
+**MEDIUM 항목 유형 분류:**
+- 재진입 경로 (HIGH 제거 후 남은 간접 경로)
+- 권한 누락 (특정 함수 onlyRole 빠진 경우)
+- 가시성 실수 (internal 함수가 public으로 선언된 경우)
+
+**보안 테스트 케이스 설계 원칙:**
+- 공격자 관점에서 시나리오 작성
+- 정상 케이스가 아닌 비정상 입력으로 테스트
+
+### 🔴 실습 (40분) — 수강생 직접 작성
+
+**Step 1**: MEDIUM 항목 하나씩 수정
+```bash
+# TODO: Slither MEDIUM 항목 목록 확인
+slither blockchain/contracts/KyoboNFT.sol --json slither-output.json
+
+# 각 항목 수정 → 재실행 → 0건 될 때까지 반복
+```
+
+**Step 2**: 보안 테스트 파일 작성
+```typescript
+// blockchain/test/security/SecurityTest.test.ts
+// TODO: 3가지 공격 시나리오 테스트
+
+describe('보안 테스트', () => {
+  // TODO: Reentrancy 공격 → 방어 확인
+  it('재진입 공격 → nonReentrant로 방어', async () => {
+    // AttackerContract 배포 → attack() 호출 → revert 확인
+  });
+
+  // TODO: Access Control 우회 → 방어 확인
+  it('MINTER_ROLE 없는 주소 mintBatch → revert', async () => {
+    // attacker.mintBatch(...) → revert 확인
+  });
+
+  // TODO: tx.origin 공격 → 방어 확인 (tx.origin 제거됐으므로 자동 방어)
+  it('피싱 컨트랙트 경유 → msg.sender 체크로 방어', async () => {
+    // 피싱 컨트랙트가 burn 호출 → from != msg.sender → revert 확인
+  });
+});
+```
+
+**Step 3**: 전체 테스트 실행 → 모든 공격 방어 확인
+```bash
+npx hardhat test blockchain/test/security/SecurityTest.test.ts
+```
+
+### ✅ 답안
+
+```typescript
+describe('보안 테스트', () => {
+  it('재진입 공격 → nonReentrant로 방어', async () => {
+    const AttackerFactory = await ethers.getContractFactory('ReentrancyAttacker');
+    const attacker = await AttackerFactory.deploy(await nft.getAddress());
+
+    // 공격자 주소에 토큰 mint
+    await nft.connect(minter).mint(await attacker.getAddress(), 1001n, 5n, '0x');
+
+    // 재진입 공격 시도 → ReentrancyGuard가 차단
+    await expect(
+      attacker.attack()
+    ).to.be.revertedWithCustomError(nft, 'ReentrancyGuardReentrantCall');
+  });
+
+  it('MINTER_ROLE 없는 주소 mintBatch → revert', async () => {
+    await expect(
+      nft.connect(attacker).mintBatch(attacker.address, [1001n], [1n], '0x')
+    ).to.be.revertedWithCustomError(nft, 'AccessControlUnauthorizedAccount');
+  });
+
+  it('피싱 컨트랙트 → msg.sender 체크로 방어', async () => {
+    // from != msg.sender 이고 isApprovedForAll도 false인 경우
+    await expect(
+      nft.connect(phishingContract).burn(user.address, 1001n, 1n)
+    ).to.be.revertedWith('KyoboNFT: not authorized');
+  });
+});
+```
+
+### ✅ 완료 기준
+- [ ] Slither HIGH/MEDIUM 0건
+- [ ] 공격 시나리오 테스트 전부 방어 확인
+
+---
+
+## S44: 업그레이드 시 데이터 손상 원인과 방어 패턴 (강의 15분 + 실습 40분)
+
+### 강의
+
+**업그레이드 거버넌스 절차:**
+1. 테스트넷 검증 → 2. Gnosis Safe 제안 → 3. 2-of-3 서명 → 4. 실행
+(M8 Gnosis Safe와 연계)
+
+**보안 감사 리포트 구조:**
+- 취약점 분류 (HIGH/MEDIUM/LOW)
+- 적용 방어 패턴
+- 잔여 LOW 항목
+- 권장 사항
+
+### 🔴 실습 (40분) — 수강생 직접 작성
+
+**Step 1**: 슬롯 순서 변경 실험 → 값 파괴 확인 → 올바른 방법으로 재시도
+```typescript
+// TODO: v1에서 토큰 mint (tokenId 1001, amount 5)
+// TODO: KyoboNFT_WrongUpgrade.sol 작성 (기존 변수 순서 변경)
+// TODO: 업그레이드 → balanceOf 확인 → 값이 파괴됨 (다른 값)
+// TODO: 올바른 방법(끝에 추가)으로 다시 시도 → 보존 확인
+
+// 주의: 이 실험은 반드시 로컬에서만 (Sepolia 배포된 컨트랙트 건드리지 말 것)
+```
+
+**Step 2**: reinitializer(2) 테스트
+```typescript
+it('v2 업그레이드 후 initialize 재호출 → revert', async () => {
+  // v2로 업그레이드
+  const KyoboNFTV2 = await ethers.getContractFactory('KyoboNFTV2');
+  await upgrades.upgradeProxy(proxyAddr, KyoboNFTV2);
+
+  const nftV2 = await ethers.getContractAt('KyoboNFTV2', proxyAddr);
+
+  // initialize 재호출 → revert 확인
+  // TODO: nftV2.initialize(attacker.address) → revert 확인
+  // TODO: nftV2.initializeV2(999n) 2회 호출 → 2번째 revert 확인
+});
+```
+
+**Step 3**: M7 보안 리포트 작성
+```markdown
+# KyoboNFT 보안 감사 리포트
+
+## 발견 취약점 요약
+| 등급 | 항목 | 상태 |
+|---|---|---|
+| HIGH | Reentrancy (burn 함수) | ✅ 제거 (CEI + nonReentrant) |
+| HIGH | tx.origin 사용 | ✅ 제거 (msg.sender로 교체) |
+| MEDIUM | [항목명] | ✅ 제거 |
+
+## 적용 방어 패턴
+- ReentrancyGuard: burn 함수
+- CEI 패턴: 모든 외부 호출 함수
+- AccessControl: MINTER_ROLE, PAUSER_ROLE, UPGRADER_ROLE
+
+## 잔여 LOW 항목
+- [항목명]: False Positive — [이유]
+
+## 권장 사항
+- Gnosis Safe 2-of-3으로 업그레이드 거버넌스
+- 정기 감사 (분기별)
+```
+
+### ✅ 답안
+
+```typescript
+// reinitializer 이중 호출 방지 테스트
+it('reinitializer(2) 이중 호출 → revert', async () => {
+  const KyoboNFTV2 = await ethers.getContractFactory('KyoboNFTV2');
+  const upgraded = await upgrades.upgradeProxy(proxyAddr, KyoboNFTV2);
+
+  // 첫 번째 initializeV2 → 성공
+  await upgraded.initializeV2(1_000_000n);
+
+  // 두 번째 initializeV2 → revert
+  await expect(
+    upgraded.initializeV2(999n)
+  ).to.be.revertedWithCustomError(upgraded, 'InvalidInitialization');
+
+  // v1 initialize 재호출도 revert
+  await expect(
+    upgraded.initialize(attacker.address)
+  ).to.be.revertedWithCustomError(upgraded, 'InvalidInitialization');
+});
+```
+
+### ✅ M7 완료 기준
+- [ ] Slither HIGH/MEDIUM 최종 0건
+- [ ] Storage layout 충돌 없음
+- [ ] reinitializer 이중 호출 방지
+- [ ] 보안 리포트 작성

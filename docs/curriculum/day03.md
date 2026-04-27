@@ -1,369 +1,388 @@
-# Day 03 — 온체인 이벤트를 오프체인으로 잡는 법
+# Day 03 — M2: DMZ 이벤트 파이프라인 후반부 (S9~S12)
 
-**시간**: 3시간 (180분)  
-**핵심 질문**: 블록체인은 push가 없다. 그러면 Core Banking은 NFT 발행 완료를 어떻게 아는가?
-
----
-
-## 세션 구조
-
-| 시간 | 내용 |
-|---|---|
-| 00:00~00:25 | 1부: 폴링 vs 이벤트 구독 — 왜 선택이 중요한가 |
-| 00:25~00:55 | 2부: 이벤트 구조 해부 — ABI, Log, indexed |
-| 00:55~01:50 | 실습 1: 로컬 노드 배포 + 이벤트 실시간 수신 |
-| 01:50~02:20 | 3부: ChainEventListener 내부 구조 |
-| 02:20~02:55 | 실습 2: Missed Event 복구 시나리오 |
-| 02:55~03:00 | 마무리 |
+**세션**: S9~S12 | **모듈**: M2 | **시간**: 4시간 (4세션 × 1시간)  
+**산출물**: EventConsumer(멱등 처리) + DLQ + Finalized 블록 처리 + M2 E2E 완주
 
 ---
 
-## 1부: 폴링 vs 이벤트 구독 (00:00~00:25)
+## S9: 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리 (강의 55분)
 
-### 1-1. 폴링의 문제 (15분)
+### 강의 (이론 세션 — 실습 없음)
 
-**토킹포인트:**
+**At-least-once 의미:**
+- 최소 1번 처리 보장, 중복 가능
+- Exactly-once는 분산 시스템에서 사실상 불가 → 멱등성이 필수인 이유
 
-> "가장 단순한 방법은 폴링입니다. 1초마다 '발행됐어?' 물어보는 거죠. 근데 금융 시스템에서 이게 왜 문제인지 생각해보겠습니다."
-
-**폴링 방식:**
+**잘못된 처리 순서 케이스 1 — XACK 먼저:**
 ```
-1초마다:
-  블록체인에 "새 이벤트 있어?" 요청
-  → 없으면 무시
-  → 있으면 처리
-
-문제 1: 블록이 2초마다 생성되면 이벤트를 최대 2초 늦게 발견
-문제 2: 이벤트 없을 때도 1초마다 RPC 호출 → 노드 부하
-문제 3: 서비스 재시작 시 폴링 중단 구간의 이벤트 누락
-문제 4: 많은 컨트랙트를 감시하면 폴링 수가 선형 증가
+XACK → DB 처리 실패
+→ 메시지 PEL에서 제거됨 → 영구 유실 (재수신 불가)
 ```
 
-**이벤트 구독 방식:**
+**잘못된 처리 순서 케이스 2 — DB 커밋 먼저:**
 ```
-WebSocket 연결 유지
-  → 이벤트 발생 시 즉시 push
-  → 없을 때는 아무 비용 없음
-  → 재시작 시 queryEvents()로 missed event 복구
+DB 커밋 → XACK 실패 → 재시작 후 재수신
+→ 멱등성 없으면 holdings +2 (중복 발행)
 ```
 
-### 1-2. 이벤트 드리븐이 금융 시스템에서 중요한 이유 (10분)
+**올바른 처리 순서 (4단계):**
+```
+1. 멱등성 확인 (ON CONFLICT DO NOTHING)  ← 중복 차단
+2. DB 트랜잭션 (LedgerService 포함)      ← 실제 처리
+3. 트랜잭션 커밋                          ← 원자적 완료
+4. XACK                                  ← 처리 완료 선언
+```
 
-**토킹포인트:**
+**XACK 실패 케이스 대응:**
+- 재시작 후 PEL 재수신 → 멱등성 체크에서 이미 처리됨 감지 → XACK만 재실행
 
-> "NFT가 발행됐는데 Core Banking이 5초 후에 알면 어떤 문제가 생길까요? 고객은 앱에서 NFT를 받았는데 포인트 시스템엔 반영이 안 된 상태가 5초간 존재합니다. 이걸 '데이터 불일치'라고 합니다. 금융에서 데이터 불일치는 곧 민원입니다."
+**DB와 XACK 원자성 불가 문제:**
+- Redis-DB 간 2PC 불가
+- 멱등성이 유일한 현실적 보정 수단
+
+**Consumer 인스턴스 확장 시 안전성:**
+- 멱등성 + Consumer Group으로 중복 처리 없는 수평 확장 가능
+
+### ✅ 완료 기준 (강의 이해 확인)
+- [ ] 잘못된 처리 순서 2가지 시나리오 설명 가능
+- [ ] 올바른 순서 4단계 + 각 이유 설명 가능
+- [ ] 멱등성이 At-least-once를 안전하게 만드는 원리 설명 가능
 
 ---
 
-## 2부: 이벤트 구조 해부 (00:25~00:55)
+## S10: EventConsumer 구현과 멱등 처리 통합 검증 (개요 10분 + 실습 50분)
 
-### 2-1. Solidity 이벤트가 블록체인에 기록되는 방식 (20분)
+### 개요 (10분)
 
-**토킹포인트:**
+올바른 처리 순서 재확인 / 멱등성 체크 위치 재확인
 
-> "`KyoboNFT.sol`에서 `emit Issued(to, tokenId, activityId)` 를 실행하면 블록체인에 Log가 기록됩니다. 이 Log의 구조를 이해해야 나중에 정확히 파싱할 수 있습니다."
+### 🔴 실습 (50분) — 수강생 직접 작성
 
-```bash
-cat blockchain/src/phase1/KyoboNFT.sol
-# Issued 이벤트 찾기:
-# event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason);
-```
-
-**Log의 구조:**
-```
-Topics[0]: keccak256("Issued(address,uint256,bytes32)")  ← 이벤트 시그니처
-Topics[1]: to 주소  ← indexed 파라미터 (검색 가능)
-Topics[2]: tokenId  ← indexed 파라미터 (검색 가능)
-Data:      reason   ← non-indexed (검색 불가, 데이터만 저장)
-```
-
-**`indexed`가 중요한 이유:**
+**Step 1**: EventConsumer 핵심 루프 구현
 ```typescript
-// indexed면 특정 주소로 필터링 가능
-contract.queryFilter(
-  contract.filters.Issued(userAddress)  // ← 특정 수신자만 조회
-)
+// dmz/packages/event-engine/src/consumer/EventConsumer.ts
+// TODO: Consumer Group 기반 반복 폴링 루프 구현
+// - XREADGROUP으로 미처리 메시지 읽기
+// - 각 메시지마다 processNFTIssued 호출
+// - 처리 완료 후 XACK
 
-// non-indexed면 전체 스캔 필요
-```
+export class EventConsumer {
+  private running = false;
 
-### 2-2. ABI의 역할 (10분)
+  constructor(
+    private readonly redis: Redis,
+    private readonly ledgerService: LedgerService,
+  ) {}
 
-**토킹포인트:**
+  async start(): Promise<void> {
+    this.running = true;
+    while (this.running) {
+      // TODO: XREADGROUP GROUP processing-group worker-1 COUNT 10 BLOCK 5000 STREAMS kyobo-events >
+      // TODO: 메시지 있으면 processNFTIssued 호출
+      // TODO: 처리 완료 후 XACK
+    }
+  }
 
-> "ABI(Application Binary Interface)는 컨트랙트와 통신하기 위한 '설명서'입니다. 이 함수는 어떤 파라미터를 받고, 이 이벤트는 어떤 필드를 가지는지 기술합니다. ethers.js가 ABI를 기반으로 raw 바이트를 사람이 읽을 수 있는 형태로 변환합니다."
-
-```typescript
-// ABI 없으면:
-Log { data: "0x000000000000000000000000..." }  // 해독 불가
-
-// ABI 있으면:
-{ to: "0xabc...", tokenId: 1n, reason: "0x..." }  // 파싱 완료
-```
-
----
-
-## 실습 1: 로컬 노드 배포 + 이벤트 실시간 수신 (00:55~01:50)
-
-### Step 1 — 컨트랙트 배포 (15분)
-
-터미널 1 (노드 구동):
-```bash
-docker compose -f infrastructure/docker/docker-compose.yml up hardhat-node
-```
-
-터미널 2 (배포):
-```bash
-cd blockchain
-npm install
-npx hardhat run scripts/deploy/deploy-phase1.ts --network localhost
-```
-
-출력 예시:
-```
-ActivityOracle: 0x5FbDB2315678afecb367f032d93F642f64180aa3
-KyoboNFT:      0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-NFTIssuer:     0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
-ISSUER_ROLE granted to NFTIssuer
-→ .env에 위 주소 기록 후 issuer-service 재시작
-```
-
-`.env`에 기록:
-```
-NFT_CONTRACT_ADDR=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-NFT_ISSUER_ADDR=0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
-```
-
-### Step 2 — 이벤트 리스너 작성 + 실행 (20분)
-
-터미널 3 (수강자가 직접 작성):
-```typescript
-// scripts/listen-events.ts
-import { EVMAdapter } from '../dmz/packages/chain-adapters/src/evm/EVMAdapter';
-import * as dotenv from 'dotenv';
-dotenv.config();
-
-// ABI는 배포 후 생성된 artifacts에서 가져옴
-const ABI = [
-  "event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason)"
-];
-
-async function main() {
-  const adapter = new EVMAdapter({
-    rpcUrl:  'http://localhost:8545',
-    chainId: '31337',
-  });
-
-  const currentBlock = await adapter.getBlockNumber();
-  console.log('현재 블록:', currentBlock, '— 이벤트 리스닝 시작');
-
-  const unsubscribe = await adapter.subscribeEvents(
-    process.env.NFT_CONTRACT_ADDR!,
-    ABI,
-    ['Issued'],
-    currentBlock,
-    async (event) => {
-      console.log('\n[이벤트 수신!]');
-      console.log('  txHash:     ', event.txHash);
-      console.log('  blockNumber:', event.blockNumber);
-      console.log('  수신자:     ', event.args.to);
-      console.log('  tokenId:    ', event.args.tokenId);
-      console.log('  발행 시각:  ', new Date().toISOString());
-    },
-  );
-
-  // 60초 후 구독 해제
-  setTimeout(() => { unsubscribe(); process.exit(0); }, 60000);
+  async processNFTIssued(event: NFTIssuedEvent): Promise<void> {
+    // TODO: 올바른 처리 순서 구현
+    // 1. 멱등성 확인 (recordProcessedEvent)
+    // 2. DB 트랜잭션 (transitionMintRequest + holdings +1)
+    // 3. 커밋
+    // 4. XACK는 start() 루프에서 처리
+  }
 }
-
-main();
 ```
 
-```bash
-npx ts-node scripts/listen-events.ts
-# → "현재 블록: 5 — 이벤트 리스닝 시작"
-# → 대기 중...
-```
-
-### Step 3 — NFT 발행 트랜잭션 실행 (15분)
-
-터미널 4 (발행):
+**Step 2**: 동일 이벤트 2회 주입 테스트
 ```typescript
-// scripts/test-issue.ts
-import { ethers } from 'hardhat';
-
-async function main() {
-  const [deployer, oracleSigner] = await ethers.getSigners();
-
-  const dataType  = ethers.keccak256(ethers.toUtf8Bytes('ACTIVITY'));
-  const value     = 10000n;
-  const timestamp = BigInt(Math.floor(Date.now() / 1000));
-
-  const hash = ethers.solidityPackedKeccak256(
-    ['bytes32', 'uint256', 'uint256'],
-    [dataType, value, timestamp],
-  );
-  const signature = await oracleSigner.signMessage(ethers.getBytes(hash));
-
-  const issuer = await ethers.getContractAt(
-    'NFTIssuer', process.env.NFT_ISSUER_ADDR!
-  );
-
-  console.log('NFT 발행 중...');
-  const tx = await issuer.issueActivityNFT(
-    deployer.address,
-    ethers.keccak256(ethers.toUtf8Bytes(`activity-${Date.now()}`)),
-    { dataType, value, timestamp, signature },
-  );
-
-  await tx.wait();
-  console.log('발행 완료! txHash:', tx.hash);
-}
-
-main();
+// test: 같은 txHash+logIndex 이벤트 2회 → holdings 1회만 증가
+it('동일 이벤트 2회 → holdings 1회만 반영', async () => {
+  const event = { txHash: '0xabc', logIndex: 0, tokenId: 1001, to: '0xAlice' };
+  
+  // TODO: consumer.processNFTIssued(event) 2회 호출
+  // TODO: holdings 조회 → 1임을 확인
+});
 ```
 
-```bash
-npx hardhat run scripts/test-issue.ts --network localhost
-```
+### ✅ 답안
 
-**터미널 3에서 이벤트 출력 확인:**
-```
-[이벤트 수신!]
-  txHash:      0x...
-  blockNumber: 6
-  수신자:      0xf39Fd6e51...
-  tokenId:     0n
-  발행 시각:   2026-04-21T...
-```
-
----
-
-## 3부: ChainEventListener 내부 구조 (01:50~02:20)
-
-### 3-1. Missed Event 복구 로직 (20분)
-
-**토킹포인트:**
-
-> "실제 운영 환경에서 issuer-service가 재시작될 수 있습니다. 재시작 중에 NFT가 발행됐다면? 이벤트를 놓치면 Core Banking에 알림이 안 가고, 고객은 NFT를 받았는데 포인트 시스템엔 없는 상태가 됩니다."
-
-```bash
-cat dmz/packages/event-engine/src/listener/ChainEventListener.ts
-```
-
-핵심 로직 설명:
 ```typescript
+// EventConsumer.start() 완성
 async start(): Promise<void> {
-  const fromBlock  = await this.stateStore.getLastProcessedBlock();  // DB에서 조회
-  const curBlock   = await this.adapter.getBlockNumber();
+  this.running = true;
+  await this.queueService.initConsumerGroup();
 
-  // 재시작 구간의 이벤트 먼저 처리
-  if (fromBlock < curBlock) {
-    await this._recoverMissedEvents(fromBlock, curBlock);  // ← 여기
+  while (this.running) {
+    const results = await this.redis.xreadgroup(
+      'GROUP', 'processing-group', 'worker-1',
+      'COUNT', '10',
+      'BLOCK', '5000',
+      'STREAMS', 'kyobo-events', '>',
+    );
+
+    if (!results) continue;
+
+    for (const [, messages] of results) {
+      for (const [msgId, fields] of messages) {
+        const event = JSON.parse(fields[1]) as NFTIssuedEvent;
+        try {
+          await this.processNFTIssued(event);
+          await this.redis.xack('kyobo-events', 'processing-group', msgId);
+        } catch (err) {
+          console.error('[Consumer] 처리 실패:', err);
+          // DLQ 이동 로직은 S11에서 추가
+        }
+      }
+    }
   }
-
-  // 그 이후 실시간 구독
-  await this.adapter.subscribeEvents(...);
 }
-```
 
-> "`stateStore`가 중요합니다. 마지막으로 처리한 블록 번호를 DB에 저장합니다. 재시작 시 이 번호부터 스캔합니다. 메모리에 저장하면 재시작 시 사라지기 때문에 반드시 영속 저장소여야 합니다."
-
-### 3-2. 청크 스캔 (10분)
-
-```typescript
-private async _recoverMissedEvents(from: number, to: number): Promise<void> {
-  const CHUNK = 1000;  // 한 번에 1000블록씩
-  // ...
-  while (start < to) {
-    const end = Math.min(start + CHUNK, to);
-    // ...
-  }
-}
-```
-
-**왜 청크를 나누는가:**
-> "한 번에 100만 블록을 요청하면 노드가 응답하지 않습니다. 노드마다 최대 블록 범위 제한이 있습니다. 1,000블록씩 나눠 요청합니다."
-
----
-
-## 실습 2: Missed Event 복구 시나리오 (02:20~02:55)
-
-### Step 1 — 리스너 종료 (5분)
-터미널 3 종료 (Ctrl+C)
-
-### Step 2 — 리스너 꺼진 상태에서 NFT 3개 발행 (10분)
-```bash
-# 3번 실행
-npx hardhat run scripts/test-issue.ts --network localhost
-npx hardhat run scripts/test-issue.ts --network localhost
-npx hardhat run scripts/test-issue.ts --network localhost
-```
-
-### Step 3 — Missed Event 복구 스크립트 작성 (20분)
-
-```typescript
-// scripts/recover-events.ts
-import { EVMAdapter } from '../dmz/packages/chain-adapters/src/evm/EVMAdapter';
-
-const ABI = [
-  "event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason)"
-];
-
-async function main() {
-  const adapter = new EVMAdapter({
-    rpcUrl:  'http://localhost:8545',
-    chainId: '31337',
-  });
-
-  const lastProcessedBlock = 5;  // 리스너를 껐던 블록 (실습에서 직접 확인)
-  const currentBlock       = await adapter.getBlockNumber();
-
-  console.log(`블록 ${lastProcessedBlock} ~ ${currentBlock} 스캔 중...`);
-
-  const missed = await adapter.queryEvents(
-    process.env.NFT_CONTRACT_ADDR!,
-    ABI,
-    'Issued',
-    lastProcessedBlock,
-    currentBlock,
+// processNFTIssued 완성
+async processNFTIssued(event: NFTIssuedEvent): Promise<void> {
+  // 1. 멱등성 확인 — 이미 처리됐으면 스킵
+  const alreadyProcessed = await this.ledgerService.recordProcessedEvent(
+    event.txHash,
+    event.logIndex,
+    'NFTIssued',
+    event,
   );
+  if (alreadyProcessed) return;
 
-  console.log(`놓친 이벤트 ${missed.length}개 발견:`);
-  missed.forEach((event, i) => {
-    console.log(`  [${i + 1}] txHash: ${event.txHash}, tokenId: ${event.args.tokenId}`);
+  // 2. DB 트랜잭션 — 상태 전이 + holdings 증가
+  await this.ledgerService.db.transaction(async (trx) => {
+    await this.ledgerService.transitionMintRequest(event.requestId, 'CONFIRMED', trx);
+    await trx('user_nft_holdings')
+      .insert({ user_id: event.to, token_id: event.tokenId, amount: 1 })
+      .onConflict(['user_id', 'token_id'])
+      .merge({ amount: trx.raw('amount + 1') });
+  });
+  // 3. 커밋은 트랜잭션 블록 종료 시 자동
+  // 4. XACK는 start() 루프에서 처리
+}
+```
+
+### ✅ 완료 기준
+- [ ] 동일 이벤트 2회 → 원장 1회만 반영
+- [ ] 멱등성 체크 동작 확인
+
+---
+
+## S11: 처리 실패 격리 전략 — Dead Letter Queue 설계와 운영 (강의 15분 + 실습 40분)
+
+### 강의
+
+**DLQ 설계:**
+- 3회 실패 → Dead Letter 스트림으로 이동
+- 운영 알림 발송
+- 수동 재큐잉 절차
+
+**재시도 카운터 관리:**
+- Redis XPENDING의 delivery count 조회 방식 vs DB 카운터 방식
+- 트레이드오프: XPENDING은 Redis 재시작 시 초기화 가능 → DB 카운터가 안전
+
+### 🔴 실습 (40분) — 수강생 직접 작성
+
+**Step 1**: NFT 소각 이벤트 처리
+```typescript
+// TODO: processNFTBurned 구현
+// - holdings -1
+// - 소각 원장 기록
+// - 감사 로그 append
+
+async processNFTBurned(event: NFTBurnedEvent): Promise<void> {
+  // TODO: 멱등성 확인
+  // TODO: DB 트랜잭션: holdings 차감 + 소각 원장 + 감사 로그
+}
+```
+
+**Step 2**: DLQ 이동 함수 구현
+```typescript
+// TODO: moveToDLQ 구현
+// - Dead Letter 스트림(kyobo-dlq)으로 이동
+// - 실패 이유와 함께 저장
+// - 운영 알림 트리거
+
+async moveToDLQ(
+  messageId: string,
+  event: unknown,
+  reason: string,
+): Promise<void> {
+  // TODO: XADD kyobo-dlq * messageId [id] event [json] reason [reason]
+  // TODO: 알림 발송 (console.error 또는 alertService 호출)
+}
+```
+
+**Step 3**: 3회 실패 시 DLQ 이동 로직을 start() 루프에 통합
+```typescript
+// TODO: start() 루프의 catch 블록에 재시도 카운터 + DLQ 로직 추가
+// - 실패 카운트 3회 이상이면 moveToDLQ 호출
+// - 그 이하면 로그만 남기고 계속 폴링
+```
+
+**Step 4**: DLQ → 수동 재큐잉 확인
+```bash
+# DLQ에서 메시지 읽기
+redis-cli XRANGE kyobo-dlq - +
+
+# 수동으로 kyobo-events에 재적재
+redis-cli XADD kyobo-events * eventData [JSON]
+```
+
+### ✅ 답안
+
+```typescript
+// processNFTBurned 완성
+async processNFTBurned(event: NFTBurnedEvent): Promise<void> {
+  const alreadyProcessed = await this.ledgerService.recordProcessedEvent(
+    event.txHash, event.logIndex, 'NFTBurned', event,
+  );
+  if (alreadyProcessed) return;
+
+  await this.ledgerService.db.transaction(async (trx) => {
+    await trx('user_nft_holdings')
+      .where({ user_id: event.from, token_id: event.tokenId })
+      .decrement('amount', 1);
+    await this.ledgerService.appendAuditLog('system', 'NFT_BURNED', event.tokenId, event);
   });
 }
 
-main();
+// moveToDLQ 완성
+async moveToDLQ(messageId: string, event: unknown, reason: string): Promise<void> {
+  await this.redis.xadd(
+    'kyobo-dlq', '*',
+    'originalMessageId', messageId,
+    'event', JSON.stringify(event),
+    'reason', reason,
+    'failedAt', new Date().toISOString(),
+  );
+  console.error(`[DLQ] 메시지 이동: ${messageId}, 이유: ${reason}`);
+  // 운영: alertService.send(...)
+}
+
+// start() catch 블록 완성
+} catch (err) {
+  const count = await this.getFailureCount(msgId);
+  if (count >= 3) {
+    await this.moveToDLQ(msgId, event, String(err));
+    await this.redis.xack('kyobo-events', 'processing-group', msgId);
+  } else {
+    await this.incrementFailureCount(msgId);
+    // 재시도: PEL에 잔류 (XACK 안 함)
+  }
+}
 ```
 
-**예상 출력:**
-```
-블록 5 ~ 9 스캔 중...
-놓친 이벤트 3개 발견:
-  [1] txHash: 0x..., tokenId: 1n
-  [2] txHash: 0x..., tokenId: 2n
-  [3] txHash: 0x..., tokenId: 3n
-```
+### ✅ 완료 기준
+- [ ] 3회 실패 → DLQ 이동
+- [ ] NFT 소각 → holdings -1 + 감사 로그
 
 ---
 
-## 마무리 (02:55~03:00)
+## S12: Finalized 블록 기준 처리와 파이프라인 장애 복원력 검증 (강의 15분 + 실습 40분)
 
-**오늘의 핵심 3줄:**
-1. 블록체인은 push가 없다 — WebSocket 구독으로 실시간 수신, queryEvents로 복구
-2. 이벤트 `indexed` 필드는 검색 가능한 키, non-indexed는 데이터만
-3. 마지막 처리 블록을 DB에 저장하지 않으면 재시작 시 이벤트 유실
+### 강의
 
-**Day 04 예고:**  
-이벤트를 잡았다. Core Banking에 전달할 때 HMAC 서명, 멱등성, 재시도를 직접 구현한다.
+**Finalized 블록 처리:**
+- CONFIRMED 블록에서 처리하면 Reorg로 되돌아올 수 있음
+- Finalized 이후에만 처리하는 이유: 절대 불변이 보장된 이후
 
----
+**Private RPC에서 Finalized 블록 이벤트 구독:**
+- `eth_subscribe('newFinalizedBlock')` — 전용 노드 구독 API 활용
 
-## 참조 파일
+### 🔴 실습 (40분) — 수강생 직접 작성
 
-- `blockchain/src/phase1/KyoboNFT.sol` (Issued 이벤트)
-- `dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
-- `dmz/packages/event-engine/src/listener/ChainEventListener.ts`
-- `docs/adr/004-event-driven-architecture.md`
+**Step 1**: Consumer 강제 종료 → 재시작 후 미ACK 메시지 자동 재수신 확인
+```bash
+# 실습 시나리오:
+# 1. Consumer 실행 중 메시지 수신 (XACK 전)
+# 2. Consumer 강제 종료 (Ctrl+C)
+# 3. Consumer 재시작
+# 4. XPENDING 또는 XAUTOCLAIM으로 미처리 메시지 재수신 확인
+
+# TODO: XAUTOCLAIM으로 미처리 메시지 재수신
+redis-cli XAUTOCLAIM kyobo-events processing-group worker-1 0 0-0 COUNT 10
+```
+
+**Step 2**: Finalized 블록 체크 로직 추가
+```typescript
+// TODO: processNFTIssued에 Finalized 체크 추가
+// CONFIRMED but not Finalized → Pending 유지 (처리 보류)
+
+async processNFTIssued(event: NFTIssuedEvent): Promise<void> {
+  // TODO: event.blockNumber가 현재 Finalized 블록보다 높으면 skip
+  const finalizedBlock = await this.adapter.getFinalizedBlockNumber();
+  if (event.blockNumber > finalizedBlock) {
+    // Finalized 안 됨 → 처리 보류 (XACK 안 함)
+    return;
+  }
+  // ... 기존 처리 로직
+}
+```
+
+**Step 3**: M2 E2E 전체 흐름 1건 완주
+```bash
+# VASP Mock에서 Webhook 전송
+curl -X POST http://localhost:3000/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Signature: [올바른 서명]" \
+  -d '{"eventType":"NFTIssued","txHash":"0xabc","logIndex":0,"tokenId":1001,"to":"0xAlice"}'
+
+# 확인 순서:
+# 1. Webhook → 202 즉시 응답
+# 2. kyobo-events Stream에 메시지 적재 확인
+# 3. Consumer가 메시지 소비 + 원장 업데이트 확인
+# 4. XACK 완료 → PEL 비어있음 확인
+```
+
+### ✅ 답안
+
+```typescript
+// Finalized 체크 추가
+async processNFTIssued(event: NFTIssuedEvent): Promise<void> {
+  const finalizedBlock = await this.adapter.getFinalizedBlockNumber();
+  if (event.blockNumber > finalizedBlock) {
+    console.log(`[Consumer] 블록 ${event.blockNumber} 아직 Finalized 안 됨 (현재: ${finalizedBlock})`);
+    return; // XACK 안 함 → 다음 폴링에서 재처리
+  }
+
+  const alreadyProcessed = await this.ledgerService.recordProcessedEvent(
+    event.txHash, event.logIndex, 'NFTIssued', event,
+  );
+  if (alreadyProcessed) return;
+
+  await this.ledgerService.db.transaction(async (trx) => {
+    await this.ledgerService.transitionMintRequest(event.requestId, 'CONFIRMED', trx);
+    await trx('user_nft_holdings')
+      .insert({ user_id: event.to, token_id: event.tokenId, amount: 1 })
+      .onConflict(['user_id', 'token_id'])
+      .merge({ amount: trx.raw('amount + 1') });
+  });
+}
+```
+
+```bash
+# E2E 검증 스크립트
+# 1. 서명 생성
+BODY='{"eventType":"NFTIssued","txHash":"0xabc","logIndex":0,"tokenId":1001,"to":"0xAlice"}'
+SIG=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "test-secret" | awk '{print $2}')
+
+# 2. Webhook 전송
+curl -X POST http://localhost:3000/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Signature: $SIG" \
+  -d "$BODY"
+# 응답: {"received":true} (202)
+
+# 3. Stream 확인
+redis-cli XRANGE kyobo-events - +
+# 메시지 1개 확인
+
+# 4. 원장 확인 (Consumer 처리 후)
+# SELECT * FROM user_nft_holdings WHERE user_id = '0xAlice';
+# amount = 1
+```
+
+### ✅ M2 완료 기준
+- [ ] Consumer 장애 → 재시작 후 자동 재수신
+- [ ] 3회 실패 → DLQ + 알림
+- [ ] NFT 발행 → 원장 업데이트 E2E 동작

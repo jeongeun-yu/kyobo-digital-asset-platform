@@ -1,281 +1,400 @@
-# Day 12 — 키 거버넌스 심화 + 전체 시스템 완성
+# Day 12 — M8: 키 거버넌스 (S45~S48)
 
-**시간**: 3시간 (180분)  
-**핵심 질문**: 교보생명이 VASP와 키를 어떻게 나눠 갖는가? MPC와 멀티시그 중 무엇을 선택하는가?
-
----
-
-## 세션 구조
-
-| 시간 | 내용 |
-|---|---|
-| 00:00~00:40 | 1부: 키 거버넌스 요구사항 — 규제·운영·보안 |
-| 00:40~01:25 | 실습 1: Gnosis Safe 멀티시그 설정 + 트랜잭션 |
-| 01:25~02:10 | 실습 2: KeyGovernanceService 구현 |
-| 02:10~02:50 | 실습 3: 전체 시스템 end-to-end 시뮬레이션 |
-| 02:50~03:00 | 마무리: Phase 1 완성 + Phase 2·3 로드맵 |
+**세션**: S45~S48 | **모듈**: M8 | **시간**: 4시간 (4세션 × 1시간)  
+**산출물**: Admin API + Gnosis Safe 배포 + SafeTx 이론 + MultisigService(proposeTx/addSignature/executeTx)
 
 ---
 
-## 1부: 키 거버넌스 요구사항 (00:00~00:40)
+## S45: 운영 관리 API 설계 — 컨트랙트 제어와 시스템 운영 인터페이스 (강의 15분 + 실습 40분)
 
-### 1-1. 왜 키 거버넌스가 핵심인가 (15분)
+### 강의
 
-**토킹포인트:**
+**Admin API 레이어 필요성:**
+- 컨트랙트 함수(M6)·ReconcileService(M4)는 완성됐으나 운영 진입점 없음
+- 대시보드·모니터링 툴이 호출할 REST 엔드포인트 필요
 
-> "교보생명이 직접 키를 갖지 않으면 VASP에 모든 것을 의존하게 됩니다. VASP가 키를 독점하면 교보생명은 자신의 자산에 대한 통제권이 없습니다. 반대로 교보생명이 단독으로 키를 관리하면 HSM 구축, 키 관리 인프라, 24/7 운영이 필요합니다. 현실적인 Phase 1 답은 균형입니다."
+**Admin API 보안 원칙:**
+- `ADMIN_ROLE` 검증
+- IP 허용 목록 (내부망 전용)
+- 감사 로그 의무 기록 (모든 Admin 행위)
 
-**키 거버넌스 3가지 모델:**
+### 🔴 실습 (40분) — 수강생 직접 작성
 
-| 모델 | 설명 | 장점 | 단점 |
-|---|---|---|---|
-| VASP 단독 보관 | 외부 VASP가 모든 키 관리 | 빠른 구현, 낮은 비용 | 교보 통제권 없음, VASP 의존도 최대 |
-| MPC (Multi-Party Computation) | 키 샤드를 여러 주체가 분산 보관 | 단일 실패점 없음, 복구 가능 | 구현 복잡, Phase 3 수준 |
-| Gnosis Safe 멀티시그 | m-of-n 서명으로 TX 승인 | 투명한 온체인 거버넌스, 즉시 구현 가능 | 서명자 관리 오버헤드 |
+**Step 1**: Admin API 엔드포인트 구현
+```typescript
+// internal/src/routes/adminRoutes.ts
+// TODO: 아래 4개 엔드포인트 구현
 
-> "Phase 1에서는 Gnosis Safe 2-of-3 멀티시그를 선택합니다. 교보생명 1키 + VASP 1키 + Cold Key 1키. Phase 3에서 VASP 인가를 취득하면 MPC로 전환합니다."
+// POST /admin/contract/pause
+router.post('/admin/contract/pause', requireAdminRole, async (req, res) => {
+  // TODO: PAUSER_ROLE 검증
+  // TODO: 컨트랙트 pause() 호출
+  // TODO: 감사 로그 기록
+  // TODO: 201 응답
+});
 
-### 1-2. 특금법·가상자산법 키 관리 요건 (25분)
+// POST /admin/contract/unpause
+router.post('/admin/contract/unpause', requireAdminRole, async (req, res) => {
+  // TODO
+});
 
-**규제 요건 정리:**
+// POST /admin/reconcile
+router.post('/admin/reconcile', requireAdminRole, async (req, res) => {
+  // TODO: ReconcileService 트리거
+  // TODO: 불일치 건수 응답 반환
+});
 
-| 규제 | 조항 | 요건 |
-|---|---|---|
-| 특금법 시행령 | §10의2 | 콜드월렛 80% 이상 보관 |
-| 가상자산이용자보호법 | §6 | 이용자 자산과 고유 자산 분리 보관 |
-| ISMS-P | 자산관리 통제 | 암호 키 생성·배포·폐기 절차 문서화 |
-| 전자금융감독규정 | §34 | 키 접근 이력 1년 이상 보존 |
+// GET /admin/issuance/stats
+router.get('/admin/issuance/stats', requireAdminRole, async (req, res) => {
+  // TODO: 상태별 발행 현황 집계
+  // { REQUESTED: N, SUBMITTED: N, PENDING: N, CONFIRMED: N, FAILED: N }
+});
 
-**Phase 1 키 구조:**
-
-```
-교보생명 키 구조 (Phase 1)
-├── Hot Wallet (20% 한도)
-│   └── Gnosis Safe 2-of-3
-│       ├── 서명자 A: 교보 운영키 (AWS KMS)
-│       ├── 서명자 B: VASP 운영키 (VASP HSM)
-│       └── 서명자 C: 교보 Cold Key (HSM, 비상용)
-│
-└── Cold Wallet (80% 이상)
-    └── 교보생명 단독 관리 (오프라인 HSM)
-        └── 분기별 감사 + 이중 잠금 절차
-```
-
----
-
-## 실습 1: Gnosis Safe 멀티시그 (00:40~01:25)
-
-### Step 1 — Gnosis Safe 배포 확인 (10분)
-
-```bash
-cat blockchain/src/phase1/KyoboSafe.sol
+// POST /admin/roles/grant
+router.post('/admin/roles/grant', requireAdminRole, async (req, res) => {
+  // TODO: MINTER_ROLE 또는 PAUSER_ROLE 부여
+  // TODO: 감사 로그 기록
+});
 ```
 
-> "KyoboSafe는 Gnosis Safe의 GnosisSafe 컨트랙트를 래핑합니다. 우리가 추가한 것은 감사 로그 훅과 Travel Rule 검증뿐입니다."
+**Step 2**: 테스트
+```typescript
+// TODO: pause/unpause → 컨트랙트 상태 변경 확인
+it('pause API → 컨트랙트 pause 상태 확인', async () => {
+  await request(app).post('/admin/contract/pause').expect(201);
+  // TODO: nft.paused() === true 확인
+});
 
-### Step 2 — 멀티시그 트랜잭션 흐름 (25분)
+// TODO: reconcile API → 불일치 건수 반환
+it('reconcile API → 불일치 건수 반환', async () => {
+  const res = await request(app).post('/admin/reconcile').expect(200);
+  expect(res.body).toHaveProperty('discrepancies');
+});
 
-**3단계 흐름:**
-
-```
-1. 제안 (Propose)
-   교보 운영자 → proposeTransaction(to, value, data, operation)
-   → Safe에 pending TX로 기록
-
-2. 서명 수집 (Collect Signatures)
-   서명자 A (교보) → signTransaction(txHash)
-   서명자 B (VASP) → signTransaction(txHash)
-   → 2-of-3 충족
-
-3. 실행 (Execute)
-   누구든 → execTransaction(to, value, data, operation, signatures)
-   → Safe가 실제 TX 실행
-```
-
-**실습 과제:**
-```bash
-# Testnet 배포된 KyoboSafe 주소로 실습
-KYOBO_SAFE_ADDR=$(cat .env.test | grep SAFE_ADDR | cut -d= -f2)
-
-# 1. NFT 발행 TX 제안
-pnpm ts-node scripts/proposeMint.ts --safe $KYOBO_SAFE_ADDR --to $NFT_CONTRACT --tokenId 101
-
-# 2. 서명 추가 (서명자 B로 전환)
-pnpm ts-node scripts/signTx.ts --txHash <pending-tx-hash> --signer vasp
-
-# 3. 실행
-pnpm ts-node scripts/executeTx.ts --txHash <pending-tx-hash>
+// TODO: role grant → 감사 로그 기록
+it('role grant → audit_log 기록 확인', async () => {
+  await request(app).post('/admin/roles/grant').send({ address: '0xNew', role: 'MINTER_ROLE' });
+  // TODO: audit_log에 ROLE_GRANTED 항목 확인
+});
 ```
 
-### Step 3 — 비상 키 (Cold Key) 사용 시나리오 (15분)
-
-**토킹포인트:**
-
-> "서명자 A(교보 운영키)와 서명자 B(VASP 운영키)가 모두 사용 불가능한 상황. VASP 폐업, 사이버 침해, 재해. 이때 서명자 C(Cold Key)를 꺼냅니다."
+### ✅ 답안
 
 ```typescript
-// Cold Key 활성화 프로세스 (절차서 발췌)
-// 1. CEO + CIO + 외부 감사인 3인 동석
-// 2. 물리적 금고에서 Cold Key USB 2개 중 1개 꺼내기
-// 3. 오프라인 서명 장비에서 TX 서명
-// 4. 서명된 TX → 온라인 환경으로 이관 후 브로드캐스트
-// 5. 감사 로그 즉시 기록 + 이사회 보고
+// pause 엔드포인트 완성
+router.post('/admin/contract/pause', requireAdminRole, async (req, res) => {
+  const requester = req.user!.address;
+
+  // PAUSER_ROLE 검증
+  const hasPauserRole = await nftContract.hasRole(PAUSER_ROLE, requester);
+  if (!hasPauserRole) {
+    return res.status(403).json({ error: 'PAUSER_ROLE 없음' });
+  }
+
+  await nftContract.connect(signer).pause();
+  await auditLog.appendAuditLog(requester, 'CONTRACT_PAUSED', 'KyoboNFT', {});
+
+  res.status(201).json({ paused: true });
+});
+
+// reconcile 엔드포인트 완성
+router.post('/admin/reconcile', requireAdminRole, async (req, res) => {
+  const { userId } = req.body;
+  const result = await reconcileService.reconcile(userId);
+  res.json({ discrepancies: result.discrepancies.length, details: result.discrepancies });
+});
+
+// stats 엔드포인트 완성
+router.get('/admin/issuance/stats', requireAdminRole, async (req, res) => {
+  const stats = await db('mint_requests')
+    .select('status')
+    .count('id as count')
+    .groupBy('status');
+  res.json(Object.fromEntries(stats.map((s) => [s.status, Number(s.count)])));
+});
 ```
+
+### ✅ 완료 기준
+- [ ] pause/unpause → 컨트랙트 상태 변경 확인
+- [ ] reconcile API → 불일치 건수 반환
+- [ ] role grant/revoke → 감사 로그 기록
 
 ---
 
-## 실습 2: KeyGovernanceService (01:25~02:10)
+## S46: 다중 서명 기반 키 거버넌스 — Gnosis Safe와 EIP-712 (강의 35분 + 실습 30분)
 
-### Step 1 — 스켈레톤 확인 (10분)
+### 강의
 
-```bash
-cat dmz/packages/vasp/src/governance/KeyGovernanceService.ts
-```
+**TX 분류:**
+- 일반 mint → VASP 단독 서명 (빠른 처리 필요)
+- 업그레이드·대형 TX → **2-of-3 필수** (서명자: VASP, 교보 IT, 준법감시)
 
-**구현할 메서드:**
-- `proposeTx()` — Safe에 TX 제안 + 내부 pending_txs 테이블 기록
-- `addSignature()` — 서명 수집 + 임계값 충족 여부 확인
-- `executeTx()` — 임계값 충족 시 Safe.execTransaction() 호출
-- `getSigningStatus()` — 현재 서명 현황 조회
+**EIP-712 SafeTx:**
+- 오프체인 서명으로 온체인 TX 승인
+- 구조화된 데이터 해시 + 도메인 분리자
+- 재생 공격 방지: 도메인 분리자에 chainId + verifyingContract 포함
 
-### Step 2 — proposeTx 구현 (25분)
+**키 분실 복구 절차:**
+- 서명자 1명 분실 시 → 남은 2명이 `swapOwner` TX 제안 → 2-of-3 서명 → 서명자 교체
 
+**MPC 향후 거버넌스 진화:**
+- Gnosis Safe: 온체인 멀티시그 (완전한 키가 각자에게 있음)
+- MPC/TSS: 키 파편 분산 생성 → **완전한 개인키가 어디에도 존재하지 않음**
+- 당사 MPC 적용 포인트: VASP HOT 키 / 내부 서명자 키
+
+### 🔴 실습 (30분) — 수강생 직접 작성
+
+**Step 1**: Hardhat fork에서 Gnosis Safe 배포
 ```typescript
-// dmz/packages/vasp/src/governance/KeyGovernanceService.ts
-async proposeTx(params: ProposeTxParams): Promise<PendingTx> {
-  // TODO:
-  // 1. Safe SDK로 TX 데이터 인코딩
-  // 2. TX 해시 계산 (EIP-712 SafeTx struct hash)
-  // 3. DB pending_txs INSERT
-  //    - tx_hash, to, value, data, operation, status='PENDING_SIGNATURES'
-  //    - required_signatures = safe.threshold (2)
-  //    - collected_signatures = [] (JSON array)
-  // 4. audit_log: TX_PROPOSED 기록
-  // 5. 서명자들에게 알림 발송
-  throw new Error('Not implemented');
+// blockchain/scripts/deploy-gnosis-safe.ts
+// TODO: Gnosis Safe 배포 — threshold=2, 서명자 3개 등록
+
+import { ethers } from 'hardhat';
+
+async function main() {
+  const [signer1, signer2, signer3] = await ethers.getSigners();
+  
+  // TODO: Safe Factory 사용하여 Safe 배포
+  // Safe 배포 주소: '0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2' (mainnet)
+  // 로컬 fork에서 이 주소에 Safe Factory가 배포되어 있어야 함
+  
+  // threshold = 2
+  // owners = [signer1, signer2, signer3]
+  console.log('Safe 주소:', safeAddress);
 }
 ```
 
-**실습 과제:**
-1. `// TODO` 5단계 모두 구현
-2. Travel Rule: `params.value >= 1_000_000` (100만원) 이면 `travelRuleData` 필수 검증 추가
-3. 단위 테스트: `pnpm test --filter=vasp -- --grep "KeyGovernanceService"`
+**Step 2**: SafeTx 해시 계산 확인
+```typescript
+// TODO: 업그레이드 TX에 대한 SafeTx 해시 계산
 
-### Step 3 — 서명 임계값 알림 (20분)
+const safeTxHash = await safe.getTransactionHash(
+  to,        // 컨트랙트 주소
+  value,     // ETH 금액 (업그레이드는 0)
+  data,      // upgradeTo() 호출 데이터
+  operation, // 0 = CALL
+  safeTxGas, // 0
+  baseGas,   // 0
+  gasPrice,  // 0
+  gasToken,  // address(0)
+  refundReceiver, // address(0)
+  nonce,     // await safe.nonce()
+);
+console.log('SafeTx 해시:', safeTxHash);
+```
+
+**Step 3**: 서명자 교체 시나리오 확인
+```typescript
+// TODO: swapOwner 트랜잭션 구조 확인 (실제 실행 X)
+const swapOwnerData = safeInterface.encodeFunctionData('swapOwner', [
+  prevOwner,   // 교체할 서명자의 이전 서명자
+  oldOwner,    // 제거할 서명자
+  newOwner,    // 새 서명자
+]);
+console.log('swapOwner TX 데이터:', swapOwnerData);
+```
+
+### ✅ 답안
 
 ```typescript
-// 서명이 임계값에 도달했을 때 자동 실행 옵션
-async addSignature(txHash: string, signer: string, signature: string): Promise<SignatureStatus> {
-  // TODO:
-  // 1. pending_txs에서 txHash 조회
-  // 2. collected_signatures에 signer + signature 추가
-  // 3. collected_signatures.length >= required_signatures 이면
-  //    → auto_execute 플래그 확인
-  //    → true: executeTx() 자동 호출
-  //    → false: 운영자에게 "실행 준비됨" 알림
-  throw new Error('Not implemented');
+// Gnosis Safe 배포 (Safe Factory 사용)
+import { SafeFactory, Safe } from '@safe-global/protocol-kit';
+
+async function main() {
+  const [signer1, signer2, signer3] = await ethers.getSigners();
+
+  const safeFactory = await SafeFactory.create({ provider, signer: signer1.address });
+  
+  const safeAccountConfig = {
+    owners: [signer1.address, signer2.address, signer3.address],
+    threshold: 2,
+  };
+  
+  const safe = await safeFactory.deploySafe({ safeAccountConfig });
+  console.log('Safe 주소:', await safe.getAddress());
+  console.log('threshold:', await safe.getThreshold()); // 2
+  console.log('owners:', await safe.getOwners()); // 3명
 }
 ```
 
----
-
-## 실습 3: End-to-End 시뮬레이션 (02:10~02:50)
-
-### Step 1 — 전체 시나리오 정의 (10분)
-
-**시나리오: 보험 계약 체결 → NFT 발행 → 이벤트 수신 → 원장 기록 → 감사 로그**
-
-```
-[외부] 보험 계약 체결
-   ↓
-[API] POST /api/mint-requests { userId, policyId }
-   ↓
-[LedgerService] PENDING 기록 + audit_log: MINT_REQUESTED
-   ↓
-[KeyGovernanceService] Safe TX 제안 → 서명 수집 → 실행
-   ↓
-[Chain] KyoboNFT.mint() 실행 → Transfer 이벤트 발생
-   ↓
-[WebhookServer] VASP Webhook 수신 → IdempotencyGuard 통과
-   ↓
-[EventConsumer] Redis Streams 소비 → CONFIRMED 상태 전이
-   ↓
-[LedgerService] user_nft_holdings INSERT + mint_requests CONFIRMED
-   ↓
-[AuditLogService] TX_CONFIRMED 기록 (checksum 포함)
-   ↓
-[API] GET /api/nft-holdings/:userId → 보유 NFT 확인
-```
-
-### Step 2 — 시뮬레이션 실행 (25분)
-
-```bash
-# 전체 스택 실행 (Docker Compose)
-docker-compose up -d postgres redis
-
-# 마이그레이션 실행
-pnpm db:migrate
-
-# 개발 서버 실행
-pnpm dev
-
-# 다른 터미널에서 e2e 시뮬레이션
-pnpm ts-node scripts/e2e-simulation.ts \
-  --userId "user-kyobo-001" \
-  --policyId "policy-life-2026-001"
-```
-
-**시뮬레이션 관찰 포인트:**
-1. `pending_txs` 테이블에 Safe TX 생성 확인
-2. 서명 2개 수집 후 자동 실행 확인
-3. `processed_events` 테이블에 Transfer 이벤트 idempotency 확인
-4. `audit_log` 테이블에 전체 흐름 추적 확인
-
-### Step 3 — 장애 주입 테스트 (15분)
-
-```bash
-# Webhook 중단 시뮬레이션
-# (WebhookServer 포트 막기 → Polling이 대신 처리하는지 확인)
-pnpm ts-node scripts/inject-fault.ts --type webhook-down --duration 60s
-
-# Reorg 시뮬레이션
-pnpm ts-node scripts/inject-fault.ts --type reorg --txHash <submitted-tx>
-
-# 결과: REORGED 상태 전이 + 재제출 로그 확인
-```
+### ✅ 완료 기준
+- [ ] Safe 배포 + threshold=2 설정
+- [ ] SafeTx 해시 계산 확인
 
 ---
 
-## 마무리: Phase 1 완성 + 로드맵 (02:50~03:00)
+## S47: 다중 서명 트랜잭션 생명주기 — 제안·서명 수집·실행 프로토콜 설계 (강의 55분)
 
-### Phase 1에서 우리가 만든 것
+### 강의 (이론 세션 — 실습 없음)
 
-| 레이어 | 구현 내용 |
-|---|---|
-| 체인 추상화 | IChainAdapter — EVM·XRPL·UTXO 공통 인터페이스 |
-| VASP 추상화 | IVASPAdapter — Phase 1 외부 VASP, Phase 4 직접 인가 |
-| 이벤트 파이프라인 | WebhookServer + IdempotencyGuard + Redis Streams |
-| 스마트 컨트랙트 | KyoboNFT (ERC-721) + BaseToken (RBAC + Compliance) |
-| 내부 원장 | LedgerService + 상태머신 + 4개 핵심 테이블 |
-| 감사 로그 | AuditLogService + checksum 무결성 + 금융 규제 대응 |
-| VASP 변동 처리 | VaspRecoveryService + 이중 채널 동기화 |
-| 키 거버넌스 | Gnosis Safe 2-of-3 + KeyGovernanceService |
+**단일 HOT 키의 취약점:**
+- 키 1개 탈취 시 업그레이드·대형 TX 전권 가능
+- **키 하나로 시스템 전체 장악 가능한 구조는 금융 시스템에 부적합**
 
-### Phase 2·3 로드맵
+**k-of-n 멀티시그 설계:**
+- threshold 의미: k명 이상이 동의해야 실행 가능
+- 당사 구성: VASP(기술 실행) / 당사IT(운영 승인) / 준법감시(컴플라이언스) — 3자 중 2자 동의
 
+**SafeTx 생명주기 전체:**
 ```
-Phase 2 (6~12개월)
-├── Circle Arc 연동: EVM 네이티브 USDC + CCTP 크로스체인
-├── KRW1 스테이블코인 발행 (ERC-20 + 담보 관리)
-└── XRPL 어댑터 완성: AMM + DEX 연동
-
-Phase 3 (12~24개월)
-├── XRPL RWA 토큰화: 부동산·채권 온체인 등록
-├── 교보생명 VASP 인가 취득
-├── MPC 키 관리로 전환 (VASP 의존도 제거)
-└── 보험금 자동 지급 스마트 컨트랙트 (Parametric Insurance)
+1. proposeTx: SafeTx 해시 계산 + DB 저장
+2. addSignature: 각 서명자가 오프체인 서명 → DB 저장
+3. threshold 도달 확인
+4. executeTx: Safe.execTransaction 온체인 실행
 ```
 
-**마지막 토킹포인트:**
+**오프체인 서명의 의미:**
+- EIP-712 구조화 데이터 서명
+- 가스비 없이 각자 서명 가능
+- 충분한 서명이 모이면 한 번의 온체인 TX로 실행
 
-> "12일 36시간 동안 여러분은 교보생명 디지털 자산 플랫폼의 Phase 1 전체를 직접 설계하고 구현했습니다. 이 코드는 이 교육이 끝난 후에도 교보생명의 실제 시스템 설계 논의의 출발점이 됩니다. Phase 2를 향해 가는 여정에서 오늘 여기서 내린 결정들을 기억하십시오."
+**EIP-712 vs 평문 서명 차이:**
+- 구조화 데이터 해시 + 도메인 분리자
+- 다른 컨트랙트에서 동일 서명 재사용(재생 공격) 방지
+
+**1-of-3 실행 시 revert하는 이유:**
+- threshold 검증은 Safe 컨트랙트가 온체인에서 직접 수행
+- 서명 수 미달 시 revert
+
+### ✅ 완료 기준 (강의 이해 확인)
+- [ ] SafeTx 생명주기 4단계 설명 가능
+- [ ] 오프체인 서명의 의미와 EIP-712 역할 설명 가능
+- [ ] 1-of-3 revert 이유 설명 가능
+
+---
+
+## S48: MultisigService 구현과 2-of-3 서명 실행 검증 (개요 10분 + 실습 50분)
+
+### 개요 (10분)
+
+SafeTx 생명주기 재확인 / proposeTx → addSignature → executeTx 함수 설계 재확인
+
+### 🔴 실습 (50분) — 수강생 직접 작성
+
+**Step 1**: proposeTx 구현
+```typescript
+// internal/packages/multisig/src/MultisigService.ts
+// TODO: SafeTx 해시 계산 + DB 저장
+
+async proposeTx(
+  to: string,
+  data: string,
+  proposer: string,
+): Promise<string> {
+  // TODO: nonce 조회 (safe.nonce())
+  // TODO: SafeTx 해시 계산
+  // TODO: safetx_proposals 테이블에 저장
+  // TODO: safeTxHash 반환
+}
+```
+
+**Step 2**: addSignature 구현
+```typescript
+// TODO: 오프체인 서명 수집 저장
+
+async addSignature(
+  safeTxHash: string,
+  signer: string,
+  signature: string,
+): Promise<void> {
+  // TODO: safetx_signatures 테이블에 (safeTxHash, signer, signature) 저장
+  // TODO: 중복 서명 방지 (동일 signer 재서명 불가)
+}
+```
+
+**Step 3**: executeTx 구현
+```typescript
+// TODO: threshold 확인 후 온체인 실행
+
+async executeTx(safeTxHash: string, executor: string): Promise<string> {
+  // TODO: 서명 수 조회 → threshold 미달 시 throw
+  // TODO: 서명 목록 정렬 (Safe 요구사항: 주소 오름차순)
+  // TODO: safe.execTransaction 호출
+  // TODO: txHash 반환
+}
+```
+
+**Step 4**: 1-of-3 vs 2-of-3 테스트
+```typescript
+it('1-of-3 서명으로 대형 TX → revert', async () => {
+  const safeTxHash = await multisig.proposeTx(target, data, proposer);
+  await multisig.addSignature(safeTxHash, signer1.address, await signer1.signMessage(safeTxHash));
+  
+  // TODO: 1개 서명으로 executeTx → revert 확인
+});
+
+it('2-of-3 서명 → 정상 실행', async () => {
+  const safeTxHash = await multisig.proposeTx(target, data, proposer);
+  await multisig.addSignature(safeTxHash, signer1.address, await signer1.signMessage(...));
+  await multisig.addSignature(safeTxHash, signer2.address, await signer2.signMessage(...));
+  
+  // TODO: 2개 서명으로 executeTx → 성공 확인
+});
+```
+
+### ✅ 답안
+
+```typescript
+// proposeTx 완성
+async proposeTx(to: string, data: string, proposer: string): Promise<string> {
+  const nonce = await this.safe.getNonce();
+  
+  const safeTxHash = await this.safe.getTransactionHash({
+    to, data,
+    value: '0',
+    operation: OperationType.Call,
+    safeTxGas: '0',
+    baseGas: '0',
+    gasPrice: '0',
+    gasToken: ethers.ZeroAddress,
+    refundReceiver: ethers.ZeroAddress,
+    nonce: nonce.toString(),
+  });
+
+  await this.db('safetx_proposals').insert({
+    safe_tx_hash: safeTxHash,
+    to, data,
+    nonce: nonce.toString(),
+    proposer,
+    created_at: new Date(),
+  });
+
+  return safeTxHash;
+}
+
+// addSignature 완성
+async addSignature(safeTxHash: string, signer: string, signature: string): Promise<void> {
+  await this.db('safetx_signatures')
+    .insert({ safe_tx_hash: safeTxHash, signer, signature })
+    .onConflict(['safe_tx_hash', 'signer'])
+    .ignore(); // 중복 서명 무시
+}
+
+// executeTx 완성
+async executeTx(safeTxHash: string): Promise<string> {
+  const signatures = await this.db('safetx_signatures')
+    .where({ safe_tx_hash: safeTxHash })
+    .orderBy('signer', 'asc'); // Safe: 주소 오름차순 필수
+
+  const threshold = await this.safe.getThreshold();
+  if (signatures.length < threshold) {
+    throw new Error(`서명 미달: ${signatures.length}/${threshold}`);
+  }
+
+  // 서명 연결 (Safe 형식: bytes 연결)
+  const signatureBytes = signatures.map((s) => s.signature).join('').replace(/^0x/g, '');
+  const combinedSignature = '0x' + signatureBytes;
+
+  const proposal = await this.db('safetx_proposals').where({ safe_tx_hash: safeTxHash }).first();
+  const txResponse = await this.safe.executeTransaction({
+    ...proposal,
+    signatures: combinedSignature,
+  });
+
+  return txResponse.hash;
+}
+```
+
+### ✅ M8 전반부 완료 기준
+- [ ] 1-of-3 서명으로 대형 TX → revert
+- [ ] 2-of-3 서명 → 정상 실행

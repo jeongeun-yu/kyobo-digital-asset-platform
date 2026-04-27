@@ -1,279 +1,423 @@
-# Day 10 — 내부 원장 설계 + 감사 로그
+# Day 10 — M6: ERC-1155 컨트랙트 완전 구현 (S37~S40)
 
-**시간**: 3시간 (180분)  
-**핵심 질문**: 블록체인 이벤트는 외부 진실이다. 그 진실을 내부 DB와 어떻게 동기화하고, 금융 규제 기준으로 어떻게 증명하는가?
-
----
-
-## 세션 구조
-
-| 시간 | 내용 |
-|---|---|
-| 00:00~00:40 | 1부: 내부 원장의 역할 — 온체인과 오프체인의 경계 |
-| 00:40~01:20 | 실습 1: DB 스키마 설계 + LedgerService 구현 |
-| 01:20~02:10 | 실습 2: AuditLog 서비스 구현 + 금융 규제 요건 |
-| 02:10~02:50 | 실습 3: 잔액 재조정(Reconcile) 로직 |
-| 02:50~03:00 | 마무리: 원장의 단일 진실 원천 |
+**세션**: S37~S40 | **모듈**: M6 | **시간**: 4시간 (4세션 × 1시간)  
+**산출물**: mint/mintBatch/burn/pause + Sepolia 배포 + Etherscan 검증 + v2 업그레이드
 
 ---
 
-## 1부: 내부 원장의 역할 (00:00~00:40)
+## S37: 온체인 역할 기반 접근 제어와 발행 권한 체계 (강의 20분 + 실습 35분)
 
-### 1-1. 왜 내부 원장이 필요한가 (15분)
+### 강의
 
-**토킹포인트:**
+**역할 설계:**
+- `MINTER_ROLE`: VASP 주소 — NFT 발행 권한
+- `PAUSER_ROLE`: Admin — 컨트랙트 일시 중지
+- `DEFAULT_ADMIN_ROLE`: 역할 부여/회수 권한
 
-> "교보생명이 블록체인을 쓴다고 해서 Oracle의 DB를 버릴 수 없습니다. 고객 잔액 조회, 고객센터 문의, 내부 감사 — 모두 DB가 필요합니다. 그런데 블록체인 위에도 진실이 있습니다. 이 두 진실을 어떻게 관리할 것인가가 오늘의 주제입니다."
+**mintBatch 가스 한도:**
+- 1회 500건 초과 시 block gas limit 초과
+- 배치 분할 필요 (M5 BulkIssueService에서 이미 처리)
 
-**온체인 vs 오프체인 진실:**
+**TX Nonce 관리:**
+- 순서 보장
+- Replace-by-Fee로 stuck TX 복구
 
-| 항목 | 온체인 (단일 진실) | 오프체인 내부 원장 (운영 편의) |
-|---|---|---|
-| NFT 소유권 | `ownerOf(tokenId)` | `user_nft_holdings` 테이블 |
-| 트랜잭션 기록 | `Transfer` 이벤트 | `processed_events` 테이블 |
-| 발행 요청 | — | `mint_requests` 테이블 (PENDING→CONFIRMED) |
-| 감사 증적 | 이벤트 로그 | `audit_log` 테이블 (append-only) |
+### 🔴 실습 (35분) — 수강생 직접 작성
 
-> "온체인이 단일 진실입니다. 오프체인 원장은 **항상 온체인에서 파생**됩니다. 이 방향이 절대 역전되어서는 안 됩니다."
+**Step 1**: mint 함수 구현
+```solidity
+// TODO: mint 구현
+// - onlyRole(MINTER_ROLE) 체크
+// - whenNotPaused 체크
 
-### 1-2. DB 스키마 설계 원칙 (25분)
-
-**핵심 테이블 4개:**
-
-```sql
--- 1. 사용자 NFT 보유 현황 (온체인에서 파생, 캐시)
-CREATE TABLE user_nft_holdings (
-  id              BIGSERIAL PRIMARY KEY,
-  user_id         VARCHAR(64) NOT NULL,
-  token_id        BIGINT NOT NULL,
-  contract_addr   VARCHAR(42) NOT NULL,
-  chain_id        INT NOT NULL,
-  acquired_at     TIMESTAMPTZ NOT NULL,
-  released_at     TIMESTAMPTZ,           -- NULL = 현재 보유중
-  on_chain_tx     VARCHAR(66) NOT NULL,  -- 취득 TX hash
-  UNIQUE(token_id, contract_addr, chain_id)
-);
-
--- 2. 처리된 온체인 이벤트 (idempotency 보장)
-CREATE TABLE processed_events (
-  id              BIGSERIAL PRIMARY KEY,
-  tx_hash         VARCHAR(66) NOT NULL,
-  log_index       INT NOT NULL,
-  event_name      VARCHAR(64) NOT NULL,
-  block_number    BIGINT NOT NULL,
-  processed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  payload         JSONB NOT NULL,
-  UNIQUE(tx_hash, log_index)             -- 중복 방지 composite key
-);
-
--- 3. 발행 요청 상태머신
-CREATE TABLE mint_requests (
-  id              BIGSERIAL PRIMARY KEY,
-  request_id      UUID NOT NULL UNIQUE,
-  user_id         VARCHAR(64) NOT NULL,
-  policy_id       VARCHAR(64) NOT NULL,
-  status          VARCHAR(16) NOT NULL   -- PENDING|SUBMITTED|CONFIRMED|FAILED
-                  CHECK (status IN ('PENDING','SUBMITTED','CONFIRMED','FAILED')),
-  tx_hash         VARCHAR(66),           -- SUBMITTED 이후 채워짐
-  token_id        BIGINT,                -- CONFIRMED 이후 채워짐
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  error_msg       TEXT
-);
-
--- 4. 감사 로그 (append-only, 절대 UPDATE/DELETE 금지)
-CREATE TABLE audit_log (
-  id              BIGSERIAL PRIMARY KEY,
-  event_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  actor           VARCHAR(64) NOT NULL,  -- system | user_id | admin_id
-  action          VARCHAR(64) NOT NULL,  -- MINT_REQUESTED, TX_SUBMITTED, etc.
-  resource_type   VARCHAR(32) NOT NULL,
-  resource_id     VARCHAR(128) NOT NULL,
-  before_state    JSONB,
-  after_state     JSONB NOT NULL,
-  ip_address      INET,
-  session_id      UUID,
-  checksum        VARCHAR(64) NOT NULL   -- SHA-256(event_time||actor||action||resource_id||after_state)
-);
-```
-
-> "audit_log에 UPDATE나 DELETE를 허용하는 순간 감사 로그가 아닙니다. PostgreSQL Row Security Policy로 이 테이블은 INSERT만 허용합니다."
-
----
-
-## 실습 1: LedgerService 구현 (00:40~01:20)
-
-> **아키텍처 업데이트 (2026-04-25)**: NFT 보유 현황과 감사 로그는
-> `internal/blockchain-gateway` (Java)가 관리한다.
-> DMZ TypeScript는 ICoreBankingAdapter.recordNftHolding() / recordAuditLog()를 호출한다.
-> Day 10 실습에서 Java 구현체(InternalLedgerService.java, AuditLogService.java)도 함께 확인한다.
-
-### Step 1 — 스켈레톤 확인 (10분)
-
-```bash
-# DMZ TypeScript — 운영 원장 (mint_requests, processed_events)
-cat dmz/packages/core-banking/src/ledger/LedgerService.ts
-
-# Internal Java — 영구 원장 (user_nft_holdings, audit_log)
-cat internal/blockchain-gateway/src/main/java/io/coincraft/kyobo/gateway/service/InternalLedgerService.java
-cat internal/blockchain-gateway/src/main/java/io/coincraft/kyobo/gateway/service/AuditLogService.java
-```
-
-**레이어별 역할 분리:**
-- DMZ TypeScript (`LedgerService.ts`): `mint_requests`, `processed_events` — 임시 운영 데이터
-- Internal Java (`InternalLedgerService.java`): `user_nft_holdings` — 영구 금융 원장
-- Internal Java (`AuditLogService.java`): `audit_log` — 규제 감사 로그 (append-only)
-
-**DMZ에서 구현할 메서드:**
-- `getMintRequestStatus()` — 발행 요청 상태 조회
-- `updateMintRequest()` — 상태머신 전이 (CONFIRMED 시 Java 호출)
-- `recordProcessedEvent()` — 이벤트 중복 방지
-
-**Java에서 구현할 메서드 (실습 후반):**
-- `InternalLedgerService.recordNftHolding()` — NFT 취득 기록
-- `InternalLedgerService.releaseNftHolding()` — NFT 소각/이전 기록
-
-### Step 2 — 상태머신 전이 규칙 구현 (20분)
-
-```typescript
-// 허용된 전이만 통과시키는 guard
-const VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
-  PENDING:    ['SUBMITTED', 'FAILED'],
-  SUBMITTED:  ['CONFIRMED', 'FAILED'],
-  CONFIRMED:  [],            // 종단 상태
-  FAILED:     [],            // 종단 상태
-};
-```
-
-**실습 과제:**
-1. `LedgerService.ts`에서 `// TODO: implement state transition guard` 찾아서 구현
-2. 잘못된 전이(CONFIRMED→PENDING 등) 시도 시 `InvalidStateTransitionError` throw
-3. 단위 테스트 실행: `pnpm test --filter=core-banking`
-
-### Step 3 — 이벤트 중복 처리 방어 (10분)
-
-```typescript
-// processed_events INSERT 시 ON CONFLICT DO NOTHING
-// 이미 처리된 이벤트는 조용히 skip
-const result = await db.query(`
-  INSERT INTO processed_events (tx_hash, log_index, event_name, block_number, payload)
-  VALUES ($1, $2, $3, $4, $5)
-  ON CONFLICT (tx_hash, log_index) DO NOTHING
-  RETURNING id
-`, [txHash, logIndex, eventName, blockNumber, JSON.stringify(payload)]);
-
-if (result.rows.length === 0) {
-  // 이미 처리된 이벤트 — 멱등성 보장, 정상 종료
-  return { skipped: true };
+function mint(
+  address to,
+  uint256 tokenId,
+  uint256 amount,
+  bytes memory data
+) external onlyRole(MINTER_ROLE) whenNotPaused {
+  // TODO: _mint(to, tokenId, amount, data) 호출
 }
 ```
 
----
+**Step 2**: mintBatch 함수 구현
+```solidity
+// TODO: mintBatch 구현 — 동일 modifier 적용
 
-## 실습 2: AuditLog 서비스 구현 (01:20~02:10)
-
-### Step 1 — 금융 규제 감사 요건 이해 (15분)
-
-**토킹포인트:**
-
-> "금융감독원 전자금융감독규정 §34: 접근 기록은 1년 이상 보존. 가상자산이용자보호법 §15: 거래 기록 5년 보존. 이 요건들이 audit_log 테이블 설계에 직접 영향을 줍니다."
-
-**감사 추적 필수 항목:**
-
-| 항목 | 규제 근거 | 구현 |
-|---|---|---|
-| 누가 (Who) | 전금법 §34 | `actor` 컬럼 |
-| 언제 (When) | 가상자산법 §15 | `event_time` (microsecond precision) |
-| 무엇을 (What) | 가상자산법 §15 | `action` + `resource_type` + `resource_id` |
-| 변경 전후 (Before/After) | 금감원 IT감사 가이드 | `before_state`, `after_state` JSONB |
-| 무결성 (Integrity) | ISMS-P 인증 기준 | `checksum` SHA-256 |
-
-### Step 2 — AuditLogService 구현 (25분)
-
-```bash
-cat dmz/packages/core-banking/src/audit/AuditLogService.ts
-```
-
-**구현할 메서드:**
-- `log()` — 단건 감사 로그 기록 + checksum 자동 생성
-- `verify()` — checksum 재계산 후 DB값 비교 (무결성 검증)
-- `queryByResource()` — 리소스별 감사 이력 조회
-
-**실습 과제:**
-1. `AuditLogService.ts`에서 `// TODO: generate checksum` 찾아서 구현
-   - 입력: `event_time + actor + action + resource_id + JSON.stringify(after_state)`
-   - 알고리즘: `crypto.createHash('sha256')`
-2. `verifyIntegrity(id: number)` 구현 — DB에서 읽어 checksum 재계산 후 비교
-
-### Step 3 — 미들웨어 연결 (20분)
-
-```typescript
-// Express 미들웨어: 모든 상태 변경 API 자동 감사 기록
-export function auditMiddleware(auditLog: AuditLogService) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const originalJson = res.json.bind(res);
-    res.json = (body: unknown) => {
-      // TODO: res.locals에서 before/after state 추출 후 auditLog.log() 호출
-      return originalJson(body);
-    };
-    next();
-  };
+function mintBatch(
+  address to,
+  uint256[] memory tokenIds,
+  uint256[] memory amounts,
+  bytes memory data
+) external onlyRole(MINTER_ROLE) whenNotPaused {
+  // TODO: _mintBatch(to, tokenIds, amounts, data) 호출
 }
 ```
 
+**Step 3**: 테스트
+```typescript
+// MINTER_ROLE 없는 주소 → revert 테스트
+it('MINTER_ROLE 없는 주소 mint → revert', async () => {
+  // TODO: attacker 주소로 mint 시도 → revert 확인
+});
+
+// Pause 상태 → revert 테스트
+it('Pause 상태 mint → revert', async () => {
+  // TODO: pause() 호출 후 mint 시도 → revert 확인
+});
+
+// mintBatch 500건 가스 측정
+it('mintBatch 500건 가스 측정', async () => {
+  // TODO: tokenIds 500개 배열 생성
+  // TODO: mintBatch 호출 → gasUsed 측정
+  // TODO: block gas limit(30M) 대비 여유 확인
+});
+```
+
+### ✅ 답안
+
+```solidity
+// mint 완성
+function mint(address to, uint256 tokenId, uint256 amount, bytes memory data)
+  external
+  onlyRole(MINTER_ROLE)
+  whenNotPaused
+{
+  _mint(to, tokenId, amount, data);
+}
+
+// mintBatch 완성
+function mintBatch(
+  address to,
+  uint256[] memory tokenIds,
+  uint256[] memory amounts,
+  bytes memory data
+) external onlyRole(MINTER_ROLE) whenNotPaused {
+  _mintBatch(to, tokenIds, amounts, data);
+}
+```
+
+```typescript
+// 테스트 완성
+it('MINTER_ROLE 없는 주소 mint → revert', async () => {
+  await expect(
+    nft.connect(attacker).mint(attacker.address, 1001n, 1n, '0x')
+  ).to.be.revertedWithCustomError(nft, 'AccessControlUnauthorizedAccount');
+});
+
+it('Pause 상태 mint → revert', async () => {
+  await nft.connect(pauser).pause();
+  await expect(
+    nft.connect(minter).mint(user.address, 1001n, 1n, '0x')
+  ).to.be.revertedWithCustomError(nft, 'EnforcedPause');
+});
+
+it('mintBatch 500건 가스 측정', async () => {
+  const tokenIds = Array.from({ length: 500 }, (_, i) => BigInt(i + 1));
+  const amounts  = new Array(500).fill(1n);
+  const tx = await nft.connect(minter).mintBatch(user.address, tokenIds, amounts, '0x');
+  const receipt = await tx.wait();
+  console.log('gasUsed:', receipt.gasUsed.toString());
+  expect(receipt.gasUsed).to.be.lessThan(30_000_000n);
+});
+```
+
+### ✅ 완료 기준
+- [ ] MINTER_ROLE 없는 주소 mint → revert
+- [ ] mintBatch 500건 가스 측정 완료
+
 ---
 
-## 실습 3: 잔액 재조정(Reconcile) (02:10~02:50)
+## S38: 컨트랙트 생명주기 관리 — 소각·일시정지·업그레이드 (강의 15분 + 실습 40분)
 
-### Step 1 — 재조정이 필요한 이유 (10분)
+### 강의
 
-**토킹포인트:**
+**burn 권한 설계:**
+- 소유자 또는 approved 주소만 소각
+- 잔액 0 상태 소각 방어 (OZ에서 자동 처리)
 
-> "이벤트 파이프라인이 완벽해도 DB와 온체인이 틀어질 수 있습니다. 서버 재시작, 네트워크 순단, Reorg — 이런 상황에서도 교보생명 원장은 정확해야 합니다. Reconcile은 그 보험입니다."
+**`_authorizeUpgrade`에 UPGRADER_ROLE:**
+- 아무나 업그레이드 못하게 막는 핵심 방어
 
-**재조정 시나리오:**
+**Pause 권한 단일점 위험:**
+- Admin 키 분실 시 영구 정지
+- 다중 Pauser 설계 필요
 
+### 🔴 실습 (40분) — 수강생 직접 작성
+
+**Step 1**: burn / pause / unpause / _authorizeUpgrade 구현
+```solidity
+// TODO: burn 구현
+function burn(address from, uint256 tokenId, uint256 amount) external {
+  // TODO: msg.sender가 from이거나 approved인지 확인
+  // TODO: _burn(from, tokenId, amount) 호출
+}
+
+// TODO: pause / unpause
+function pause()   external onlyRole(PAUSER_ROLE)  { _pause(); }
+function unpause() external onlyRole(PAUSER_ROLE)  { _unpause(); }
+
+// TODO: _authorizeUpgrade
+function _authorizeUpgrade(address newImplementation)
+  internal
+  override
+  // TODO: 적절한 role 체크
+{}
 ```
-시나리오 1: 이벤트 누락
-  → 온체인: tokenId 42 → user_A 보유
-  → DB: user_nft_holdings에 tokenId 42 없음
-  → 재조정: DB에 INSERT + 감사 로그 RECONCILE_INSERT
 
-시나리오 2: 데이터 불일치
-  → 온체인: tokenId 42 → user_B 소유
-  → DB: tokenId 42 → user_A 소유 기록
-  → 재조정: DB 업데이트 + 감사 로그 RECONCILE_UPDATE + 알림
+**Step 2**: 테스트
+```typescript
+// Pause 상태 mint/burn → revert
+it('Pause 상태 burn → revert', async () => {
+  await nft.connect(minter).mint(user.address, 1001n, 5n, '0x');
+  await nft.connect(pauser).pause();
+  
+  // TODO: burn 시도 → revert 확인
+});
+
+it('unpause 후 정상 동작', async () => {
+  await nft.connect(pauser).pause();
+  await nft.connect(pauser).unpause();
+  
+  // TODO: mint 성공 확인
+});
+
+// 전체 단위 테스트 실행
+// npx hardhat test → all PASS 확인
 ```
 
-### Step 2 — ReconcileService 구현 (30분)
+### ✅ 답안
+
+```solidity
+// burn 완성
+function burn(address from, uint256 tokenId, uint256 amount) external {
+  require(
+    from == msg.sender || isApprovedForAll(from, msg.sender),
+    "KyoboNFT: caller is not owner or approved"
+  );
+  _burn(from, tokenId, amount);
+}
+
+// _authorizeUpgrade 완성
+function _authorizeUpgrade(address newImplementation)
+  internal
+  override
+  onlyRole(UPGRADER_ROLE)
+{}
+
+// supportsInterface override (다중 상속 필수)
+function supportsInterface(bytes4 interfaceId)
+  public view override(ERC1155Upgradeable, AccessControlUpgradeable)
+  returns (bool)
+{
+  return super.supportsInterface(interfaceId);
+}
+```
+
+### ✅ 완료 기준
+- [ ] Pause 상태 mint/burn → revert
+- [ ] 전체 단위 테스트 PASS
+
+---
+
+## S39: 스마트컨트랙트 배포 파이프라인과 온체인 코드 검증 (강의 15분 + 실습 40분)
+
+### 강의
+
+**Upgradeable 배포 절차:**
+1. implementation 컨트랙트 배포
+2. 프록시 배포 (implementation 주소 참조)
+3. initialize 호출 (프록시를 통해)
+
+**Etherscan 검증:**
+- proxy + implementation 둘 다 등록 필요
+- API 키: ETHERSCAN_API_KEY 환경변수
+
+**배포 후 프록시 주소 저장:**
+- 환경변수 + 배포 관리 파일 (deployments/)
+
+### 🔴 실습 (40분) — 수강생 직접 작성
+
+**Step 1**: 업그레이드 가능 배포 스크립트
+```typescript
+// blockchain/scripts/deploy-kyobo-nft.ts
+// TODO: 배포 스크립트 작성
+
+import { ethers, upgrades } from 'hardhat';
+
+async function main() {
+  const [deployer] = await ethers.getSigners();
+  console.log('배포 계정:', deployer.address);
+
+  const KyoboNFT = await ethers.getContractFactory('KyoboNFT');
+  
+  // TODO: upgrades.deployProxy로 배포
+  // TODO: 프록시 주소 콘솔 출력
+  // TODO: deployments/ 파일에 주소 저장
+}
+
+main().catch(console.error);
+```
+
+**Step 2**: Sepolia 배포 실행
+```bash
+# TODO: Sepolia ETH 충전 확인 (최소 0.1 ETH)
+# TODO: 배포 실행
+npx hardhat run scripts/deploy-kyobo-nft.ts --network sepolia
+
+# TODO: Etherscan 트랜잭션 확인
+```
+
+**Step 3**: Etherscan 소스코드 검증
+```bash
+# TODO: 검증 실행
+npx hardhat verify --network sepolia [PROXY_ADDRESS]
+
+# TODO: Etherscan Read Contract에서 직접 함수 호출 테스트
+# - balanceOf(address, tokenId) 조회
+# - supportsInterface 조회
+```
+
+### ✅ 답안
+
+```typescript
+// deploy-kyobo-nft.ts 완성
+async function main() {
+  const [deployer] = await ethers.getSigners();
+  console.log('배포 계정:', deployer.address);
+  console.log('잔액:', ethers.formatEther(await ethers.provider.getBalance(deployer.address)));
+
+  const KyoboNFT = await ethers.getContractFactory('KyoboNFT');
+  const nft = await upgrades.deployProxy(KyoboNFT, [deployer.address], {
+    initializer: 'initialize',
+    kind: 'uups',
+  });
+  await nft.waitForDeployment();
+  
+  const proxyAddress = await nft.getAddress();
+  console.log('KyoboNFT 프록시:', proxyAddress);
+
+  // 배포 정보 저장
+  const fs = await import('fs');
+  fs.writeFileSync(
+    'deployments/sepolia.json',
+    JSON.stringify({ KyoboNFT: proxyAddress, deployer: deployer.address, network: 'sepolia' }, null, 2),
+  );
+}
+```
 
 ```bash
-cat dmz/packages/core-banking/src/reconcile/ReconcileService.ts
+# Etherscan 검증
+npx hardhat verify --network sepolia $(cat deployments/sepolia.json | jq -r '.KyoboNFT')
 ```
 
-**구현 흐름:**
-1. 체인에서 현재 NFT 보유자 목록 조회 (`IChainAdapter.getTokenOwners()`)
-2. DB의 `user_nft_holdings` (released_at IS NULL) 조회
-3. 두 집합 비교 → 누락/불일치 탐지
-4. 차이 항목 수정 + 감사 로그 기록
-5. 재조정 결과 리포트 반환
-
-**실습 과제:**
-- `ReconcileService.reconcile()` 메서드에서 `// TODO` 3곳 구현
-- 실행: `pnpm reconcile --dry-run` (실제 변경 없이 차이만 출력)
+### ✅ 완료 기준
+- [ ] Sepolia 배포 성공
+- [ ] Etherscan verify 통과
+- [ ] Read Contract에서 함수 호출 확인
 
 ---
 
-## 마무리: 원장의 단일 진실 원천 (02:50~03:00)
+## S40: 프록시 업그레이드 안전성 — Storage Layout 규칙과 버전 관리 (강의 15분 + 실습 40분)
 
-**핵심 3줄:**
+### 강의
 
-> 1. **온체인이 진실, 오프체인은 파생이다.** DB 원장은 항상 온체인 이벤트에서 파생되어야 하며, 역방향 동기화는 설계 원칙 위반이다.
-> 2. **감사 로그는 append-only다.** UPDATE/DELETE를 허용하는 순간 금융 규제 감사를 통과할 수 없다. checksum으로 무결성을 증명한다.
-> 3. **Reconcile은 방어선이다.** 이벤트 파이프라인이 완벽해도 주기적 재조정으로 온체인-오프체인 일치를 보장한다.
+**Storage layout 규칙:**
+- 기존 슬롯 변경·삭제 **절대 불가**
+- 끝에만 추가 가능
+- 위반 시 토큰 전량 파괴 (슬롯 재정의로 기존 값 덮어쓰기)
 
----
+**`reinitializer(2)`:**
+- 업그레이드 후 initialize 재호출 방지
+- 버전 번호 관리
 
-## 다음 시간 예고
+**hardhat-upgrades 레이아웃 체커:**
+- 슬롯 충돌 자동 감지
+- `upgrades.validateUpgrade` 또는 `upgrades.upgradeProxy` 시 자동 검증
 
-> "원장과 감사 로그를 갖췄습니다. 그런데 VASP가 TX를 실패시키거나 체인 Reorg가 발생하면 어떻게 됩니까? Day 11에서는 그 상황을 직접 재현하고, 원장 상태머신이 어떻게 복구하는지 구현합니다."
+### 🔴 실습 (40분) — 수강생 직접 작성
+
+**Step 1**: 의도적 슬롯 충돌 재현 → 원복
+```solidity
+// KyoboNFT.sol에 임시 변수 추가 (잘못된 위치)
+// TODO: 기존 변수들 사이에 새 변수 삽입 (슬롯 충돌 발생)
+// → 업그레이드 시 값 파괴 확인
+// → 원복: 끝에 추가하는 올바른 방법으로 재시도
+```
+
+**Step 2**: KyoboNFTV2.sol 작성
+```solidity
+// blockchain/contracts/KyoboNFTV2.sol
+// TODO: 새 변수를 끝에만 추가
+// TODO: reinitializer(2) 적용
+
+contract KyoboNFTV2 is KyoboNFT {
+  // TODO: 새 변수 (끝에 추가)
+  uint256 public maxSupply;
+  
+  // TODO: v2 초기화
+  function initializeV2(uint256 _maxSupply) public reinitializer(2) {
+    maxSupply = _maxSupply;
+  }
+}
+```
+
+**Step 3**: 업그레이드 스크립트 실행
+```typescript
+// TODO: 기존 tokenId 보존 확인
+
+async function main() {
+  const proxyAddr = process.env.KYOBO_NFT_PROXY_ADDR!;
+  
+  // v1에서 mint 1건
+  const nftV1 = await ethers.getContractAt('KyoboNFT', proxyAddr);
+  await nftV1.mint(user.address, 1001n, 1n, '0x');
+  const balanceBefore = await nftV1.balanceOf(user.address, 1001n);
+  
+  // v2로 업그레이드
+  const KyoboNFTV2 = await ethers.getContractFactory('KyoboNFTV2');
+  // TODO: upgrades.upgradeProxy 호출
+  
+  // 기존 tokenId 보존 확인
+  const nftV2 = await ethers.getContractAt('KyoboNFTV2', proxyAddr);
+  const balanceAfter = await nftV2.balanceOf(user.address, 1001n);
+  console.log('업그레이드 전:', balanceBefore.toString());
+  console.log('업그레이드 후:', balanceAfter.toString());
+  // 같아야 함
+}
+```
+
+### ✅ 답안
+
+```solidity
+// KyoboNFTV2.sol
+contract KyoboNFTV2 is KyoboNFT {
+  // 새 변수는 반드시 끝에만 추가
+  uint256 public maxSupply;
+  mapping(uint256 => string) public tokenMetadata;
+
+  function initializeV2(uint256 _maxSupply) public reinitializer(2) {
+    maxSupply = _maxSupply;
+  }
+}
+```
+
+```typescript
+// 업그레이드 스크립트
+const KyoboNFTV2 = await ethers.getContractFactory('KyoboNFTV2');
+const upgraded = await upgrades.upgradeProxy(proxyAddr, KyoboNFTV2);
+await upgraded.waitForDeployment();
+
+// v2 초기화
+await upgraded.initializeV2(1_000_000n);
+console.log('maxSupply:', await upgraded.maxSupply());
+
+// 기존 토큰 보존 확인
+const balance = await upgraded.balanceOf(user.address, 1001n);
+console.log('기존 tokenId 1001 보유량:', balance.toString()); // 1
+```
+
+### ✅ M6 완료 기준
+- [ ] Sepolia 배포 + Etherscan 검증
+- [ ] v2 업그레이드 후 기존 tokenId 보존
+- [ ] Storage layout 충돌 없음

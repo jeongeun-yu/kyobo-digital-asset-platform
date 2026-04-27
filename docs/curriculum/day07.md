@@ -1,282 +1,423 @@
-# Day 07 — 테스트넷 배포 & 운용 모니터링
+# Day 07 — M4 마무리 + M5 전반부: 원장 완성 + 비즈니스 로직 진입 (S25~S28)
 
-**시간**: 3시간 (180분)  
-**핵심 질문**: 로컬에서 동작한다. 테스트넷에 배포하면 무엇이 달라지고, 운용 책임자는 무엇을 모니터링해야 하는가?
-
----
-
-## 세션 구조
-
-| 시간 | 내용 |
-|---|---|
-| 00:00~00:25 | 1부: 테스트넷 vs 로컬 — 무엇이 달라지는가 |
-| 00:25~01:15 | 실습 1: Ethereum Sepolia 배포 + Etherscan 확인 |
-| 01:15~01:45 | 2부: 운용 모니터링 — 무엇을 보아야 하는가 |
-| 01:45~02:30 | 실습 2: 테스트넷 NFT 발행 + 트랜잭션 추적 |
-| 02:30~03:00 | 실습 3: 비상 정지 + 복구 절차 |
+**세션**: S25~S28 | **모듈**: M4~M5 | **시간**: 4시간 (4세션 × 1시간)  
+**산출물**: Reconcile + SHA-256 감사 체인 + 지갑 프로비저닝 + user-wallet 매핑
 
 ---
 
-## 1부: 테스트넷 vs 로컬 — 무엇이 달라지는가 (00:00~00:25)
+## S25: 온체인 상태와 내부 원장의 정합성 유지 원칙 (강의 20분 + 실습 35분)
 
-### 1-1. 로컬 Hardhat의 한계 (10분)
+### 강의
 
-**토킹포인트:**
+**Reconcile 원칙:**
+- 온체인 `balanceOf()`가 항상 진실
+- 원장이 불일치하면 원장을 온체인 기준으로 수정
 
-> "로컬 Hardhat 노드는 개발에는 완벽하지만 실제 환경과 다른 점이 있습니다."
+**불일치 발생 시나리오:**
+- Consumer 장애로 이벤트 미처리
+- Reorg 후 원장 미업데이트
 
-| 항목 | 로컬 Hardhat | Ethereum Sepolia 테스트넷 |
-|---|---|---|
-| 블록 생성 | 트랜잭션 즉시 | ~2초 대기 |
-| 네트워크 지연 | 없음 | RPC 응답 지연 |
-| Gas 가격 | 0 | 실제 gas price 적용 |
-| 블록 탐색기 | 없음 | Etherscan Sepolia |
-| 컨트랙트 검증 | 불가 | Etherscan 검증 가능 |
-| 재시작 시 | 상태 초기화 | 영구 기록 |
+**역방향 금지 (절대 규칙):**
+- 원장 값으로 온체인을 수정하는 코드는 절대 없어야 함
+- ReconcileService는 읽기만 하고 온체인을 수정하지 않음
 
-### 1-2. 테스트넷 배포 전 체크리스트 (15분)
+### 🔴 실습 (35분) — 수강생 직접 작성
 
-**토킹포인트:**
-
-> "테스트넷이라도 배포 후 컨트랙트 주소는 바뀌지 않습니다. 배포 전 반드시 확인해야 할 것들이 있습니다."
-
-**배포 전 체크리스트:**
-```
-□ Hardhat 로컬에서 모든 시나리오 테스트 완료
-□ 배포 계정에 테스트넷 Sepolia ETH 충분히 확보
-□ ORACLE_SIGNER_ADDRESS 주소 확정
-□ BASE_METADATA_URI 서버 준비 (메타데이터 서버 응답 확인)
-□ 배포 스크립트의 파라미터 재확인
-□ 팀원과 배포 역할 분담 확인 (배포자 ≠ 오라클 서명자)
-```
-
----
-
-## 실습 1: Ethereum Sepolia 배포 + Etherscan 확인 (00:25~01:15)
-
-### Step 1 — 테스트넷 ETH 확보 (10분)
-
-```
-Sepolia Faucet: https://sepoliafaucet.com/
-또는: https://www.alchemy.com/faucets/ethereum-sepolia
-→ 지갑 주소 입력 → 0.5 ETH 수령
-```
-
-`.env` 설정:
-```bash
-SEPOLIA_RPC_URL=https://rpc.sepolia.org
-DEPLOYER_PRIVATE_KEY=[테스트 전용 지갑 키]
-ORACLE_SIGNER_ADDRESS=[오라클 서명 계정 주소]
-BASE_METADATA_URI=https://meta-test.kyobo-da.internal/nft
-ETHERSCAN_API_KEY=[Etherscan API 키]
-```
-
-### Step 2 — 배포 실행 (15분)
-
-```bash
-cd blockchain
-npx hardhat run scripts/deploy/deploy-phase1.ts --network sepolia
-```
-
-**예상 출력:**
-```
-Deploying with: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-ActivityOracle: 0x5FbDB2315678afecb367f032d93F642f64180aa3
-KyoboNFT:      0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-NFTIssuer:     0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
-ISSUER_ROLE granted to NFTIssuer
-
-── 배포 완료 ──────────────────────────────────
-NFT_CONTRACT_ADDR=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-NFT_ISSUER_ADDR=0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
-ORACLE_ADDR=0x5FbDB2315678afecb367f032d93F642f64180aa3
-```
-
-### Step 3 — Etherscan Sepolia 탐색 (25분)
-
-`https://sepolia.etherscan.io/address/[NFT_CONTRACT_ADDR]`
-
-확인 항목별 설명:
-
-**[Contract 탭]**
-> "소스 코드가 표시되지 않는다면 컨트랙트가 Verify되지 않은 것입니다. Verify하면 누구나 소스 코드를 확인할 수 있습니다."
-
-```bash
-npx hardhat verify --network sepolia [NFT_CONTRACT_ADDR] [deployer] [complianceAddr]
-```
-
-**[Events 탭]**
-> "이 컨트랙트에서 발생한 모든 이벤트가 기록됩니다. Issued, Revoked, RoleGranted... 이것이 온체인 감사 로그입니다. 누구도 삭제할 수 없습니다."
-
-**[Read Contract 탭]**
-> "배포된 컨트랙트의 상태를 직접 조회할 수 있습니다. `paused()` 상태, `issuer()` 주소를 여기서 확인합니다."
-
----
-
-## 2부: 운용 모니터링 — 무엇을 보아야 하는가 (01:15~01:45)
-
-### 2-1. 운용 책임자가 매일 확인해야 할 것들 (20분)
-
-**토킹포인트:**
-
-> "NFT 발행 서비스가 운영되면 매일 아침 확인해야 할 지표들이 있습니다. 이것들을 놓치면 고객 피해로 이어집니다."
-
-**일일 모니터링 체크리스트:**
-
-```
-□ issuer-service 프로세스 정상 실행 중
-□ EVMAdapter.isConnected() = true (노드 연결 확인)
-□ 마지막 처리 블록이 현재 블록과 차이 없음 (이벤트 지연 없음)
-□ DLQ 쌓인 이벤트 없음
-□ 오라클 서명 키 만료 여부 확인
-□ KyoboNFT.paused() = false (서비스 정상)
-□ 당일 발행 건수 Core Banking과 일치 여부
-```
-
-**이상 징후별 대응:**
-
-| 이상 징후 | 원인 추정 | 즉시 조치 |
-|---|---|---|
-| isConnected() = false | 노드 다운 또는 DMZ 방화벽 | 노드 상태 확인, DMZ Nginx 로그 확인 |
-| 처리 블록 지연 급증 | 이벤트 처리 병목 | 이벤트 핸들러 에러 로그 확인 |
-| DLQ 누적 | Core Banking 다운 | Core Banking 팀 연락, DLQ 보존 |
-| 발행 건수 불일치 | 이벤트 누락 또는 중복 | lastProcessedBlock 확인, DB 조회 |
-| paused() = true | 비상 정지 실행됨 | 원인 파악 후 unpause 여부 결정 |
-
-### 2-2. Gas 비용 모니터링 (10분)
-
-**토킹포인트:**
-
-> "EVM 호환 체인에서 NFT 발행 1건당 Gas 비용을 측정해 봅시다. 프로덕션 체인이 결정되면 이 수치를 바탕으로 월간 Gas 예산을 산정해야 합니다. 운영 예산에 Gas 비용이 반드시 포함되어야 합니다."
-
+**Step 1**: reconcile 구현
 ```typescript
-// 배포 스크립트에서 Gas 측정
-const receipt = await tx.wait();
-console.log('gasUsed:', receipt.gasUsed.toString());
-console.log('gasPrice:', receipt.gasPrice?.toString(), 'wei');
-const cost = receipt.gasUsed * (receipt.gasPrice ?? 0n);
-console.log('cost:', ethers.formatEther(cost), 'ETH');
+// internal/packages/ledger/src/ReconcileService.ts
+// TODO: 온체인 잔액 조회 → 원장 비교 → 불일치 시 보정
+
+async reconcile(userId: string): Promise<ReconcileResult> {
+  // TODO: 사용자의 모든 tokenId에 대해
+  //   1. adapter.balanceOf(walletAddress, tokenId) 호출
+  //   2. DB user_nft_holdings 조회
+  //   3. 불일치 시: 원장을 온체인 값으로 덮어쓰기 + 감사 로그 + 알림
+
+  const walletAddress = await this.walletService.getWalletAddress(userId);
+  const holdings = await this.db('user_nft_holdings').where({ user_id: userId });
+
+  const discrepancies: Discrepancy[] = [];
+
+  for (const holding of holdings) {
+    const onchain = await this.adapter.balanceOf(walletAddress, BigInt(holding.token_id));
+    
+    if (onchain !== BigInt(holding.amount)) {
+      // TODO: 불일치 처리
+    }
+  }
+
+  return { userId, discrepancies, checkedAt: new Date() };
+}
 ```
 
----
-
-## 실습 2: 테스트넷 NFT 발행 + 트랜잭션 추적 (01:45~02:30)
-
-### Step 1 — 테스트넷 발행 (20분)
-
-```bash
-npx hardhat run scripts/issue-nft-full.ts --network sepolia
-```
-
-**출력 예시:**
-```
-=== NFT 발행 전체 흐름 ===
-[1단계] 오라클 데이터 준비
-  value (보): 10000
-[2단계] 오라클 서명 생성
-  서명자: 0x...
-[3단계] NFTIssuer.issueActivityNFT() 호출
-  트랜잭션 전송: 0xabcd...
-  블록 확인: 12345678
-  Gas 사용량: 185432
-[4단계] 발행 결과 확인
-  tokenId: 0
-  발행 시각: 2026-04-21T...
-```
-
-### Step 2 — Etherscan에서 트랜잭션 분석 (25분)
-
-`https://sepolia.etherscan.io/tx/[txHash]`
-
-분석 항목:
-
-**Transaction Details:**
-- Status: `Success` — 성공 여부
-- Gas Used: `185,432` / Gas Limit: `250,000`
-  - Gas Limit을 너무 낮게 설정하면 Out of Gas로 실패
-  - 실패해도 Gas는 소모됨
-
-**Event Logs:**
-- Topic 0: `Issued(address,uint256,bytes32)` 이벤트 시그니처 해시
-- Topic 1 (indexed): 수신자 주소 (패딩 포함)
-- Topic 2 (indexed): tokenId
-- Data: reason (activityId)
-
-> "이 로그를 `ChainEventListener`가 구독합니다. ethers.js의 ABI 파서가 raw hex를 사람이 읽을 수 있는 형태로 변환합니다."
-
----
-
-## 실습 3: 비상 정지 + 복구 절차 (02:30~03:00)
-
-**시나리오:**
-> "오전 9시, 오라클 서명 키가 유출됐다는 신고가 들어왔다. 즉시 조치가 필요하다."
-
-### Step 1 — 즉시 Pause (5분)
+**Step 2**: 강제 불일치 삽입 테스트
 ```typescript
-const nft = await ethers.getContractAt('KyoboNFT', process.env.NFT_CONTRACT_ADDR!);
-const tx  = await nft.pause();
-await tx.wait();
-console.log('컨트랙트 일시 정지 완료');
-console.log('Etherscan에서 pause 이벤트 확인:', tx.hash);
-```
-
-### Step 2 — 피해 범위 파악 (10분)
-```typescript
-// pause 이전 블록부터 유출 의심 시점까지의 Issued 이벤트 조회
-const adapter = new EVMAdapter({ rpcUrl: process.env.SEPOLIA_RPC_URL!, chainId: '11155111' });
-const suspiciousEvents = await adapter.queryEvents(
-  process.env.NFT_CONTRACT_ADDR!,
-  ABI,
-  'Issued',
-  suspectFromBlock,
-  suspectToBlock,
-);
-
-console.log('조사 대상 발행 건수:', suspiciousEvents.length);
-suspiciousEvents.forEach(e => {
-  console.log('  to:', e.args.to, '| activityId:', e.args.reason);
+it('강제 불일치 → Reconcile 감지 + 보정', async () => {
+  // 1. user_nft_holdings에 amount = 5 강제 삽입
+  await db('user_nft_holdings').insert({ user_id: 'alice', token_id: '1001', amount: 5 });
+  
+  // 2. 온체인 잔액은 3으로 설정 (Mock)
+  mockAdapter.setBalance('alice-wallet', 1001n, 3n);
+  
+  // 3. reconcile 실행
+  const result = await reconcileService.reconcile('alice');
+  
+  // TODO: discrepancies에 1건 포함 확인
+  // TODO: DB amount가 3으로 수정됐는지 확인
 });
 ```
 
-### Step 3 — 키 교체 + Unpause (10분)
+### ✅ 답안
+
 ```typescript
-// ActivityOracle에 새 서명 계정 설정
-const oracle  = await ethers.getContractAt('ActivityOracle', process.env.ORACLE_ADDR!);
-const newKey  = ethers.Wallet.createRandom();
-const ORACLE_ROLE = ethers.keccak256(ethers.toUtf8Bytes('ORACLE_ROLE'));
+// reconcile 완성
+async reconcile(userId: string): Promise<ReconcileResult> {
+  const walletAddress = await this.walletService.getWalletAddress(userId);
+  const holdings = await this.db('user_nft_holdings').where({ user_id: userId });
+  const discrepancies: Discrepancy[] = [];
 
-await oracle.revokeRole(ORACLE_ROLE, compromisedSignerAddress);
-await oracle.grantRole(ORACLE_ROLE, newKey.address);
-console.log('오라클 키 교체 완료. 새 주소:', newKey.address);
+  for (const holding of holdings) {
+    const onchain = await this.adapter.balanceOf(walletAddress, BigInt(holding.token_id));
+    const local = BigInt(holding.amount);
 
-await nft.unpause();
-console.log('서비스 재개');
+    if (onchain !== local) {
+      discrepancies.push({
+        tokenId: holding.token_id,
+        onchain: Number(onchain),
+        local: Number(local),
+      });
+
+      // 원장을 온체인 기준으로 보정 (역방향 금지 — 온체인 수정 없음)
+      await this.db('user_nft_holdings')
+        .where({ user_id: userId, token_id: holding.token_id })
+        .update({ amount: Number(onchain), updated_at: new Date() });
+
+      await this.ledger.appendAuditLog(
+        'ReconcileService',
+        'RECONCILE_CORRECTION',
+        holding.token_id,
+        { onchain: Number(onchain), local: Number(local) },
+      );
+
+      console.error(`[Reconcile] 불일치 감지: userId=${userId}, tokenId=${holding.token_id}, onchain=${onchain}, local=${local}`);
+    }
+  }
+
+  return { userId, discrepancies, checkedAt: new Date() };
+}
 ```
 
-### Step 4 — 사후 정리 (5분)
-비상 대응 보고서 작성:
-- 유출 감지 시각 ~ 조치 완료 시각
-- 피해 추정 발행 건수
-- 조치 내용 (pause, 키 교체, unpause)
-- 재발 방지 방안 (키 관리 프로세스 개선)
+### ✅ 완료 기준
+- [ ] 강제 불일치 → Reconcile 감지 + 보정
+- [ ] 역방향 수정 코드 없음 확인
 
 ---
 
-## 마무리
+## S26: 금융 규제 대응 감사 로그 — SHA-256 체인과 불변성 보장 (강의 20분 + 실습 35분)
 
-**오늘의 핵심 3줄:**
-1. 테스트넷 배포 후 Etherscan이 공개 감사 로그가 된다
-2. 운용 책임자는 매일 7개 항목을 확인해야 한다
-3. 비상 정지는 30초 안에 실행 가능해야 한다 — PAUSER_ROLE 소유자가 항상 대기 가능해야 한다
+### 강의
 
-**Day 08 예고:**  
-ISMS-P 체크리스트 직접 실행. 스마트컨트랙트 취약점을 실제 운용 관점에서 다시 본다.
+**Append-only 원칙:**
+- UPDATE/DELETE 금지
+- 보정도 새 INSERT
+- 규제 요건 충족: 5년 보관, 삭제 불가
+
+**SHA-256 체인:**
+```
+checksum_n = SHA256(prev_checksum + event_time + actor + action + resourceId + afterState)
+```
+중간 1개 삭제 시 이후 전체 불일치 → 위변조 감지
+
+### 🔴 실습 (35분) — 수강생 직접 작성
+
+**Step 1**: appendAuditLog 구현
+```typescript
+// internal/packages/ledger/src/AuditLogService.ts
+// TODO: SHA-256 체인 감사 로그 추가
+
+async appendAuditLog(
+  actor: string,
+  action: string,
+  resourceId: string,
+  afterState: unknown,
+): Promise<void> {
+  // TODO: 직전 checksum 조회 (가장 최근 레코드)
+  // TODO: 현재 checksum 계산: SHA256(prev + now + actor + action + resourceId + afterState)
+  // TODO: INSERT INTO audit_log
+}
+```
+
+**Step 2**: verifyChainIntegrity 구현
+```typescript
+// TODO: 전체 순회, checksum 재계산, 첫 번째 불일치 위치 반환
+
+async verifyChainIntegrity(): Promise<{ valid: boolean; firstBadId?: number }> {
+  const logs = await this.db('audit_log').orderBy('id', 'asc');
+  
+  let prevChecksum = '';
+  
+  for (const log of logs) {
+    // TODO: checksum 재계산
+    // TODO: log.checksum과 비교 → 불일치 시 { valid: false, firstBadId: log.id } 반환
+  }
+  
+  return { valid: true };
+}
+```
+
+**Step 3**: 무결성 훼손 테스트
+```typescript
+it('중간 레코드 DELETE → checksum 불일치 감지', async () => {
+  // 감사 로그 5개 추가
+  await auditLog.appendAuditLog('user', 'MINT', '1001', {});
+  await auditLog.appendAuditLog('user', 'BURN', '1001', {});
+  // ... 3개 더
+
+  // 중간 레코드 삭제
+  await db('audit_log').where({ id: 3 }).delete();
+
+  // 무결성 검증 → 불일치 감지
+  const result = await auditLog.verifyChainIntegrity();
+  // TODO: result.valid === false 확인
+});
+```
+
+### ✅ 답안
+
+```typescript
+// appendAuditLog 완성
+import * as crypto from 'crypto';
+
+async appendAuditLog(actor: string, action: string, resourceId: string, afterState: unknown): Promise<void> {
+  const last = await this.db('audit_log').orderBy('id', 'desc').first();
+  const prevChecksum = last?.checksum ?? '';
+
+  const now = new Date().toISOString();
+  const data = `${prevChecksum}|${now}|${actor}|${action}|${resourceId}|${JSON.stringify(afterState)}`;
+  const checksum = crypto.createHash('sha256').update(data).digest('hex');
+
+  await this.db('audit_log').insert({
+    actor, action,
+    resource_id: resourceId,
+    after_state: afterState,
+    checksum,
+    created_at: now,
+  });
+}
+
+// verifyChainIntegrity 완성
+async verifyChainIntegrity(): Promise<{ valid: boolean; firstBadId?: number }> {
+  const logs = await this.db('audit_log').orderBy('id', 'asc');
+  let prevChecksum = '';
+
+  for (const log of logs) {
+    const data = `${prevChecksum}|${log.created_at}|${log.actor}|${log.action}|${log.resource_id}|${JSON.stringify(log.after_state)}`;
+    const expected = crypto.createHash('sha256').update(data).digest('hex');
+
+    if (expected !== log.checksum) {
+      return { valid: false, firstBadId: log.id };
+    }
+    prevChecksum = log.checksum;
+  }
+
+  return { valid: true };
+}
+```
+
+### ✅ M4 완료 기준
+- [ ] 감사 로그 중간 삭제 → checksum 불일치 감지
+- [ ] afterState 수정 → 감지
+- [ ] chain integrity 검증 통과
 
 ---
 
-## 참조 파일
+## S27: 사용자 레이어 진입점 설계 — VASP별 지갑 프로비저닝 분기 (강의 20분 + 실습 35분)
 
-- `blockchain/scripts/deploy/deploy-phase1.ts`
-- `blockchain/src/base/BaseToken.sol`
-- `dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
-- `.env.example`
+### 강의
+
+**사용자 레이어 → 내부망 진입 인터페이스:**
+- `POST /api/wallet/provision` 단일 엔드포인트
+- VASP별 분기: 월렛원(앱 서명) vs 코다(서버 생성)
+
+**VASP별 분기:**
+- 월렛원: 앱에서 `eth_sign` 후 signature 서버 전달 → 서명 검증 → DB 저장
+- 코다: 서버가 Custody API 직접 호출 → 지갑 자동 생성 → DB 저장
+
+### 🔴 실습 (35분) — 수강생 직접 작성
+
+**Step 1**: POST /api/wallet/provision 컨트롤러
+```typescript
+// internal/src/routes/walletRoutes.ts
+// TODO: 컨트롤러 + 라우트 등록
+
+router.post('/api/wallet/provision', async (req, res) => {
+  const { userId, vaspType, signature, walletAddress } = req.body;
+  
+  try {
+    // TODO: WalletProvisioningService.provision() 호출
+    // TODO: 성공 시 201 응답
+  } catch (err) {
+    // TODO: UnsupportedVaspError → 400
+    // TODO: 기타 → 500
+  }
+});
+```
+
+**Step 2**: WalletProvisioningService.provision 구현
+```typescript
+// internal/packages/business/src/WalletProvisioningService.ts
+// TODO: VASP 타입별 분기 구현
+
+async provision(
+  userId: string,
+  vaspType: string,
+  options: { signature?: string; walletAddress?: string },
+): Promise<string> {
+  if (vaspType === 'walleton') {
+    // TODO: 서명 검증 → DB 저장
+  } else if (vaspType === 'coda') {
+    // TODO: Custody API 호출 → 지갑 자동 생성 → DB 저장
+  } else {
+    // TODO: UnsupportedVaspError throw
+  }
+}
+```
+
+**Step 3**: UnsupportedVaspError 테스트
+```typescript
+it('미지원 vaspType → UnsupportedVaspError', async () => {
+  await expect(
+    service.provision('user-1', 'unsupported-vasp', {}),
+  ).rejects.toThrow(UnsupportedVaspError);
+});
+```
+
+### ✅ 답안
+
+```typescript
+// WalletProvisioningService 완성
+export class UnsupportedVaspError extends Error {
+  constructor(vaspType: string) {
+    super(`Unsupported VASP type: ${vaspType}`);
+    this.name = 'UnsupportedVaspError';
+  }
+}
+
+async provision(userId: string, vaspType: string, options: ProvisionOptions): Promise<string> {
+  switch (vaspType) {
+    case 'walleton': {
+      if (!options.signature || !options.walletAddress) {
+        throw new Error('월렛원: signature와 walletAddress 필요');
+      }
+      await this.registerWalletAddress(userId, options.walletAddress, options.signature);
+      return options.walletAddress;
+    }
+    case 'coda': {
+      const walletAddress = await this.codaClient.createWallet(userId);
+      await this.db('user_wallet_mapping').insert({
+        user_id: userId,
+        wallet_address: walletAddress,
+        vasp_type: 'coda',
+        created_at: new Date(),
+      });
+      return walletAddress;
+    }
+    default:
+      throw new UnsupportedVaspError(vaspType);
+  }
+}
+```
+
+### ✅ 완료 기준
+- [ ] POST /api/wallet/provision 라우트 등록
+- [ ] vaspType 분기 구조 확인
+- [ ] UnsupportedVaspError 테스트 통과
+
+---
+
+## S28: 온체인 식별자와 내부 사용자 ID의 매핑 설계 (강의 25분 + 실습 30분)
+
+### 강의
+
+**user_id ↔ wallet_address 매핑 필요성:**
+- 당사 내부 식별자와 블록체인 주소 분리
+- 1:1(기본) vs 1:N(멀티 지갑 지원 시)
+
+**VASP별 지갑 주소 종류:**
+- 월렛원: 사용자 직접 Web3 연결(외부 지갑)
+- 코다: Custody 시스템 생성(내부)
+
+**지갑 주소 등록 흐름:**
+```
+앱 로그인 → 지갑 연결 → eth_sign → ecrecover 서명 검증 → DB 저장
+```
+
+### 🔴 실습 (30분) — 수강생 직접 작성
+
+**Step 1**: user_wallet_mapping 테이블 마이그레이션
+```typescript
+// TODO: 마이그레이션 작성
+await knex.schema.createTable('user_wallet_mapping', (t) => {
+  // TODO: user_id, wallet_address, vasp_type, is_active, created_at
+  // TODO: UNIQUE(user_id, wallet_address) — 중복 등록 방지
+});
+```
+
+**Step 2**: 지갑 주소 등록 흐름 시퀀스 다이어그램 직접 그리기 (화이트보드)
+```
+월렛원 방식:
+앱 → [eth_sign(nonce)] → 서버 → [ecrecover] → DB 저장
+
+코다 방식:
+서버 → [Custody API 호출] → 지갑 생성 → DB 저장
+```
+
+**Step 3**: WalletNotFoundError 예외 클래스
+```typescript
+// TODO: WalletNotFoundError 정의
+
+export class WalletNotFoundError extends Error {
+  constructor(userId: string) {
+    // TODO: 메시지 + name 설정
+  }
+}
+
+// getWalletAddress: 없으면 WalletNotFoundError throw
+async getWalletAddress(userId: string): Promise<string> {
+  const mapping = await this.db('user_wallet_mapping')
+    .where({ user_id: userId, is_active: true })
+    .first();
+  
+  if (!mapping) throw new WalletNotFoundError(userId);
+  return mapping.wallet_address;
+}
+```
+
+### ✅ 답안
+
+```typescript
+// 마이그레이션 완성
+await knex.schema.createTable('user_wallet_mapping', (t) => {
+  t.increments('id');
+  t.string('user_id').notNullable();
+  t.string('wallet_address').notNullable();
+  t.string('vasp_type').notNullable(); // 'walleton' | 'coda'
+  t.boolean('is_active').defaultTo(true);
+  t.timestamp('created_at').defaultTo(knex.fn.now());
+  t.unique(['user_id', 'wallet_address']);
+  t.index('user_id');
+});
+
+// WalletNotFoundError 완성
+export class WalletNotFoundError extends Error {
+  constructor(userId: string) {
+    super(`Wallet not found for user: ${userId}`);
+    this.name = 'WalletNotFoundError';
+  }
+}
+```
+
+### ✅ 완료 기준
+- [ ] user_wallet_mapping 마이그레이션 완성
+- [ ] WalletNotFoundError 정의

@@ -1,276 +1,375 @@
-# Day 02 — DMZ 설계: 블록체인 노드는 어디에 두는가
+# Day 02 — M2: DMZ 이벤트 파이프라인 전반부 (S5~S8)
 
-**시간**: 3시간 (180분)  
-**핵심 질문**: 내부망 시스템이 블록체인 노드에 안전하게 접근하려면 네트워크 구조가 어떻게 되어야 하는가?
-
----
-
-## 세션 구조
-
-| 시간 | 내용 |
-|---|---|
-| 00:00~00:30 | 1부: 금융기관 DMZ 설계 원칙 |
-| 00:30~01:10 | 실습 1: Nginx 설정 파일 분석 + 수정 |
-| 01:10~01:50 | 2부: 블록체인 노드 RPC vs WebSocket |
-| 01:50~02:40 | 실습 2: 로컬 환경 구동 + EVMAdapter 연결 확인 |
-| 02:40~03:00 | 3부: 외부 VASP 연동 구조 + 마무리 |
+**세션**: S5~S8 | **모듈**: M2 | **시간**: 4시간 (4세션 × 1시간)  
+**산출물**: WebhookReceiver(202 패턴) + Redis Streams CLI 실습 + HMAC 서명 검증 + QueueService
 
 ---
 
-## 1부: 금융기관 DMZ 설계 원칙 (00:00~00:30)
+## S5: 온체인 이벤트 수신 설계 — 즉시 처리의 위험과 비동기 분리 (강의 25분 + 실습 30분)
 
-### 1-1. DMZ가 존재하는 이유 (15분)
+### 강의
 
-**토킹포인트:**
+**Webhook 즉시 처리 위험:**
+- DB 장애 시 이벤트 영구 유실
+- VASP 재전송 없으면 복구 불가
 
-> "DMZ(Demilitarized Zone)는 군사 용어에서 왔습니다. 내부망과 외부망 사이의 완충 지대입니다. 금융기관 ISMS-P 요건상 고객 데이터를 다루는 시스템은 외부와 직접 통신하면 안 됩니다. 근데 블록체인 노드는 외부 피어와 통신해야만 작동합니다. 이 모순을 DMZ로 해결합니다."
+**202 즉시 응답 패턴:**
+- Webhook 수신 즉시 202 반환, Queue 적재는 비동기
+- VASP 타임아웃 방지 (VASP는 5~30초 내 응답 없으면 타임아웃)
 
+**Queue 중간 단계가 필수인 이유:**
+1. 이벤트 내구성 보장 — Redis Streams 영구 저장
+2. Consumer 독립 확장 — 처리 속도와 수신 속도 분리
+3. 재처리 가능 — 실패 시 PEL에서 재수신
+
+**202 패턴 없는 방식 vs 202+Queue 방식 비교:**
 ```
-[인터넷 / 외부 피어]
-        ↓
-[방화벽 1] ← 허용: 블록체인 P2P 포트만
-        ↓
-[DMZ 서버]
-  - 블록체인 노드 (외부 피어와 동기화)
-  - Nginx 리버스 프록시
-        ↓
-[방화벽 2] ← 허용: 내부 서비스 요청만 (포트 8545/8546)
-        ↓
-[교보 내부망]
-  - issuer-service
-  - Core Banking
-```
+[기존] Webhook → DB 직접 저장 → 202
+        → DB 장애 시: 저장 실패 → VASP에 500 반환 → 이벤트 유실
 
-**왜 노드를 내부망에 두면 안 되는가:**
-- 블록체인 노드는 수백 개의 외부 피어와 상시 통신
-- 내부망 방화벽이 이를 전부 허용하면 내부망 보안 의미 없음
-- ISMS-P 심사 시 지적 대상
-
-**왜 노드를 외부망에 두면 안 되는가:**
-- Public RPC 사용 시 트랜잭션 내용 외부 노출
-- 내부 서비스에서 외부 RPC로 직접 트랜잭션 전송 = 외부 의존성
-- 노드 운영자 신뢰 문제
-
-### 1-2. 이 프로젝트의 DMZ 설계 (15분)
-
-**토킹포인트:**
-
-> "우리 레포의 `infrastructure/dmz/nginx/dmz.conf`를 보겠습니다. 3개의 서버 블록이 있습니다. 하나씩 보겠습니다."
-
-**포트별 역할:**
-
-| 포트 | 역할 | 허용 출처 |
-|---|---|---|
-| 8545 | EVM RPC (HTTP) | 내부망 IP만 |
-| 8546 | EVM WebSocket | 내부망 IP만 |
-| 443 | issuer-service Webhook 수신 | 내부망 IP만 |
-
-> "모두 내부망에서만 접근 가능합니다. 외부에서 교보 노드 RPC에 직접 접근할 수 없습니다. 이게 Private Node의 핵심입니다."
-
----
-
-## 실습 1: Nginx 설정 파일 분석 + 수정 (00:30~01:10)
-
-### Step 1 — 설정 파일 정독 (15분)
-```bash
-cat infrastructure/dmz/nginx/dmz.conf
+[202 패턴] Webhook → Queue 적재 → 즉시 202
+           → DB 장애와 무관 / Consumer가 나중에 Queue에서 꺼내 처리
 ```
 
-각 지시어의 역할을 직접 주석으로 달아본다:
+### 🔴 실습 (30분) — 수강생 직접 작성
 
-```nginx
-upstream blockchain_node {
-    server 10.0.1.10:8545;  # ← 이 IP는 무엇인가?
-    keepalive 32;           # ← keepalive가 없으면 어떤 성능 문제가 생기는가?
-}
-
-allow 10.0.0.0/8;  # ← 이 CIDR이 의미하는 IP 범위는?
-deny  all;         # ← 이 순서가 바뀌면 어떻게 되는가?
-
-proxy_read_timeout 3600s;  # ← 왜 1시간인가?
-```
-
-**질문 답 (강사 해설):**
-- `10.0.1.10`: DMZ 내부에 있는 블록체인 노드 서버 IP
-- `keepalive 32`: 커넥션 재사용. 없으면 매 RPC 요청마다 TCP 핸드쉐이크 반복
-- `10.0.0.0/8`: 10.x.x.x 전체 (교보 내부망 대역)
-- `proxy_read_timeout 3600s`: WebSocket 이벤트 구독은 연결을 1시간 이상 유지해야 함
-
-### Step 2 — 설정 수정 시나리오 (25분)
-
-**시나리오 A:** 교보 내부망 CIDR이 `172.16.0.0/12`로 변경되었다.
-```nginx
-# 수정 전
-allow 10.0.0.0/8;
-
-# 수정 후 — 직접 작성
-allow ____________;
-```
-
-**시나리오 B:** 블록체인 노드 서버를 `10.0.1.20`으로 이전했다.
-```nginx
-# 어느 줄을 어떻게 수정하는가?
-```
-
-**시나리오 C:** 외부 VASP API 호출을 DMZ Nginx가 중계해야 한다.
-- 새로운 upstream 블록 추가
-- 어떤 보안 설정이 추가로 필요한가?
-
----
-
-## 2부: 블록체인 노드 RPC vs WebSocket (01:10~01:50)
-
-### 2-1. 두 가지 통신 방식의 차이 (20분)
-
-**토킹포인트:**
-
-> "블록체인 노드와 통신하는 방법이 두 가지입니다. HTTP RPC와 WebSocket입니다. 뭐가 다를까요?"
-
-**HTTP RPC (포트 8545):**
-```
-요청: "현재 블록 번호가 뭐야?" POST /
-응답: { "result": "0x1a3b5" }
-연결: 요청-응답 후 종료
-```
-
-**WebSocket (포트 8546):**
-```
-연결 유지 → 서버가 이벤트 발생 시 즉시 push
-"방금 Issued 이벤트 발생했어!" → 즉시 수신
-연결: 끊을 때까지 유지
-```
-
-> "트랜잭션 전송(sendTransaction)은 RPC를 씁니다. 이벤트 구독(subscribeEvents)은 WebSocket을 씁니다. EVMAdapter가 두 방식을 내부에서 처리하기 때문에 상위 레이어는 신경 쓸 필요 없습니다."
-
-### 2-2. EVMAdapter 코드 구조 (20분)
-
-```bash
-cat dmz/packages/chain-adapters/src/evm/EVMAdapter.ts
-```
-
-**토킹포인트:**
-
-> "생성자를 보세요. `rpcUrl`과 `privateKey`를 받습니다. `privateKey`가 없으면 `wallet`이 null입니다. 이 상태에서 `sendTransaction()`을 호출하면?"
-
+**Step 1**: WebhookReceiver 기본 구조 생성
 ```typescript
-constructor(config: {
-  rpcUrl:     string;
-  chainId:    string;
-  privateKey?: string;  // 없으면 read-only 모드
-}) {
-  this.wallet = config.privateKey
-    ? new Wallet(config.privateKey, this.provider)
-    : null;
+// dmz/packages/event-engine/src/webhook/WebhookReceiver.ts
+// TODO: POST /webhook 라우트 핸들러 구현
+// 요구사항:
+// 1. 요청 수신 즉시 202 반환
+// 2. Queue 적재는 202 반환 후 비동기로 처리
+// 3. DB 접근 없음
+
+export class WebhookReceiver {
+  constructor(
+    private readonly queueService: QueueService,
+  ) {}
+
+  async receiveWebhook(req: Request, res: Response): Promise<void> {
+    // TODO: 즉시 202 응답
+    // TODO: 비동기로 Queue 적재
+  }
 }
 ```
 
-**중요:** 모니터링 서비스는 `privateKey` 없이 read-only 모드로 연결한다. 키 노출 최소화.
-
----
-
-## 실습 2: 로컬 환경 구동 + EVMAdapter 연결 확인 (01:50~02:40)
-
-### Step 1 — 환경 설정 (10분)
-```bash
-cp .env.example .env
-# .env 열어서 로컬 값 확인 (RPC_URL, CHAIN_ID 등)
-```
-
-### Step 2 — 로컬 노드 구동 (10분)
-```bash
-docker compose -f infrastructure/docker/docker-compose.yml up hardhat-node -d
-
-# 노드 응답 확인
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-
-# 응답: {"jsonrpc":"2.0","id":1,"result":"0x0"}
-# 0x0을 10진수로: 0번 블록 (제네시스)
-```
-
-### Step 3 — EVMAdapter 직접 실행 (30분)
-
-`scripts/test-adapter.ts` 파일을 직접 작성한다:
+**Step 2**: Queue 적재 실패 시 처리 정책을 결정하고 주석으로 설명
 ```typescript
-import { EVMAdapter } from './dmz/packages/chain-adapters/src/evm/EVMAdapter';
+// TODO: Queue 적재가 실패하면 어떻게 해야 하는가?
+// 옵션 A: 로그만 남기고 무시 (이미 202 반환됨)
+// 옵션 B: 인메모리 버퍼에 저장 후 재시도
+// 선택한 정책과 이유를 주석으로 작성
+```
 
-async function main() {
-  const adapter = new EVMAdapter({
-    rpcUrl:  'http://localhost:8545',
-    chainId: '31337',
-    // privateKey 없음 → read-only 모드
-  });
+### ✅ 답안
 
-  console.log('연결 상태:', await adapter.isConnected());
-  console.log('현재 블록:', await adapter.getBlockNumber());
+```typescript
+// WebhookReceiver.ts 완성
+import { Request, Response } from 'express';
+import { QueueService } from './QueueService';
 
-  // read-only 모드에서 sendTransaction 호출 시도
-  try {
-    await adapter.sendTransaction({
-      contractAddr: '0x0000000000000000000000000000000000000000',
-      abi: [],
-      method: 'test',
-      args: [],
+export class WebhookReceiver {
+  constructor(private readonly queueService: QueueService) {}
+
+  async receiveWebhook(req: Request, res: Response): Promise<void> {
+    // 즉시 202 반환 — VASP 타임아웃 방지
+    res.status(202).json({ received: true });
+
+    // 비동기 Queue 적재 — 응답과 독립적으로 처리
+    setImmediate(async () => {
+      try {
+        await this.queueService.enqueue(req.body);
+      } catch (err) {
+        // Queue 적재 실패: 로그 기록 (이미 202 반환됨)
+        // 운영에서는 별도 fallback queue 또는 알림 필요
+        console.error('[WebhookReceiver] Queue 적재 실패:', err);
+      }
     });
-  } catch (err: unknown) {
-    console.log('예상된 에러:', (err as Error).message);
-    // → "EVMAdapter: read-only mode, no private key"
+  }
+}
+```
+
+### ✅ 완료 기준
+- [ ] 202 패턴 설계 이해 + 설명 가능
+- [ ] WebhookReceiver 라우트 구조 완성
+
+---
+
+## S6: Redis Streams 내부 구조와 At-least-once 처리 보장 원리 (강의 55분)
+
+### 강의 (이론 세션 — 실습 없음)
+
+**Pub/Sub vs Queue vs Streams 비교:**
+| 방식 | 영구 저장 | 재수신 | Consumer Group |
+|---|---|---|---|
+| Pub/Sub | ✗ | ✗ | ✗ |
+| 단순 Queue | △ (소비 시 삭제) | ✗ | ✗ |
+| Redis Streams | ✓ (영구) | ✓ (XACK 전까지) | ✓ |
+
+**Stream Entry 구조:**
+- ID: `timestamp-seq` 자동 생성 (예: `1714000000000-0`)
+- field-value 쌍으로 데이터 저장
+- `XADD stream-key * field1 value1 field2 value2`
+
+**Consumer Group 내부 원리:**
+- 그룹 등록: `XGROUP CREATE stream group-name 0`
+- PEL(Pending Entry List): 읽었지만 XACK 안 된 메시지 목록
+- `XREADGROUP GROUP group-name consumer-name COUNT 10 BLOCK 5000 STREAMS stream >`
+
+**`>` 심볼 의미**: 미처리 새 메시지만 읽음. 읽으면 즉시 PEL에 등록됨
+
+**XACK 의미**: PEL에서 해당 메시지 제거 = 처리 완료 선언  
+→ XACK 전 장애 시 메시지는 PEL에 잔류 → 재시작 후 재수신 가능
+
+**At-least-once 보장 메커니즘:**
+```
+XREADGROUP → PEL 등록 → 처리 → XACK → PEL 제거
+                            ↑ 장애 발생
+재시작 후 XAUTOCLAIM / XPENDING → PEL 재수신
+```
+
+**Consumer Group 수평 확장:**
+- 같은 그룹에 여러 인스턴스 등록 → Redis가 메시지 자동 분배
+- 중복 처리 없는 확장 (한 메시지는 한 Consumer에게만 할당)
+
+### ✅ 완료 기준 (강의 이해 확인)
+- [ ] PEL 개념 + XACK 전 장애 시 재처리 경로 설명 가능
+- [ ] Consumer Group 분산 원리 설명 가능
+- [ ] Pub/Sub 대비 Streams 선택 이유 설명 가능
+
+---
+
+## S7: Redis Streams CLI 실습과 At-least-once 재처리 시뮬레이션 (개요 10분 + 실습 50분)
+
+### 개요 (10분)
+
+XADD → PEL → XACK 흐름 재확인 / XACK 전 종료 시 재수신 경로 재확인
+
+### 🔴 실습 (50분) — 수강생 직접 입력
+
+**Step 1**: Redis 인스턴스 기동
+```bash
+docker run -d -p 6379:6379 redis:7-alpine
+redis-cli ping
+# PONG
+```
+
+**Step 2**: Stream에 이벤트 적재
+```bash
+# TODO: XADD로 NFT 발행 이벤트 3개 적재
+# stream 이름: kyobo-events
+# field: eventType, tokenId, to
+XADD kyobo-events * eventType NFTIssued tokenId 1001 to 0xAlice
+# 나머지 2개 직접 작성
+```
+
+**Step 3**: Consumer Group 생성 + 메시지 읽기
+```bash
+# TODO: Consumer Group 생성 (처음부터 읽기)
+XGROUP CREATE kyobo-events processing-group $ MKSTREAM
+
+# TODO: Consumer Group으로 메시지 읽기
+XREADGROUP GROUP processing-group worker-1 COUNT 10 STREAMS kyobo-events >
+```
+
+**Step 4**: ACK 처리 → PEL 확인
+```bash
+# TODO: 첫 번째 메시지 ACK
+# (Step 2에서 받은 메시지 ID 사용)
+XACK kyobo-events processing-group [MESSAGE-ID]
+
+# TODO: PEL 조회 → ACK된 메시지 사라졌는지 확인
+XPENDING kyobo-events processing-group - + 10
+```
+
+**Step 5**: 미ACK 재수신 시뮬레이션
+```bash
+# 메시지를 읽되 ACK하지 않음 → Ctrl+C로 프로세스 종료 시뮬레이션
+# 재시작 후 XAUTOCLAIM으로 재수신
+XAUTOCLAIM kyobo-events processing-group worker-2 0 0-0 COUNT 10
+```
+
+**Step 6**: Consumer 2개 동시 실행 → 메시지 분배 확인
+```bash
+# 터미널 1: worker-A
+XREADGROUP GROUP processing-group worker-A COUNT 5 BLOCK 5000 STREAMS kyobo-events >
+
+# 터미널 2: worker-B
+XREADGROUP GROUP processing-group worker-B COUNT 5 BLOCK 5000 STREAMS kyobo-events >
+
+# 새 메시지 10개 적재 후 → 각 worker에 몇 개씩 분배되는지 확인
+```
+
+### ✅ 답안
+
+```bash
+# Step 2 완성
+XADD kyobo-events * eventType NFTIssued tokenId 1001 to 0xAlice
+XADD kyobo-events * eventType NFTIssued tokenId 1002 to 0xBob
+XADD kyobo-events * eventType NFTBurned tokenId 1001 to 0xAlice
+
+# Stream 내용 확인
+XRANGE kyobo-events - +
+
+# Step 3 완성 (0 = 처음부터 읽기)
+XGROUP CREATE kyobo-events processing-group 0 MKSTREAM
+XREADGROUP GROUP processing-group worker-1 COUNT 10 STREAMS kyobo-events >
+
+# Step 4 — PEL에 3개 잔류 확인
+XPENDING kyobo-events processing-group - + 10
+# 출력: 3개 ID 목록
+
+# ACK 후 재조회
+XACK kyobo-events processing-group 1714000000000-0
+XPENDING kyobo-events processing-group - + 10
+# 출력: 2개 (1개 줄어듦)
+```
+
+### ✅ 완료 기준
+- [ ] Streams 직접 조작 실습 완료
+- [ ] 미ACK 재수신 원리 확인
+- [ ] Consumer 2개 → 메시지 분배 확인
+
+---
+
+## S8: Webhook 보안 검증과 Consumer Group 기반 병렬 처리 (강의 15분 + 실습 40분)
+
+### 강의
+
+**HMAC-SHA256 서명 검증:**
+- VASP가 전송하는 `X-Signature` 헤더 검증
+- 서명 없는 요청은 즉시 401 거부
+- 서명 계산: `HMAC-SHA256(webhookSecret, requestBody)`
+
+**Private RPC Node 필요성:**
+- 공용 RPC 장애 시 이벤트 수신 전면 중단
+- 전용 노드 → 안정적 연결 보장
+
+### 🔴 실습 (40분) — 수강생 직접 작성
+
+**Step 1**: HMAC 서명 검증 로직 구현
+```typescript
+// dmz/packages/event-engine/src/webhook/WebhookReceiver.ts
+// TODO: receiveWebhook에 HMAC 검증 추가
+
+import * as crypto from 'crypto';
+
+function verifySignature(
+  body: string,
+  signature: string,
+  secret: string,
+): boolean {
+  // TODO: HMAC-SHA256으로 body 해시 계산
+  // TODO: signature와 비교 (타이밍 공격 방지: crypto.timingSafeEqual 사용)
+}
+
+async receiveWebhook(req: Request, res: Response): Promise<void> {
+  const signature = req.headers['x-signature'] as string;
+  const body = JSON.stringify(req.body);
+
+  // TODO: signature 없으면 401 반환
+  // TODO: verifySignature 실패하면 401 반환
+  // TODO: 검증 통과 시 202 반환 + Queue 비동기 적재
+}
+```
+
+**Step 2**: QueueService — enqueue 구현
+```typescript
+// dmz/packages/event-engine/src/webhook/QueueService.ts
+// TODO: enqueue(event) 구현
+// - Redis Streams XADD 호출
+// - Consumer Group 초기화 (없으면 생성)
+
+export class QueueService {
+  constructor(private readonly redis: Redis) {}
+
+  async enqueue(event: unknown): Promise<void> {
+    // TODO: XADD kyobo-events * eventData JSON.stringify(event)
+  }
+
+  async initConsumerGroup(): Promise<void> {
+    // TODO: XGROUP CREATE (이미 존재하면 무시)
+  }
+}
+```
+
+**Step 3**: 서명 검증 테스트
+```typescript
+// test: 서명 없는 요청 → 401
+// test: 잘못된 서명 → 401
+// test: 올바른 서명 → 202
+```
+
+### ✅ 답안
+
+```typescript
+// verifySignature 완성
+function verifySignature(body: string, signature: string, secret: string): boolean {
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(body)
+    .digest('hex');
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expected),
+    );
+  } catch {
+    return false;
   }
 }
 
-main();
+// receiveWebhook 완성
+async receiveWebhook(req: Request, res: Response): Promise<void> {
+  const signature = req.headers['x-signature'] as string | undefined;
+
+  if (!signature) {
+    res.status(401).json({ error: 'Missing signature' });
+    return;
+  }
+
+  const body = JSON.stringify(req.body);
+  if (!verifySignature(body, signature, this.webhookSecret)) {
+    res.status(401).json({ error: 'Invalid signature' });
+    return;
+  }
+
+  res.status(202).json({ received: true });
+
+  setImmediate(async () => {
+    try {
+      await this.queueService.enqueue(req.body);
+    } catch (err) {
+      console.error('[WebhookReceiver] enqueue 실패:', err);
+    }
+  });
+}
 ```
 
-**확인 포인트:**
-- `isConnected(): true` 출력되는가?
-- `getBlockNumber()` 값이 계속 증가하는가? (Hardhat은 트랜잭션마다 블록 생성)
-- read-only 에러 메시지가 정확히 출력되는가?
-
----
-
-## 3부: 외부 VASP 연동 구조 + 마무리 (02:40~03:00)
-
-### 3-1. VASP가 DMZ에서 어떻게 통신하는가 (15분)
-
-**토킹포인트:**
-
-> "외부 VASP API는 인터넷에 있습니다. 교보 issuer-service는 내부망에 있습니다. 직접 통신이 안 됩니다. DMZ Nginx가 역방향 프록시로 중계합니다."
-
-```
-[issuer-service] (내부망)
-      ↓ HTTP → DMZ:443/vasp/...
-[DMZ Nginx] (DMZ)
-      ↓ HTTPS → 외부 VASP API
-[외부 VASP] (인터넷)
-```
-
-`ExternalVASPAdapter.ts`의 `_request()` 메서드:
 ```typescript
-const res = await fetch(`${this.baseUrl}${path}`, {
-  headers: { 'X-API-Key': this.apiKey },
-});
+// QueueService.enqueue 완성
+async enqueue(event: unknown): Promise<void> {
+  await this.redis.xadd(
+    'kyobo-events',
+    '*',
+    'eventData',
+    JSON.stringify(event),
+  );
+}
+
+async initConsumerGroup(): Promise<void> {
+  try {
+    await this.redis.xgroup('CREATE', 'kyobo-events', 'processing-group', '0', 'MKSTREAM');
+  } catch (err: unknown) {
+    if (!(err as Error).message.includes('BUSYGROUP')) throw err;
+    // 이미 존재하는 그룹 → 무시
+  }
+}
 ```
 
-> "`baseUrl`이 DMZ 주소를 가리키면 내부망에서 외부 VASP와 안전하게 통신할 수 있습니다. 코드는 직접 외부망을 알 필요 없습니다."
-
-### 마무리 (05분)
-
-**오늘의 핵심 3줄:**
-1. DMZ는 "노드를 외부와 내부 사이에 안전하게 배치하기 위한" 구조다
-2. RPC(8545)는 요청-응답, WebSocket(8546)은 이벤트 스트리밍 — 용도가 다르다
-3. EVMAdapter는 두 방식을 추상화해 상위 레이어에서 신경 쓰지 않게 한다
-
-**Day 03 예고:**  
-실제로 NFT 이벤트를 발생시키고 `ChainEventListener`가 실시간으로 잡는 것을 눈으로 확인한다.
-
----
-
-## 참조 파일
-
-- `infrastructure/dmz/nginx/dmz.conf`
-- `infrastructure/docker/docker-compose.yml`
-- `dmz/packages/chain-adapters/src/interfaces/IChainAdapter.ts`
-- `dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
-- `dmz/packages/vasp/src/external/ExternalVASPAdapter.ts`
-- `docs/adr/001-chain-abstraction-layer.md`
+### ✅ M2 전반부 완료 기준
+- [ ] Webhook → 202 즉시 응답 (DB 없음)
+- [ ] HMAC 서명 없는 요청 거부 (401)
+- [ ] QueueService enqueue 동작
