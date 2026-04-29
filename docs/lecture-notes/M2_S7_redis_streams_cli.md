@@ -40,7 +40,7 @@ Q3. Consumer 2개가 메시지를 어떻게 나눠 가져가는가?
 [ConsumerGroupWorker]        ← S8 이후 코드 구현
 ```
 
-![ConsumerGroupWorker](image-10.png)
+![ConsumerGroupWorker](M2_S7_consumer_group_worker_flow.png)
 
 ## 1. 이 코드가 뭐하는 코드인가
 

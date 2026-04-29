@@ -60,7 +60,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
 
 # 1부 — HMAC-SHA256 서명 검증 원리 (15분)
 
-![_verifySignature분석](image-11.png)
+![_verifySignature분석](M2_S8_verify_signature_flow.png)
 
 ## (1) 이 코드가 뭐하는 코드인가
 

@@ -80,7 +80,7 @@ Q3. PEL이란 무엇이고, XACK는 왜 필수인가?
   장애 후 → XAUTOCLAIM → 재수신
 ```
 
-![RedisStreamPublisher 전체 흐름](image-9.png)
+![RedisStreamPublisher 전체 흐름](M2_S6_redis_stream_pipeline.png)
 
 # RedisStreamPublisher 코드 분석
 

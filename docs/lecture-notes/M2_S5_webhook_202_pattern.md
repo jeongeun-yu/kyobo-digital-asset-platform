@@ -419,7 +419,7 @@ code dmz/packages/event-engine/src/webhook/WebhookServer.ts
 
 ## Step 2: 핸들러 등록 → 서버 기동 (10분)
 
-![alt text](image-7.png)
+![alt text](M2_S5_webhook_server_internal.png)
 
 ```typescript
 // TODO: 아래 스켈레톤을 채워서 WebhookServer를 기동하라
@@ -599,7 +599,7 @@ console.log('signature:', sig);
 console.log('payload:  ', payload);
 ```
 
-![alt text](image-8.png)
+![alt text](M2_S5_hmac_signature_code_detail.png)
 
 
 ### (1) 이 코드가 뭐하는 코드인가
