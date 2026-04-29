@@ -8,19 +8,11 @@
  *
  * 목표:
  *   1. verifySignature() 직접 구현 (HMAC + timingSafeEqual)
- *   2. 서명 검증 시나리오 7가지 확인
+ *   2. 서명 검증 시나리오 8가지 확인
  */
 
 import crypto from 'crypto';
 
-/**
- * HMAC-SHA256 서명을 검증한다.
- *
- * @param rawBody   - 수신한 원본 바이트 (Buffer). JSON.parse 전 원본 사용.
- * @param signature - X-Kyobo-Signature 헤더 값 (hex string).
- * @param secret    - HMAC 공유 시크릿.
- * @returns 서명이 유효하면 true, 아니면 false.
- */
 function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
   if (!signature) return false;
 
@@ -37,7 +29,7 @@ function verifySignature(rawBody: Buffer, signature: string, secret: string): bo
   return crypto.timingSafeEqual(sigBuf, expBuf);
 }
 
-// ── 헬퍼: === 로 비교하는 취약한 검증 (Timing Attack 시연용) ─────────────────
+// ── Timing Attack 시연용: === 비교 ────────────────────────────────────────────
 function verifySignatureUnsafe(rawBody: Buffer, signature: string, secret: string): boolean {
   if (!signature) return false;
   const expected = crypto
@@ -47,12 +39,12 @@ function verifySignatureUnsafe(rawBody: Buffer, signature: string, secret: strin
   return signature === expected;  // ← Timing Attack에 취약
 }
 
-// ── 헬퍼: JSON 재직렬화 후 서명 계산하는 잘못된 방식 ─────────────────────────
+// ── 재직렬화 함정 시연용 ──────────────────────────────────────────────────────
 function verifySignatureWrongSerialization(rawBody: Buffer, signature: string, secret: string): boolean {
   if (!signature) return false;
-  const reparsed  = JSON.parse(rawBody.toString('utf8'));  // 객체로 파싱
-  const reJson    = JSON.stringify(reparsed);              // 다시 직렬화
-  const expected  = crypto
+  const reparsed = JSON.parse(rawBody.toString('utf8'));
+  const reJson   = JSON.stringify(reparsed);
+  const expected = crypto
     .createHmac('sha256', secret)
     .update(Buffer.from(reJson))  // ← 재직렬화된 문자열로 계산 (함정)
     .digest('hex');
@@ -62,11 +54,15 @@ function verifySignatureWrongSerialization(rawBody: Buffer, signature: string, s
   return crypto.timingSafeEqual(sigBuf, expBuf);
 }
 
+// ── 헬퍼: 서명 계산 과정 출력 ─────────────────────────────────────────────────
+function computeHmac(data: Buffer, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(data).digest('hex');
+}
+
 // ── 공통 상수 ─────────────────────────────────────────────────────────────────
 
 const SECRET = 'kyobo-test-secret-2024';
 
-// 발신자가 원본 바이트 그대로 직렬화한 페이로드
 const PAYLOAD = Buffer.from(JSON.stringify({
   eventType: 'ACTIVITY_ACHIEVED',
   data:      { userId: 'u-001', activityId: 'steps-10k' },
@@ -74,99 +70,136 @@ const PAYLOAD = Buffer.from(JSON.stringify({
   requestId: 'test-s08',
 }));
 
-const CORRECT_SIG = crypto
-  .createHmac('sha256', SECRET)
-  .update(PAYLOAD)
-  .digest('hex');
+const CORRECT_SIG = computeHmac(PAYLOAD, SECRET);
 
 // ── 시나리오 실행 ─────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== 기본 검증 시나리오 ===\n');
 
-  // 시나리오 1: 서명 헤더 없음 → false
-  const r1 = verifySignature(PAYLOAD, '', SECRET);
-  console.log(`[시나리오 1] 서명 없음           → ${r1}  (기대: false)`);
+  // 시나리오 1: 서명 없음
+  console.log('[시나리오 1] 서명 없음');
+  console.log(`  received : ""  (빈 문자열)`);
+  console.log(`  결과     : ${verifySignature(PAYLOAD, '', SECRET)}  (기대: false)\n`);
 
-  // 시나리오 2: 완전히 틀린 서명 → false
-  const r2 = verifySignature(PAYLOAD, '0'.repeat(64), SECRET);
-  console.log(`[시나리오 2] 잘못된 서명          → ${r2}  (기대: false)`);
+  // 시나리오 2: 완전히 틀린 서명
+  const fakeSig = '0'.repeat(64);
+  console.log('[시나리오 2] 잘못된 서명');
+  console.log(`  received : ${fakeSig}`);
+  console.log(`  expected : ${CORRECT_SIG}`);
+  console.log(`  결과     : ${verifySignature(PAYLOAD, fakeSig, SECRET)}  (기대: false)\n`);
 
-  // 시나리오 3: 올바른 서명 → true
-  const r3 = verifySignature(PAYLOAD, CORRECT_SIG, SECRET);
-  console.log(`[시나리오 3] 올바른 서명          → ${r3}  (기대: true)`);
+  // 시나리오 3: 올바른 서명
+  console.log('[시나리오 3] 올바른 서명');
+  console.log(`  received : ${CORRECT_SIG}`);
+  console.log(`  expected : ${CORRECT_SIG}`);
+  console.log(`  결과     : ${verifySignature(PAYLOAD, CORRECT_SIG, SECRET)}  (기대: true)\n`);
 
-  // 시나리오 4: 다른 시크릿으로 만든 서명 → false
-  const sigWithWrongSecret = crypto
-    .createHmac('sha256', 'wrong-secret')
-    .update(PAYLOAD)
-    .digest('hex');
-  const r4 = verifySignature(PAYLOAD, sigWithWrongSecret, SECRET);
-  console.log(`[시나리오 4] 다른 시크릿으로 서명 → ${r4}  (기대: false)`);
+  // 시나리오 4: 다른 시크릿으로 만든 서명
+  const wrongSecretSig = computeHmac(PAYLOAD, 'wrong-secret');
+  console.log('[시나리오 4] 다른 시크릿으로 서명');
+  console.log(`  received : ${wrongSecretSig}  (wrong-secret으로 계산)`);
+  console.log(`  expected : ${CORRECT_SIG}  (kyobo-test-secret-2024으로 계산)`);
+  console.log(`  결과     : ${verifySignature(PAYLOAD, wrongSecretSig, SECRET)}  (기대: false)\n`);
 
-  console.log('\n=== Timing Attack: === vs timingSafeEqual ===\n');
+  console.log('=== Timing Attack: === vs timingSafeEqual ===\n');
 
-  // 시나리오 5: === 로 비교해도 올바른 서명이면 true — 기능은 같다
-  //            하지만 내부적으로 첫 번째 다른 바이트에서 즉시 종료한다는 게 문제
-  //            → 응답 시간 측정으로 서명 한 자리씩 추측 가능 (Timing Attack)
-  const r5 = verifySignatureUnsafe(PAYLOAD, CORRECT_SIG, SECRET);
-  console.log(`[시나리오 5] === 비교 (올바른 서명) → ${r5}  (기대: true)`);
-  console.log('  ↑ 기능은 맞지만 Timing Attack에 취약. 운영에서 절대 사용 금지.');
+  // 시나리오 5: === 비교
+  console.log('[시나리오 5] === 비교 — 올바른 서명');
+  console.log(`  received : ${CORRECT_SIG}`);
+  console.log(`  expected : ${CORRECT_SIG}`);
+  console.log(`  결과     : ${verifySignatureUnsafe(PAYLOAD, CORRECT_SIG, SECRET)}  (기대: true)`);
+  console.log('  ↑ 기능은 맞지만 첫 번째 다른 바이트에서 즉시 종료 → Timing Attack 취약\n');
 
-  const r5b = verifySignatureUnsafe(PAYLOAD, '0'.repeat(64), SECRET);
-  console.log(`[시나리오 5b] === 비교 (틀린 서명)  → ${r5b}  (기대: false)`);
-  console.log('  ↑ 첫 바이트에서 즉시 false → 응답 시간이 짧아 공격자가 감지 가능.');
+  console.log('[시나리오 5b] === 비교 — 틀린 서명');
+  console.log(`  received : ${fakeSig}`);
+  console.log(`  expected : ${CORRECT_SIG}`);
+  console.log(`  결과     : ${verifySignatureUnsafe(PAYLOAD, fakeSig, SECRET)}  (기대: false)`);
+  console.log('  ↑ 첫 바이트 "0" ≠ "a" 에서 즉시 종료 → 응답 시간이 올바른 서명 비교보다 짧음\n');
 
-  console.log('\n=== rawBody 재직렬화 함정 ===\n');
+  console.log('=== rawBody 재직렬화 함정 ===\n');
 
-  // 시나리오 6: 같은 내용이지만 키 순서가 다른 페이로드
-  //            발신자(교보 앱 서버)가 보낸 원본과 키 순서가 다르면 서명 불일치
+  // 시나리오 6: 키 순서가 다른 페이로드
   const PAYLOAD_REORDERED = Buffer.from(JSON.stringify({
-    requestId: 'test-s08',        // ← 키 순서 변경
+    requestId: 'test-s08',
     timestamp: 1714000000,
     eventType: 'ACTIVITY_ACHIEVED',
     data:      { activityId: 'steps-10k', userId: 'u-001' },
   }));
-  const sigForReordered = crypto
-    .createHmac('sha256', SECRET)
-    .update(PAYLOAD_REORDERED)
-    .digest('hex');
+  const sigForReordered = computeHmac(PAYLOAD_REORDERED, SECRET);
 
-  // CORRECT_SIG는 원본 PAYLOAD 기준으로 만들어짐 → 재정렬된 페이로드엔 불일치
-  const r6 = verifySignature(PAYLOAD_REORDERED, CORRECT_SIG, SECRET);
-  console.log(`[시나리오 6] 키 순서 다른 페이로드 + 원본 서명  → ${r6}  (기대: false)`);
-  console.log('  ↑ 내용은 같아도 바이트가 다르면 HMAC 결과가 완전히 달라진다.');
+  console.log('[시나리오 6] 키 순서 다른 페이로드 + 원본 서명');
+  console.log(`  payload  : ${PAYLOAD_REORDERED.toString()}`);
+  console.log(`  received : ${CORRECT_SIG}  (원본 키순서 기준 서명)`);
+  console.log(`  expected : ${sigForReordered}  (재정렬 페이로드 기준 서명)`);
+  console.log(`  결과     : ${verifySignature(PAYLOAD_REORDERED, CORRECT_SIG, SECRET)}  (기대: false)`);
+  console.log('  ↑ 내용은 같지만 바이트 배열이 달라 HMAC 결과가 완전히 다름\n');
 
-  // 재정렬된 페이로드에 맞는 서명은 올바르게 통과
-  const r6b = verifySignature(PAYLOAD_REORDERED, sigForReordered, SECRET);
-  console.log(`[시나리오 6b] 키 순서 다른 페이로드 + 맞는 서명 → ${r6b}  (기대: true)`);
+  console.log('[시나리오 6b] 키 순서 다른 페이로드 + 맞는 서명');
+  console.log(`  payload  : ${PAYLOAD_REORDERED.toString()}`);
+  console.log(`  received : ${sigForReordered}`);
+  console.log(`  expected : ${sigForReordered}`);
+  console.log(`  결과     : ${verifySignature(PAYLOAD_REORDERED, sigForReordered, SECRET)}  (기대: true)\n`);
 
-  // 시나리오 7: JSON 재직렬화로 서명 계산하면 — JS끼리는 우연히 맞을 수 있지만
-  //            발신자가 Python/Go 등 다른 언어면 키 순서가 달라 불일치
-  const r7 = verifySignatureWrongSerialization(PAYLOAD, CORRECT_SIG, SECRET);
-  console.log(`\n[시나리오 7] 재직렬화 방식으로 검증 (같은 JS 환경) → ${r7}  (기대: true, 우연히 일치)`);
-  console.log('  ↑ JS→JS는 키 순서가 보존돼 우연히 통과. 하지만 Python 발신자면 불일치.');
+  // 시나리오 7: JSON 재직렬화 방식
+  const reJson = JSON.stringify(JSON.parse(PAYLOAD.toString('utf8')));
+  const reSerializedSig = computeHmac(Buffer.from(reJson), SECRET);
 
-  const r7b = verifySignatureWrongSerialization(PAYLOAD_REORDERED, sigForReordered, SECRET);
-  console.log(`[시나리오 7b] 재직렬화 방식 + 키 순서 다른 페이로드 → ${r7b}  (기대: ???)`);
-  console.log('  ↑ 재직렬화 후 키 순서가 바뀌어 발신자 서명과 불일치할 수 있다.');
+  console.log('[시나리오 7] 재직렬화 방식으로 검증 (같은 JS 환경)');
+  console.log(`  원본     : ${PAYLOAD.toString()}`);
+  console.log(`  재직렬화 : ${reJson}`);
+  console.log(`  같은가?  : ${PAYLOAD.toString() === reJson}`);
+  console.log(`  결과     : ${verifySignatureWrongSerialization(PAYLOAD, CORRECT_SIG, SECRET)}  (기대: true — JS끼리는 우연히 일치)`);
+  console.log('  ↑ V8은 삽입 순서 보존. 하지만 Python/Go 발신자면 키 순서 달라 불일치\n');
 
-  console.log('\n=== timingSafeEqual 길이 불일치 throw ===\n');
+  console.log('[시나리오 7b] 재직렬화 방식 + 키 순서 다른 페이로드');
+  const reJson2 = JSON.stringify(JSON.parse(PAYLOAD_REORDERED.toString('utf8')));
+  console.log(`  원본     : ${PAYLOAD_REORDERED.toString()}`);
+  console.log(`  재직렬화 : ${reJson2}`);
+  console.log(`  같은가?  : ${PAYLOAD_REORDERED.toString() === reJson2}`);
+  console.log(`  결과     : ${verifySignatureWrongSerialization(PAYLOAD_REORDERED, sigForReordered, SECRET)}  (기대: ???)`);
+  console.log('  ↑ JS끼리는 삽입 순서가 보존돼서 결국 일치 — 실제 불일치를 보려면 7c 참조\n');
 
-  // 시나리오 8: 짧은 서명(hex 32글자 = 16바이트) → 길이 불일치 → throw 발생
-  //            verifySignature는 사전 차단하므로 throw 없이 false 반환
+  // 시나리오 7c: Python 발신자 시뮬레이션 (실제 불일치)
+  // Python json.dumps 기본값: 콜론·쉼표 뒤 공백 있음
+  //   {"eventType": "ACTIVITY_ACHIEVED", "data": {"userId": "u-001", ...}}
+  // JS JSON.stringify 기본값: 공백 없음
+  //   {"eventType":"ACTIVITY_ACHIEVED","data":{"userId":"u-001",...}}
+  const PAYLOAD_PYTHON = Buffer.from(
+    '{"eventType": "ACTIVITY_ACHIEVED", "data": {"userId": "u-001", "activityId": "steps-10k"}, "timestamp": 1714000000, "requestId": "test-s08"}'
+  );
+  const sigForPython = computeHmac(PAYLOAD_PYTHON, SECRET);
+  const reJsonPython = JSON.stringify(JSON.parse(PAYLOAD_PYTHON.toString('utf8')));
+
+  console.log('[시나리오 7c] Python 발신자 시뮬레이션 — 실제 불일치');
+  console.log(`  원본 (Python): ${PAYLOAD_PYTHON.toString()}`);
+  console.log(`  재직렬화 (JS): ${reJsonPython}`);
+  console.log(`  같은가?       : ${PAYLOAD_PYTHON.toString() === reJsonPython}  ← 공백 차이로 불일치`);
+  console.log(`  HMAC(원본)    : ${sigForPython}`);
+  console.log(`  HMAC(재직렬화): ${computeHmac(Buffer.from(reJsonPython), SECRET)}  ← 완전히 다른 해시`);
+  console.log(`  올바른 검증   : ${verifySignature(PAYLOAD_PYTHON, sigForPython, SECRET)}  (기대: true)`);
+  console.log(`  재직렬화 검증 : ${verifySignatureWrongSerialization(PAYLOAD_PYTHON, sigForPython, SECRET)}  (기대: false)`);
+  console.log('  ↑ 이래서 rawBody를 절대 재직렬화하면 안 된다\n');
+
+  console.log('=== timingSafeEqual 길이 불일치 throw ===\n');
+
+  // 시나리오 8: 짧은 서명
   const shortSig = 'a'.repeat(32);  // 16바이트 (정상은 32바이트)
-  const r8 = verifySignature(PAYLOAD, shortSig, SECRET);
-  console.log(`[시나리오 8] 짧은 서명 (길이 불일치) → verifySignature: ${r8}  (기대: false, throw 없음)`);
+  const shortBuf = Buffer.from(shortSig, 'hex');
+  const expBuf   = Buffer.from(CORRECT_SIG, 'hex');
 
-  // 길이 체크 없이 직접 timingSafeEqual 호출하면 throw
+  console.log('[시나리오 8] 짧은 서명 → verifySignature 사전 차단');
+  console.log(`  received : "${shortSig}" (${shortBuf.length}바이트)`);
+  console.log(`  expected : "${CORRECT_SIG.slice(0, 16)}..." (${expBuf.length}바이트)`);
+  console.log(`  결과     : ${verifySignature(PAYLOAD, shortSig, SECRET)}  (기대: false, throw 없음)\n`);
+
+  console.log('[시나리오 8b] 길이 체크 없이 timingSafeEqual 직접 호출');
+  console.log(`  sigBuf.length : ${shortBuf.length}바이트`);
+  console.log(`  expBuf.length : ${expBuf.length}바이트`);
   try {
-    const sigBuf = Buffer.from(shortSig, 'hex');  // 16바이트
-    const expBuf = Buffer.from(CORRECT_SIG, 'hex');  // 32바이트
-    crypto.timingSafeEqual(sigBuf, expBuf);
-    console.log('[시나리오 8b] 길이 체크 없이 timingSafeEqual 직접 호출 → throw 없음 (예상치 못한 결과)');
+    crypto.timingSafeEqual(shortBuf, expBuf);
   } catch (err) {
-    console.log(`[시나리오 8b] 길이 체크 없이 timingSafeEqual 직접 호출 → throw 발생: ${(err as Error).message}`);
+    console.log(`  throw 발생    : ${(err as Error).message}`);
     console.log('  ↑ 이래서 length 사전 체크가 필수다.');
   }
 })();
