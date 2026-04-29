@@ -97,3 +97,29 @@ Redis가 메시지 분배 (XREADGROUP: 먼저 호출한 쪽이 소유)
 
 > 멱등성 키: `txHash + logIndex` (온체인) 또는 `requestId` (Webhook)  
 > DB: `processed_events(tx_hash, log_index) UNIQUE` + `ON CONFLICT DO NOTHING`
+
+---
+
+# 실습 (30분)
+
+실습 파일: `exercises/S08_atleastonce.ts` / 답안: `S08_atleastonce.answer.ts`
+
+```bash
+# dmz/packages/event-engine 폴더에서
+npx ts-node src/exercises/S08_atleastonce.ts
+```
+
+**Part 1** — 멱등성 없는 Naive Processor 실행: 동일 메시지 2회 → 원장 +2 (버그) 확인  
+**Part 2** — TODO: `IdempotentNftProcessor` 구현
+
+```
+TODO 구현 목록:
+  [ ] eventTypes: ['NFT_ISSUED']
+  [ ] const processedIds = new Set<string>()
+  [ ] process(): requestId 중복 체크 → credit() → processedIds.add()
+```
+
+**완료 기준:**
+- [ ] Part 1 실행 시 `❌ 중복 발행!` 출력 확인 (버그 재현)
+- [ ] Part 2 구현 후 `✅ 정상` 출력 확인
+- [ ] XACK 순서: process 완료 후 Worker가 자동 호출됨을 출력에서 확인

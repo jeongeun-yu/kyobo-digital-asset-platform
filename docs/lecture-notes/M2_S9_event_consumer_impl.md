@@ -227,3 +227,30 @@ async process(message: StreamMessage): Promise<void> {
 **완료 기준:**
 - [ ] 동일 txHash+logIndex 이벤트 2회 → `user_nft_holdings.amount = 1` (1회만 반영)
 - [ ] Consumer 재시작 후 미ACK 메시지 자동 재수신
+
+---
+
+# 실습 (30분)
+
+실습 파일: `exercises/S09_handle_with_retry.ts` / 답안: `S09_handle_with_retry.answer.ts`
+
+```bash
+# dmz/packages/event-engine 폴더에서
+npx ts-node src/exercises/S09_handle_with_retry.ts
+```
+
+**목표:** `_handleWithRetry()` 함수를 직접 구현하고 4가지 시나리오로 검증
+
+```
+TODO 구현 목록:
+  [ ] TODO 1: retryCount >= MAX_RETRIES → dlq.move() + xack + return
+  [ ] TODO 2: matched processor 없음 → xack + return
+  [ ] TODO 3: process 성공 → xack
+  [ ] TODO 4: process 실패 → _retryCount + 1 (xack 없음)
+```
+
+**완료 기준:**
+- [ ] 시나리오 1: DLQ 이동 ✅ + XACK ✅
+- [ ] 시나리오 2: XACK ✅ (processor 호출 없음)
+- [ ] 시나리오 3: XACK ✅
+- [ ] 시나리오 4: retryCount=2 ✅ + XACK 없음 ✅
