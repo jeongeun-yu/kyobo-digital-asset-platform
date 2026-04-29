@@ -1,11 +1,29 @@
 /**
- * S06 답안 — ConsumerGroupWorker 구조 이해 + EventProcessor 구현
+ * S06 답안 — Redis Streams 전체 흐름
  * 강의 노트: M2_S6_redis_streams_theory.md
  */
 
+import { RedisStreamPublisher, type StreamEvent } from '../dmz/RedisStreamPublisher';
 import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../dmz/ConsumerGroupWorker';
 import { DLQHandler } from '../dmz/DLQHandler';
 
+// ── Mock Redis (Publisher용) ───────────────────────────────────────────────
+const publisherRedis = {
+  async xadd(key: string, fields: Record<string, string>): Promise<string> {
+    const messageId = `${Date.now()}-0`;
+    console.log(`[XADD] ${key}`, fields);
+    console.log(`[XADD] → messageId: ${messageId}`);
+    return messageId;
+  },
+  async xgroupCreate(key: string, group: string, id: string, mkstream: boolean): Promise<void> {
+    console.log(`[XGROUP CREATE] ${key} ${group} ${id}${mkstream ? ' MKSTREAM' : ''}`);
+  },
+  async ping(): Promise<string> {
+    return 'PONG';
+  },
+};
+
+// ── Mock DLQ ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(
   {
     async xadd(key, fields) {
@@ -18,15 +36,16 @@ const mockDLQ = new DLQHandler(
   { async sendAlert(msg) { console.log('[DLQ ALERT]', msg); } },
 );
 
-let callCount = 0;
-const mockRedis = {
+// ── Mock Redis (Consumer용) ───────────────────────────────────────────────
+let consumerCallCount = 0;
+const consumerRedis = {
   async xreadgroup(
     group: string, consumer: string,
     streams: Array<{ key: string; id: string }>,
     count: number, blockMs: number,
   ) {
-    callCount++;
-    if (callCount === 1) {
+    consumerCallCount++;
+    if (consumerCallCount === 1) {
       console.log(`[XREADGROUP] ${consumer} → 새 메시지 수신`);
       return [{
         key: 'kyobo:events',
@@ -74,7 +93,7 @@ const nftIssuedProcessor: EventProcessor = {
 
 // TODO 2 답안
 const worker = new ConsumerGroupWorker(
-  mockRedis,
+  consumerRedis,
   [nftIssuedProcessor],
   mockDLQ,
   {
@@ -88,6 +107,41 @@ const worker = new ConsumerGroupWorker(
 );
 
 (async () => {
+  console.log('=== Part 1: RedisStreamPublisher ===\n');
+
+  // TODO 3 답안
+  const publisher = new RedisStreamPublisher(publisherRedis);
+
+  // TODO 4 답안
+  await publisher.initialize();
+  await publisher.initialize(); // 두 번째 호출 → BUSYGROUP 무시 확인
+
+  // TODO 5 답안
+  const event: StreamEvent = {
+    streamKey:   'kyobo:events',
+    eventType:   'NFT_ISSUED',
+    payload:     { tokenId: '42', owner: '0xKYOBO' },
+    txHash:      '0xdeadbeef001',
+    blockNumber: 18500001,
+    requestId:   'req-001',
+  };
+
+  const messageId = await publisher.publish(event);
+  console.log('[result] messageId:', messageId);
+  console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
+
+  const burned: StreamEvent = {
+    streamKey:   'kyobo:events',
+    eventType:   'NFT_BURNED',
+    payload:     { tokenId: '41', owner: '0x0000' },
+    txHash:      '0xcafebabe001',
+    blockNumber: 18500002,
+    requestId:   'req-002',
+  };
+  const burnedId = await publisher.publish(burned);
+  console.log('[result] NFT_BURNED messageId:', burnedId);
+
+  console.log('\n=== Part 2: ConsumerGroupWorker ===\n');
   console.log('[worker] 시작 — 3초 후 자동 종료');
 
   setTimeout(() => {

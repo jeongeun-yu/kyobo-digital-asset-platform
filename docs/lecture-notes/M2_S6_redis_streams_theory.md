@@ -74,7 +74,7 @@ Q3. PEL이란 무엇이고, XACK는 왜 필수인가?
   PEL (Pending Entry List)
           │
           ▼
-[ConsumerGroupWorker]                    ← S7 실습 대상
+[ConsumerGroupWorker]                    ← S6 실습 대상
   XREADGROUP → PEL 등록
   처리 성공 → XACK → PEL 제거
   장애 후 → XAUTOCLAIM → 재수신
@@ -860,24 +860,18 @@ const worker2 = new ConsumerGroupWorker(redis, processors, dlq, {
 
 # 코드 실습 (S6)
 
-S6 실습은 두 개의 파일로 구성된다. `exercises/` 폴더에서 실행한다.
+S6 실습은 하나의 파일로 구성된다. `exercises/` 폴더에서 실행한다.
 
 | 파일 | 내용 |
 |---|---|
-| `S06_redis_publisher.ts` | `RedisStreamPublisher` 생성 → `initialize()` → `publish()` |
-| `S06_consumer_worker.ts` | `EventProcessor` 구현 → `ConsumerGroupWorker` 생성 → XREADGROUP → XACK 흐름 |
+| `S06_redis_stream.ts` | Part 1: `RedisStreamPublisher` initialize → publish / Part 2: `EventProcessor` 구현 → `ConsumerGroupWorker` XREADGROUP → XACK |
 
 ```bash
 # dmz/packages/event-engine 폴더에서
-
-# Publisher 실습
-npx ts-node src/exercises/S06_redis_publisher.ts
-
-# ConsumerGroupWorker 실습
-npx ts-node src/exercises/S06_consumer_worker.ts
+npx ts-node src/exercises/S06_redis_stream.ts
 ```
 
-답안: `S06_redis_publisher.answer.ts` / `S06_consumer_worker.answer.ts`
+답안: `S06_redis_stream.answer.ts`
 
 ---
 

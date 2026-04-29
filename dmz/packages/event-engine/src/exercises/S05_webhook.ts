@@ -24,9 +24,9 @@ const server = new WebhookServer({
 //         - 200ms 슬립 (처리 시뮬레이션)
 //         - 처리 완료 로그 출력
 server.on('NFT_ISSUED', async (payload) => {
-  console.log('[handler] NFT_ISSUED received:', JSON.stringify(payload, null, 2));
-  await new Promise(r => setTimeout(r, 200));
-  console.log('[handler] NFT_ISSUED processed');
+  // TODO: payload를 JSON으로 콘솔 출력
+  // TODO: 200ms 슬립
+  // TODO: 처리 완료 로그 출력
 });
 
 (async () => {
