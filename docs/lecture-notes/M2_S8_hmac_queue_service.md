@@ -31,12 +31,12 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
 # 전체 흐름에서의 위치
 
 ```
-[교보 Core Banking]
+[교보 앱 서버]                ← 사용자 활동 달성 이벤트 발신
    │  POST /webhook
    │  X-Kyobo-Signature: <hmac-sha256-hex>
-   │  Body: rawJSON
+   │  Body: { eventType: "ACTIVITY_ACHIEVED", data: {...}, requestId: "..." }
    ▼
-[WebhookServer._handleRequest()]
+[WebhookServer._handleRequest()]  ← DMZ 경계. 서명 검증 후 큐 적재.
    │
    ├── _readBody()             ← rawBody Buffer 수집
    │       │
@@ -68,9 +68,9 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
 = "이 메시지가 우리가 공유한 시크릿을 가진 발신자에게서 왔음을 증명"
 
 ```
-발신자 (교보 Core Banking):
+발신자 (교보 앱 서버):
   secret = "kyobo-webhook-secret-2024"
-  payload = '{"eventType":"NFT_ISSUED","data":...}'
+  payload = '{"eventType":"ACTIVITY_ACHIEVED","data":{"userId":"u-001","activityId":"steps-10k"},...}'
   
   signature = HMAC-SHA256(secret, payload)
   → "a3f4b2c1d8e9f0..." (64자 hex)
@@ -457,8 +457,8 @@ const server = new WebhookServer({
   maxBodyKb: 64,
 });
 
-server.on('NFT_ISSUED', async (payload) => {
-  console.log('[received] NFT_ISSUED:', payload.requestId);
+server.on('ACTIVITY_ACHIEVED', async (payload) => {
+  console.log('[received] ACTIVITY_ACHIEVED:', payload.requestId);
 });
 
 await server.listen();
@@ -472,7 +472,7 @@ console.log('SECRET:', SECRET);
 curl -s -o /dev/null -w "%{http_code}\n" \
   -X POST http://localhost:3002 \
   -H "Content-Type: application/json" \
-  -d '{"eventType":"NFT_ISSUED","data":{"tokenId":"99"},"timestamp":1714000000,"requestId":"test-no-sig"}'
+  -d '{"eventType":"ACTIVITY_ACHIEVED","data":{"userId":"u-001","activityId":"steps-10k"},"timestamp":1714000000,"requestId":"test-no-sig"}'
 
 # 예상: 401
 ```
@@ -484,7 +484,7 @@ curl -s -o /dev/null -w "%{http_code}\n" \
   -X POST http://localhost:3002 \
   -H "Content-Type: application/json" \
   -H "X-Kyobo-Signature: 0000000000000000000000000000000000000000000000000000000000000000" \
-  -d '{"eventType":"NFT_ISSUED","data":{"tokenId":"99"},"timestamp":1714000000,"requestId":"test-bad-sig"}'
+  -d '{"eventType":"ACTIVITY_ACHIEVED","data":{"userId":"u-001","activityId":"steps-10k"},"timestamp":1714000000,"requestId":"test-bad-sig"}'
 
 # 예상: 401
 ```
@@ -497,8 +497,8 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 // generate-sig.js
 const crypto  = require('crypto');
 const payload = JSON.stringify({
-  eventType: 'NFT_ISSUED',
-  data:      { tokenId: '99', owner: '0xKYOBO' },
+  eventType: 'ACTIVITY_ACHIEVED',
+  data:      { userId: 'u-001', activityId: 'steps-10k' },
   timestamp: 1714000000,
   requestId: 'test-correct-sig',
 });
@@ -514,14 +514,14 @@ console.log('SIG:    ', sig);
 
 ```bash
 node generate-sig.js
-# PAYLOAD: {"eventType":"NFT_ISSUED","data":{"tokenId":"99","owner":"0xKYOBO"},"timestamp":1714000000,"requestId":"test-correct-sig"}
+# PAYLOAD: {"eventType":"ACTIVITY_ACHIEVED","data":{"userId":"u-001","activityId":"steps-10k"},"timestamp":1714000000,"requestId":"test-correct-sig"}
 # SIG:     a3f4b2c1...  (실제 출력된 hex)
 ```
 
 **curl 전송:**
 
 ```bash
-PAYLOAD='{"eventType":"NFT_ISSUED","data":{"tokenId":"99","owner":"0xKYOBO"},"timestamp":1714000000,"requestId":"test-correct-sig"}'
+PAYLOAD='{"eventType":"ACTIVITY_ACHIEVED","data":{"userId":"u-001","activityId":"steps-10k"},"timestamp":1714000000,"requestId":"test-correct-sig"}'
 SIG=$(node -e "
   const crypto = require('crypto');
   const sig = crypto.createHmac('sha256','kyobo-test-secret-2024')
@@ -587,29 +587,20 @@ const server = new WebhookServer({
   maxBodyKb: 64,
 });
 
-// Webhook → Redis Streams 연결
+// 교보 앱 서버 → 활동 달성 이벤트 수신 → Redis Streams 적재
 server
-  .on('NFT_ISSUED', async (payload) => {
+  .on('ACTIVITY_ACHIEVED', async (payload) => {
     const messageId = await publisher.publish({
       streamKey:   'kyobo:events',
       eventType:   payload.eventType,
       payload:     payload.data,
-      txHash:      payload.data['txHash'] as string,
-      blockNumber: payload.data['blockNumber'] as number,
+      txHash:      '',          // 발행 전 단계 — 아직 txHash 없음
+      blockNumber: 0,
       requestId:   payload.requestId,
     });
     console.log(`[queue] published ${payload.eventType}: ${messageId}`);
-  })
-  .on('NFT_BURNED', async (payload) => {
-    await publisher.publish({
-      streamKey:   'kyobo:events',
-      eventType:   payload.eventType,
-      payload:     payload.data,
-      txHash:      payload.data['txHash'] as string,
-      blockNumber: payload.data['blockNumber'] as number,
-      requestId:   payload.requestId,
-    });
   });
+// ↑ 실제 txHash/blockNumber는 블록체인 발행 후 ChainEventListener가 채운다
 
 await server.listen();
 console.log('[app] DMZ event pipeline ready');
@@ -618,10 +609,10 @@ console.log('[app] DMZ event pipeline ready');
 ## S5~S8 완성 흐름 도식
 
 ```
-[교보 Core Banking]
+[교보 앱 서버]               ← 사용자 활동 달성 → 이쪽이 WebhookServer를 호출
    │  POST /webhook
    │  X-Kyobo-Signature: <hmac-sha256>
-   │  Body: rawJSON
+   │  Body: { eventType: "ACTIVITY_ACHIEVED", ... }
    ▼
 [WebhookServer._readBody()]          ← rawBody Buffer 수집 (S5)
    ↓ Buffer
@@ -638,6 +629,12 @@ console.log('[app] DMZ event pipeline ready');
 [Redis Streams: kyobo:events]        ← append-only 로그 (S6/S7)
    ↓
 [ConsumerGroupWorker]                ← XREADGROUP + XACK (S9 이후)
+   ↓ 발행 요청 처리
+[블록체인]                           ← NFT 발행 트랜잭션
+   ↓ 온체인 이벤트 (Issued)
+[ChainEventListener]                 ← 이쪽이 블록체인 이벤트를 수신
+   ↓
+[Core Banking 아웃바운드 알림]        ← DMZ → Core Banking (반대 방향)
 ```
 
 ---

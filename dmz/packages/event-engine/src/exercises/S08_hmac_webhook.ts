@@ -86,8 +86,8 @@ async function publish(event: StreamEvent): Promise<string> {
 
 const SECRET  = 'kyobo-test-secret-2024';
 const PAYLOAD = Buffer.from(JSON.stringify({
-  eventType: 'NFT_ISSUED',
-  data:      { tokenId: '99', owner: '0xKYOBO' },
+  eventType: 'ACTIVITY_ACHIEVED',
+  data:      { userId: 'u-001', activityId: 'steps-10k' },
   timestamp: 1714000000,
   requestId: 'test-s08',
 }));
