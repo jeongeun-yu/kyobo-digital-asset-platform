@@ -16,7 +16,7 @@ import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '..
 import { DLQHandler } from '../dmz/DLQHandler';
 
 // ── 인메모리 원장 (실습용 시뮬레이션) ──────────────────────────────────────
-const ledger: Map<string, number> = new Map();
+export const ledger: Map<string, number> = new Map();
 
 function credit(tokenId: string, owner: string): void {
   const prev = ledger.get(tokenId) ?? 0;
@@ -50,7 +50,7 @@ const naiveProcessor: EventProcessor = {
 
 // TODO: const processedIds = new Set<string>();
 
-const idempotentProcessor: EventProcessor = {
+export const idempotentProcessor: EventProcessor = {
   eventTypes: /* TODO */ [],
 
   async process(msg: StreamMessage): Promise<void> {
@@ -114,7 +114,7 @@ async function runScenario(processor: EventProcessor): Promise<void> {
   console.log(`  → 최종 원장 처리 횟수: ${count} ${count === 1 ? '✅ 정상' : '❌ 중복 발행!'}\n`);
 }
 
-(async () => {
+if (require.main === module) (async () => {
   console.log('=== S08 실습: At-least-once + 멱등성 ===\n');
 
   console.log('[ Part 1 ] 멱등성 없음 — 동일 메시지 2회 전달');

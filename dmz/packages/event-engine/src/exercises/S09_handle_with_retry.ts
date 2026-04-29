@@ -32,7 +32,7 @@ const GROUP_NAME  = 'issuer-consumers';
 //      → msg.fields['_retryCount'] = String(retryCount + 1)
 //         (XACK 안 함 — PEL에 남겨 _reclaimPending에서 재수신)
 // ══════════════════════════════════════════════════════════════════════════
-async function _handleWithRetry(
+export async function _handleWithRetry(
   msg:        StreamMessage,
   processors: EventProcessor[],
   redis:      Pick<RedisConsumerClient, 'xack'>,
@@ -111,7 +111,7 @@ function check(label: string, pass: boolean): void {
 // ══════════════════════════════════════════════════════════════════════════
 // 4가지 시나리오
 // ══════════════════════════════════════════════════════════════════════════
-(async () => {
+if (require.main === module) (async () => {
   console.log('=== S09 실습: _handleWithRetry 구현 ===\n');
 
   // ── 시나리오 1: retryCount=3 → DLQ ──────────────────────────────────
