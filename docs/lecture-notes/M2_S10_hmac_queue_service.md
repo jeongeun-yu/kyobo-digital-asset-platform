@@ -421,11 +421,11 @@ Step 4: timingSafeEqual
 
 # 실습 (40분)
 
-실습 파일: `exercises/S08_hmac_webhook.ts` / 답안: `S08_hmac_webhook.answer.ts`
+실습 파일: `exercises/S10_hmac_webhook.ts` / 답안: `S10_hmac_webhook.answer.ts`
 
 ```bash
 # dmz/packages/event-engine 폴더에서
-npx ts-node src/exercises/S08_hmac_webhook.ts
+npx ts-node src/exercises/S10_hmac_webhook.ts
 ```
 
 ## Step 1: _verifySignature() 직접 구현 (15분)

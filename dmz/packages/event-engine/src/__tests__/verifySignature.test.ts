@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-// S08 실습에서 학생이 직접 구현하는 함수 — 테스트가 구현 명세가 된다
+// S10 실습에서 학생이 직접 구현하는 함수 — 테스트가 구현 명세가 된다
 function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
   if (!signature) return false;
 

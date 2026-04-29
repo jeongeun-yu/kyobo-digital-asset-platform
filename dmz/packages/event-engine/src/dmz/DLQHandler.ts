@@ -1,7 +1,7 @@
 /**
  * DLQHandler — Dead Letter Queue 처리
  *
- * M7 S42 핵심 개념:
+ * M2 S11 핵심 개념:
  *   3회 실패 메시지 → Dead Letter Stream 이동
  *   운영자 알림 → 수동 확인 → 수동 재큐잉 절차
  *
