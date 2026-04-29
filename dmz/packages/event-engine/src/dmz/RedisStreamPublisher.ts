@@ -1,7 +1,7 @@
 /**
  * RedisStreamPublisher — 온체인 이벤트 → Redis Streams 발행
  *
- * M7 S37~S39 핵심 개념:
+ * M2 S5~S8 핵심 개념:
  *   1. 202 패턴: 체인 이벤트 수신 즉시 "accepted" 반환, Redis Stream에 비동기 발행
  *      → 처리 지연이 체인 구독 차단하지 않음
  *
@@ -74,17 +74,6 @@ export class RedisStreamPublisher {
    *   → payload는 JSON 직렬화 후 저장
    */
   async publish(event: StreamEvent): Promise<string> {
-    // TODO (M7 S38 실습): XADD 필드 구성 + 발행
-    //   const messageId = await this.redis.xadd(event.streamKey ?? this.defaultStream, {
-    //     eventType:   event.eventType,
-    //     payload:     JSON.stringify(event.payload),
-    //     txHash:      event.txHash,
-    //     blockNumber: String(event.blockNumber),
-    //     requestId:   event.requestId,
-    //     publishedAt: String(Date.now()),
-    //   });
-    //   return messageId;
-
     const messageId = await this.redis.xadd(
       event.streamKey ?? this.defaultStream,
       {
@@ -110,3 +99,12 @@ export class RedisStreamPublisher {
     }
   }
 }
+
+/**
+ * QueueService — RedisStreamPublisher의 커리큘럼용 alias
+ *
+ * 커리큘럼 M2 S8에서 "QueueService.enqueue(event)"로 언급되는 것이
+ * 구현상 RedisStreamPublisher임을 명시.
+ * 수강생 혼란 방지를 위한 re-export.
+ */
+export { RedisStreamPublisher as QueueService };

@@ -1,7 +1,7 @@
 /**
  * ConsumerGroupWorker — Redis Streams Consumer Group 처리 워커
  *
- * M7 S39~S42 핵심 개념:
+ * M2 S9~S12 핵심 개념:
  *
  *   At-least-once 처리 보장 흐름:
  *     1. XREADGROUP → messageId + 소유권(PEL) 취득
@@ -109,20 +109,6 @@ export class ConsumerGroupWorker {
   // ── 새 메시지 처리 ──────────────────────────────────────────────────
 
   private async _processNew(): Promise<void> {
-    // TODO (M7 S39 실습): XREADGROUP ">" 로 새 메시지만 수신
-    //   const result = await this.redis.xreadgroup(
-    //     this.config.groupName,
-    //     this.config.consumerId,
-    //     [{ key: this.config.streamKey, id: '>' }],
-    //     this.config.batchSize,
-    //     this.config.blockMs,
-    //   );
-    //   for (const { messages } of result ?? []) {
-    //     for (const msg of messages) {
-    //       await this._handleWithRetry(msg);
-    //     }
-    //   }
-
     const result = await this.redis.xreadgroup(
       this.config.groupName,
       this.config.consumerId,
@@ -141,10 +127,6 @@ export class ConsumerGroupWorker {
   // ── PEL 재수신 (Consumer 장애 복구) ─────────────────────────────────
 
   private async _reclaimPending(): Promise<void> {
-    // TODO (M7 S39 실습): XAUTOCLAIM으로 minIdleMs 초과 미처리 메시지 재수신
-    //   장애 시나리오: Consumer-1 이 XREADGROUP 후 처리 중 crash
-    //   → minIdleMs 경과 → Consumer-2 가 XAUTOCLAIM으로 인계받음
-
     const { messages } = await this.redis.xautoclaim(
       this.config.streamKey,
       this.config.groupName,
