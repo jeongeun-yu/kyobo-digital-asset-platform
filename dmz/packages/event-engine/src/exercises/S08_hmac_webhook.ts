@@ -1,5 +1,5 @@
 /**
- * S08 실습 — HMAC-SHA256 서명 검증 + RedisStreamPublisher.publish() 구현
+ * S08 실습 — HMAC-SHA256 서명 검증 구현
  *
  * 강의 노트: M2_S8_hmac_queue_service.md
  *
@@ -8,13 +8,10 @@
  *
  * 목표:
  *   1. verifySignature() 직접 구현 (HMAC + timingSafeEqual)
- *   2. MockPublisher.publish() 직접 구현 (XADD 필드 직렬화)
- *   3. 서명 검증 시나리오 3가지 확인 (없음/위조/올바름)
+ *   2. 서명 검증 시나리오 3가지 확인 (없음/위조/올바름)
  */
 
 import crypto from 'crypto';
-
-// ── 1부: verifySignature 독립 함수 구현 ─────────────────────────────────────
 
 /**
  * HMAC-SHA256 서명을 검증한다.
@@ -43,46 +40,7 @@ function verifySignature(rawBody: Buffer, signature: string, secret: string): bo
   return false; // placeholder
 }
 
-// ── 2부: MockPublisher (RedisStreamPublisher.publish() 스켈레톤) ────────────
-
-interface StreamEvent {
-  streamKey:   string;
-  eventType:   string;
-  payload:     Record<string, unknown>;
-  txHash:      string;
-  blockNumber: number;
-  requestId:   string;
-}
-
-const mockRedis = {
-  async xadd(key: string, fields: Record<string, string>): Promise<string> {
-    const messageId = `${Date.now()}-0`;
-    console.log(`[XADD] ${key}`, fields);
-    console.log(`[XADD] → messageId: ${messageId}`);
-    return messageId;
-  },
-};
-
-/**
- * TODO 6: publish() 구현
- *
- * mockRedis.xadd(streamKey, fields)를 호출하라.
- * fields에 포함할 항목:
- *   - eventType:   string 그대로
- *   - payload:     JSON.stringify(event.payload)  ← 객체는 직렬화 필수
- *   - txHash:      string 그대로
- *   - blockNumber: String(event.blockNumber)       ← number → string 변환
- *   - requestId:   string 그대로
- *   - publishedAt: String(Date.now())              ← 발행 시각
- *
- * @returns messageId (xadd 반환값)
- */
-async function publish(event: StreamEvent): Promise<string> {
-  // TODO 6: mockRedis.xadd 호출 후 messageId 반환
-  throw new Error('not implemented');
-}
-
-// ── 3부: 검증 시나리오 실행 ──────────────────────────────────────────────────
+// ── 검증 시나리오 실행 ────────────────────────────────────────────────────────
 
 const SECRET  = 'kyobo-test-secret-2024';
 const PAYLOAD = Buffer.from(JSON.stringify({
@@ -111,18 +69,4 @@ const CORRECT_SIG = crypto
   // 시나리오 3: 올바른 서명 → true
   const r3 = verifySignature(PAYLOAD, CORRECT_SIG, SECRET);
   console.log(`[시나리오 3] 올바른 서명  → ${r3}  (기대: true)`);
-
-  console.log('\n=== publish() 실습 ===\n');
-
-  const messageId = await publish({
-    streamKey:   'kyobo:events',
-    eventType:   'NFT_ISSUED',
-    payload:     { tokenId: '42', owner: '0xKYOBO' },
-    txHash:      '0xdeadbeef001',
-    blockNumber: 18500001,
-    requestId:   'req-s08',
-  });
-
-  console.log('[result] messageId:', messageId);
-  console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
 })();

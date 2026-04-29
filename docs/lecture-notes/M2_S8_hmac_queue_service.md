@@ -1,9 +1,7 @@
 # M2 S8 — Webhook 보안 검증과 QueueService 구현
 
-> Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 15분 + 실습 40분  
-> 대상:
->   `dmz/packages/event-engine/src/webhook/WebhookServer.ts`  
->   `dmz/packages/event-engine/src/dmz/RedisStreamPublisher.ts`
+> Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 15분 + 실습 30분  
+> 대상: `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
 
 ---
 
@@ -62,6 +60,188 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
 
 # 1부 — HMAC-SHA256 서명 검증 원리 (15분)
 
+![_verifySignature분석](image-11.png)
+
+## (1) 이 코드가 뭐하는 코드인가
+
+**한 줄 요약:** WebhookServer가 받은 요청이 **진짜 외부 시스템에서 보낸 것인지, 위조된 것인지** 판별하는 보안 검증 메서드.
+
+**역할 위치:**
+```
+[외부 요청] → WebhookServer 수신 → _verifySignature() ← 지금 여기
+                                        ↓
+                         true → 핸들러 실행 (RedisStreamPublisher로)
+                         false → 401 Unauthorized 응답
+```
+
+테스트 스크립트(앞에서 본 `crypto.createHmac(...).digest('hex')`)가 만든 서명을 **이 메서드가 검증**함. 송신과 수신은 거울처럼 대칭.
+
+## (2) TS 문법 새로 등장한 것
+
+### `private _verifySignature(rawBody: Buffer, signature: string): boolean`
+- **반환 타입 `: boolean`** = 함수 끝에 명시. true/false만 리턴
+- **`Buffer`** = Node.js 내장 타입, 바이트 배열을 다루는 객체
+- **`private` + `_` prefix** = 내부 전용 메서드 표시 (외부에서 호출 못 함)
+
+### `Buffer.from(signature, 'hex')`
+- 두 번째 인자가 **인코딩 지정**
+- `'hex'` = "이 문자열은 16진수다, 두 글자씩 묶어서 1바이트로 해석"
+- 예: `'a3f2'` (4글자 hex) → `[0xa3, 0xf2]` (2바이트)
+- 다른 인코딩: `'utf8'`, `'base64'`, `'binary'`
+
+### `sigBuf.length !== expBuf.length`
+- Buffer의 `.length`는 **바이트 수**
+- 문자열 `.length`는 글자 수 (UTF-8에선 다를 수 있음)
+- SHA-256 결과는 항상 32바이트 = hex 64글자
+
+### `crypto.timingSafeEqual(a, b)`
+- Node.js crypto 내장 함수
+- 일반 `===`나 `Buffer.equals()`와 달리 **항상 동일 시간 소요**
+- 길이가 다르면 throw → 그래서 사전에 길이 검사 필수
+
+## (3) 라인별 흐름
+
+### ① 헤더 존재 확인
+```typescript
+if (!signature) return false;
+```
+- 헤더 자체가 없으면 즉시 거부
+- 빈 문자열, undefined, null 모두 falsy로 처리됨
+
+### ② 서버 측에서 같은 계산 수행
+```typescript
+const expected = crypto
+  .createHmac('sha256', this.config.secret)
+  .update(rawBody)
+  .digest('hex');
+```
+- **테스트 스크립트와 완전히 같은 코드** — 송수신이 거울 대칭
+- 차이점: 외부는 자기 secret으로 계산해서 헤더에 넣음, 서버는 자기 secret으로 다시 계산해서 비교
+- secret이 일치하면 같은 입력에 같은 출력 → 서명 일치
+- secret이 다르면 결과가 완전히 다름 → 서명 불일치
+
+### ③ hex 문자열을 바이트로 변환
+```typescript
+const sigBuf = Buffer.from(signature, 'hex');
+const expBuf = Buffer.from(expected,  'hex');
+```
+- `timingSafeEqual`은 Buffer만 받음 → 변환 필요
+- 64글자 hex → 32바이트 Buffer
+
+### ④ 길이 사전 검사
+```typescript
+if (sigBuf.length !== expBuf.length) return false;
+```
+- `timingSafeEqual`은 길이 다르면 **throw**
+- 그러면 호출자가 try/catch로 감싸야 하는 번거로움
+- 길이 자체는 공개 정보(SHA-256은 항상 32바이트)이므로 그냥 비교해도 안전
+
+### ⑤ 타이밍 안전 비교
+```typescript
+return crypto.timingSafeEqual(sigBuf, expBuf);
+```
+- 일반 비교는 **첫 다른 바이트에서 즉시 종료** → 시간 누설
+- 이 함수는 **모든 바이트를 끝까지 비교** → 시간 누설 없음
+- 결과는 boolean
+
+## (4) 핵심 설계 포인트 3가지
+
+### 포인트 ①: rawBody Buffer로 계산 (JSON 재직렬화 함정)
+
+**잘못된 방식 (재직렬화):**
+```typescript
+const body = JSON.parse(rawBody.toString());  // 객체로
+const reSerialized = JSON.stringify(body);    // 다시 문자열로
+const hmac = createHmac('sha256', secret).update(reSerialized).digest('hex');
+// → 이러면 서명 절대 일치 안 함
+```
+
+**왜 안 되는가:**
+- 외부가 보낸 원본: `{"a":1, "b":2}` (공백 포함, 키 순서 그대로)
+- JSON.parse → JSON.stringify: `{"a":1,"b":2}` (공백 제거, 키 순서 변경 가능)
+- **한 바이트만 달라도 HMAC 결과가 완전히 달라짐**
+
+**올바른 방식 (이 코드):**
+```typescript
+.update(rawBody)  // Buffer 그대로
+```
+- 외부가 보낸 원본 바이트 그대로 사용
+- 공백, 키 순서, 들여쓰기까지 동일하게 해시
+
+### 포인트 ②: 길이 검사로 throw 회피
+
+```typescript
+if (sigBuf.length !== expBuf.length) return false;
+```
+
+- `timingSafeEqual`의 throw 조건을 사전 차단
+- "길이 정보 누설" 우려할 수 있지만 SHA-256 길이는 **고정 32바이트**
+- 즉 길이 비교는 정보 가치 없음 → 일반 비교로 충분
+
+### 포인트 ③: timingSafeEqual로 Timing Attack 방지
+
+**Timing Attack이란:**
+- 일반 비교(`===`)는 첫 번째 다른 바이트에서 멈춤
+- "비교 시간"으로 어디까지 일치했는지 추측 가능
+- 공격자가 한 바이트씩 맞춰가며 서명 추측 시도
+
+**예시 (이론적):**
+```
+공격자가 'a000...000' 보냄 → 1ns 만에 거부 (첫 바이트부터 다름)
+공격자가 'b000...000' 보냄 → 2ns (첫 바이트 일치, 두 번째에서 다름)
+→ "첫 바이트는 b가 맞다" 추론
+```
+
+**`timingSafeEqual` 방어:**
+- 항상 모든 바이트를 끝까지 비교
+- 시간으로 추측 불가
+
+**현실적 위협도:**
+- 네트워크 지연 변동이 ns 단위 차이를 가림
+- 그래도 보안 표준은 **항상 timingSafeEqual 권장**
+
+---
+
+## 5. 송신과 수신 대칭 구조
+
+| | 송신 (외부 클라이언트) | 수신 (이 코드) |
+|---|---|---|
+| 입력 | payload 객체 | rawBody Buffer |
+| 직렬화 | `JSON.stringify(obj)` | (이미 직렬화된 상태) |
+| 바이트화 | `Buffer.from(json)` | (이미 Buffer) |
+| HMAC 알고리즘 | SHA-256 | SHA-256 |
+| Secret | `'dev-secret-kyobo'` | `this.config.secret` |
+| 출력 | hex 문자열 → 헤더 | hex 문자열 → 비교 |
+
+**송신과 수신이 같은 secret + 같은 알고리즘이면 결과 일치 → 정당한 요청**  
+**다르면 불일치 → 위조**
+
+---
+
+## 6. 보안 체크리스트
+
+| 항목 | 처리 여부 | 이 코드의 방식 |
+|------|----------|---------------|
+| 헤더 누락 | ✅ | 즉시 false |
+| JSON 재직렬화 함정 | ✅ | rawBody Buffer 사용 |
+| 길이 불일치 throw | ✅ | 사전 검사 |
+| Timing Attack | ✅ | timingSafeEqual |
+| Replay Attack | ❌ | 별도 처리 (timestamp + requestId) |
+| Secret 유출 | ❌ | 환경변수/Vault로 분리 필요 |
+
+---
+
+## 7. 강의 강조 포인트
+
+- **rawBody는 절대 JSON.parse 후 다시 stringify 하면 안 됨** — 가장 흔한 함정
+- **secret은 평문 코드에 박지 마라** — `process.env.WEBHOOK_SECRET` 또는 Vault
+- **timingSafeEqual은 길이 다르면 throw** — 사전 길이 검사 필수 패턴
+- **Buffer.from(string, 'hex')** — hex 문자열을 바이트로 정확히 복원하는 표준 방식
+- **송수신은 거울 대칭** — 같은 알고리즘, 같은 secret, 같은 입력 → 같은 출력
+- **HMAC 검증만으론 부족** — Replay Attack 방어를 위해 timestamp 검증 + requestId 중복 차단 필요
+- **금융권 시각** — secret 로테이션 정책(예: 90일마다 교체) + 이중 검증(현재 키 + 직전 키 동시 허용 기간) 권장
+- **`private _xxx` 패턴** — 클래스 내부 전용 메서드 명명 컨벤션
+
 ## 1-1. HMAC이란?
 
 **HMAC (Hash-based Message Authentication Code)**  
@@ -77,7 +257,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
   
   HTTP 요청:
     X-Kyobo-Signature: a3f4b2c1d8e9f0...
-    Body: {"eventType":"NFT_ISSUED","data":...}
+    Body: {"eventType":"ACTIVITY_ACHIEVED","data":...}
 
 수신자 (우리):
   rawBody = 수신한 Body bytes
@@ -300,148 +480,7 @@ private _verifySignature(rawBody: Buffer, signature: string): boolean {
 
 ---
 
-## Step 2: RedisStreamPublisher.publish() 구현 (10분)
-
-### 현재 코드 상태 확인
-
-```typescript
-// RedisStreamPublisher.ts — 현재 상태
-async publish(event: StreamEvent): Promise<string> {
-  // TODO (M7 S38 실습): XADD 필드 구성 + 발행
-  //   const messageId = await this.redis.xadd(event.streamKey ?? this.defaultStream, {
-  //     eventType:   event.eventType,
-  //     payload:     JSON.stringify(event.payload),
-  //     txHash:      event.txHash,
-  //     blockNumber: String(event.blockNumber),
-  //     requestId:   event.requestId,
-  //     publishedAt: String(Date.now()),
-  //   });
-  //   return messageId;
-
-  const messageId = await this.redis.xadd(
-    event.streamKey ?? this.defaultStream,
-    {
-      eventType:   event.eventType,
-      payload:     JSON.stringify(event.payload),
-      txHash:      event.txHash,
-      blockNumber: String(event.blockNumber),
-      requestId:   event.requestId,
-      publishedAt: String(Date.now()),
-    },
-  );
-
-  return messageId;
-}
-```
-
-### 스켈레톤 (주석 제거 + TODO 형태)
-
-```typescript
-// RedisStreamPublisher.ts — 실습용 스켈레톤
-async publish(event: StreamEvent): Promise<string> {
-  // TODO 1: this.redis.xadd 호출
-  //         첫 번째 인자: event.streamKey가 있으면 사용, 없으면 this.defaultStream
-  //         두 번째 인자: 아래 필드를 포함하는 Record<string, string>
-  //           - eventType: string
-  //           - payload: JSON.stringify(event.payload)  ← 반드시 직렬화
-  //           - txHash: string
-  //           - blockNumber: String(event.blockNumber)  ← 반드시 string
-  //           - requestId: string
-  //           - publishedAt: String(Date.now())
-
-  // TODO 2: messageId를 반환
-
-  throw new Error('not implemented');
-}
-```
-
-### 답안
-
-```typescript
-async publish(event: StreamEvent): Promise<string> {
-  // TODO 1 답안
-  const messageId = await this.redis.xadd(
-    event.streamKey ?? this.defaultStream,
-    {
-      eventType:   event.eventType,
-      payload:     JSON.stringify(event.payload),
-      txHash:      event.txHash,
-      blockNumber: String(event.blockNumber),
-      requestId:   event.requestId,
-      publishedAt: String(Date.now()),
-    },
-  );
-
-  // TODO 2 답안
-  return messageId;
-}
-```
-
-**왜 각 필드를 이렇게 변환하는가:**
-
-```
-eventType:   event.eventType
-             → string 그대로. 이미 string.
-
-payload:     JSON.stringify(event.payload)
-             → Redis Streams는 string만 저장 가능.
-               객체는 JSON 직렬화 필수.
-
-blockNumber: String(event.blockNumber)
-             → number → string 변환.
-               Consumer에서 parseInt()로 다시 복원.
-
-publishedAt: String(Date.now())
-             → 발행 시각 기록. 지연 분석에 사용.
-```
-
----
-
-## Step 2-2: initialize() 구현 확인
-
-```typescript
-// 스켈레톤
-async initialize(groupName = 'issuer-consumers'): Promise<void> {
-  // TODO: xgroupCreate 호출
-  //       - stream: this.defaultStream
-  //       - group: groupName
-  //       - id: '$' (지금 이후 새 메시지만)
-  //       - mkstream: true
-  // TODO: BUSYGROUP 에러는 무시, 다른 에러는 throw
-  throw new Error('not implemented');
-}
-```
-
-```typescript
-// 답안
-async initialize(groupName = 'issuer-consumers'): Promise<void> {
-  try {
-    await this.redis.xgroupCreate(this.defaultStream, groupName, '$', true);
-  } catch (err: unknown) {
-    // BUSYGROUP = 이미 존재하는 그룹 → 서비스 재시작 시 정상 발생
-    if (!String(err).includes('BUSYGROUP')) throw err;
-    // 다른 에러 (연결 실패, 권한 오류 등)는 상위로 전파
-  }
-}
-```
-
-**BUSYGROUP을 어떻게 감지하는가:**
-
-```typescript
-// Redis 클라이언트(ioredis 등)는 에러 메시지에 "BUSYGROUP"을 포함시킴
-// 예: ReplyError: BUSYGROUP Consumer Group name already exists
-
-String(err).includes('BUSYGROUP')
-// → "ReplyError: BUSYGROUP Consumer Group name already exists"
-// → true → 무시
-
-// 실제 구현에서는 더 견고한 타입 체크를 쓸 수 있음:
-if (err instanceof Error && err.message.startsWith('BUSYGROUP')) return;
-```
-
----
-
-## Step 3: 서명 검증 테스트 (15분)
+## Step 2: 서명 검증 테스트 (15분)
 
 ### 테스트 서버 기동
 
@@ -624,7 +663,7 @@ console.log('[app] DMZ event pipeline ready');
    ↓
 [handler(payload)]                   ← 비동기 실행
    ↓
-[RedisStreamPublisher.publish()]     ← XADD (S8 구현)
+[RedisStreamPublisher.publish()]     ← XADD (S6 구현)
    ↓ messageId
 [Redis Streams: kyobo:events]        ← append-only 로그 (S6/S7)
    ↓
@@ -643,8 +682,6 @@ console.log('[app] DMZ event pipeline ready');
 
 ```
 [ ] _verifySignature() 를 TODO → 답안으로 직접 구현했다
-[ ] RedisStreamPublisher.publish() 를 TODO → 답안으로 직접 구현했다
-[ ] initialize()의 BUSYGROUP 처리 이유를 설명할 수 있다
 [ ] curl로 3가지 시나리오를 테스트했다:
     [ ] 서명 없음 → 401
     [ ] 잘못된 서명 → 401
@@ -664,9 +701,6 @@ console.log('[app] DMZ event pipeline ready');
 | rawBody Buffer | `.update(rawBody)` not `.update(JSON.stringify(parsed))` | JSON 재직렬화 불일치 방지 |
 | timingSafeEqual | `crypto.timingSafeEqual(sigBuf, expBuf)` | Timing Attack 방지 |
 | 길이 사전 체크 | `if (sigBuf.length !== expBuf.length) return false` | timingSafeEqual throw 방지 |
-| BUSYGROUP 무시 | `String(err).includes('BUSYGROUP')` | 서비스 재시작 안전 보장 |
-| blockNumber 변환 | `String(event.blockNumber)` | Redis Streams string-only |
-| payload 직렬화 | `JSON.stringify(event.payload)` | Redis Streams string-only |
 
 ---
 
@@ -692,9 +726,8 @@ S7: Redis Streams CLI 실습
 
 S8: 코드 구현
     _verifySignature: HMAC + timingSafeEqual
-    publish: XADD + string 직렬화
-    initialize: XGROUP CREATE + BUSYGROUP 처리
     curl 테스트: 401/401/202 확인
+    (publish/initialize는 S6에서 완료)
 ```
 
 ---
