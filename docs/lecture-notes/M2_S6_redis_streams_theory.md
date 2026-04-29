@@ -1,4 +1,4 @@
-# M2 S6 — Redis Streams 내부 구조와 At-least-once 처리 보장 원리
+# M2 S6 — Redis Streams 내부 구조
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 55분 (이론 전용)  
 > 대상: `dmz/packages/event-engine/src/dmz/RedisStreamPublisher.ts`
@@ -722,119 +722,7 @@ XACK kyobo:events issuer-consumers 1714000000000-0 1714000001000-0
 
 ---
 
-# 4부 — At-least-once 보장 메커니즘 전체 도식 (10분)
-
-## 4-1. At-least-once = "최소 한 번" 보장
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ At-least-once 보장 체인                                          │
-└─────────────────────────────────────────────────────────────────┘
-
-[이벤트 발생]
-      │
-      ▼
-XADD → messageId 기록 (DB에 저장)
-      │
-      ▼ ← 여기서 Consumer crash? → 재시작 후 PEL 재수신
-XREADGROUP → PEL 등록
-      │
-      ▼ ← 여기서 처리 실패? → XACK 안 함 → PEL 유지 → 재시도
-처리 (LedgerService.update)
-      │
-      ▼
-XACK → PEL 제거 ← 처리 완료 선언
-```
-
-## 4-2. 왜 "최소 한 번"인가?
-
-```
-시나리오: 처리는 성공했지만 XACK 전에 crash
-
-Step 1: process(message) 성공
-Step 2: redis.xack() 호출 직전 crash
-Step 3: 재시작 → PEL에 메시지 여전히 있음
-Step 4: 재수신 → process(message) 재처리
-
-→ 같은 메시지가 두 번 처리됨 (exactly-once 아님)
-→ 이것이 "at-least-once"의 의미
-
-해결책: 처리 로직을 멱등적으로 구현
-  → requestId를 DB unique key로 사용
-  → 같은 requestId가 두 번 오면 INSERT IGNORE / ON CONFLICT DO NOTHING
-```
-
-## 4-3. 멱등성과 requestId
-
-```typescript
-// ConsumerGroupWorker → EventProcessor
-async process(message: StreamMessage): Promise<void> {
-  const requestId = message.fields['requestId'];
-
-  // DB에 이미 처리됐으면 SKIP
-  const existing = await db.ledger.findByRequestId(requestId);
-  if (existing) {
-    console.log(`[idempotent] ${requestId} already processed, skipping`);
-    return;  // XACK는 ConsumerGroupWorker가 처리
-  }
-
-  // 처리
-  await db.ledger.insert({
-    requestId,
-    tokenId:  message.fields['tokenId'],
-    // ...
-  });
-}
-```
-
----
-
-# 5부 — Consumer Group 수평 확장 (5분)
-
-## 5-1. Consumer 수 증가에 따른 처리량
-
-```
-Consumer 1개:
-  kyobo:events → [msg1, msg2, msg3, msg4, msg5, msg6]
-                      │     │     │     │     │     │
-                  consumer-1이 순차 처리
-
-Consumer 3개:
-  kyobo:events → [msg1, msg2, msg3, msg4, msg5, msg6]
-                      │           │           │
-                  consumer-1  consumer-2  consumer-3
-                  msg1, msg4  msg2, msg5  msg3, msg6
-                  병렬 처리   병렬 처리   병렬 처리
-
-→ 처리량 약 3배 (처리 로직이 CPU/IO bound인 경우)
-```
-
-## 5-2. ConsumerGroupWorker 수평 확장
-
-```typescript
-// 같은 스트림, 같은 그룹, 다른 consumerId
-const worker1 = new ConsumerGroupWorker(redis, processors, dlq, {
-  streamKey:  'kyobo:events',
-  groupName:  'issuer-consumers',
-  consumerId: 'consumer-1',       // ← 각각 다른 ID
-  batchSize:  10,
-  blockMs:    5000,
-  minIdleMs:  30_000,
-});
-
-const worker2 = new ConsumerGroupWorker(redis, processors, dlq, {
-  streamKey:  'kyobo:events',
-  groupName:  'issuer-consumers',
-  consumerId: 'consumer-2',       // ← 각각 다른 ID
-  batchSize:  10,
-  blockMs:    5000,
-  minIdleMs:  30_000,
-});
-
-// Docker Compose로 스케일링
-// docker compose up --scale event-worker=3
-// → consumer-1, consumer-2, consumer-3이 자동 배포
-```
+> At-least-once 설계 원칙(처리 순서 불변 규칙, 멱등성, 수평 확장) → **S8 참조**
 
 ---
 
@@ -904,10 +792,7 @@ A: 개념은 동일하다. Consumer Group, PEL(Kafka의 Offset), XACK(Kafka의 c
 
 **Q2. XACK를 처리 성공 전에 먼저 보내면 어떤 문제가 생기는가?**
 
-A: 이벤트 유실이 발생한다.  
-XACK → PEL 제거 → 이후 처리 실패 → 재시도 불가 → 이벤트 사라짐.  
-원장에 기록 안 된 NFT 발행이 발생하고, 감사에서 불일치가 드러난다.  
-반드시 처리 완료 확인 후 XACK를 보내야 한다.
+A: → S8에서 케이스별로 상세히 다룬다.
 
 **Q3. minIdleMs를 너무 짧게 설정하면?**
 
