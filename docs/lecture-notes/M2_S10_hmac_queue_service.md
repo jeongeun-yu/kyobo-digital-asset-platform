@@ -1,4 +1,4 @@
-# M2 S8 — Webhook 보안 검증과 QueueService 구현
+# M2 S10 — Webhook 보안 검증과 QueueService 구현
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 15분 + 실습 30분  
 > 대상: `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
@@ -39,7 +39,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
    ├── _readBody()             ← rawBody Buffer 수집
    │       │
    │       ▼
-   ├── _verifySignature()      ← S8 구현 핵심 (1)
+   ├── _verifySignature()      ← S10 구현 핵심 (1)
    │   HMAC-SHA256(rawBody, secret)
    │   timingSafeEqual(expected, received)
    │       │
@@ -51,7 +51,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
    └── handler() 비동기 실행
            │
            ▼
-[RedisStreamPublisher.publish()]  ← S8 구현 핵심 (2)
+[RedisStreamPublisher.publish()]  ← S10 구현 핵심 (2)
    XADD kyobo:events * {...fields}
    → messageId 반환
 ```
@@ -60,7 +60,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
 
 # 1부 — HMAC-SHA256 서명 검증 원리 (15분)
 
-![_verifySignature분석](M2_S8_verify_signature_flow.png)
+![_verifySignature분석](M2_S10_verify_signature_flow.png)
 
 ## (1) 이 코드가 뭐하는 코드인가
 
@@ -361,7 +361,7 @@ export class WebhookServer {
     await Promise.allSettled(handlers.map(h => h(payload)));
   }
 
-  // ← S8 구현 핵심
+  // ← S10 구현 핵심
   private _verifySignature(rawBody: Buffer, signature: string): boolean { ... }
 }
 ```
@@ -606,7 +606,7 @@ const reserialized = JSON.stringify(parsed);  // '{"b":2,"a":1}' ← 같을 수�
 
 ---
 
-# 전체 연결: S5 → S8 통합 흐름
+# 전체 연결: S5 → S10 통합 흐름
 
 ## 완성된 파이프라인 코드
 
@@ -645,7 +645,7 @@ await server.listen();
 console.log('[app] DMZ event pipeline ready');
 ```
 
-## S5~S8 완성 흐름 도식
+## S5~S10 완성 흐름 도식
 
 ```
 [교보 앱 서버]               ← 사용자 활동 달성 → 이쪽이 WebhookServer를 호출
@@ -688,7 +688,7 @@ console.log('[app] DMZ event pipeline ready');
     [ ] 올바른 서명 → 202
 [ ] rawBody Buffer로 서명 계산해야 하는 이유를 설명할 수 있다
 [ ] timingSafeEqual이 throw하는 경우와 사전 차단 방법을 설명할 수 있다
-[ ] S5~S8 전체 파이프라인을 코드 레벨에서 설명할 수 있다
+[ ] S5~S10 전체 파이프라인을 코드 레벨에서 설명할 수 있다
 ```
 
 ---
@@ -704,7 +704,7 @@ console.log('[app] DMZ event pipeline ready');
 
 ---
 
-# Block A 전체 복습 (S5~S8)
+# Block A 전체 복습 (S5~S10)
 
 ```
 S5: 202 패턴
@@ -724,7 +724,13 @@ S7: Redis Streams CLI 실습
     PEL 직접 눈으로 확인
     Consumer 2개 분배 시뮬레이션
 
-S8: 코드 구현
+S8: At-least-once 설계 원리
+    XACK 순서 불변 규칙, Exactly-once 불가 이유
+
+S9: EventConsumer 코드 상세
+    start() / _processNew() / _reclaimPending() / _handleWithRetry()
+
+S10: 코드 구현
     _verifySignature: HMAC + timingSafeEqual
     curl 테스트: 401/401/202 확인
     (publish/initialize는 S6에서 완료)

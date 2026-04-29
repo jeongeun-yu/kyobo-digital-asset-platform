@@ -1,6 +1,6 @@
-# M2 S9 — 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리
+# M2 S8 — 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리
 
-> Block B — DMZ 이벤트 파이프라인 · M2 S9 · 강의 55분  
+> Block B — DMZ 이벤트 파이프라인 · M2 S8 · 강의 55분  
 > 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 
 ---

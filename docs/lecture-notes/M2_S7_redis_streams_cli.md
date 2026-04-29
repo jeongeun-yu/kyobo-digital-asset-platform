@@ -37,7 +37,7 @@ Q3. Consumer 2개가 메시지를 어떻게 나눠 가져가는가?
   XAUTOCLAIM
           │
           ▼
-[ConsumerGroupWorker]        ← S8 이후 코드 구현
+[ConsumerGroupWorker]        ← S8/S9 코드 구현
 ```
 
 ![ConsumerGroupWorker](M2_S7_consumer_group_worker_flow.png)
@@ -268,14 +268,14 @@ if (retryCount >= this.MAX_RETRIES) {
 
 ---
 
-## 8. 전체 파이프라인 종합 (S5~S9)
+## 8. 전체 파이프라인 종합 (S5~S10)
 
 | 단계 | 컴포넌트 | 책임 | 실패 시 |
 |------|----------|------|---------|
 | S5 | WebhookServer | HTTP 인증 + 수신 | 401 응답 |
 | S6 | RedisStreamPublisher | 큐 적재 | 호출자에게 throw |
 | S7~ | (Redis Stream 자체) | 메시지 보관 + 분배 | MAXLEN으로 크기 제한 |
-| S9 | ConsumerGroupWorker | 처리 + 재시도 + DLQ | 3회 후 DLQ |
+| S8/S9 | ConsumerGroupWorker | 처리 + 재시도 + DLQ | 3회 후 DLQ |
 | (보조) | LedgerService | 원장 업데이트 | EventProcessor가 throw |
 | (보조) | AuditLogService | 감사 로그 | 동일 |
 | (보조) | DLQHandler | 실패 메시지 격리 | 별도 스트림에 적재 |
@@ -770,22 +770,21 @@ XREADGROUP GROUP issuer-consumers consumer-3 COUNT 4 STREAMS kyobo:events >
 
 ---
 
-# 다음 세션 예고 (S8)
-
-S8에서는 이 CLI 실습을 TypeScript 코드로 구현한다.
+# 다음 세션 예고 (S8~S10)
 
 ```
-S8 구현 대상:
-  1. WebhookServer._verifySignature()
-     → HMAC-SHA256, timingSafeEqual, rawBody Buffer
-     → CLI 실습에서 서명 검증을 직접 구현
+S8: At-least-once 설계 원리
+    XACK 순서 불변 규칙 — 처리 → 커밋 → XACK
+    Exactly-once가 불가능한 이유
 
-  2. RedisStreamPublisher.publish()
-     → XADD 호출 (S7에서 CLI로 해본 것을 코드로)
-     → initialize() — XGROUP CREATE + BUSYGROUP 처리
+S9: ConsumerGroupWorker 코드 상세
+    start() / _reclaimPending() / _processNew() / _handleWithRetry()
+    DLQ 연동, retryCount 증가 로직
 
-실습 흐름:
-  TODO 주석 제거 → 답안 작성 → 서명 검증 테스트 (curl)
+S10: Webhook 보안 코드 구현
+    WebhookServer._verifySignature()
+    → HMAC-SHA256, timingSafeEqual, rawBody Buffer
+    curl 테스트: 401/401/202 확인
 ```
 
 ---

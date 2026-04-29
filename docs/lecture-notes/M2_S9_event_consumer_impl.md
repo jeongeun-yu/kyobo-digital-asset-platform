@@ -1,6 +1,6 @@
-# M2 S10 — EventConsumer 구현과 멱등 처리 통합 검증
+# M2 S9 — EventConsumer 구현과 멱등 처리 통합 검증
 
-> Block B — DMZ 이벤트 파이프라인 · M2 S10 · 강의 55분  
+> Block B — DMZ 이벤트 파이프라인 · M2 S9 · 강의 55분  
 > 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 
 ---
