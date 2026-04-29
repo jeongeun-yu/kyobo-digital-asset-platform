@@ -1,4 +1,4 @@
-# M2 S7 — Redis Streams CLI 실습과 At-least-once 재처리 시뮬레이션
+# M2 S7 — Redis Streams CLI 실습
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 개요 10분 + 실습 50분  
 > 대상: Redis CLI, Docker, `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
@@ -182,31 +182,11 @@ else {
 
 ---
 
-## 4. At-least-once vs Exactly-once 이해
+## 4. At-least-once vs Exactly-once
 
-### Redis Streams의 At-least-once 보장
-- **메시지가 누락될 일은 없음** (XACK 받기 전엔 PEL에 남음)
-- 단, **같은 메시지가 2회 이상 처리될 수 있음**
-  - 예: 처리 완료 직후 XACK 호출 직전에 crash → 재시작 시 또 처리
+> 설계 원칙과 처리 순서 불변 규칙은 **S8 참조**
 
-### 그래서 Exactly-once는 누가 책임지는가?
-- 인프라(Redis)는 **At-least-once까지만** 보장
-- "한 번만 효과 발생"은 **EventProcessor가 멱등성으로 직접 구현**
-- 방법: `requestId`를 DB에 unique 제약으로 저장 → 중복 insert는 자동 무시
-
-```typescript
-// EventProcessor.process() 내부 (예시)
-async process(msg: StreamMessage) {
-  const requestId = msg.fields['requestId'];
-  
-  // DB에 이미 있으면 그냥 리턴 (멱등성)
-  if (await ledger.exists(requestId)) return;
-  
-  await ledger.insert({ requestId, ...data });
-}
-```
-
-**강의에서 강조해야 할 핵심:** "At-least-once 큐 + 멱등 핸들러 = 사실상 Exactly-once"
+CLI 실습 포인트: XACK 없이 재시작하면 PEL에서 메시지가 재수신되는 것을 직접 확인한다.
 
 ---
 
@@ -237,20 +217,9 @@ if (retryCount >= this.MAX_RETRIES) {
 
 ## 6. 수평 확장 메커니즘
 
-### Consumer 인스턴스 N개를 띄우면
-- 같은 `groupName`, 다른 `consumerId`로 시작
-- Redis가 자동으로 메시지를 분배 (선착순 XREADGROUP)
-- **라운드 로빈 아님** — 먼저 호출한 쪽이 받아감
+> 수평 확장 시 멱등성 안전성은 **S8 참조**
 
-### 장애 시나리오 단계별
-1. consumer-1이 XREADGROUP으로 msg-A 가져감 (PEL에 등록)
-2. consumer-1이 처리 도중 crash
-3. 30초(`minIdleMs`) 경과
-4. consumer-2의 다음 루프에서 `_reclaimPending()` 호출
-5. XAUTOCLAIM으로 msg-A 인계받음
-6. consumer-2가 처리 시도
-
-**메시지는 누락되지 않고, 자동으로 살아있는 워커가 인수.**
+CLI 실습 포인트: Consumer 2개를 터미널 두 창에서 동시에 실행해 메시지 분배를 직접 확인한다.
 
 ---
 
@@ -260,7 +229,7 @@ if (retryCount >= this.MAX_RETRIES) {
 - **재시도 카운터를 메시지 필드에 저장** — Redis Streams는 자체 재시도가 없으므로 직접 관리
 - **`_retryCount`처럼 언더스코어 prefix** — "내부 메타데이터 필드" 관용 (사용자 데이터와 구분)
 - **`Promise.all` 병렬 실행** — 여러 processor가 같은 메시지에 관심 있을 때 동시 처리
-- **At-least-once + 멱등성 = Exactly-once** — 인프라와 애플리케이션의 책임 분담
+- **At-least-once + 멱등성 = Exactly-once** — 설계 원칙은 S8에서 상세히 다룸
 - **DLQ는 운영 필수** — 코드만 짜고 모니터링 안 하면 무용지물
 - **try-catch가 루프를 감쌈** — 워커는 어떤 일이 있어도 죽으면 안 됨 (서비스 중단 직결)
 - **`'>'` vs `'0-0'`** — XREADGROUP은 새 메시지(`>`), XAUTOCLAIM은 처음부터 스캔(`0-0`)
