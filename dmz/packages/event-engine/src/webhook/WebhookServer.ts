@@ -1,5 +1,6 @@
 import http from 'http';
 import crypto from 'crypto';
+import { logger } from '../infra/logger';
 
 /**
  * WebhookServer — 외부 시스템(교보 core banking 등)으로부터 Webhook 수신
@@ -63,7 +64,7 @@ export class WebhookServer {
   listen(): Promise<void> {
     return new Promise(resolve =>
       this.server.listen(this.config.port, () => {
-        console.log(`[WebhookServer] listening on :${this.config.port}`);
+        logger.info('WebhookServer listening', { port: this.config.port });
         resolve();
       }),
     );
@@ -105,7 +106,7 @@ export class WebhookServer {
 
     } catch (err) {
       if (!res.headersSent) res.writeHead(400).end();
-      console.error('[WebhookServer] error:', err);
+      logger.error('WebhookServer request error', { error: (err as Error).message });
     }
   }
 

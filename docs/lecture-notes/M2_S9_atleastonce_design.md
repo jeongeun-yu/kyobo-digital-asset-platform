@@ -1,6 +1,6 @@
-# M2 S8 — 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리
+# M2 S9 — 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리
 
-> Block B — DMZ 이벤트 파이프라인 · M2 S8 · 강의 55분  
+> Block B — DMZ 이벤트 파이프라인 · M2 S9 · 강의 55분  
 > 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 
 ---
@@ -20,6 +20,17 @@
 Exactly-once = 이상
 At-least-once + 멱등성 = 현실
 ```
+
+### DB 커밋 vs Redis XACK 차이
+
+| | DB COMMIT | Redis XACK |
+|---|---|---|
+| **확정 대상** | 데이터 변경 (insert/update/delete) | 메시지 처리 완료 표시 |
+| **묻는 질문** | "이 데이터 변경을 영속화할까?" | "이 메시지 책임을 내가 다 졌나?" |
+| **위치** | DB 트랜잭션의 종결자 | 큐 시스템의 영수증 |
+
+**같은 점:** 둘 다 "확정"하는 동작  
+**다른 점:** 무엇을 확정하는지가 완전히 다름
 
 ## 2. 잘못된 처리 순서 — 왜 순서가 중요한가
 
@@ -102,11 +113,11 @@ Redis가 메시지 분배 (XREADGROUP: 먼저 호출한 쪽이 소유)
 
 # 실습 (30분)
 
-실습 파일: `exercises/S08_atleastonce.ts` / 답안: `S08_atleastonce.answer.ts`
+실습 파일: `exercises/S09_atleastonce.ts` / 답안: `S09_atleastonce.answer.ts`
 
 ```bash
 # dmz/packages/event-engine 폴더에서
-npx ts-node src/exercises/S08_atleastonce.ts
+npx ts-node src/exercises/S09_atleastonce.ts
 ```
 
 **Part 1** — 멱등성 없는 Naive Processor 실행: 동일 메시지 2회 → 원장 +2 (버그) 확인  

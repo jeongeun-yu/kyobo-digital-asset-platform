@@ -1,10 +1,10 @@
 /**
- * S06 실습 — Redis Streams 전체 흐름
+ * S07 실습 — Redis Streams 전체 흐름
  *
- * 강의 노트: M2_S6_redis_streams_theory.md
+ * 강의 노트: M2_S7_redis_streams_theory.md
  *
  * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S06_redis_stream.ts
+ *   npx ts-node src/exercises/S07_redis_stream.ts
  *
  * 사전 조건: 없음 (Mock Redis 사용 — 실제 Docker 불필요)
  *

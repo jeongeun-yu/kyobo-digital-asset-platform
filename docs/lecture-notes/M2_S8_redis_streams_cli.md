@@ -1,4 +1,4 @@
-# M2 S7 — Redis Streams CLI 실습
+# M2 S8 — Redis Streams CLI 실습
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 개요 10분 + 실습 50분  
 > 대상: Redis CLI, Docker, `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
@@ -8,7 +8,7 @@
 # 이 세션이 답하는 질문
 
 ```
-Q1. S6에서 배운 PEL이 실제로 생기는가?
+Q1. S7에서 배운 PEL이 실제로 생기는가?
     → CLI에서 XREADGROUP 후 XPENDING을 치면 직접 눈으로 볼 수 있다.
 
 Q2. Consumer가 crash하면 정말로 메시지가 재수신되는가?
@@ -26,165 +26,29 @@ Q3. Consumer 2개가 메시지를 어떻게 나눠 가져가는가?
 [WebhookServer]              ← S5 완료
           │
           ▼
-[RedisStreamPublisher]       ← S6 완료 (XADD·XGROUP CREATE CLI 포함)
+[RedisStreamPublisher]       ← S7 완료 (XADD·XGROUP CREATE CLI 포함)
   XADD → Stream
           │
           ▼
-[Redis Streams: kyobo:events] ← S7 실습 핵심 (Consumer 관점 CLI)
+[Redis Streams: kyobo:events] ← S8 실습 핵심 (Consumer 관점 CLI)
   XREADGROUP (>)
   XACK
   XPENDING
   XAUTOCLAIM
           │
           ▼
-[ConsumerGroupWorker]        ← S8/S9 코드 구현
+[ConsumerGroupWorker]        ← S9/S10 코드 구현
 ```
 
-![ConsumerGroupWorker](M2_S7_consumer_group_worker_flow.png)
+![ConsumerGroupWorker](images/M2_S8_consumer_group_worker_flow.png)
 
-## 1. 이 코드가 뭐하는 코드인가
-
-**한 줄 요약:** Redis Stream에 쌓인 메시지를 **꺼내서 처리하고 결과를 확정**하는 Consumer 워커. 장애 복구·재시도·DLQ까지 책임지는 파이프라인의 종착점.
-
-**S6의 RedisStreamPublisher와의 관계:**
-```
-[WebhookServer S5]
-      ↓
-[RedisStreamPublisher S6] — 큐에 적재
-      ↓
-[Redis Stream "kyobo:events"]
-      ↓
-[ConsumerGroupWorker (이 파일)] — 큐에서 꺼내 처리
-      ↓
-[LedgerService / AuditLogService / DLQHandler]
-```
-
-Producer(S6)와 Consumer(이 파일)가 **Redis Stream을 매개로 완전히 분리**됨. 둘은 서로의 존재를 모르고, 큐만 공유.
-
----
-
-## 2. TS 문법 새로 등장한 것
-
-### `import type { DLQHandler, DLQItem } from './DLQHandler';`
-- **`import type`** = 타입 정보만 import (런타임 코드 없음)
-- 컴파일 후 JS에선 이 줄이 **완전히 사라짐**
-- 순환 참조 방지, 번들 크기 최적화에 사용
-- `DLQHandler`, `DLQItem`은 인터페이스/타입이라 런타임에 필요 없음
-
-### `Array<{ key: string; id: string }>`
-- **`Array<T>`** = `T[]`의 다른 표현
-- 안에 들어가는 게 **즉석 인터페이스(inline type)** — 별도 선언 없이 타입 정의
-- `Array<{ key: string }>` = 객체 배열, 각 객체에 `key` 필드 필수
-
-### `...ids: string[]`
-- **rest 파라미터** — 가변 인자를 배열로 받음
-- `xack(key, group, 'id1', 'id2', 'id3')` → `ids = ['id1', 'id2', 'id3']`
-- 호출 측은 콤마로 나열, 함수 내부는 배열로 받음
-
-### `private readonly MAX_RETRIES = 3;`
-- 클래스 상수 — 인스턴스마다 고정값 보유
-- TS에서 `private readonly` + 대문자 = "이 클래스의 상수" 관용
-
-### `msg.fields['eventType'] ?? ''`
-- nullish coalescing — 없으면 빈 문자열
-- `parseInt(msg.fields['_retryCount'] ?? '0', 10)` 같은 패턴
-- **두 번째 인자 `10`** = parseInt의 진법 명시 (10진수). 안 쓰면 일부 환경에서 8진수 오인 가능
-
-### `processors.filter(p => p.eventTypes.includes(eventType))`
-- **메서드 체이닝 + 화살표 함수** 조합
-- `filter(콜백)` → 콜백이 `true` 반환하는 항목만 남김
-- `includes(value)` → 배열에 값이 있는지 boolean
-- 한 줄로 "이 eventType을 처리할 수 있는 processor만 추출"
-
-### `Promise.all(processors.map(p => p.process(msg)))`
-- **`Promise.all`** = 여러 Promise를 **병렬 실행** + 모두 완료 대기
-- 하나라도 실패하면 전체 reject
-- `map(p => p.process(msg))` = 각 processor에 대해 process 호출 → Promise 배열
-- 직렬 실행하려면 `for (const p of processors) await p.process(msg)`
-
-### `private readonly config: { ... }`
-- **인라인 객체 타입을 생성자 매개변수로 직접 명시**
-- 별도 `interface Config` 선언 안 하고 즉석에서 형태 지정
-- 작은 설정 객체에 적합 (큰 건 인터페이스로 빼는 게 가독성 좋음)
-
-### `private async _reclaimPending()` — 언더스코어 prefix
-- TS에 진짜 private 표시법은 `private` 키워드 또는 `#필드`
-- `_` prefix는 **관습적 표시** (옛 JS 시절 컨벤션)
-- 이 코드는 `private` + `_` 둘 다 써서 "내부용임을 강조"
-
----
-
-## 3. 핵심 메서드 흐름
-
-### `start()` — 메인 루프
-```typescript
-while (this.running) {
-  try {
-    await this._reclaimPending();  // ① PEL 인계
-    await this._processNew();      // ② 새 메시지
-  } catch (err) {
-    console.error(...);
-    await this._sleep(1000);       // 에러 시 1초 쉬고 재시도
-  }
-}
-```
-- 루프마다 **두 단계 반복**: 미처리 인계 → 새 메시지 처리
-- catch가 루프 전체를 감싸서 어떤 에러로도 워커가 죽지 않음
-
-### `_processNew()` — XREADGROUP
-```typescript
-const result = await this.redis.xreadgroup(
-  this.config.groupName,
-  this.config.consumerId,
-  [{ key: this.config.streamKey, id: '>' }],
-  this.config.batchSize,
-  this.config.blockMs,
-);
-```
-- **`'>'`** = "내가 아직 본 적 없는 새 메시지만"
-- `blockMs` = 새 메시지 없을 때 최대 대기 시간 (0=무한)
-- 호출 즉시 메시지의 **소유권이 이 consumer로** 넘어감 (PEL 등록)
-
-### `_reclaimPending()` — XAUTOCLAIM
-```typescript
-const { messages } = await this.redis.xautoclaim(
-  this.config.streamKey,
-  this.config.groupName,
-  this.config.consumerId,
-  this.config.minIdleMs,   // 30초 등
-  '0-0',                   // 처음부터 스캔
-  this.config.batchSize,
-);
-```
-- 다른 consumer가 XREADGROUP했지만 **30초 넘게 처리 못 한 메시지**를 인계
-- consumer crash → PEL에 남은 메시지를 다른 consumer가 자동으로 가져감
-- **이게 At-least-once의 핵심 메커니즘**
-
-### `_handleWithRetry()` — 메시지별 처리 결정 트리
-```typescript
-if (retryCount >= MAX_RETRIES) → DLQ 이동 + XACK
-else if (처리자 없음) → XACK (무시)
-else {
-  try {
-    await Promise.all(processors.map(p => p.process(msg)));
-    XACK;  // 성공
-  } catch {
-    msg.fields['_retryCount']++;  // 실패 → 카운터 증가
-    // XACK 안 함 → PEL에 남음
-  }
-}
-```
-
-**핵심 분기:**
-1. **재시도 한도 초과** → DLQ로 옮기고 XACK (이상 메시지 영구 격리)
-2. **처리자 없음** → XACK으로 그냥 버림 (지원 안 하는 이벤트는 무시)
-3. **정상 시도** → 성공 시 XACK, 실패 시 PEL에 남겨 다음 루프에서 재처리
+> ConsumerGroupWorker 코드 구조 분석 → **S10 참조**
 
 ---
 
 ## 4. At-least-once vs Exactly-once
 
-> 설계 원칙과 처리 순서 불변 규칙은 **S8 참조**
+> 설계 원칙과 처리 순서 불변 규칙은 **S9 참조**
 
 CLI 실습 포인트: XACK 없이 재시작하면 PEL에서 메시지가 재수신되는 것을 직접 확인한다.
 
@@ -192,32 +56,16 @@ CLI 실습 포인트: XACK 없이 재시작하면 PEL에서 메시지가 재수�
 
 ## 5. DLQ (Dead Letter Queue) 패턴
 
-### 왜 필요한가
-- 일부 메시지는 **영원히 처리 불가**할 수 있음
-  - 잘못된 데이터 형식, 외부 API 영구 장애, 비즈니스 규칙 위반
-- 무한 재시도하면 큐가 막힘 → 다른 정상 메시지도 영향
-- **3회 시도 후 격리**해서 사람이 수동 조사
+> `_handleWithRetry()` 코드 구현(retryCount >= MAX_RETRIES 분기) → **S9 참조**  
+> DLQHandler.ts 내부 설계(move / listPending / requeueMessage) → **S11 참조**
 
-### 이 코드의 DLQ 흐름
-```typescript
-if (retryCount >= this.MAX_RETRIES) {
-  await this.dlq.move({ messageId, event, reason, failedAt });
-  await this.redis.xack(...);  // 원 스트림에서는 ACK
-  return;
-}
-```
-- DLQ는 보통 **별도 Redis Stream** (예: `kyobo:dlq`)
-- 운영자가 주기적으로 점검 → 원인 파악 → 수정 후 원 스트림에 재발행
-
-### 강의 포인트
-- DLQ 없으면 **장애 메시지 하나가 시스템 전체를 마비** 시킬 수 있음
-- 금융권에선 DLQ 모니터링 + 알림이 필수 (SLA 항목)
+CLI 실습 포인트: `XPENDING`에서 delivery count가 3 이상인 메시지가 DLQ로 이동된 뒤 원 스트림에서 XACK되는 흐름을 S11 실습에서 직접 확인한다.
 
 ---
 
 ## 6. 수평 확장 메커니즘
 
-> 수평 확장 시 멱등성 안전성은 **S8 참조**
+> 수평 확장 시 멱등성 안전성은 **S9 참조**
 
 CLI 실습 포인트: Consumer 2개를 터미널 두 창에서 동시에 실행해 메시지 분배를 직접 확인한다.
 
@@ -225,15 +73,15 @@ CLI 실습 포인트: Consumer 2개를 터미널 두 창에서 동시에 실행�
 
 ## 7. 강의 강조 포인트
 
-- **`import type`** — 타입과 런타임 코드 분리, 순환 참조 방지
-- **재시도 카운터를 메시지 필드에 저장** — Redis Streams는 자체 재시도가 없으므로 직접 관리
-- **`_retryCount`처럼 언더스코어 prefix** — "내부 메타데이터 필드" 관용 (사용자 데이터와 구분)
-- **`Promise.all` 병렬 실행** — 여러 processor가 같은 메시지에 관심 있을 때 동시 처리
-- **At-least-once + 멱등성 = Exactly-once** — 설계 원칙은 S8에서 상세히 다룸
-- **DLQ는 운영 필수** — 코드만 짜고 모니터링 안 하면 무용지물
-- **try-catch가 루프를 감쌈** — 워커는 어떤 일이 있어도 죽으면 안 됨 (서비스 중단 직결)
+CLI 실습에서 강조할 포인트:
+
 - **`'>'` vs `'0-0'`** — XREADGROUP은 새 메시지(`>`), XAUTOCLAIM은 처음부터 스캔(`0-0`)
-- **3대 의존성** — LedgerService(원장), AuditLogService(감사), DLQHandler(실패) — 각자 책임 명확히 분리
+- **delivery count** — XPENDING에서 증가하는 수치, `_retryCount`(메시지 필드)와 다른 개념
+- **PEL = 처리 중 영수증** — XACK 전까지 Consumer 소유, 재시작 후 XAUTOCLAIM으로 복구
+
+> ConsumerGroupWorker 코드의 TS 문법·설계 포인트(import type, Promise.all, try-catch 루프, 3대 의존성) → **S9 참조**  
+> At-least-once + 멱등성 설계 원칙 → **S8 참조**  
+> DLQ 운영 필수 이유 → **S11 참조**
 
 ---
 
@@ -742,18 +590,17 @@ XREADGROUP GROUP issuer-consumers consumer-3 COUNT 4 STREAMS kyobo:events >
 # 다음 세션 예고 (S8~S10)
 
 ```
-S8: At-least-once 설계 원리
+S9: At-least-once 설계 원리
     XACK 순서 불변 규칙 — 처리 → 커밋 → XACK
     Exactly-once가 불가능한 이유
 
-S9: ConsumerGroupWorker 코드 상세
+S10: ConsumerGroupWorker 코드 상세
     start() / _reclaimPending() / _processNew() / _handleWithRetry()
     DLQ 연동, retryCount 증가 로직
 
-S10: Webhook 보안 코드 구현
-    WebhookServer._verifySignature()
-    → HMAC-SHA256, timingSafeEqual, rawBody Buffer
-    curl 테스트: 401/401/202 확인
+S11: DLQ 설계와 운영
+    DLQHandler.ts 내부 구조
+    move / listPending / requeueMessage
 ```
 
 ---

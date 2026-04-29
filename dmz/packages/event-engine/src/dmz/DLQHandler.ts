@@ -13,6 +13,8 @@
  * DLQ 스트림 키: "kyobo:events:dlq"
  */
 
+import { logger } from '../infra/logger';
+
 export interface DLQItem {
   messageId: string;    // 원본 Redis messageId
   streamKey: string;    // 원본 스트림 키
@@ -59,9 +61,6 @@ export class DLQHandler {
    * @returns DLQ messageId
    */
   async move(item: DLQItem): Promise<string> {
-    // TODO (M7 S42 실습): DLQ 스트림에 XADD + 알림 전송
-    //   DLQ 필드: 원본 이벤트 필드 + 메타 (reason, failedAt, originalMessageId)
-
     const dlqMessageId = await this.redis.xadd(this.dlqStreamKey, {
       ...item.event,
       _originalMessageId: item.messageId,
@@ -78,7 +77,7 @@ export class DLQHandler {
       `- 이벤트: ${item.event['eventType'] ?? 'unknown'}\n` +
       `- 원인: ${item.reason}\n` +
       `- DLQ ID: ${dlqMessageId}`
-    ).catch(err => console.error('[DLQHandler] alert failed:', err));
+    ).catch(err => logger.error('DLQ alert failed', { error: (err as Error).message }));
 
     return dlqMessageId;
   }
@@ -88,7 +87,6 @@ export class DLQHandler {
    * @param count 최대 조회 건수 (기본 100)
    */
   async listPending(count = 100): Promise<DLQItem[]> {
-    // TODO (M7 S42 실습): XRANGE로 DLQ 스트림 조회
     const entries = await this.redis.xrange(this.dlqStreamKey, '-', '+', count);
 
     return entries.map(entry => ({

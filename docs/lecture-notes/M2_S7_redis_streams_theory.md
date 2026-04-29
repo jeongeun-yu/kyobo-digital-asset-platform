@@ -1,4 +1,4 @@
-# M2 S6 — Redis Streams 내부 구조
+# M2 S7 — Redis Streams 내부 구조
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 55분 (이론 전용)  
 > 대상: `dmz/packages/event-engine/src/dmz/RedisStreamPublisher.ts`
@@ -64,23 +64,23 @@ Q3. PEL이란 무엇이고, XACK는 왜 필수인가?
   handler 비동기 실행
           │ WebhookPayload
           ▼
-[RedisStreamPublisher]                   ← S6 이론 핵심
+[RedisStreamPublisher]                   ← S7 이론 핵심
   publish() → XADD → Redis Streams
           │ messageId: "1714000000000-0"
           ▼
-[Redis Streams: kyobo:events]            ← S6 내부 구조 학습 대상
+[Redis Streams: kyobo:events]            ← S7 내부 구조 학습 대상
   append-only log
   Consumer Group: issuer-consumers
   PEL (Pending Entry List)
           │
           ▼
-[ConsumerGroupWorker]                    ← S6 실습 대상
+[ConsumerGroupWorker]                    ← S7 실습 대상
   XREADGROUP → PEL 등록
   처리 성공 → XACK → PEL 제거
   장애 후 → XAUTOCLAIM → 재수신
 ```
 
-![RedisStreamPublisher 전체 흐름](M2_S6_redis_stream_pipeline.png)
+![RedisStreamPublisher 전체 흐름](images/M2_S7_redis_stream_pipeline.png)
 
 # RedisStreamPublisher 코드 분석
 
@@ -722,7 +722,7 @@ XACK kyobo:events issuer-consumers 1714000000000-0 1714000001000-0
 
 ---
 
-> At-least-once 설계 원칙(처리 순서 불변 규칙, 멱등성, 수평 확장) → **S8 참조**
+> At-least-once 설계 원칙(처리 순서 불변 규칙, 멱등성, 수평 확장) → **S9 참조**
 
 ---
 
@@ -746,29 +746,29 @@ XACK kyobo:events issuer-consumers 1714000000000-0 1714000001000-0
 
 ---
 
-# 코드 실습 (S6)
+# 코드 실습 (S7)
 
 S6 실습은 하나의 파일로 구성된다. `exercises/` 폴더에서 실행한다.
 
 | 파일 | 내용 |
 |---|---|
-| `S06_redis_stream.ts` | Part 1: `RedisStreamPublisher` initialize → publish / Part 2: `EventProcessor` 구현 → `ConsumerGroupWorker` XREADGROUP → XACK |
+| `S07_redis_stream.ts` | Part 1: `RedisStreamPublisher` initialize → publish / Part 2: `EventProcessor` 구현 → `ConsumerGroupWorker` XREADGROUP → XACK |
 
 ```bash
 # dmz/packages/event-engine 폴더에서
-npx ts-node src/exercises/S06_redis_stream.ts
+npx ts-node src/exercises/S07_redis_stream.ts
 ```
 
-답안: `S06_redis_stream.answer.ts`
+답안: `S07_redis_stream.answer.ts`
 
 ---
 
-# 다음 세션 예고 (S7)
+# 다음 세션 예고 (S8)
 
-S7에서는 Redis CLI 실습을 진행한다. Docker 기동부터 Consumer 2개 분배까지 끊김 없이 이어진다.
+S8에서는 Redis CLI 실습을 진행한다. Docker 기동부터 Consumer 2개 분배까지 끊김 없이 이어진다.
 
 ```
-S7 실습 목표:
+S8 실습 목표:
   Docker 기동 + PING 확인
   → XADD로 이벤트 3개 적재
   → XGROUP CREATE + XREADGROUP으로 메시지 수신
@@ -792,7 +792,7 @@ A: 개념은 동일하다. Consumer Group, PEL(Kafka의 Offset), XACK(Kafka의 c
 
 **Q2. XACK를 처리 성공 전에 먼저 보내면 어떤 문제가 생기는가?**
 
-A: → S8에서 케이스별로 상세히 다룬다.
+A: → S9에서 케이스별로 상세히 다룬다.
 
 **Q3. minIdleMs를 너무 짧게 설정하면?**
 

@@ -25,6 +25,8 @@
  *     재시도 지연만 발생시키고 Core Banking에 불필요한 부하를 줌.
  */
 
+import { logger } from '../infra/logger';
+
 export interface RetryConfig {
   maxAttempts:    number;
   initialDelayMs: number;
@@ -160,6 +162,6 @@ export class RetryHandler {
 export class DeadLetterQueue {
   async push(item: { event: OutboundEvent; error: string; attempts: number }): Promise<void> {
     // TODO: DB 저장 또는 Kafka DLQ 발행
-    console.error('[DLQ] failed event:', JSON.stringify(item, null, 2));
+    logger.error('outbound event failed', { requestId: item.event.requestId, attempts: item.attempts, error: item.error });
   }
 }

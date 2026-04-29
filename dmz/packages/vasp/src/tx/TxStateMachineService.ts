@@ -1,7 +1,7 @@
 /**
  * TxStateMachineService — 비동기 TX 상태 관리
  *
- * M4 S15~S22 핵심 개념:
+ * M3 S13~S22 핵심 개념:
  *
  * 상태 전이도:
  *   REQUESTED ──submitMintRequest()──→ SUBMITTED

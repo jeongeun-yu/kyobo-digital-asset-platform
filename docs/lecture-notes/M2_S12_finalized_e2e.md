@@ -1,7 +1,7 @@
 # M2 S12 — Finalized 블록 기준 처리와 파이프라인 장애 복원력 검증
 
 > Block B — DMZ 이벤트 파이프라인 · M2 S12 · 강의 55분  
-> 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`, `dmz/packages/event-engine/src/dmz/DLQHandler.ts`
+> 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`, `dmz/packages/event-engine/src/dmz/DLQHandler.ts`, `dmz/packages/event-engine/src/processors/NFTIssuedProcessor.ts`
 
 ---
 
@@ -34,37 +34,100 @@ Finalized 이전에 처리하면 Reorg로 인한 데이터 불일치가 발생�
 eth_subscribe('newFinalizedBlock') — 전용(Private) RPC에서만 지원
 ```
 
-## 2. Finalized 체크 로직
+## 2. NFTIssuedProcessor 구조
+
+`src/processors/NFTIssuedProcessor.ts` — `EventProcessor` 인터페이스의 구체 구현체.
 
 ```typescript
-// EventProcessor.process() 내부에서 Finalized 체크
-async process(message: StreamMessage): Promise<void> {
-  const event = JSON.parse(message.fields['payload'] ?? '{}') as NFTIssuedEvent;
+// LedgerService 인터페이스 (M4에서 PostgreSQL 구현체로 교체)
+export interface LedgerService {
+  creditNFT(owner: string, tokenId: string, amount?: number): Promise<void>;
+  getNFTBalance(owner: string, tokenId: string): Promise<number>;
+}
 
-  // Finalized 체크
-  const finalizedBlock = await this.adapter.getFinalizedBlockNumber();
-  if (event.blockNumber > finalizedBlock) {
-    // 아직 Finalized 안 됨 → XACK 안 함 → 다음 폴링에서 재처리
-    console.log(
-      `[Consumer] 블록 ${event.blockNumber} 아직 Finalized 안 됨` +
-      ` (현재 Finalized: ${finalizedBlock})`
-    );
-    return;
+// Finalized 블록 번호 조회 인터페이스
+export interface FinalizedBlockProvider {
+  getFinalizedBlockNumber(): Promise<number>;
+}
+
+export class NFTIssuedProcessor implements EventProcessor {
+  readonly eventTypes = ['NFT_ISSUED'];
+
+  constructor(
+    private readonly idempotency:             IdempotencyGuard,
+    private readonly ledger:                  LedgerService,
+    private readonly finalizedBlockProvider?: FinalizedBlockProvider,
+  ) {}
+
+  async process(message: StreamMessage): Promise<void> {
+    const payload    = JSON.parse(message.fields['payload'] ?? '{}');
+    const requestId  = message.fields['requestId'] ?? message.id;
+
+    // Step 1: Finalized 체크
+    if (this.finalizedBlockProvider && payload.blockNumber != null) {
+      const finalized = await this.finalizedBlockProvider.getFinalizedBlockNumber();
+      if (payload.blockNumber > finalized) {
+        throw new DeferredProcessingError(`block ${payload.blockNumber} not yet finalized`);
+        // Worker가 DeferredProcessingError를 잡아 XACK 없이 PEL 잔류 처리
+        // retryCount 증가 없음 — 실패가 아니라 "아직 처리할 수 없음"
+      }
+    }
+
+    // Step 2+3: 멱등성 확인 → 원장 업데이트
+    await this.idempotency.run(`NFTIssued:${requestId}`, async () => {
+      await this.ledger.creditNFT(payload.to, payload.tokenId);
+    });
+  }
+}
+
+// M2 실습·테스트용 (M4에서 PostgreSQL로 교체)
+export class InMemoryLedgerService implements LedgerService {
+  readonly holdings = new Map<string, number>();
+
+  async creditNFT(owner: string, tokenId: string, amount = 1): Promise<void> {
+    const key = `${owner}:${tokenId}`;
+    this.holdings.set(key, (this.holdings.get(key) ?? 0) + amount);
   }
 
-  // Finalized 확인 → 이하 정상 처리
-  const idempotencyKey = `NFTIssued:${event.txHash}:${event.logIndex}`;
-  await this.idempotencyGuard.run(idempotencyKey, async () => {
-    // ...
-  });
+  async getNFTBalance(owner: string, tokenId: string): Promise<number> {
+    return this.holdings.get(`${owner}:${tokenId}`) ?? 0;
+  }
 }
 ```
 
-**주의:** `return`만 하고 XACK를 호출하지 않는다.  
-→ PEL에 잔류 → 다음 폴링 주기에 `_reclaimPending()`이 재수신  
-→ Finalized가 되면 그 때 처리
+**처리 순서 (At-least-once 4단계 불변 규칙):**
 
-## 3. Consumer 장애 복구 실습 시나리오
+| 단계 | 동작 | XACK 여부 |
+|------|------|----------|
+| Finalized 미확정 | `return` | 없음 → PEL 잔류 |
+| 중복 requestId | `idempotency.run()` 스킵 | Worker가 처리 |
+| 정상 처리 | `creditNFT()` 실행 | Worker가 처리 |
+
+XACK는 `ConsumerGroupWorker._handleWithRetry()`에서 처리 — `NFTIssuedProcessor`는 호출하지 않음.
+
+## 3. Finalized 체크 로직
+
+**주의:** `DeferredProcessingError`를 throw하고 XACK를 호출하지 않는다.  
+→ `ConsumerGroupWorker._handleWithRetry()`가 `DeferredProcessingError`를 잡아 retryCount 증가 없이 PEL 잔류  
+→ `_reclaimPending()`(XAUTOCLAIM)이 minIdleMs 경과 후 재수신  
+→ Finalized가 되면 그 때 정상 처리
+
+`throw new Error()` vs `return` 차이:
+- `return` → 워커가 성공으로 간주 → XACK 호출 → 메시지 영구 소실
+- `throw DeferredProcessingError` → 워커가 PEL 잔류 처리 → retryCount 증가 없음
+- `throw Error` (일반 오류) → retryCount++ → 3회 후 DLQ 이동 (잘못된 동작)
+
+```typescript
+// FinalizedBlockProvider 없이 생성 → Finalized 체크 스킵 (M2 실습 기본값)
+const processor = new NFTIssuedProcessor(idempotency, ledger);
+
+// FinalizedBlockProvider 주입 → 체크 활성화
+const processor = new NFTIssuedProcessor(idempotency, ledger, {
+  async getFinalizedBlockNumber() { return 18_000_000; },
+});
+```
+
+## 4. Consumer 장애 복구 실습 시나리오
 
 **시나리오:**
 
@@ -95,72 +158,54 @@ redis-cli XPENDING kyobo:events issuer-consumers - + 10
 # 결과: (empty list or set)
 ```
 
-## 4. M2 전체 E2E 흐름 검증
+## 5. M2 전체 E2E 흐름 검증
 
 ```
 VASP (외부) → WebhookServer(DMZ)
-→ IdempotencyGuard (중복 차단)
-→ RedisStreamPublisher → kyobo:events Stream
+→ WebhookPublishHandler (IdempotencyGuard → RedisStreamPublisher)
+→ kyobo:events Stream (MockRedisStream)
 → ConsumerGroupWorker → NFTIssuedProcessor
-→ LedgerService (DB 트랜잭션)
+→ InMemoryLedgerService (M2 실습용)
 → XACK
 ```
 
-**E2E 실행 스크립트:**
+**실습 파일:** `src/exercises/S12_e2e.ts`
 
-```bash
-# Step 1: HMAC 서명 생성
-BODY='{"eventType":"NFTIssued","txHash":"0xabc123","logIndex":0,"tokenId":1001,"to":"0xAlice"}'
-SIG=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "test-secret-key" | awk '{print $2}')
+```typescript
+// MockRedisStream: RedisStreamClient + RedisConsumerClient 동시 구현
+// 메모리 배열(store[])로 XADD/XREADGROUP/XACK를 시뮬레이션
+// → Redis 서버 없이 전체 파이프라인을 로컬에서 완주
 
-# Step 2: Webhook 전송
-curl -s -w "\n%{http_code}" \
-  -X POST http://localhost:3000/webhook \
-  -H "Content-Type: application/json" \
-  -H "X-Kyobo-Signature: $SIG" \
-  -d "$BODY"
-# 기대: 202
+// 실행:
+// npx ts-node src/exercises/S12_e2e.ts
 
-# Step 3: Stream 메시지 확인
-redis-cli XRANGE kyobo:events - + COUNT 5
-# 기대: NFTIssued 메시지 1건
-
-# Step 4: Consumer 처리 대기 (~1초)
-sleep 2
-
-# Step 5: 원장 확인
-# psql -c "SELECT user_id, token_id, amount FROM user_nft_holdings WHERE user_id = '0xAlice';"
-# 기대: 0xAlice | 1001 | 1
-
-# Step 6: PEL 비어있음 확인
-redis-cli XPENDING kyobo:events issuer-consumers - + 10
-# 기대: (empty)
-
-# Step 7: 동일 이벤트 재전송 (멱등성 확인)
-curl -s -w "\n%{http_code}" \
-  -X POST http://localhost:3000/webhook \
-  -H "Content-Type: application/json" \
-  -H "X-Kyobo-Signature: $SIG" \
-  -d "$BODY"
-# 기대: 202 (but amount는 여전히 1)
-
-sleep 2
-# psql → amount = 1 (중복 처리 안 됨)
+// 채점:
+// npx jest src/__tests__/e2e.test.ts
 ```
 
-**각 단계별 확인 포인트:**
+**5가지 검증 시나리오:**
 
-| 단계 | 확인 방법 | 기대값 |
+| 검증 | 확인 방법 | 기대값 |
 |------|----------|--------|
-| Webhook 수신 | HTTP 응답 코드 | 202 |
-| HMAC 검증 실패 | 잘못된 서명 전송 → | 401 |
-| Stream 적재 | XRANGE | 메시지 1건 |
-| 멱등성 (Webhook) | requestId 동일 재전송 → | 202 but Stream에 추가 안 됨 |
-| Consumer 처리 | XPENDING | empty |
-| 원장 업데이트 | user_nft_holdings | amount = 1 |
-| 멱등성 (Consumer) | 동일 이벤트 재처리 → | amount 변화 없음 |
+| [1] 정상 Webhook | HTTP 응답 코드 | 202 |
+| [2] Stream 적재 | `mockRedis.messageCount` | 1 |
+| [3] 원장 업데이트 | `ledger.getNFTBalance()` | 1 |
+| [4] 멱등성 (동일 requestId 재전송) | Stream 수 + 원장 잔고 | 여전히 1 / 1 |
+| [5] HMAC 검증 실패 | 잘못된 서명 전송 → | 401 |
 
-## 5. M2 모듈 완료 기준 체크리스트
+**TODO 목록 (실습에서 직접 구현):**
+
+```
+TODO 1: WebhookPublishHandler 생성 + server.on('NFT_ISSUED', ...) 등록
+TODO 2: NFTIssuedProcessor 생성 (idempotencyConsumer, ledger)
+TODO 3: ConsumerGroupWorker 생성
+        config: streamKey='kyobo:events', groupName='issuer-consumers',
+                consumerId='worker-s12', batchSize=10, blockMs=30, minIdleMs=30_000
+TODO 4: 동일 BODY(requestId) 재전송 → 멱등성 확인
+TODO 5: 잘못된 서명으로 전송 → 401 확인
+```
+
+## 6. M2 모듈 완료 기준 체크리스트
 
 - [ ] **At-least-once + 멱등성**: 동일 이벤트 2회 → 원장 1회만 반영
 - [ ] **장애 복구**: Consumer 강제 종료 → 재시작 후 미ACK 메시지 자동 재수신

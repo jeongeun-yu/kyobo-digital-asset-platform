@@ -1,4 +1,4 @@
-# M2 S10 — Webhook 보안 검증과 QueueService 구현
+# M2 S6 — Webhook 보안 검증과 QueueService 구현
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 15분 + 실습 30분  
 > 대상: `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
@@ -39,7 +39,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
    ├── _readBody()             ← rawBody Buffer 수집
    │       │
    │       ▼
-   ├── _verifySignature()      ← S10 구현 핵심 (1)
+   ├── _verifySignature()      ← S6 구현 핵심 (1)
    │   HMAC-SHA256(rawBody, secret)
    │   timingSafeEqual(expected, received)
    │       │
@@ -51,7 +51,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
    └── handler() 비동기 실행
            │
            ▼
-[RedisStreamPublisher.publish()]  ← S10 구현 핵심 (2)
+[RedisStreamPublisher.publish()]  ← S6 구현 핵심 (2)
    XADD kyobo:events * {...fields}
    → messageId 반환
 ```
@@ -60,7 +60,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
 
 # 1부 — HMAC-SHA256 서명 검증 원리 (15분)
 
-![_verifySignature분석](M2_S10_verify_signature_flow.png)
+![_verifySignature분석](images/M2_S6_verify_signature_flow.png)
 
 ## (1) 이 코드가 뭐하는 코드인가
 
@@ -361,7 +361,7 @@ export class WebhookServer {
     await Promise.allSettled(handlers.map(h => h(payload)));
   }
 
-  // ← S10 구현 핵심
+  // ← S6 구현 핵심
   private _verifySignature(rawBody: Buffer, signature: string): boolean { ... }
 }
 ```
@@ -421,11 +421,11 @@ Step 4: timingSafeEqual
 
 # 실습 (40분)
 
-실습 파일: `exercises/S10_hmac_webhook.ts` / 답안: `S10_hmac_webhook.answer.ts`
+실습 파일: `exercises/S06_hmac_webhook.ts` / 답안: `S06_hmac_webhook.answer.ts`
 
 ```bash
 # dmz/packages/event-engine 폴더에서
-npx ts-node src/exercises/S10_hmac_webhook.ts
+npx ts-node src/exercises/S06_hmac_webhook.ts
 ```
 
 ## Step 1: _verifySignature() 직접 구현 (15분)
@@ -606,19 +606,24 @@ const reserialized = JSON.stringify(parsed);  // '{"b":2,"a":1}' ← 같을 수�
 
 ---
 
-# 전체 연결: S5 → S10 통합 흐름
+# 전체 연결: S5 → S6 통합 흐름
 
 ## 완성된 파이프라인 코드
 
 ```typescript
 // 서비스 초기화 (main.ts)
-import { WebhookServer }       from './webhook/WebhookServer';
-import { RedisStreamPublisher } from './dmz/RedisStreamPublisher';
+import { WebhookServer }          from './webhook/WebhookServer';
+import { WebhookPublishHandler }  from './webhook/WebhookPublishHandler';
+import { IdempotencyGuard, InMemoryIdempotencyStore } from './webhook/IdempotencyGuard';
+import { RedisStreamPublisher }   from './dmz/RedisStreamPublisher';
 
 const redis = createRedisClient();  // ioredis 등
 
 const publisher = new RedisStreamPublisher(redis);
 await publisher.initialize();       // XGROUP CREATE (BUSYGROUP 무시)
+
+const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
+// 운영 환경에서는 new RedisIdempotencyStore(redis) 사용
 
 const server = new WebhookServer({
   port:      3000,
@@ -626,54 +631,49 @@ const server = new WebhookServer({
   maxBodyKb: 64,
 });
 
-// 교보 앱 서버 → 활동 달성 이벤트 수신 → Redis Streams 적재
-server
-  .on('ACTIVITY_ACHIEVED', async (payload) => {
-    const messageId = await publisher.publish({
-      streamKey:   'kyobo:events',
-      eventType:   payload.eventType,
-      payload:     payload.data,
-      txHash:      '',          // 발행 전 단계 — 아직 txHash 없음
-      blockNumber: 0,
-      requestId:   payload.requestId,
-    });
-    console.log(`[queue] published ${payload.eventType}: ${messageId}`);
-  });
-// ↑ 실제 txHash/blockNumber는 블록체인 발행 후 ChainEventListener가 채운다
+// WebhookPublishHandler: 멱등성 확인 → Stream 적재
+const handler = new WebhookPublishHandler(publisher, idempotency);
+server.on('NFT_ISSUED', handler.createHandler());
+// ↑ createHandler()가 반환한 함수가 payload를 받아 idempotency.run() → publisher.publish()
 
 await server.listen();
 console.log('[app] DMZ event pipeline ready');
 ```
 
-## S5~S10 완성 흐름 도식
+**WebhookPublishHandler 역할:**
+- `IdempotencyGuard.run(requestId)` → 동일 requestId 두 번 → Stream에 1건만 적재
+- `RedisStreamPublisher.publish()` → XADD
+- 인라인 람다 대신 클래스로 분리 → 단위 테스트 가능
+
+## S5~S6 완성 흐름 도식
 
 ```
-[교보 앱 서버]               ← 사용자 활동 달성 → 이쪽이 WebhookServer를 호출
+[교보 앱 서버 / VASP]        ← NFT 발행 이벤트 → WebhookServer를 호출
    │  POST /webhook
    │  X-Kyobo-Signature: <hmac-sha256>
-   │  Body: { eventType: "ACTIVITY_ACHIEVED", ... }
+   │  Body: { eventType: "NFT_ISSUED", requestId: "...", ... }
    ▼
 [WebhookServer._readBody()]          ← rawBody Buffer 수집 (S5)
    ↓ Buffer
-[WebhookServer._verifySignature()]   ← HMAC + timingSafeEqual (S8 구현)
+[WebhookServer._verifySignature()]   ← HMAC + timingSafeEqual (S6 구현)
    │  false → 401
    │  true  → 계속
    ↓
 [res.writeHead(202).end()]           ← 즉시 응답 (S5 패턴)
    ↓
-[handler(payload)]                   ← 비동기 실행
+[WebhookPublishHandler.createHandler()(payload)]   ← 비동기 실행
    ↓
-[RedisStreamPublisher.publish()]     ← XADD (S6 구현)
+[IdempotencyGuard.run(requestId)]    ← 중복 requestId → 스킵
+   ↓ 신규 이벤트만
+[RedisStreamPublisher.publish()]     ← XADD (S7 구현)
    ↓ messageId
-[Redis Streams: kyobo:events]        ← append-only 로그 (S6/S7)
+[Redis Streams: kyobo:events]        ← append-only 로그 (S7/S8)
    ↓
-[ConsumerGroupWorker]                ← XREADGROUP + XACK (S9 이후)
-   ↓ 발행 요청 처리
-[블록체인]                           ← NFT 발행 트랜잭션
-   ↓ 온체인 이벤트 (Issued)
-[ChainEventListener]                 ← 이쪽이 블록체인 이벤트를 수신
+[ConsumerGroupWorker]                ← XREADGROUP + XACK (S10)
    ↓
-[Core Banking 아웃바운드 알림]        ← DMZ → Core Banking (반대 방향)
+[NFTIssuedProcessor]                 ← 멱등성 재확인 → 원장 업데이트 (S12)
+   ↓
+[LedgerService.creditNFT()]          ← DB 트랜잭션 → XACK
 ```
 
 ---
@@ -688,7 +688,8 @@ console.log('[app] DMZ event pipeline ready');
     [ ] 올바른 서명 → 202
 [ ] rawBody Buffer로 서명 계산해야 하는 이유를 설명할 수 있다
 [ ] timingSafeEqual이 throw하는 경우와 사전 차단 방법을 설명할 수 있다
-[ ] S5~S10 전체 파이프라인을 코드 레벨에서 설명할 수 있다
+[ ] WebhookPublishHandler가 왜 인라인 람다 대신 클래스로 분리되는지 설명할 수 있다
+[ ] S5~S6 전체 파이프라인을 코드 레벨에서 설명할 수 있다
 ```
 
 ---
@@ -704,7 +705,7 @@ console.log('[app] DMZ event pipeline ready');
 
 ---
 
-# Block A 전체 복습 (S5~S10)
+# Block A 전체 복습 (S5~S6)
 
 ```
 S5: 202 패턴
@@ -712,28 +713,27 @@ S5: 202 패턴
     처리는 Queue를 통해 비동기
     → 발신자 timeout 방지 / 이벤트 내구성 확보
 
-S6: Redis Streams 이론
+S6: Webhook 보안 (이 세션)
+    _verifySignature: HMAC + timingSafeEqual
+    curl 테스트: 401/401/202 확인
+    → WebhookServer 완결
+
+S7: Redis Streams 이론
     Pub/Sub vs Queue vs Streams
     Entry ID = timestamp-seq
     Consumer Group + PEL
     XREADGROUP(>) → PEL 등록 → XACK → PEL 제거
-    At-least-once 보장 메커니즘
 
-S7: Redis Streams CLI 실습
+S8: Redis Streams CLI 실습
     XADD / XGROUP CREATE / XREADGROUP / XACK / XPENDING / XAUTOCLAIM
     PEL 직접 눈으로 확인
     Consumer 2개 분배 시뮬레이션
 
-S8: At-least-once 설계 원리
+S9: At-least-once 설계 원리
     XACK 순서 불변 규칙, Exactly-once 불가 이유
 
-S9: EventConsumer 코드 상세
+S10: ConsumerGroupWorker 코드 상세
     start() / _processNew() / _reclaimPending() / _handleWithRetry()
-
-S10: 코드 구현
-    _verifySignature: HMAC + timingSafeEqual
-    curl 테스트: 401/401/202 확인
-    (publish/initialize는 S6에서 완료)
 ```
 
 ---

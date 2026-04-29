@@ -1,7 +1,7 @@
 # Day 02 — M2: DMZ 이벤트 파이프라인 전반부 (S5~S8)
 
 **세션**: S5~S8 | **모듈**: M2 | **시간**: 4시간 (4세션 × 1시간)  
-**산출물**: WebhookReceiver(202 패턴) + Redis Streams CLI 실습 + HMAC 서명 검증 + QueueService
+**산출물**: WebhookServer(202 패턴 + HMAC 서명 검증) + Redis Streams 이론 + CLI 실습
 
 ---
 
@@ -96,57 +96,87 @@ export class WebhookReceiver {
 
 ---
 
-## S6: Redis Streams 내부 구조와 At-least-once 처리 보장 원리 (강의 55분)
+## S6: Webhook 보안 검증 — HMAC-SHA256과 타이밍 공격 방어 (강의 15분 + 실습 40분)
 
-### 강의 (이론 세션 — 실습 없음)
+### 강의
 
-**Pub/Sub vs Queue vs Streams 비교:**
-| 방식 | 영구 저장 | 재수신 | Consumer Group |
-|---|---|---|---|
-| Pub/Sub | ✗ | ✗ | ✗ |
-| 단순 Queue | △ (소비 시 삭제) | ✗ | ✗ |
-| Redis Streams | ✓ (영구) | ✓ (XACK 전까지) | ✓ |
+**HMAC-SHA256 서명 검증:**
+- VASP가 전송하는 `X-Kyobo-Signature` 헤더 검증
+- 서명 없는 요청 즉시 401 거부
+- rawBody Buffer로 서명 계산 (JSON 재직렬화 함정 방지)
 
-**Stream Entry 구조:**
-- ID: `timestamp-seq` 자동 생성 (예: `1714000000000-0`)
-- field-value 쌍으로 데이터 저장
-- `XADD stream-key * field1 value1 field2 value2`
+**Timing Attack 방어:**
+- `===` 비교는 일치 위치에 따라 응답 시간 차이 → 서명 유추 가능
+- `crypto.timingSafeEqual()` 사용으로 상수 시간 비교 강제
 
-**Consumer Group 내부 원리:**
-- 그룹 등록: `XGROUP CREATE stream group-name 0`
-- PEL(Pending Entry List): 읽었지만 XACK 안 된 메시지 목록
-- `XREADGROUP GROUP group-name consumer-name COUNT 10 BLOCK 5000 STREAMS stream >`
+### 🔴 실습 (40분)
 
-**`>` 심볼 의미**: 미처리 새 메시지만 읽음. 읽으면 즉시 PEL에 등록됨
+실습 파일: `src/exercises/S06_hmac_webhook.ts`
 
-**XACK 의미**: PEL에서 해당 메시지 제거 = 처리 완료 선언  
-→ XACK 전 장애 시 메시지는 PEL에 잔류 → 재시작 후 재수신 가능
-
-**At-least-once 보장 메커니즘:**
 ```
-XREADGROUP → PEL 등록 → 처리 → XACK → PEL 제거
-                            ↑ 장애 발생
-재시작 후 XAUTOCLAIM / XPENDING → PEL 재수신
+TODO 구현 목록:
+  [ ] TODO 1: signature 없으면 false 반환
+  [ ] TODO 2: crypto.createHmac으로 expected 계산 (rawBody Buffer 사용)
+  [ ] TODO 3: Buffer.from(?, 'hex') 변환
+  [ ] TODO 4: 길이 다르면 false 반환
+  [ ] TODO 5: crypto.timingSafeEqual 비교
 ```
 
-**Consumer Group 수평 확장:**
-- 같은 그룹에 여러 인스턴스 등록 → Redis가 메시지 자동 분배
-- 중복 처리 없는 확장 (한 메시지는 한 Consumer에게만 할당)
-
-### ✅ 완료 기준 (강의 이해 확인)
-- [ ] PEL 개념 + XACK 전 장애 시 재처리 경로 설명 가능
-- [ ] Consumer Group 분산 원리 설명 가능
-- [ ] Pub/Sub 대비 Streams 선택 이유 설명 가능
+### ✅ 완료 기준
+- [ ] 서명 없는 요청 → 401
+- [ ] 잘못된 서명 → 401
+- [ ] 올바른 서명 → 202
+- [ ] WebhookServer(S5+S6) 전체 흐름 설명 가능
 
 ---
 
-## S7: Redis Streams CLI 실습과 At-least-once 재처리 시뮬레이션 (개요 10분 + 실습 50분)
+## S7: Redis Streams 내부 구조 (강의 55분)
 
-### 개요 (10분)
+### 강의 (이론 전용)
 
-XADD → PEL → XACK 흐름 재확인 / XACK 전 종료 시 재수신 경로 재확인
+**왜 Redis Streams인가 — Kafka와의 관계:**
 
-### 🔴 실습 (50분) — 수강생 직접 입력
+| 항목 | Redis Streams | Kafka |
+|---|---|---|
+| 실습 환경 | `docker run redis` 한 줄 | ZooKeeper/KRaft + Broker 별도 설치 |
+| 핵심 개념 | Consumer Group, At-least-once, PEL, ACK | 동일 |
+| 처리량 | 수만 msg/초 | 수백만 msg/초 |
+
+개념이 동일하다. Redis Streams로 배운 패턴은 Kafka에 그대로 적용된다.
+
+| Redis Streams | Kafka |
+|---|---|
+| `XACK` | `commitOffset` |
+| `PEL` | `__consumer_offsets` |
+| `XREADGROUP` | `poll()` |
+| `XADD` | `produce()` |
+
+**Pub/Sub vs Queue vs Streams:**
+```
+[Pub/Sub]  구독자 없으면 메시지 소멸 → 내구성 없음
+[Queue]    단일 Consumer → 수평 확장 불가
+[Streams]  append-only 로그 + Consumer Group → 내구성 + 확장 모두 해결
+```
+
+**PEL(Pending Entry List)과 XACK:**
+- `XREADGROUP`으로 읽으면 자동으로 PEL에 등록
+- `XACK`를 보내야 PEL에서 제거 = "처리 완료" 선언
+- XACK 없이 Consumer crash → PEL에 잔류 → 재시작 후 재수신 (At-least-once 보장)
+
+**Consumer Group 메시지 분배:**
+- 동일 그룹의 여러 Consumer → 메시지 자동 분배 (중복 수신 없음)
+- 서로 다른 그룹 → 각 그룹이 전체 메시지를 독립적으로 수신
+
+### ✅ 완료 기준
+- [ ] Pub/Sub vs Queue vs Streams 차이 설명 가능
+- [ ] PEL → XACK 흐름 설명 가능
+- [ ] Redis Streams ↔ Kafka 1:1 매핑 설명 가능
+
+---
+
+## S8: Redis Streams CLI 실습 (강의 15분 + 실습 45분)
+
+### 🔴 실습 (45분) — 수강생 직접 입력
 
 **Step 1**: Redis 인스턴스 기동
 ```bash
@@ -226,150 +256,8 @@ XPENDING kyobo-events processing-group - + 10
 # 출력: 2개 (1개 줄어듦)
 ```
 
-### ✅ 완료 기준
-- [ ] Streams 직접 조작 실습 완료
+### ✅ Day 02 완료 기준
+- [ ] WebhookServer(S5+S6) 전체 흐름 — 202 즉시 응답 + HMAC 검증 설명 가능
+- [ ] Redis Streams CLI 직접 조작 완료
 - [ ] 미ACK 재수신 원리 확인
 - [ ] Consumer 2개 → 메시지 분배 확인
-
----
-
-## S8: Webhook 보안 검증과 Consumer Group 기반 병렬 처리 (강의 15분 + 실습 40분)
-
-### 강의
-
-**HMAC-SHA256 서명 검증:**
-- VASP가 전송하는 `X-Signature` 헤더 검증
-- 서명 없는 요청은 즉시 401 거부
-- 서명 계산: `HMAC-SHA256(webhookSecret, requestBody)`
-
-**Private RPC Node 필요성:**
-- 공용 RPC 장애 시 이벤트 수신 전면 중단
-- 전용 노드 → 안정적 연결 보장
-
-### 🔴 실습 (40분) — 수강생 직접 작성
-
-**Step 1**: HMAC 서명 검증 로직 구현
-```typescript
-// dmz/packages/event-engine/src/webhook/WebhookReceiver.ts
-// TODO: receiveWebhook에 HMAC 검증 추가
-
-import * as crypto from 'crypto';
-
-function verifySignature(
-  body: string,
-  signature: string,
-  secret: string,
-): boolean {
-  // TODO: HMAC-SHA256으로 body 해시 계산
-  // TODO: signature와 비교 (타이밍 공격 방지: crypto.timingSafeEqual 사용)
-}
-
-async receiveWebhook(req: Request, res: Response): Promise<void> {
-  const signature = req.headers['x-signature'] as string;
-  const body = JSON.stringify(req.body);
-
-  // TODO: signature 없으면 401 반환
-  // TODO: verifySignature 실패하면 401 반환
-  // TODO: 검증 통과 시 202 반환 + Queue 비동기 적재
-}
-```
-
-**Step 2**: QueueService — enqueue 구현
-```typescript
-// dmz/packages/event-engine/src/webhook/QueueService.ts
-// TODO: enqueue(event) 구현
-// - Redis Streams XADD 호출
-// - Consumer Group 초기화 (없으면 생성)
-
-export class QueueService {
-  constructor(private readonly redis: Redis) {}
-
-  async enqueue(event: unknown): Promise<void> {
-    // TODO: XADD kyobo-events * eventData JSON.stringify(event)
-  }
-
-  async initConsumerGroup(): Promise<void> {
-    // TODO: XGROUP CREATE (이미 존재하면 무시)
-  }
-}
-```
-
-**Step 3**: 서명 검증 테스트
-```typescript
-// test: 서명 없는 요청 → 401
-// test: 잘못된 서명 → 401
-// test: 올바른 서명 → 202
-```
-
-### ✅ 답안
-
-```typescript
-// verifySignature 완성
-function verifySignature(body: string, signature: string, secret: string): boolean {
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(body)
-    .digest('hex');
-
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expected),
-    );
-  } catch {
-    return false;
-  }
-}
-
-// receiveWebhook 완성
-async receiveWebhook(req: Request, res: Response): Promise<void> {
-  const signature = req.headers['x-signature'] as string | undefined;
-
-  if (!signature) {
-    res.status(401).json({ error: 'Missing signature' });
-    return;
-  }
-
-  const body = JSON.stringify(req.body);
-  if (!verifySignature(body, signature, this.webhookSecret)) {
-    res.status(401).json({ error: 'Invalid signature' });
-    return;
-  }
-
-  res.status(202).json({ received: true });
-
-  setImmediate(async () => {
-    try {
-      await this.queueService.enqueue(req.body);
-    } catch (err) {
-      console.error('[WebhookReceiver] enqueue 실패:', err);
-    }
-  });
-}
-```
-
-```typescript
-// QueueService.enqueue 완성
-async enqueue(event: unknown): Promise<void> {
-  await this.redis.xadd(
-    'kyobo-events',
-    '*',
-    'eventData',
-    JSON.stringify(event),
-  );
-}
-
-async initConsumerGroup(): Promise<void> {
-  try {
-    await this.redis.xgroup('CREATE', 'kyobo-events', 'processing-group', '0', 'MKSTREAM');
-  } catch (err: unknown) {
-    if (!(err as Error).message.includes('BUSYGROUP')) throw err;
-    // 이미 존재하는 그룹 → 무시
-  }
-}
-```
-
-### ✅ M2 전반부 완료 기준
-- [ ] Webhook → 202 즉시 응답 (DB 없음)
-- [ ] HMAC 서명 없는 요청 거부 (401)
-- [ ] QueueService enqueue 동작

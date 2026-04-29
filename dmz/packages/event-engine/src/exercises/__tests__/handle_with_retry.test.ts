@@ -1,6 +1,6 @@
-import { _handleWithRetry } from '../exercises/S09_handle_with_retry';
-import { type EventProcessor, type StreamMessage, type RedisConsumerClient } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import { _handleWithRetry } from '../S10_handle_with_retry';
+import { type EventProcessor, type StreamMessage, type RedisConsumerClient } from '../../dmz/ConsumerGroupWorker';
+import { DLQHandler } from '../../dmz/DLQHandler';
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 function makeMsg(overrides: Partial<StreamMessage['fields']> = {}): StreamMessage {

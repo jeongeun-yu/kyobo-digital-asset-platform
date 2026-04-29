@@ -1,6 +1,6 @@
 /**
- * S06 답안 — Redis Streams 전체 흐름
- * 강의 노트: M2_S6_redis_streams_theory.md
+ * S07 답안 — Redis Streams 전체 흐름
+ * 강의 노트: M2_S7_redis_streams_theory.md
  */
 
 import { RedisStreamPublisher, type StreamEvent } from '../dmz/RedisStreamPublisher';

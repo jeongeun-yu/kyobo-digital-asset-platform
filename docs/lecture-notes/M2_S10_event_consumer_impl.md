@@ -1,6 +1,6 @@
-# M2 S9 — EventConsumer 구현과 멱등 처리 통합 검증
+# M2 S10 — EventConsumer 구현과 멱등 처리 통합 검증
 
-> Block B — DMZ 이벤트 파이프라인 · M2 S9 · 강의 55분  
+> Block B — DMZ 이벤트 파이프라인 · M2 S10 · 강의 55분  
 > 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 
 ---
@@ -232,11 +232,11 @@ async process(message: StreamMessage): Promise<void> {
 
 # 실습 (30분)
 
-실습 파일: `exercises/S09_handle_with_retry.ts` / 답안: `S09_handle_with_retry.answer.ts`
+실습 파일: `exercises/S10_handle_with_retry.ts` / 답안: `S10_handle_with_retry.answer.ts`
 
 ```bash
 # dmz/packages/event-engine 폴더에서
-npx ts-node src/exercises/S09_handle_with_retry.ts
+npx ts-node src/exercises/S10_handle_with_retry.ts
 ```
 
 **목표:** `_handleWithRetry()` 함수를 직접 구현하고 4가지 시나리오로 검증

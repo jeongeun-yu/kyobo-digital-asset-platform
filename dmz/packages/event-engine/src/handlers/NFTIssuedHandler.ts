@@ -2,6 +2,7 @@ import type { ChainEvent } from '@kyobo/chain-adapters';
 import type { IEventHandler } from '../interfaces/IEventHandler';
 import { IdempotencyGuard } from '../webhook/IdempotencyGuard';
 import { RetryHandler } from '../webhook/RetryHandler';
+import { logger } from '../infra/logger';
 
 /**
  * NFTIssuedHandler — KyoboNFT.Issued 이벤트 처리기
@@ -53,7 +54,7 @@ export class NFTIssuedHandler implements IEventHandler {
     });
 
     if (!processed) {
-      console.log(`[NFTIssuedHandler] duplicate skipped: ${idempotencyKey}`);
+      logger.info('duplicate event skipped', { idempotencyKey });
     }
   }
 }

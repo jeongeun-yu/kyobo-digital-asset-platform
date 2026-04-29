@@ -1,7 +1,7 @@
 /**
- * S08 답안 — At-least-once + 멱등성 구현
+ * S09 답안 — At-least-once + 멱등성 구현
  *
- * 강의 노트: M2_S8_atleastonce_design.md
+ * 강의 노트: M2_S9_atleastonce_design.md
  */
 
 import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../dmz/ConsumerGroupWorker';
@@ -95,7 +95,7 @@ async function runScenario(processor: EventProcessor): Promise<void> {
 }
 
 (async () => {
-  console.log('=== S08 실습: At-least-once + 멱등성 ===\n');
+  console.log('=== S09 실습: At-least-once + 멱등성 ===\n');
 
   console.log('[ Part 1 ] 멱등성 없음 — 동일 메시지 2회 전달');
   await runScenario(naiveProcessor);

@@ -1,6 +1,6 @@
-import { idempotentProcessor, ledger } from '../exercises/S08_atleastonce';
-import { ConsumerGroupWorker, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import { idempotentProcessor, ledger } from '../S09_atleastonce';
+import { ConsumerGroupWorker, type StreamMessage } from '../../dmz/ConsumerGroupWorker';
+import { DLQHandler } from '../../dmz/DLQHandler';
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(

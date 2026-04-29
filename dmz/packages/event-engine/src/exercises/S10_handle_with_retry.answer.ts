@@ -1,7 +1,7 @@
 /**
- * S09 답안 — ConsumerGroupWorker 핵심 로직: _handleWithRetry 구현
+ * S10 답안 — ConsumerGroupWorker 핵심 로직: _handleWithRetry 구현
  *
- * 강의 노트: M2_S9_event_consumer_impl.md
+ * 강의 노트: M2_S10_event_consumer_impl.md
  */
 
 import { type EventProcessor, type StreamMessage, type RedisConsumerClient } from '../dmz/ConsumerGroupWorker';
@@ -98,7 +98,7 @@ function check(label: string, pass: boolean): void {
 }
 
 (async () => {
-  console.log('=== S09 실습: _handleWithRetry 구현 ===\n');
+  console.log('=== S10 실습: _handleWithRetry 구현 ===\n');
 
   console.log('[ 시나리오 1 ] retryCount=3 → DLQ 이동 + XACK');
   xackLog.length = 0; dlqLog.length = 0;

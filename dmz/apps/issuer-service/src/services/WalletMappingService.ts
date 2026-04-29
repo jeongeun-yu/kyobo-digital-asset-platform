@@ -1,7 +1,7 @@
 /**
  * WalletMappingService — 사용자 ↔ 지갑 주소 매핑 관리
  *
- * M5 S25~S27 핵심 개념:
+ * M5 S27~S29 핵심 개념:
  *
  * 설계 문제 (S25):
  *   교보생명 내부 userId와 블록체인 walletAddr는 다른 식별자 공간.

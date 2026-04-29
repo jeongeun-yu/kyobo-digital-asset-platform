@@ -1,10 +1,10 @@
 /**
- * S10 실습 — HMAC-SHA256 서명 검증 구현
+ * S06 실습 — HMAC-SHA256 서명 검증 구현
  *
- * 강의 노트: M2_S10_hmac_queue_service.md
+ * 강의 노트: M2_S6_hmac_queue_service.md
  *
  * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S10_hmac_webhook.answer.ts
+ *   npx ts-node src/exercises/S06_hmac_webhook.ts
  *
  * 목표:
  *   1. verifySignature() 직접 구현 (HMAC + timingSafeEqual)

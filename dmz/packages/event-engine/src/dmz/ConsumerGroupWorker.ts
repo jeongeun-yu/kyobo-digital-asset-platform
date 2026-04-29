@@ -9,7 +9,7 @@
  *     3. XACK → PEL에서 제거 = "처리 완료"
  *     Consumer 장애 → 재시작 후 XAUTOCLAIM으로 미처리 메시지 재수신
  *
- *   DLQ 정책 (S42):
+ *   DLQ 정책 (S11):
  *     3회 실패 → DLQHandler.move() 호출 → Dead Letter Stream
  *     수동 재큐잉: DLQ 스트림 → 다시 kyobo:events XADD
  *
@@ -24,6 +24,22 @@
  */
 
 import type { DLQHandler, DLQItem } from './DLQHandler';
+import { logger } from '../infra/logger';
+
+/**
+ * DeferredProcessingError — 처리 보류 신호
+ *
+ * EventProcessor.process()에서 throw → 워커가 XACK 없이 PEL에 잔류시킴.
+ * retryCount는 증가하지 않음 (실패가 아니라 "아직 처리할 수 없음").
+ *
+ * 사용 사례: Finalized 블록 대기 (NFTIssuedProcessor)
+ */
+export class DeferredProcessingError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'DeferredProcessingError';
+  }
+}
 
 export interface StreamMessage {
   id:     string;  // Redis messageId: "{ms}-{seq}"
@@ -96,7 +112,7 @@ export class ConsumerGroupWorker {
         // 2. 새 메시지 처리
         await this._processNew();
       } catch (err) {
-        console.error('[ConsumerGroupWorker] error:', err);
+        logger.error('consumer loop error', { error: (err as Error).message });
         await this._sleep(1000);
       }
     }
@@ -174,10 +190,15 @@ export class ConsumerGroupWorker {
       // 성공 → ACK
       await this.redis.xack(this.config.streamKey, this.config.groupName, msg.id);
     } catch (err) {
+      if (err instanceof DeferredProcessingError) {
+        // 처리 보류 — XACK 없음, retryCount 증가 없음 → PEL 잔류 → 나중에 재수신
+        logger.info('message deferred', { messageId: msg.id, reason: (err as Error).message });
+        return;
+      }
       // 실패 → 재시도 카운터 증가 (DLQ 조건 다음 루프에서 판단)
       // NOTE: Redis Streams는 자동 재시도 없음 — PEL에 남아있다가 _reclaimPending에서 재수신
       msg.fields['_retryCount'] = String(retryCount + 1);
-      console.error(`[ConsumerGroupWorker] message ${msg.id} failed (attempt ${retryCount + 1}):`, err);
+      logger.warn('message processing failed', { messageId: msg.id, attempt: retryCount + 1, error: (err as Error).message });
     }
   }
 

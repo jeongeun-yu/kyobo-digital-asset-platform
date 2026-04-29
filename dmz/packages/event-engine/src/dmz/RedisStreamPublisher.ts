@@ -103,7 +103,7 @@ export class RedisStreamPublisher {
 /**
  * QueueService — RedisStreamPublisher의 커리큘럼용 alias
  *
- * 커리큘럼 M2 S8에서 "QueueService.enqueue(event)"로 언급되는 것이
+ * 커리큘럼 M2 S5에서 "QueueService.enqueue(event)"로 언급되는 것이
  * 구현상 RedisStreamPublisher임을 명시.
  * 수강생 혼란 방지를 위한 re-export.
  */

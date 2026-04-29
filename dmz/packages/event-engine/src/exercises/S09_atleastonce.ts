@@ -1,10 +1,10 @@
 /**
- * S08 실습 — At-least-once + 멱등성 구현
+ * S09 실습 — At-least-once + 멱등성 구현
  *
- * 강의 노트: M2_S8_atleastonce_design.md
+ * 강의 노트: M2_S9_atleastonce_design.md
  *
  * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S08_atleastonce.ts
+ *   npx ts-node src/exercises/S09_atleastonce.ts
  *
  * 목표:
  *   Part 1 — 멱등성 없는 Naive 처리자: 동일 메시지 2회 → holdings +2 버그 확인
@@ -115,7 +115,7 @@ async function runScenario(processor: EventProcessor): Promise<void> {
 }
 
 if (require.main === module) (async () => {
-  console.log('=== S08 실습: At-least-once + 멱등성 ===\n');
+  console.log('=== S09 실습: At-least-once + 멱등성 ===\n');
 
   console.log('[ Part 1 ] 멱등성 없음 — 동일 메시지 2회 전달');
   await runScenario(naiveProcessor);
