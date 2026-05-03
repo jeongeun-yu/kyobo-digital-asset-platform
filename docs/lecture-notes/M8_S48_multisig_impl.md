@@ -3,6 +3,8 @@
 > 모듈 8 · 세션 48 · 1시간  
 > 스켈레톤: `dmz/packages/vasp/src/governance/KeyGovernanceService.ts`
 
+> ⚠️ **Phase 구분** — **Phase 1 해당**: 당사 보조키를 활용한 멀티시그 서명 참여 (VASP 주키 + 당사 보조키 구조). **Phase 3 해당**: 완전 자체 Custody 인가 이후 당사가 주키까지 직접 보관·서명하는 구조. Phase 1에서 당사는 서명 참여자이지 키 보관 주체가 아니다.
+
 ---
 
 ## 강의 파트 (10분)
