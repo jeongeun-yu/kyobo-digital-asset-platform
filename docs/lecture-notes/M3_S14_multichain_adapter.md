@@ -429,6 +429,8 @@ export interface IVASPAdapter {
 | **Phase 1** | 외부 VASP(월렛원·코다) 위임 | EVMAdapter 직접 구현 |
 | **향후** | 교보 자체 VASP 인가 시 직접 구현 | XRPLAdapter 추가 |
 
+> **📌 M5에서 이어서:** `IVASPAdapter`의 실제 구현체(`ExternalVASPAdapter`, `WalletProvisioningService`)와 외부 VASP API 연동 패턴은 **M5 S27~S28**에서 상세히 다룬다. 여기서는 "IBlockchainAdapter와 다른 레이어"라는 역할 구분에 집중한다.
+
 ---
 
 ## 9. 멀티체인 전환 전략 — 당사 적용 로드맵
