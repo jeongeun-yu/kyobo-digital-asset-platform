@@ -270,7 +270,7 @@ async requeueMessage(
 }
 ```
 
-![requeueMessage](image-1.png)
+![requeueMessage](images/M2_S11_requeue_message_flow.png)
 
 ### (1) 한 줄 요약
 

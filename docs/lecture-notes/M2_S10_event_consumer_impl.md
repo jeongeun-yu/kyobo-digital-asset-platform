@@ -265,7 +265,7 @@ private async _handleWithRetry(msg: StreamMessage): Promise<void> {
 }
 ```
 
-![_handleWithRetry()` 메서드 분석](image.png)
+![_handleWithRetry()` 메서드 분석](images/M2_S10_handle_with_retry_flow.png)
 
 
 ### (1) 한 줄 요약
