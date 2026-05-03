@@ -7,6 +7,152 @@
 
 ## S20 — TIMEOUT·REORG 복구 핸들러 구현
 
+---
+
+### 0. 이론 — TIMEOUT과 REORG는 왜 재시도 가능한가
+
+#### 0-1. mempool과 Gas Price의 관계
+
+```
+블록체인 TX 제출 흐름:
+
+  IssuerService
+      │
+      │  submitMintTx()
+      ▼
+  VASP (EVMAdapter)
+      │
+      │  sendTransaction()
+      ▼
+  mempool (미채굴 TX 대기소)
+      │
+      │  검증자(validator)가 gas price 기준으로 TX 선택
+      ▼
+  블록 포함 (채굴 완료)
+      │
+      ▼
+  receipt.status = 'success'
+  
+  ──────────────────────────────────────────
+  TIMEOUT 발생 지점:
+  
+  mempool
+    │
+    │  (30분 이상 대기)
+    │  → gas price가 너무 낮아 검증자가 선택 안 함
+    ▼
+  TX가 mempool에 "stuck" 상태
+    │
+    │  → EIP-1559 네트워크에서는 기준 수수료(baseFee)가 올라가면
+    │    낮은 gas price TX는 계속 후순위로 밀림
+    ▼
+  pollStaleRequests 감지 → handleTimeout() 호출
+```
+
+**왜 재시도(gas bump)가 가능한가:**
+
+```
+REVERT:  상태 전이가 시도됐지만 조건 미충족 → 조건을 고쳐야 함
+TIMEOUT: 상태 전이를 시도조차 못 함 (mempool에 묶임)
+         → 동일 nonce로 gas price만 올려 재제출하면 통과 가능
+         
+         ┌─────────────────────────────────────────┐
+         │  Gas Bump 메커니즘                       │
+         │                                          │
+         │  기존 TX: nonce=42, gasPrice=10 gwei     │
+         │  새 TX:   nonce=42, gasPrice=13 gwei (+30%)│
+         │                                          │
+         │  nonce가 같으면 → 검증자는 높은 gas TX   │
+         │  를 선택, 낮은 gas TX는 자동 드롭         │
+         └─────────────────────────────────────────┘
+```
+
+---
+
+#### 0-2. REORG(체인 재편)란 무엇인가
+
+```
+정상 상태 (단일 체인):
+  Block 12345 → Block 12346 → Block 12347 → ...
+
+포크 발생 (두 검증자가 동시에 다른 블록 생성):
+  Block 12345 → Block 12346 (A) → Block 12347 (A) ← 채택
+                             ↘
+                              Block 12346 (B) ← 드롭 (더 짧은 체인)
+  
+  B 체인에 포함됐던 TX: 채택된 체인에 없음 → mempool로 복귀
+```
+
+**REORG 깊이와 확률:**
+
+```
+재편 깊이    발생 확률      우리 처리
+─────────────────────────────────────────────
+1 블록       간헐적         일반적 재편 (흔함)
+2~3 블록     드묾           비정상적 재편
+6+ 블록      극히 드묾      51% 공격 수준
+─────────────────────────────────────────────
+
+CONFIRMED 기준 = 블록 finality (체인별 다름):
+  Ethereum: 12 블록 (~2.4분)
+  Polygon:  256 블록 (~8분)
+  더 깊이 재편되면 already-confirmed TX도 무효화 가능
+```
+
+---
+
+#### 0-3. REORG 후 우리 시스템의 처리 흐름
+
+```
+t=0:    handleReorg 감지
+          │
+          ▼
+        REORGED 전이 (중간 상태 — 임시 기록)
+          │
+          ▼
+        5블록 대기 (재편이 진정되길 기다림)
+          │
+          ▼
+        vasp.getStatus(txHash) 재조회
+          │
+          ├── 'confirmed' → 재편 후 다시 포함됨 → CONFIRMED 복귀 ✅
+          │
+          └── 'not_found' → 영구 소실 → FAILED + 재발행 요청 ❌
+
+  ┌─────────────────────────────────────────────────┐
+  │  왜 5블록 대기인가?                              │
+  │                                                  │
+  │  1블록 대기: 재편이 진행 중일 수 있음            │
+  │  5블록 대기: 재편이 대부분 안정화되는 시간       │
+  │  12블록: Ethereum finality 기준 (과하게 보수적) │
+  │                                                  │
+  │  실무: VASP의 confirmation 기준과 맞춤           │
+  └─────────────────────────────────────────────────┘
+```
+
+---
+
+#### 0-4. Gas Bump 후 이중 채굴 위험과 방어
+
+```
+위험 시나리오:
+  t=0:  TX1 제출 (nonce=42, gasPrice=10)
+  t=30: TIMEOUT 감지 → TX2 제출 (nonce=42, gasPrice=13)
+  t=35: TX2 채굴 → CONFIRMED 처리
+  t=40: TX1도 채굴? → No! 같은 nonce는 동시 채굴 불가
+
+  같은 nonce → 검증자는 하나만 선택 → 나머지 자동 드롭
+  → EVM nonce 메커니즘이 자연스럽게 이중 채굴 방지
+  
+방어 레이어 2: requestId 멱등성
+  가정: 네트워크 지연으로 TX1이 다시 나타나 채굴됐을 때
+  → NFTIssuedProcessor가 IdempotencyGuard 체크
+  → requestId 이미 처리됨 → 중복 발행 차단
+  → REVERT(토큰 이미 존재)되거나 Guard에서 skip
+```
+
+---
+
 ### 1. handleTimeout 구현
 
 ```typescript
@@ -212,6 +358,9 @@ it('handleReorg → REORGED → 재조회 → CONFIRMED 복귀', async () => {
 ```
 
 **완료 기준:**
-- [ ] `handleTimeout` — gas bump 재전송 + 새 txHash 저장
-- [ ] `handleReorg` — REORGED 전이 → 5블록 대기 → CONFIRMED 복귀
-- [ ] REORG 시뮬레이션 테스트 통과
+- [ ] `handleTimeout` TODO 완성 — gas bump 재전송 + 새 txHash + retryCount 증가
+- [ ] `handleTimeout`에서 상태가 PENDING → PENDING으로 유지되는 이유 설명 (아직 미채굴)
+- [ ] `handleReorg` TODO 완성 — REORGED 전이 → 5블록 대기 → VASP 재조회 → CONFIRMED or FAILED
+- [ ] gas bump 후 기존 TX가 나중에 채굴될 경우 중복 방어 원리 설명 (requestId Idempotency)
+- [ ] `VaspRecoveryService.handleReorg`와 `TxStateMachineService.handleReorg` 역할 구분 설명
+- [ ] REORG 시뮬레이션 + TIMEOUT 시뮬레이션 테스트 각각 통과

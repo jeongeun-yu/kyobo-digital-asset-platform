@@ -7,6 +7,147 @@
 
 ## S22 — pollStaleRequests 구현 + 3종 복구 통합 테스트
 
+---
+
+### 0. 이론 — 배치 처리에서 오류 격리가 중요한 이유
+
+#### 0-1. 단일 오류가 전체 배치를 중단시키는 문제
+
+```
+pollStaleRequests 배치 처리:
+  100건의 stale TX 조회됨
+
+  잘못된 설계 (오류 전파):
+    [req-001] 처리 ✅
+    [req-002] 처리 ✅
+    ...
+    [req-050] VASP API 타임아웃 → throw
+    → pollStaleRequests 중단
+    → [req-051] ~ [req-100] 미처리
+    → 50건의 사용자가 최대 5분 추가 지연
+
+  올바른 설계 (오류 격리):
+    [req-050] VASP API 타임아웃 → catch → 로그
+    [req-051] 처리 계속 ✅
+    ...
+    [req-100] 처리 완료 ✅
+    → [req-050]은 다음 크론 주기(5분 후)에 재처리
+```
+
+이 패턴을 **Bulkhead(격벽) 패턴**이라 한다. 배의 격벽이 한 구역에 구멍이 나도 전체 침몰을 막듯, 개별 오류가 전체 배치를 침몰시키지 않도록 격리한다.
+
+---
+
+#### 0-2. 통합 테스트(Integration Test) vs 단위 테스트(Unit Test) — 왜 둘 다 필요한가
+
+```
+단위 테스트:
+  handleRevert, handleTimeout, handleReorg 각각 독립 테스트
+  → "이 함수가 올바르게 동작하는가"
+  → 빠름, 격리됨, 의존성 Mock
+  
+  한계: 각 함수가 따로 동작해도 조합 시 버그 발생 가능
+
+통합 테스트:
+  pollStaleRequests → vasp.getStatus() → handleXxx() → DB 저장
+  전체 흐름을 실제 흐름과 유사하게 검증
+  → "시스템이 전체적으로 올바르게 동작하는가"
+  
+  ┌──────────────────────────────────────────────────────┐
+  │  S22 통합 테스트 범위                                 │
+  │                                                        │
+  │  [Mock VASP] ← setNextStatus()                        │
+  │       │                                               │
+  │  pollStaleRequests()                                  │
+  │       │                                               │
+  │  vasp.getStatus() → 결과별 분기                       │
+  │       │                                               │
+  │  handleConfirmed() / handleFailed() / handleTimeout() │
+  │       │                                               │
+  │  [In-memory Repo] → findById() 로 최종 상태 검증      │
+  └──────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 0-3. M3 전체 아키텍처 최종 조감도
+
+S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈에 본다.
+
+```
+  [사용자 요청]
+       │
+       ▼
+  IssuerService.submitMintRequest()          ← S13
+       │
+       ├── DB: mint_requests (REQUESTED)
+       │
+       ▼
+  VaspClient.submit()                        ← S13
+       │
+       ├── DB: mint_requests (SUBMITTED → PENDING)
+       │
+       ▼
+  EVMAdapter / XRPLAdapter (IBlockchainAdapter)  ← S14, S15
+       │
+       │  [VASP가 TX 처리]
+       │
+       ├──[채널 A: Webhook Push]─────────────────── S21
+       │       │
+       │  WebhookReceiver → Redis XADD → ConsumerGroupWorker
+       │       │
+       │  TxStateMachineService.handleConfirmed()
+       │
+       └──[채널 B: Polling Pull 5분 크론]─────────── S21, S22
+               │
+          pollStaleRequests()
+               │
+          ┌────┴──────────────────────────┐
+          │                               │
+          ▼                               ▼
+    vasp.getStatus()              (PENDING 30분 미만)
+          │                          → skip
+          ├── confirmed → handleConfirmed()
+          ├── failed    → handleFailed()      ← S18 (REVERT)
+          ├── not_found → handleFailed()
+          ├── pending   → skip (계속 대기)
+          │                     │
+          │               [30분 초과 pending]
+          │                     │
+          │               handleTimeout()     ← S20 (gas bump)
+          │
+          └── [CONFIRMED 전이 후]
+                    │
+               REORG 감지 → handleReorg()    ← S20
+                    │
+          ┌─────────┴───────────┐
+          │                     │
+    CONFIRMED 복귀          FAILED 전이
+  
+  [모든 상태 전이]
+       │
+       ▼
+  IdempotencyGuard (requestId 기반)           ← S16
+       │
+       ▼
+  LedgerService 이벤트 발행
+       │
+       ▼
+  ConsumerGroupWorker → NFTIssuedProcessor
+       │
+       ▼
+  user_nft_holdings +1 (M4)
+
+  ───────────────────────────────────────────────────
+  오류 복구 레이어:
+  VaspRecoveryService                         ← S18, S20
+    - retryWithBackoff (지수 백오프 + Jitter)  ← S17
+    - handleTxRevert / handleReorg / handleTimeout
+  ───────────────────────────────────────────────────
+```
+
+---
+
 ### 1. pollStaleRequests 전체 구현
 
 ```typescript
