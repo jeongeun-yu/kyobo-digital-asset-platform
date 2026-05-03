@@ -90,7 +90,7 @@ export class DLQHandler {
     const entries = await this.redis.xrange(this.dlqStreamKey, '-', '+', count);
 
     return entries.map(entry => ({
-      messageId: entry.fields['_originalMessageId'] ?? entry.id,
+      messageId: entry.id,  // DLQ 스트림 entry ID — requeueMessage 조회에 사용
       streamKey: entry.fields['_originalStream']    ?? '',
       groupName: entry.fields['_groupName']         ?? '',
       event:     entry.fields,

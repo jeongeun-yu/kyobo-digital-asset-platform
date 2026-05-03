@@ -746,6 +746,267 @@ XACK kyobo:events issuer-consumers 1714000000000-0 1714000001000-0
 
 ---
 
+# 4부 — 보완: 빠진 명령어와 디버깅 도구
+
+> **강의 주요 흐름 밖 — 실습·운영 시 참조용.** 강의 시간에는 4-5(XPENDING 출력 해석)만 간략히 다루고, 나머지는 강의 후 참조 자료로 제공한다.
+
+> 블로그 [Redis Stream 기본 정리](https://kingjakeu.github.io/page2/) 참조 보완.  
+> 강의 메인 흐름(XADD → XREADGROUP → XACK → XAUTOCLAIM)에는 없지만 실습·운영 시 자주 쓰는 명령어들.
+
+---
+
+## 4-1. 메시지 상태 3단계
+
+블로그에서 명시적으로 정의하는 메시지 상태 용어:
+
+```
+XADD로 스트림에 적재
+        │
+        ▼
+[IDLE]              아직 어떤 Consumer에게도 배달 안 됨
+
+XREADGROUP 호출 순간
+        │
+        ▼
+[DELIVERED]         Consumer에게 전달됨, PEL에 등록
+
+처리 완료 + XACK
+        │
+        ▼
+[ACK]               처리 완료 확인. PEL에서 제거.
+
+※ XACK 없이 시간 경과 → PENDING 상태로 간주 → XAUTOCLAIM/XCLAIM 대상
+```
+
+| 상태 | PEL 존재 여부 | 의미 |
+|------|-------------|------|
+| IDLE | 없음 | 아직 미배달 |
+| DELIVERED / PENDING | 있음 | 배달됨, 처리 완료 미확인 |
+| ACK | 없음 (제거됨) | 처리 완료 |
+
+---
+
+## 4-2. XRANGE — ID 범위 조회
+
+Consumer Group 없이 스트림 내용을 직접 조회할 때 사용. **모니터링·디버깅 필수 명령어.**
+
+```bash
+# 기본 형식
+XRANGE <stream-key> <start-id> <end-id> [COUNT <n>]
+
+# 전체 조회 (- = 최솟값 ID, + = 최댓값 ID)
+XRANGE kyobo:events - +
+
+# 특정 시점 이후 최대 10개
+XRANGE kyobo:events 1714000000000-0 + COUNT 10
+
+# 특정 구간
+XRANGE kyobo:events 1714000000000-0 1714000005000-0
+```
+
+**반환 예시:**
+```
+1) 1) "1714000000000-0"
+   2) 1) "eventType"
+      2) "NFT_ISSUED"
+      3) "tokenId"
+      4) "42"
+
+2) 1) "1714000001000-0"
+   2) 1) "eventType"
+      2) "NFT_BURNED"
+      ...
+```
+
+**시간 복잡도:** O(log N) — 특정 ID를 빠르게 찾음. 전체 스캔 아님.
+
+역방향 조회:
+```bash
+XREVRANGE kyobo:events + - COUNT 5   # 최신 5개
+```
+
+---
+
+## 4-3. XREAD — Consumer Group 없는 기본 읽기
+
+Consumer Group을 쓰지 않는 단순 읽기. **여러 Consumer가 동일 메시지를 각자 수신**하는 Pub/Sub 유사 패턴에 사용.
+
+```bash
+# 기본 형식
+XREAD COUNT <n> STREAMS <stream-key> <start-id>
+
+# 처음부터 전체 (0 = 최솟값 ID부터)
+XREAD COUNT 10 STREAMS kyobo:events 0
+
+# 특정 ID 이후 새 메시지
+XREAD COUNT 10 STREAMS kyobo:events 1714000000000-0
+
+# 블로킹 (새 메시지 올 때까지 대기, ms 단위. 0 = 무한 대기)
+XREAD COUNT 1 BLOCK 5000 STREAMS kyobo:events $
+```
+
+**XREAD vs XREADGROUP 차이:**
+
+| 항목 | XREAD | XREADGROUP |
+|------|-------|-----------|
+| Consumer Group 필요 | 없음 | 있음 |
+| 메시지 분배 | 모든 Consumer가 동일 메시지 수신 | Consumer 간 메시지 분담 |
+| PEL 관리 | 없음 (ACK 개념 없음) | 있음 |
+| 장애 복구 | 없음 | XAUTOCLAIM으로 재수신 |
+| 사용 시나리오 | 단순 이벤트 브로드캐스트 | 금융 이벤트 처리 (이 강의) |
+
+**강의 코드는 XREADGROUP을 쓴다.** XREAD는 PEL이 없어서 At-least-once 보장 불가.
+
+---
+
+## 4-4. XCLAIM — 수동 소유권 인계 (XAUTOCLAIM 이전 방식)
+
+XAUTOCLAIM(Redis 7.0+)이 XPENDING + XCLAIM을 원자적으로 합친 것.  
+구버전 Redis나 세밀한 제어가 필요할 때 XCLAIM을 직접 쓴다.
+
+```bash
+# 기본 형식
+XCLAIM <stream-key> <group-name> <new-consumer> <min-idle-ms> <message-id>
+
+# idle 1시간(3600000ms) 초과한 msg를 Alice에게 재배정
+XCLAIM kyobo:events issuer-consumers Alice 3600000 1714000000000-0
+
+# 효과:
+# - 해당 메시지의 소유권이 Alice로 변경됨
+# - idle time 0으로 초기화
+# - delivery count +1 증가
+# - ACK는 아님 — 여전히 PENDING 상태
+```
+
+**XCLAIM vs XAUTOCLAIM:**
+
+| | XCLAIM | XAUTOCLAIM |
+|--|--------|-----------|
+| 대상 | 특정 message-id 지정 | idle 초과 전체 자동 검색 |
+| 방식 | 수동 (XPENDING 먼저 조회 후) | 원자적 자동화 |
+| Redis 버전 | 모든 버전 | 7.0+ |
+| 강의 코드 | 안 씀 | 사용 (ConsumerGroupWorker) |
+
+**실무 선택 기준:** Redis 7.0 이상이면 XAUTOCLAIM. 하위 버전 호환 필요하면 XPENDING → XCLAIM 조합.
+
+---
+
+## 4-5. XPENDING 출력 해석
+
+강의 노트에 XPENDING이 언급되어 있지만 출력 필드 해석이 없음.
+
+```bash
+# Consumer Group의 전체 요약
+XPENDING kyobo:events issuer-consumers
+# 출력:
+# 1) (integer) 3          ← 전체 pending 메시지 수
+# 2) "1714000000000-0"    ← 가장 오래된 pending message-id
+# 3) "1714000003000-0"    ← 가장 최신 pending message-id
+# 4) 1) 1) "consumer-1"
+#          2) "2"         ← consumer-1의 pending 수
+#       2) 1) "consumer-2"
+#          2) "1"
+
+# 상세 조회 (idle 시간 포함)
+XPENDING kyobo:events issuer-consumers IDLE 30000 - + 10
+# 출력 각 항목:
+# 1) message-id
+# 2) consumer-name         ← 현재 소유 Consumer
+# 3) idle-time (ms)        ← 마지막 배달 후 경과시간 → 이 값이 minIdleMs 초과면 XAUTOCLAIM 대상
+# 4) delivery-count        ← 총 배달 횟수 → 2 이상이면 재시도된 메시지
+```
+
+**delivery-count 활용 패턴:**
+
+```
+delivery-count >= 최대재시도횟수 → DLQ로 이동 (포기)
+delivery-count < 최대재시도횟수  → 재처리 계속
+```
+
+강의 코드의 `msg.fields['_retryCount']`가 이 역할을 애플리케이션 레벨에서 담당.
+
+---
+
+## 4-6. XINFO — 스트림 상태 조회 (운영·디버깅)
+
+**실습 및 운영 시 가장 먼저 쓰는 모니터링 명령어.**
+
+```bash
+# 스트림 전체 정보
+XINFO STREAM kyobo:events
+# 출력: length(총 메시지 수), groups(Consumer Group 수),
+#       first-entry, last-entry, 메모리 사용량 등
+
+# Consumer Group 목록 및 상태
+XINFO GROUPS kyobo:events
+# 출력 (그룹별):
+# - name: 그룹명
+# - consumers: Consumer 수
+# - pending: 현재 PENDING 메시지 수   ← 이게 계속 증가하면 처리 지연 신호
+# - last-delivered-id: 마지막으로 배달된 message-id
+
+# Consumer 목록 및 상태
+XINFO CONSUMERS kyobo:events issuer-consumers
+# 출력 (Consumer별):
+# - name: Consumer 이름
+# - pending: 이 Consumer의 PENDING 메시지 수
+# - idle: 마지막 활동 이후 경과시간 (ms)   ← 이 값이 크면 Consumer가 죽었을 가능성
+```
+
+**운영 시 체크포인트:**
+
+```
+XINFO GROUPS로 pending 수 모니터링
+  pending 수가 계속 증가 → Consumer 처리 속도 < 발행 속도 → Consumer 추가 필요
+  pending 수가 0으로 안 떨어짐 → DLQ 확인, XPENDING으로 stuck 메시지 확인
+
+XINFO CONSUMERS로 idle 시간 모니터링
+  idle이 비정상적으로 큰 Consumer → crash 의심 → XAUTOCLAIM 대상
+```
+
+---
+
+## 4-7. XDEL — 메시지 삭제
+
+```bash
+XDEL <stream-key> <message-id>
+XDEL kyobo:events 1714000000000-0
+```
+
+**주의:** XDEL은 스트림에서 메시지를 즉시 제거하지만 PEL에는 남는다.  
+PEL에 남은 채로 XDEL하면 XREADGROUP 시 빈 결과 반환 → XACK 없이 처리된 것처럼 보임.
+
+**사용 권장 상황:**
+- 개인정보가 포함된 잘못 발행된 메시지 즉시 제거
+- 개발 환경에서 테스트 데이터 정리
+
+**사용 비권장 상황:**
+- 일반적인 처리 완료 후 정리 → XACK + MAXLEN 트리밍이 올바른 방법
+- 운영 환경에서 임의 삭제 → 감사 추적 불가
+
+---
+
+## 명령어 전체 정리 (보완 포함)
+
+| 명령 | 의미 | 주 사용 시점 |
+|------|------|-------------|
+| `XADD` | 메시지 발행 | 이벤트 발생 시 |
+| `XRANGE` | ID 범위 조회 | 디버깅, 특정 구간 재확인 |
+| `XREVRANGE` | 역방향 범위 조회 | 최신 메시지 확인 |
+| `XREAD` | 그룹 없는 기본 읽기 | 브로드캐스트 패턴 |
+| `XGROUP CREATE` | Consumer Group 생성 | 서비스 기동 시 |
+| `XREADGROUP` | 그룹으로 읽기 + PEL 등록 | 처리 루프 |
+| `XACK` | 처리 완료 선언 | 성공 처리 후 |
+| `XPENDING` | PEL 조회 | 모니터링, stuck 메시지 확인 |
+| `XCLAIM` | 수동 소유권 인계 | 구버전 Redis, 수동 복구 |
+| `XAUTOCLAIM` | 자동 소유권 인계 | Consumer 장애 복구 루프 |
+| `XDEL` | 메시지 삭제 | 잘못 발행된 메시지 제거 |
+| `XINFO STREAM` | 스트림 상태 조회 | 운영 모니터링 |
+| `XINFO GROUPS` | Group 상태 조회 | pending 수 확인 |
+| `XINFO CONSUMERS` | Consumer 상태 조회 | crash 감지 |
+
+---
+
 # 코드 실습 (S7)
 
 S6 실습은 하나의 파일로 구성된다. `exercises/` 폴더에서 실행한다.

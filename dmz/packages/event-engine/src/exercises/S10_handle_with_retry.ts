@@ -18,8 +18,7 @@ const MAX_RETRIES = 3;
 const STREAM_KEY  = 'kyobo:events';
 const GROUP_NAME  = 'issuer-consumers';
 
-// ══════════════════════════════════════════════════════════════════════════
-// TODO 1~4: _handleWithRetry를 완성하라
+// ── 실습: _handleWithRetry를 완성하라 ────────────────────────────────────
 //
 // 처리 규칙 (순서 엄수):
 //   1. retryCount >= MAX_RETRIES
@@ -31,34 +30,56 @@ const GROUP_NAME  = 'issuer-consumers';
 //   4. process() 실패 (throw)
 //      → msg.fields['_retryCount'] = String(retryCount + 1)
 //         (XACK 안 함 — PEL에 남겨 _reclaimPending에서 재수신)
-// ══════════════════════════════════════════════════════════════════════════
+//
+// 주석을 풀면 바로 실행 가능. 직접 타이핑도 가능.
+//
+// export async function _handleWithRetry(
+//   msg:        StreamMessage,
+//   processors: EventProcessor[],
+//   redis:      Pick<RedisConsumerClient, 'xack'>,
+//   dlq:        DLQHandler,
+// ): Promise<void> {
+//   const eventType  = msg.fields['eventType'] ?? '';
+//   const retryCount = parseInt(msg.fields['_retryCount'] ?? '0', 10);
+//
+//   // 규칙 1: retryCount >= MAX_RETRIES → DLQ 이동 + XACK + return
+//   if (retryCount >= MAX_RETRIES) {
+//     await dlq.move({
+//       messageId: msg.id,
+//       streamKey: STREAM_KEY,
+//       groupName: GROUP_NAME,
+//       event:     msg.fields,
+//       reason:    `max retries (${MAX_RETRIES}) exceeded`,
+//       failedAt:  new Date(),
+//     });
+//     await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
+//     return;
+//   }
+//
+//   // 규칙 2: 처리 가능한 processor 없음 → XACK + return
+//   const matched = processors.filter(p => p.eventTypes.includes(eventType));
+//   if (matched.length === 0) {
+//     await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
+//     return;
+//   }
+//
+//   // 규칙 3 + 4: 처리 시도 → 성공이면 XACK, 실패면 retryCount + 1
+//   try {
+//     await Promise.all(matched.map(p => p.process(msg)));
+//     await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
+//   } catch (err) {
+//     msg.fields['_retryCount'] = String(retryCount + 1);
+//     console.error(`    [retry] message ${msg.id} failed (attempt ${retryCount + 1}):`, (err as Error).message);
+//   }
+// }
+
+// 실습 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
 export async function _handleWithRetry(
-  msg:        StreamMessage,
-  processors: EventProcessor[],
-  redis:      Pick<RedisConsumerClient, 'xack'>,
-  dlq:        DLQHandler,
-): Promise<void> {
-  const eventType  = msg.fields['eventType'] ?? '';
-  const retryCount = parseInt(msg.fields['_retryCount'] ?? '0', 10);
-
-  // TODO 1: retryCount >= MAX_RETRIES → DLQ 이동 + XACK + return
-  //   await dlq.move({
-  //     messageId: msg.id,
-  //     streamKey: STREAM_KEY,
-  //     groupName: GROUP_NAME,
-  //     event:     msg.fields,
-  //     reason:    `max retries (${MAX_RETRIES}) exceeded`,
-  //     failedAt:  new Date(),
-  //   });
-  //   await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
-  //   return;
-
-  // TODO 2: 처리 가능한 processor 없음 → XACK + return
-  //   const matched = processors.filter(p => p.eventTypes.includes(eventType));
-  //   if (matched.length === 0) { ... }
-
-  // TODO 3 + 4: try { matched.map(p.process) + XACK } catch { retryCount + 1 }
-}
+  _msg:        StreamMessage,
+  _processors: EventProcessor[],
+  _redis:      Pick<RedisConsumerClient, 'xack'>,
+  _dlq:        DLQHandler,
+): Promise<void> {}
 
 // ══════════════════════════════════════════════════════════════════════════
 // Mock & 헬퍼

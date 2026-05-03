@@ -13,20 +13,34 @@
 
 import crypto from 'crypto';
 
-function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
-  if (!signature) return false;
+// ── 실습 1: verifySignature를 직접 구현하라 ───────────────────────────────
+// 구현 규칙:
+//   1. signature가 빈 문자열이면 즉시 false 반환
+//   2. crypto.createHmac('sha256', secret).update(rawBody).digest('hex') 로 expected 계산
+//   3. Buffer.from(signature, 'hex') / Buffer.from(expected, 'hex') 로 각각 버퍼 변환
+//   4. 두 버퍼 길이가 다르면 false 반환 (timingSafeEqual은 길이 다르면 throw)
+//   5. crypto.timingSafeEqual(sigBuf, expBuf) 결과 반환
+// 주석을 풀면 바로 실행 가능. 직접 타이핑도 가능.
 
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
+// function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
+//   if (!signature) return false;
+//
+//   const expected = crypto
+//     .createHmac('sha256', secret)
+//     .update(rawBody)
+//     .digest('hex');
+//
+//   const sigBuf = Buffer.from(signature, 'hex');
+//   const expBuf = Buffer.from(expected,  'hex');
+//
+//   if (sigBuf.length !== expBuf.length) return false;
+//
+//   return crypto.timingSafeEqual(sigBuf, expBuf);
+// }
 
-  const sigBuf = Buffer.from(signature, 'hex');
-  const expBuf = Buffer.from(expected,  'hex');
-
-  if (sigBuf.length !== expBuf.length) return false;
-
-  return crypto.timingSafeEqual(sigBuf, expBuf);
+// 실습 1 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
+function verifySignature(_rawBody: Buffer, _signature: string, _secret: string): boolean {
+  return false;
 }
 
 // ── Timing Attack 시연용: === 비교 ────────────────────────────────────────────

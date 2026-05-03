@@ -36,30 +36,40 @@ const naiveProcessor: EventProcessor = {
 };
 
 // ══════════════════════════════════════════════════════════════════════════
-// Part 2 — TODO: IdempotentNftProcessor를 구현하라
+// Part 2 — 실습: IdempotentNftProcessor를 구현하라
 //
-// 요구사항:
-//   - eventTypes: ['NFT_ISSUED']
-//   - processedIds: Set<string> — requestId 기반 중복 차단 (클로저로 선언)
-//   - process():
-//       1. requestId = msg.fields['requestId'] 추출
-//       2. processedIds에 이미 있으면 '[멱등성] 중복 요청 무시' 로그 후 return
-//       3. payload 파싱 → credit(tokenId, owner)
-//       4. processedIds에 requestId 추가
+// 구현 규칙:
+//   1. processedIds = new Set<string>() 로 이미 처리한 requestId를 기억한다
+//   2. eventTypes: ['NFT_ISSUED']
+//   3. process() 흐름:
+//       a. requestId = msg.fields['requestId'] 추출
+//       b. processedIds에 이미 있으면 '[멱등성] 중복 요청 무시: {requestId}' 로그 후 return
+//       c. payload 파싱 → credit(tokenId, owner) 호출
+//       d. processedIds에 requestId 추가
+// 주석을 풀면 바로 실행 가능. 직접 타이핑도 가능.
 // ══════════════════════════════════════════════════════════════════════════
 
-// TODO: const processedIds = new Set<string>();
+// const processedIds = new Set<string>();
+//
+// export const idempotentProcessor: EventProcessor = {
+//   eventTypes: ['NFT_ISSUED'],
+//
+//   async process(msg: StreamMessage): Promise<void> {
+//     const requestId = msg.fields['requestId'] ?? '';
+//
+//     if (processedIds.has(requestId)) {
+//       console.log(`    [멱등성] 중복 요청 무시: ${requestId}`);
+//       return;
+//     }
+//
+//     const { tokenId, owner } = JSON.parse(msg.fields['payload'] ?? '{}');
+//     credit(tokenId, owner);
+//     processedIds.add(requestId);
+//   },
+// };
 
-export const idempotentProcessor: EventProcessor = {
-  eventTypes: /* TODO */ [],
-
-  async process(msg: StreamMessage): Promise<void> {
-    // TODO 1: requestId 추출
-    // TODO 2: 중복이면 로그 출력 후 return
-    // TODO 3: payload 파싱 → credit(tokenId, owner)
-    // TODO 4: processedIds에 requestId 추가
-  },
-};
+// 실습 Part 2 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
+export const idempotentProcessor: EventProcessor = { eventTypes: [], async process() {} };
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(

@@ -127,6 +127,252 @@ const processor = new NFTIssuedProcessor(idempotency, ledger, {
 });
 ```
 
+### (1) 한 줄 요약
+
+**NFT_ISSUED 이벤트 1건을 받아 "블록 확정 여부 → 멱등성 → 원장 업데이트" 3단계로 처리하는 EventProcessor.**
+
+지금까지 본 ConsumerGroupWorker가 호출하는 **실제 비즈니스 로직의 1단계 구현체**.
+
+### (2) 인터페이스 두 개 먼저 이해
+
+#### `LedgerService`
+
+```typescript
+export interface LedgerService {
+  creditNFT(owner: string, tokenId: string, amount?: number): Promise<void>;
+  getNFTBalance(owner: string, tokenId: string): Promise<number>;
+}
+```
+
+- **원장(ledger)** = 잔고 기록부
+- `creditNFT` = 발행 (적립)
+- `getNFTBalance` = 잔고 조회
+- **현재는 인터페이스만, 실제 구현은 M4에서 PostgreSQL로 교체 예정**
+
+#### `FinalizedBlockProvider`
+
+```typescript
+export interface FinalizedBlockProvider {
+  getFinalizedBlockNumber(): Promise<number>;
+}
+```
+- 블록체인의 **확정된(finalized) 블록 번호** 반환
+- 이 번호 이하 블록은 "더 이상 뒤집히지 않음" 보장
+- 그 위 블록은 reorg(재구성) 가능성 있음
+
+### (3) TS 문법 새로 등장한 것
+
+#### `implements EventProcessor`
+- **`implements`** = 클래스가 인터페이스를 만족함을 명시
+- 인터페이스 필드/메서드를 모두 구현해야 컴파일 통과
+- 단순히 형태만 맞추는 게 아니라 **명시적 약속**
+
+#### `readonly eventTypes = ['NFT_ISSUED'];`
+- **`readonly`** = 한 번 정해지면 변경 불가
+- 클래스 인스턴스마다 같은 값 (사실상 상수)
+- 외부에서 `processor.eventTypes = [...]` 할당 시도 → 컴파일 에러
+
+#### `private readonly finalizedBlockProvider?: FinalizedBlockProvider`
+- **`?:`** = 선택적(optional) 매개변수
+- 없으면 `undefined`로 들어옴
+- 의미: "Finalized 검증을 켜고 싶으면 주입, 아니면 건너뜀"
+
+#### `payload.blockNumber != null`
+- **`!=` (느슨한 비교)** — 보통 `!==` 권장하지만 여기선 의도적
+- `!= null`은 `null`과 `undefined` **둘 다** 한 번에 검사
+- `!== null && !== undefined`의 단축형
+
+#### `throw new DeferredProcessingError(...)`
+- **커스텀 에러 클래스** throw
+- Worker 측에서 `instanceof DeferredProcessingError`로 잡아 **특별 처리**
+- 일반 Error와 다르게 "재시도 카운트 안 올림"
+
+#### `await this.idempotency.run(key, async () => { ... })`
+- **함수를 인자로 넘김** — 콜백 패턴
+- `idempotency.run()`이 키 체크 후 신규일 때만 콜백 실행
+- 멱등성 로직이 캡슐화됨 → 사용자는 "키 + 처리할 일"만 작성
+
+### (4) 의존성 주입 패턴
+
+#### 생성자 시그니처
+
+```typescript
+constructor(
+  private readonly idempotency:             IdempotencyGuard,
+  private readonly ledger:                  LedgerService,
+  private readonly finalizedBlockProvider?: FinalizedBlockProvider,
+) {}
+```
+
+**3개 의존성:**
+1) **`idempotency`** — 멱등성 체크 (필수)
+2) **`ledger`** — 원장 업데이트 (필수)
+3) **`finalizedBlockProvider`** — 블록 확정 검증 (선택)
+
+#### 왜 의존성 주입인가
+
+- 테스트 시 mock 객체로 교체 가능
+- 환경별로 구현체 다르게 (로컬 = 메모리, 프로덕션 = PostgreSQL)
+- M4에서 LedgerService를 PostgreSQL 구현체로 교체할 때 **이 클래스 코드 변경 0**
+
+#### 단축 문법 활용
+- `private readonly` + 매개변수 직접 명시
+- 별도 필드 선언 + `this.x = x` 할당 코드 생략
+- TS의 강력한 보일러플레이트 절약
+
+### (5) 3단계 처리 라인별 해부
+
+#### Step 1: Finalized 블록 검증
+
+```typescript
+if (this.finalizedBlockProvider && payload.blockNumber != null) {
+  const finalized = await this.finalizedBlockProvider.getFinalizedBlockNumber();
+  if (payload.blockNumber > finalized) {
+    throw new DeferredProcessingError(`block ${payload.blockNumber} not yet finalized`);
+  }
+}
+```
+
+**왜 필요한가 — 블록체인 reorg 문제:**
+- 새 블록은 일정 시간 동안 "임시" 상태
+- 다른 체인 분기가 더 길어지면 → 기존 블록 **무효화** (reorg)
+- 무효화된 블록의 NFT_ISSUED 이벤트 처리하면 → **존재하지 않는 발행**으로 원장 오염
+
+**해법: Finalized 이하만 처리**
+- Ethereum: ~64블록(약 12분) 이상 지나야 finalized
+- finalized 이전엔 안 처리 → reorg 위험 0
+
+**왜 throw로 처리:**
+- 정상 처리 흐름 차단
+- Worker가 `DeferredProcessingError` 보고 **특수 분기** 진입
+- "실패"가 아니라 "아직 때가 아님" → 카운트 안 올림
+
+#### Step 2-3: 멱등성 가드 + 원장 업데이트
+
+```typescript
+await this.idempotency.run(`NFTIssued:${requestId}`, async () => {
+  await this.ledger.creditNFT(payload.to, payload.tokenId);
+});
+```
+
+**`idempotency.run`의 동작 추정:**
+
+```typescript
+// 내부 구현 (대략)
+async run(key: string, callback: () => Promise<void>) {
+  if (await this.has(key)) return;       // 이미 처리됨 → 무시
+  await callback();                       // 신규 → 비즈니스 로직 실행
+  await this.mark(key);                   // 처리 완료 기록
+}
+```
+
+**키 형식: `NFTIssued:${requestId}`**
+- 접두사 `NFTIssued:` — 다른 이벤트 타입과 충돌 방지
+- 같은 requestId라도 다른 이벤트면 별도 키 (예: `NFTBurned:req-001` vs `NFTIssued:req-001`)
+
+**핵심 안전장치:**
+- 같은 메시지 2번 와도 ledger.creditNFT는 **1번만 호출**
+- At-least-once 큐의 중복을 흡수
+
+### (6) DeferredProcessingError vs 일반 throw
+
+이 코드 설계의 **핵심 통찰**:
+
+| 상황 | throw 방식 | retryCount | 결과 |
+|------|-----------|-----------|------|
+| DB 연결 실패 | `throw new Error(...)` | +1 | 3회 후 DLQ |
+| 외부 API 타임아웃 | `throw new Error(...)` | +1 | 3회 후 DLQ |
+| 블록 미확정 | `throw new DeferredProcessingError(...)` | **유지** | PEL 잔류, 시간 지나면 자동 처리됨 |
+
+**왜 구분하는가:**
+- DB 실패 = 시스템 문제 → 빨리 알아채야 함 → DLQ
+- 블록 미확정 = 시간 지나면 해결 → 기다리면 됨 → 단순 잔류
+
+**Worker 측 추정 코드:**
+```typescript
+try {
+  await processor.process(msg);
+  await xack(...);
+} catch (err) {
+  if (err instanceof DeferredProcessingError) {
+    // 카운트 안 올림, XACK 안 함, 그냥 다음 메시지
+    return;
+  }
+  // 일반 에러 → retryCount 증가
+  msg.fields['_retryCount'] = String(retryCount + 1);
+}
+```
+
+### (7) requestId fallback 전략
+
+```typescript
+const requestId = message.fields['requestId'] ?? message.id;
+```
+
+**우선순위:**
+1) **명시적 requestId** — 송신자가 부여한 비즈니스 ID
+2) **Redis messageId** — 큐가 자동 생성한 ID
+
+**왜 fallback이 필요한가:**
+- 외부 시스템이 requestId 안 보낼 수도 있음
+- 그래도 멱등성은 보장해야 함 → messageId라도 사용
+- messageId는 Redis가 보장하는 고유값 → 멱등성 키로 충분
+
+**의미:**
+- 이상적: 송신자가 의미 있는 requestId 부여
+- 차선: 큐의 messageId로라도 중복 차단
+
+### (8) payload 안전 파싱
+
+```typescript
+const payload = JSON.parse(message.fields['payload'] ?? '{}');
+```
+
+- payload 필드 없으면 `'{}'` (빈 객체 JSON)
+- 파싱 결과는 빈 객체 `{}`
+- `payload.blockNumber` 등 접근해도 `undefined` (throw 안 남)
+
+**JSON.parse 자체의 위험:**
+- 잘못된 JSON 문자열이면 throw
+- 이 코드는 그 경우 그대로 throw → 일반 에러 → retryCount 증가
+- "잘못된 메시지"로 취급해서 결국 DLQ
+
+### (9) 의존성이 인터페이스인 이점
+
+#### 현재 (M2)
+```typescript
+const ledger: LedgerService = new InMemoryLedger();  // 메모리 구현
+```
+
+#### 미래 (M4)
+```typescript
+const ledger: LedgerService = new PostgresLedger(pool);  // DB 구현
+```
+
+**NFTIssuedProcessor 코드는 동일.** 인터페이스만 만족하면 됨.
+
+이게 **DIP (Dependency Inversion Principle)** — 고수준 모듈(processor)이 저수준 모듈(DB)에 직접 의존하지 않고 추상(인터페이스)에 의존.
+
+### (10) 강의 강조 포인트
+
+- **`implements`로 명시적 계약** — `EventProcessor` 만족 강제, 시그니처 어긋나면 컴파일 에러
+- **`readonly` 클래스 필드** — 인스턴스 생성 후 변경 불가 보장
+- **선택적 의존성 `?:`** — 점진적 기능 추가에 유리 (Finalized 검증 없이도 동작)
+- **`!= null` 관용** — null과 undefined 한 번에 검사. 이 경우만 예외적으로 `==` 허용
+- **DeferredProcessingError 패턴** — "재시도해야 하는 실패"와 "기다리면 해결될 지연"을 구분
+- **블록체인 reorg 인식** — 금융 시스템에선 finalized 검증이 필수. 미확정 블록 처리 = 잠재적 손실
+- **멱등성 키 네임스페이스** — `EventType:requestId` 형식으로 충돌 방지
+- **콜백 패턴의 멱등성** — 키 체크와 비즈니스 로직을 분리, 사용자는 "할 일"만 작성
+- **인터페이스 의존 = 미래 교체 비용 0** — M4에서 LedgerService 구현 바뀌어도 이 클래스 그대로
+- **3단계의 미묘한 차이** — Finalized = 사전 조건, 멱등성 = 중복 방지, 원장 = 실제 효과
+
+### (11) 한 줄 정리
+
+> **`NFTIssuedProcessor`는 NFT 발행 이벤트의 비즈니스 로직 본체.**  
+> "블록 확정됐나" → "이미 처리했나" → "원장에 기록"의 3단계.  
+> 핵심은 `DeferredProcessingError`로 **"실패"와 "지연"을 구분**한 것 — 둘 다 throw지만 Worker는 다르게 반응한다.  
+> 의존성은 모두 인터페이스 → M4에서 PostgreSQL로 교체해도 이 코드는 변경 없음.
+
 ## 4. Consumer 장애 복구 실습 시나리오
 
 **시나리오:**
@@ -234,6 +480,17 @@ M2 DMZ 이벤트 파이프라인의 신뢰성 3원칙:
    → 무한 재시도 대신 격리 → 원인 파악 → 수동 재큐잉
 ```
 
-**다음 모듈 (M3 S13~S17):**  
-온체인 어댑터 계층 — EVMAdapter, ChainEventListener, TxStateMachineService  
-오프체인 처리가 끝났으니 이제 온체인에서 이벤트가 어떻게 올라오는지 배운다.
+**다음 모듈 (M3 S13~S22):**
+
+M2에서 배운 것들은 M3에서 그대로 재사용된다.
+
+| M2에서 배운 것 | M3에서 다시 등장하는 곳 |
+|---|---|
+| `ConsumerGroupWorker` At-least-once | S22: `pollStaleRequests` 결과 처리 |
+| `IdempotencyGuard` requestId 중복 차단 | S16: VASP 재전송 방어 |
+| `DLQHandler` 3회 실패 격리 | S17: NonRetryableError → 즉시 DLQ |
+| Finalized 블록 기준 처리 | S13: MINED → CONFIRMED 전이 조건 |
+
+M2가 "이벤트가 도착했을 때 어떻게 안전하게 처리하는가"였다면,  
+M3는 "TX를 보냈을 때 블록체인이 어떤 경로로 실패하는가, 각각 어떻게 복구하는가"이다.  
+`VaspTxClient` 인터페이스와 `TxStateMachineService`의 7-상태 머신부터 시작한다.

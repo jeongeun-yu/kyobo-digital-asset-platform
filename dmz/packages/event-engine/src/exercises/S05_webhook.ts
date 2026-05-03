@@ -19,15 +19,19 @@ const server = new WebhookServer({
   maxBodyKb: 64,
 });
 
-// TODO 1: 'NFT_ISSUED' 이벤트 핸들러 등록
-//         - payload를 JSON으로 콘솔 출력
-//         - 200ms 슬립 (처리 시뮬레이션)
-//         - 처리 완료 로그 출력
-server.on('NFT_ISSUED', async (payload) => {
-  // TODO: payload를 JSON으로 콘솔 출력
-  // TODO: 200ms 슬립
-  // TODO: 처리 완료 로그 출력
-});
+// ── 실습 1: NFT_ISSUED 핸들러 등록 ────────────────────────────────────────
+// server.on('NFT_ISSUED', async (payload) => { ... }) 형태로 등록한다.
+// 핸들러 안에서 해야 할 일:
+//   1. payload를 JSON.stringify로 콘솔 출력
+//   2. 200ms 슬립 (처리 시뮬레이션) — await new Promise(r => setTimeout(r, 200))
+//   3. '[handler] NFT_ISSUED processed' 로그 출력
+// 주석을 풀면 바로 실행 가능. 직접 타이핑도 가능.
+//
+// server.on('NFT_ISSUED', async (payload) => {
+//   console.log('[handler] NFT_ISSUED received:', JSON.stringify(payload, null, 2));
+//   await new Promise(r => setTimeout(r, 200));
+//   console.log('[handler] NFT_ISSUED processed');
+// });
 
 (async () => {
   await server.listen();
