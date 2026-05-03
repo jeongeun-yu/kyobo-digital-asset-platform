@@ -3,6 +3,8 @@
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S15 · 강의 55분  
 > 대상: `dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
 
+> ⚠️ **Phase 구분** — EVMAdapter **read-only 경로** (`queryEvents`, `getReceipt`) → **Phase 1 직접 사용**. **write 경로** (`mintNFT`, `sendTransaction`) → Phase 1 미활성화 (privateKey 없이 read-only 모드로 동작). Phase 3 직접 Custody 전환 시 privateKey 주입으로 활성화됨. 스켈레톤은 최종 Phase 기준으로 설계되어 있다.
+
 ---
 
 ## S14 → S15 연결
@@ -40,8 +42,8 @@ EVMAdapter는 ethers.js의 두 핵심 객체를 사용한다.
 Provider: 블록체인 "읽기 전용" 연결
   ┌────────────────────────────────────┐
   │  JsonRpcProvider                   │
-  │  → 블록 조회, 잔액 조회, 이벤트 구독│
-  │  → TX 서명 불가 (키 없음)           │
+  │  → 블록 조회, 잔액 조회, 이벤트 구독   │
+  │  → TX 서명 불가 (키 없음)            │
   └────────────────────────────────────┘
            │
            │ 서명 추가
@@ -49,8 +51,8 @@ Provider: 블록체인 "읽기 전용" 연결
 Wallet: Provider + 개인키 결합 → "쓰기" 가능
   ┌────────────────────────────────────┐
   │  Wallet(privateKey, provider)      │
-  │  → TX 서명 후 전송 가능            │
-  │  → Provider의 모든 기능 포함       │
+  │  → TX 서명 후 전송 가능              │
+  │  → Provider의 모든 기능 포함         │
   └────────────────────────────────────┘
 ```
 
@@ -83,6 +85,75 @@ constructor(config: {
 | DMZ 내부 RPC 노드만 사용 | public RPC(infura.io 등)는 TX 내용 외부 노출 위험 |
 | privateKey 환경변수 주입 | 코드 하드코딩 → git 이력에 키 유출 |
 | privateKey 없으면 read-only | 이벤트 구독·잔액 조회 전용 인스턴스 분리 가능 |
+
+---
+
+### "privateKey가 없으면 Public RPC 써도 되지 않나?"
+
+서명도 TX 전송도 없는 read-only 경로라면 공개 RPC를 써도 될 것 같다. 하지만 그렇지 않다. 이유는 서명과 무관하다.
+
+**① Rate Limit**
+
+```
+공개 RPC(Infura 무료 등) 한도 예시:
+  100,000 req/day → 초당 약 1.1 req
+
+Phase 1 DMZ 실제 요청 패턴:
+  subscribeEvents     → 블록마다 이벤트 수신
+  queryEvents         → Finalized 범위 배치 조회
+  getReceipt          → PENDING TX마다 주기적 폴링
+  getBlockNumber      → Lag 모니터링
+
+→ 트래픽 조금만 늘어도 한도 초과
+→ 이벤트 누락 → 원장 불일치
+→ 금융 시스템에서 "RPC 한도 초과로 NFT 발행 미감지"는 허용 불가
+```
+
+**② WebSocket 구독 안정성**
+
+```
+S12에서 구현한 Finalized 블록 구독:
+  evmAdapter.subscribeEvents(contractAddr, abi, ['NFTIssued'], ...)
+  → 내부적으로 eth_subscribe (WebSocket)
+
+공개 RPC의 WebSocket 지원:
+  - 무료 티어: WebSocket 미지원 또는 연결 수 제한
+  - 연결이 자주 끊김 → subscribeEvents 재연결 로직 필요
+  - 재연결 시간 동안 이벤트 누락 → missed event 복구 부담 증가
+```
+
+**③ SLA 부재**
+
+```
+공개 RPC: 가용성 보장 없음. 장애 시 연락처 없음.
+전용 RPC: 99.9% SLA 계약 가능. 장애 시 에스컬레이션 경로 존재.
+
+금융 규제 환경에서 인프라 SLA 없이 운영하는 것은
+내부 통제 위반 요소가 될 수 있다.
+```
+
+**④ 쿼리 프라이버시**
+
+```
+공개 RPC 운영자가 볼 수 있는 것:
+  - 우리가 모니터링하는 컨트랙트 주소
+  - 조회하는 지갑 주소 패턴
+  - 어떤 이벤트를 얼마나 자주 확인하는지
+
+→ 교보 고객 지갑 주소 패턴이 제3자에게 노출
+→ 금융 데이터 프라이버시 위반 가능성
+```
+
+**결론:** Private RPC는 TX 서명을 위해서가 아니라, **운영 안정성·SLA·프라이버시**를 위해 필요하다. read-only라도 private이어야 한다.
+
+**Phase 1에서 "Private RPC"의 의미:**  
+우리가 노드를 직접 운영하는 것이 아니라, 월렛원이 BaaS로 제공하는 전용 인증 엔드포인트를 사용한다. 월렛원이 TX 서명을 담당하고, 우리는 그 엔드포인트로 read-only 쿼리를 수행한다.
+
+```
+config.rpcUrl = 'https://rpc.walletone.kr/kyobo?apiKey=...'   ← 월렛원 전용 엔드포인트
+```
+
+---
 
 `this.wallet = null` 상태에서 `sendTransaction` 호출 시:
 
@@ -603,6 +674,74 @@ TransactionReceipt.gasUsed?: bigint   ← optional
 | gasUsed optional | XRPL mock에서 생략 → 상위 레이어 gasUsed 의존 금지 재확인 |
 
 **S16 예고:** EVMAdapter를 통해 TX를 전송하면 네트워크/컨트랙트 에러가 발생할 수 있다. S16에서는 VASP 재전송 방어 — Idempotency Guard 설계를 다룬다. requestId 기반으로 중복 TX 전송을 어떻게 차단하는지, DB와 체인 양쪽에서 idempotency를 어떻게 보장하는지 분석한다.
+
+---
+
+---
+
+## 월렛원 온보딩 체크리스트
+
+> EVMAdapter의 `rpcUrl`은 환경변수로 주입된다. 이 값은 월렛원이 제공하는 전용 엔드포인트다.  
+> **M2 시작 전까지 아래 항목을 월렛원 기술 담당자로부터 수령해야 한다.**  
+> 항목이 누락되면 S12(Finalized 블록 구독)부터 실제 연동 테스트가 불가능하다.
+
+### 수령 항목
+
+```
+RPC 엔드포인트
+  □ HTTP RPC URL        EVM_RPC_URL=https://...
+    └─ 용도: eth_getLogs, eth_getTransactionReceipt, eth_getBlockNumber
+  □ WebSocket RPC URL   EVM_WS_RPC_URL=wss://...
+    └─ 용도: eth_subscribe (Finalized 블록 이벤트 실시간 구독)
+  □ 인증 방식
+    └─ API Key 헤더 / Bearer 토큰 / IP 화이트리스트 중 무엇인지
+  □ Rate limit 수치     req/s, req/day 각각
+  □ SLA                 가용성 %, 장애 에스컬레이션 연락처
+
+스마트 컨트랙트
+  □ KyoboNFT Proxy 컨트랙트 주소  CONTRACT_ADDR=0x...
+    └─ EVMAdapter 생성자 + subscribeEvents 호출 시 필요
+  □ ABI (또는 함수 시그니처 목록)
+    └─ ERC1155_ABI에 추가할 이벤트 시그니처 확인용
+    └─ 특히 NFTIssued / NFTBurned 이벤트 시그니처 정확한 파라미터명
+  □ 배포 네트워크 / 체인 ID       EVM_CHAIN_ID=...
+
+Webhook (S5~S6 구현 측)
+  □ 월렛원 → 당사 Webhook push 포맷 명세 (이벤트 타입, 필드 구조)
+  □ HMAC 서명 키  WEBHOOK_HMAC_SECRET=...
+    └─ S6 HmacValidator에서 검증에 사용
+  □ Webhook 재전송 정책 (실패 시 몇 회, 어떤 간격으로 재시도하는지)
+
+운영 정보
+  □ 테스트넷 전용 엔드포인트 (개발 중 사용)
+  □ 네트워크 점검 일정 공지 채널
+  □ 장애 발생 시 에스컬레이션 연락처 (L1/L2 구분)
+```
+
+### 항목별 코드 연결
+
+| 수령 항목 | 사용 위치 | 세션 |
+|---|---|---|
+| HTTP RPC URL | `EVMAdapter` 생성자 `config.rpcUrl` | S15 |
+| WebSocket RPC URL | `subscribeEvents` 내부 Provider | S15 |
+| 컨트랙트 주소 | `subscribeEvents`, `queryEvents` 첫 번째 인자 | S15 |
+| ABI / 이벤트 시그니처 | `ERC1155_ABI` 배열 | S15 |
+| HMAC 키 | `HmacValidator` | S6 |
+| Webhook 포맷 | `WebhookReceiver` 파싱 로직 | S5 |
+
+### 일정 리스크
+
+```
+월렛원 온보딩 미팅이 M2 이후로 밀릴 경우:
+
+  S5~S11: 자체 Mock으로 개발 가능 (영향 없음)
+  S12: Finalized 블록 구독 → Mock 대체 가능하나 실제 검증 불가
+  S15: EVMAdapter 실제 연동 테스트 불가
+  S22: VASP 실제 TX 상태 폴링 불가
+
+→ 최소한 RPC URL + 컨트랙트 주소 + HMAC 키 3가지는
+  M2 시작 전에 확보되어야 한다.
+```
 
 ---
 

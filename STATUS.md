@@ -3,17 +3,19 @@
 ## 현재 상태
 | 항목 | 내용 |
 |---|---|
-| 단계 | **모노레포 3-레이어 구조 재편 완료 (dmz/ + internal/ + blockchain/)** |
-| 교육 시작 | 4/27 (웅진씽크빅) — 교보생명 50시간 확정 |
+| 단계 | 운영 세션 강의노트 S51~S58 전체 완료 (총 58세션) |
+| 교육 시작 | 4/27 (웅진씽크빅) — 교보생명 58시간 확정 |
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
-## 마지막 작업 (2026-05-03)
-- M2 S9~S11 강의노트 이론 보강: 두 저장소 문제·At-least-once·DLQ 다이어그램·비유 추가
-- M3 S18~S22 강의노트 이론 보강: EVM 실행 모델·REVERT/TIMEOUT/REORG·Gas Bump·Dual-Channel·Bulkhead 다이어그램 추가
-- 각 세션 Section 0 신설 — 코드 전 개념/비유/ASCII 다이어그램으로 이론 격차 해소
+## 마지막 작업 (2026-05-04)
+- 운영 세션 강의노트 8개 신규 작성 (S51~S58)
+  - S51 DLQ 운영, S52 Consumer 런북, S53 VASP SLA 운영
+  - S54 Reconcile 운영, S55 감사 로그 보관, S56 배포·롤백
+  - S57 업그레이드 거버넌스, S58 통합 대시보드
+- S15 Private RPC 설명 + 월렛원 온보딩 체크리스트 추가
+- 구조: 강의→실습→완료기준→운영체크리스트→워크시트→자동화확장
 
 ## 다음 작업
-- [ ] M4 S23~S26 강의노트 작성 (LedgerService·ReconcileService·AuditLogService)
 - [ ] docker-compose.yml + .env.example 추가
 - [ ] 이종건 계약서 일정 확인
 - [ ] 교보DTS와 Core Banking API 스펙 협의
