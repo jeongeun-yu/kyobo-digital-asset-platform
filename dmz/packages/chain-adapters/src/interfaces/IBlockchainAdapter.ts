@@ -70,6 +70,60 @@ export interface BurnParams {
   amount:       bigint;
 }
 
+// ── EIP-1559 수수료 구조 (Phase 3: 직접 TX 전송 시 필요) ────────────────────
+//
+// EIP-1559 (London 하드포크, 2021): Ethereum 기본 수수료 모델
+//
+//   실제 납부 = min(MaxFeePerGas, BaseFee + MaxPriorityFeePerGas)
+//   BaseFee:           네트워크 혼잡도에 따라 프로토콜이 자동 결정 (소각됨)
+//   MaxPriorityFeePerGas: 검증자에게 지불하는 팁 (채굴자 우선순위)
+//   MaxFeePerGas:      사용자가 설정하는 최대 납부 한도
+//
+// Phase 1 현황: VASP(월렛원)가 수수료 설정. EVMAdapter는 Legacy gasPrice 사용.
+// Phase 3 필요: 직접 TX 생성 시 EIP-1559 수수료 직접 설정 필요.
+//
+// Custody Track Session 5 참조: EIP-1559 수수료 구조
+
+export interface Eip1559FeeParams {
+  maxFeePerGas:         bigint;   // wei 단위
+  maxPriorityFeePerGas: bigint;   // wei 단위
+}
+
+// ── 수수료 정책 ID (Phase 3) ──────────────────────────────────────────────────
+//
+// TX 전송 시 수수료 전략을 정책 ID로 추상화.
+// 어댑터가 현재 네트워크 상황에 따라 적절한 수수료를 계산.
+//
+//   NORMAL: 표준 처리. BaseFee + 최소 Priority Fee. (~12초)
+//   FAST:   빠른 처리. BaseFee * 1.2 + 높은 Priority Fee. (~6초)
+//   SURGE:  긴급 처리. BaseFee * 1.5 + 최고 Priority Fee. (~1블록)
+//
+// Custody Track Session 5 참조: feePolicyId 체계
+
+export type FeePolicyId = 'NORMAL' | 'FAST' | 'SURGE';
+
+// ── RPC 저하 모드 (Phase 3) ───────────────────────────────────────────────────
+//
+// 단일 RPC 노드는 신뢰할 수 없다. 다중 RPC + quorum 합의 필요.
+// RPC 신뢰성 저하 시 단계적으로 기능을 제한하는 저하 모드.
+//
+//   NORMAL:                 정상. 모든 TX 처리 가능.
+//   DEGRADED_READ:          읽기 전용 RPC 부분 장애. 쓰기(TX)는 정상.
+//   DEGRADED_WRITE:         쓰기 RPC 부분 장애. 고가치 TX만 처리.
+//   MANUAL_APPROVAL_ONLY:   RPC 신뢰 불가. 모든 TX에 수동 승인 필요.
+//   STOP_THE_LINE:          전체 중단. 어떤 TX도 전송하지 않음.
+//
+// Custody Track Session 5 참조: RPC 저하 모드 5단계
+
+export type RpcDegradeMode =
+  | 'NORMAL'
+  | 'DEGRADED_READ'
+  | 'DEGRADED_WRITE'
+  | 'MANUAL_APPROVAL_ONLY'
+  | 'STOP_THE_LINE';
+
+// ── IBlockchainAdapter ────────────────────────────────────────────────────────
+
 export interface IBlockchainAdapter {
   readonly chainId:   string;
   readonly chainType: 'EVM' | 'XRPL' | 'UTXO' | 'BFT';
@@ -142,4 +196,32 @@ export interface IBlockchainAdapter {
     fromBlock: number,
     toBlock: number,
   ): Promise<ChainEvent[]>;
+}
+
+// ── Phase 3 확장 인터페이스 ───────────────────────────────────────────────────
+//
+// Phase 1 어댑터(EVMAdapter, XRPLAdapter)는 IBlockchainAdapter만 구현.
+// Phase 3에서 직접 TX 전송 시 EIP-1559 수수료 계산 + RPC 다중화가 필요해지면
+// IBlockchainAdapterV3를 추가로 구현한다.
+//
+// 이렇게 분리하는 이유:
+//   IBlockchainAdapter에 직접 추가하면 기존 구현체(EVMAdapter 등)가 모두 에러.
+//   인터페이스 확장(extends)으로 하위 호환성을 유지하면서 Phase 3 기능을 추가.
+//
+// Custody Track Session 5 참조: feePolicyId, RPC 저하 모드 5단계
+
+export interface IBlockchainAdapterV3 extends IBlockchainAdapter {
+  /**
+   * TODO (Phase 3): 현재 네트워크 수수료 조회
+   *   feePolicyId에 따라 maxFeePerGas / maxPriorityFeePerGas 계산
+   *   EVM: eth_feeHistory 기반 / XRPL: fee_base 조회
+   */
+  getFeeParams(policyId: FeePolicyId): Promise<Eip1559FeeParams>;
+
+  /**
+   * TODO (Phase 3): 현재 RPC 저하 모드 조회
+   *   다중 RPC quorum 상태를 기반으로 저하 모드 반환
+   *   STOP_THE_LINE이면 TX 전송 차단
+   */
+  getRpcDegradeMode(): Promise<RpcDegradeMode>;
 }

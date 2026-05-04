@@ -1,4 +1,4 @@
-import type { IBlockchainAdapter } from '@kyobo/chain-adapters';
+import type { IBlockchainAdapter, ChainEvent } from '@kyobo/chain-adapters';
 import type { IEventHandler } from '../interfaces/IEventHandler';
 
 /**
@@ -92,11 +92,11 @@ export class ChainEventListener {
     }
   }
 
-  private async _dispatch(event: { eventName: string; contractAddr: string; [key: string]: unknown }): Promise<void> {
+  private async _dispatch(event: ChainEvent): Promise<void> {
     const matched = this.handlers.filter(
       h => h.eventName === event.eventName &&
            (!h.contractAddr || h.contractAddr === event.contractAddr),
     );
-    await Promise.all(matched.map(h => h.handle(event as never)));
+    await Promise.all(matched.map(h => h.handle(event)));
   }
 }

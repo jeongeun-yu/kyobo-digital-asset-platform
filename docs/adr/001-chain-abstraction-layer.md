@@ -12,11 +12,11 @@ Phase 2+ (KRW 스테이블코인, STO)에서 XRP Ledger, BFT 체인 등
 
 ## 결정
 
-**모든 체인 연동은 `IChainAdapter` 인터페이스를 통한다.**  
+**모든 체인 연동은 `IBlockchainAdapter` 인터페이스를 통한다.**  
 `event-engine`, `issuer-service` 등 상위 레이어는 체인을 직접 참조하지 않는다.
 
 ```
-IChainAdapter
+IBlockchainAdapter
 ├── EVMAdapter        ← Phase 1 (Ethereum/Polygon)
 ├── XRPLAdapter       ← Phase 2+ stub
 └── UTXOAdapter       ← Phase 3+ stub

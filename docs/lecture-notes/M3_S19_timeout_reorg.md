@@ -207,7 +207,7 @@ FINALIZED
      6블록 이후면 사실상 확정 (Bitcoin 기준, PoS는 더 빠름)
 
 우리 시스템: REORG_WAIT_BLOCKS = 5 (TxStateMachineService.ts:107)
-     → CONFIRMED 후 5블록 대기 → VASP 재조회
+     → MINED 후 5블록 대기 → VASP 재조회 (FINALIZED 이전에만 REORG 가능)
 ```
 
 ### 5. 3종 복구 전략 요약
@@ -216,14 +216,14 @@ FINALIZED
 |---|---|---|---|
 | **REVERT** | 컨트랙트 조건 미충족 | `receipt.status = 0` + revertReason | 즉시 FAILED, reason 저장, 재시도 없음 |
 | **TIMEOUT** | Gas 부족으로 mempool stuck | PENDING 30분 초과 (pollStaleRequests) | Gas 20% bump + 동일 Nonce 재전송 |
-| **REORG** | 블록 재편으로 TX 소실 | CONFIRMED TX가 사라짐 감지 | REORGED 전이 → 5블록 대기 → VASP 재조회 → CONFIRMED or FAILED |
+| **REORG** | 블록 재편으로 TX 소실 | MINED TX가 사라짐 감지 (FINALIZED 이전) | REORGED 전이 → 5블록 대기 → VASP 재조회 → MINED or FAILED |
 
 **Finality 확보 후 원장 업데이트 흐름:**
 
 ```
-CONFIRMED 전이 (Finalized 기준)
+FINALIZED 전이 (PoS 2/3+ validator 동의)
      ↓
-M2 ConsumerGroupWorker가 CONFIRMED 이벤트 수신
+M2 ConsumerGroupWorker가 FINALIZED 이벤트 수신
      ↓
 LedgerService.recordHolding(+1)   ← M4 S23에서 구현
      ↓

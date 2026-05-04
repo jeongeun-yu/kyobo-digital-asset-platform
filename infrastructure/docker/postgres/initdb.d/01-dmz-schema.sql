@@ -1,14 +1,14 @@
 -- DMZ 운영 원장 스키마 (Node.js issuer-service 소유)
 -- 임시/기술적 데이터: 블록체인 트랜잭션 in-flight 상태
 
--- 발행 요청 상태머신 (PENDING → SUBMITTED → CONFIRMED | FAILED | REORGED)
+-- 발행 요청 상태머신 (PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED | FAILED | REORGED)
 CREATE TABLE IF NOT EXISTS mint_requests (
   id           BIGSERIAL PRIMARY KEY,
   request_id   UUID NOT NULL UNIQUE,
   user_id      VARCHAR(64) NOT NULL,
   policy_id    VARCHAR(64) NOT NULL,
   status       VARCHAR(16) NOT NULL
-               CHECK (status IN ('PENDING','SUBMITTED','CONFIRMED','FAILED','REORGED')),
+               CHECK (status IN ('PENDING','SUBMITTED','MINED','FINALIZED','CONFIRMED','FAILED','REORGED')),
   tx_hash      VARCHAR(66),
   token_id     BIGINT,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),

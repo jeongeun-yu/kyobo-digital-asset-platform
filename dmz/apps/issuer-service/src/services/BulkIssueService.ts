@@ -25,7 +25,6 @@
  */
 
 import { randomUUID } from 'crypto';
-import type { TxStateMachineService } from './EventConditionService';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
 
@@ -139,7 +138,7 @@ export class BulkIssueService {
     //   → 부분 실패 시 PARTIAL_FAILURE, 전체 실패 시 FAILED
 
     for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
+      const chunk = chunks[i]!;
       try {
         const requestIds = await Promise.all(
           chunk.map(userId =>

@@ -19,7 +19,7 @@ import { IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/
 import { RetryHandler, DeadLetterQueue } from '@kyobo/event-engine/webhook';
 import { NFTIssuedHandler }        from '@kyobo/event-engine/handlers';
 import { ExternalVASPAdapter }     from '@kyobo/vasp';
-import { KyoboCoreBankingAdapter } from '@kyobo/core-banking';
+import { KyoboCoreBankingAdapter, InternalGatewayClient } from '@kyobo/core-banking';
 import { ISMSChecklist }           from '@kyobo/compliance';
 
 import { IssuerService }   from './services/IssuerService';
@@ -31,7 +31,7 @@ async function bootstrap() {
     'RPC_URL', 'CHAIN_ID', 'OPERATOR_PRIVATE_KEY',
     'NFT_CONTRACT_ADDR', 'NFT_ISSUER_ADDR',
     'VASP_API_URL', 'VASP_API_KEY',
-    'CORE_BANKING_URL', 'CORE_BANKING_CLIENT_ID', 'CORE_BANKING_SECRET',
+    'CORE_BANKING_URL', 'CORE_BANKING_SECRET',
     'WEBHOOK_SECRET', 'WEBHOOK_PORT',
   ];
   for (const key of required) {
@@ -52,11 +52,11 @@ async function bootstrap() {
   });
 
   // ── Core Banking ─────────────────────────────────────────────────────────────
-  const coreBanking = new KyoboCoreBankingAdapter({
-    baseUrl:      process.env.CORE_BANKING_URL!,
-    clientId:     process.env.CORE_BANKING_CLIENT_ID!,
-    clientSecret: process.env.CORE_BANKING_SECRET!,
+  const gatewayClient = new InternalGatewayClient({
+    baseUrl: process.env.CORE_BANKING_URL!,
+    secret:  process.env.CORE_BANKING_SECRET!,
   });
+  const coreBanking = new KyoboCoreBankingAdapter(gatewayClient);
 
   // ── 멱등성 가드 (프로덕션: RedisIdempotencyStore로 교체) ─────────────────────
   const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());

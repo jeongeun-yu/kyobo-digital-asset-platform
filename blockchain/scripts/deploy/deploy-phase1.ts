@@ -26,7 +26,9 @@
 import { ethers, upgrades } from 'hardhat';
 
 async function main() {
-  const [deployer] = await ethers.getSigners();
+  const signers = await ethers.getSigners();
+  const deployer = signers[0];
+  if (!deployer) throw new Error('No signer configured');
   console.log('Deploying with:', deployer.address);
 
   // 1. ActivityOracle
@@ -76,7 +78,7 @@ async function main() {
   // 5. KyoboNFT에 NFTIssuer MINTER_ROLE 부여
   //    MINTER_ROLE = keccak256("MINTER_ROLE") — ERC-1155 기준
   const MINTER_ROLE = ethers.keccak256(ethers.toUtf8Bytes('MINTER_ROLE'));
-  await nft.grantRole(MINTER_ROLE, issuerAddr);
+  await (nft as unknown as { grantRole(role: string, addr: string): Promise<unknown> }).grantRole(MINTER_ROLE, issuerAddr);
   console.log('MINTER_ROLE granted to NFTIssuer');
 
   console.log('\n── 배포 완료 ────────────────────────────────────────');

@@ -44,7 +44,7 @@ export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
       tokenId:    notification.tokenId,
       txHash:     notification.txHash,
       issuedAt:   notification.issuedAt,
-      metadata:   notification.metadata,
+      ...(notification.metadata !== undefined && { metadata: notification.metadata }),
     });
   }
 

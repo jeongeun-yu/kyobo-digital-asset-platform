@@ -258,3 +258,11 @@ describe('Gnosis Safe 배포', () => {
 - [ ] swapOwner TX 구조 확인
 - [ ] 단일 HOT 키 구조의 위험과 2-of-3의 해결 원리 설명 가능
 - [ ] EIP-712 구조화 데이터 서명의 역할 설명 가능
+
+---
+
+> **📎 Phase 3 미리보기 연결:**  
+> 이 세션의 Gnosis Safe는 거버넌스 TX용 다중서명이다.  
+> Phase 3 직접 Custody 전환 시 **HSM vs MPC 키 관리 선택**, **Signer Input Contract 필드 명세**,  
+> **출금 주소 화이트리스트 48시간 대기 모델**, **Available/Reserved/Pending/Settled 4단계 잔액**이 추가된다.  
+> → [Phase3_S3_custody_security.md](./Phase3_S3_custody_security.md)

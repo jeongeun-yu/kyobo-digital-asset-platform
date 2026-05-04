@@ -84,7 +84,7 @@ export class InternalGatewayClient {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: this.headers(),
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      ...(body !== undefined && { body: JSON.stringify(body) }),
     });
 
     if (!res.ok) {

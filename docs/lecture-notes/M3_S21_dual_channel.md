@@ -244,14 +244,15 @@ VASP SLA: 정상 처리 시간 평균 2~10분
 ```
 정상 케이스 (콜백 성공):
   t=0:    submitMintRequest → PENDING
-  t=3분:  VASP 콜백 수신 → CONFIRMED
+  t=3분:  VASP 콜백 수신 → MINED
+  t=15분: PoS finality 확보 → FINALIZED → 원장 업데이트 → CONFIRMED
   t=35분: pollStaleRequests 실행 → 이미 CONFIRMED → skip (멱등성)
   
 콜백 누락 케이스:
   t=0:    submitMintRequest → PENDING
   t=3분:  VASP 콜백 유실
   t=30분: pollStaleRequests 실행 → PENDING 30분 초과 감지
-  t=30분: vasp.getStatus() → 'confirmed' → CONFIRMED 전이
+  t=30분: vasp.getStatus() → 'confirmed' → FINALIZED 전이 (PoS finality 확보 기준)
   
 최악 케이스 (VASP 장애):
   t=0:    submitMintRequest → PENDING

@@ -489,7 +489,7 @@ M2에서 배운 것들은 M3에서 그대로 재사용된다.
 | `ConsumerGroupWorker` At-least-once | S22: `pollStaleRequests` 결과 처리 |
 | `IdempotencyGuard` requestId 중복 차단 | S16: VASP 재전송 방어 |
 | `DLQHandler` 3회 실패 격리 | S17: NonRetryableError → 즉시 DLQ |
-| Finalized 블록 기준 처리 | S13: MINED → CONFIRMED 전이 조건 |
+| Finalized 블록 기준 처리 | S13: MINED → FINALIZED → CONFIRMED 전이 조건 |
 
 M2가 "이벤트가 도착했을 때 어떻게 안전하게 처리하는가"였다면,  
 M3는 "TX를 보냈을 때 블록체인이 어떤 경로로 실패하는가, 각각 어떻게 복구하는가"이다.  

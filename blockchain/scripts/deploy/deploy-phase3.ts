@@ -24,7 +24,9 @@
 import { ethers } from 'hardhat';
 
 async function main() {
-  const [deployer] = await ethers.getSigners();
+  const signers = await ethers.getSigners();
+  const deployer = signers[0];
+  if (!deployer) throw new Error('No signer configured');
   console.log('Deploying Phase 3 STO with:', deployer.address);
 
   // Phase 3 배포 전 가이드라인 확인 체크포인트
@@ -60,13 +62,13 @@ async function main() {
   // 4. CONTROLLER_ROLE 부여 — 규제 기관 요구 시 강제 이전 권한 (준법 담당)
   const CONTROLLER_ROLE = ethers.keccak256(ethers.toUtf8Bytes('CONTROLLER_ROLE'));
   const controllerAddr = process.env.CONTROLLER_ADDRESS ?? deployer.address;
-  await token.grantRole(CONTROLLER_ROLE, controllerAddr);
+  await (token as unknown as { grantRole(role: string, addr: string): Promise<unknown> }).grantRole(CONTROLLER_ROLE, controllerAddr);
   console.log('CONTROLLER_ROLE granted to:', controllerAddr);
 
   // 5. REGISTRAR_ROLE 부여 — issuer-service 서비스 계정
   const REGISTRAR_ROLE = ethers.keccak256(ethers.toUtf8Bytes('REGISTRAR_ROLE'));
   const registrarAddr = process.env.REGISTRAR_ADDRESS ?? deployer.address;
-  await registry.grantRole(REGISTRAR_ROLE, registrarAddr);
+  await (registry as unknown as { grantRole(role: string, addr: string): Promise<unknown> }).grantRole(REGISTRAR_ROLE, registrarAddr);
   console.log('REGISTRAR_ROLE granted to:', registrarAddr);
 
   console.log('\n── Phase 3 배포 완료 ──────────────────────────────');

@@ -1,4 +1,4 @@
-import type { IChainAdapter }  from '@kyobo/chain-adapters';
+import type { IBlockchainAdapter }  from '@kyobo/chain-adapters';
 import type { IVASPAdapter }   from '@kyobo/vasp';
 import type { ICoreBankingAdapter } from '@kyobo/core-banking';
 import type { IdempotencyGuard }    from '@kyobo/event-engine/webhook';
@@ -24,7 +24,7 @@ import { IssuerService }            from '../services/IssuerService';
 export class TokenIssuerFactory {
   constructor(
     private readonly deps: {
-      chainAdapter: IChainAdapter;
+      chainAdapter: IBlockchainAdapter;
       vaspAdapter:  IVASPAdapter;
       coreBanking:  ICoreBankingAdapter;
       idempotency:  IdempotencyGuard;

@@ -3,17 +3,17 @@
 ## 현재 상태
 | 항목 | 내용 |
 |---|---|
-| 단계 | 운영 세션 강의노트 S51~S58 전체 완료 (총 58세션) |
+| 단계 | 스켈레톤 Phase 3 stub + 이론 강의노트 4개 완성 |
 | 교육 시작 | 4/27 (웅진씽크빅) — 교보생명 58시간 확정 |
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
-## 마지막 작업 (2026-05-04)
-- 운영 세션 강의노트 8개 신규 작성 (S51~S58)
-  - S51 DLQ 운영, S52 Consumer 런북, S53 VASP SLA 운영
-  - S54 Reconcile 운영, S55 감사 로그 보관, S56 배포·롤백
-  - S57 업그레이드 거버넌스, S58 통합 대시보드
-- S15 Private RPC 설명 + 월렛원 온보딩 체크리스트 추가
-- 구조: 강의→실습→완료기준→운영체크리스트→워크시트→자동화확장
+## 마지막 작업 (2026-05-05)
+- TX 8상태 머신(FINALIZED 추가) 스켈레톤·실습·강의노트 전체 반영
+- Custody Track S2/3/5/6 vs 교보 커리큘럼 갭 분석 리포트 작성 (`docs/custody-gap-analysis.md`)
+- Phase 3 stub 파일 9개 신규 생성: TxAttempt, Broadcaster, ConfirmationTracker, NonceManager, OutboxWorker, ISignerService, WhitelistAddressService, Eip1559FeeParams/FeePolicyId/RpcDegradeMode 타입, InternalLedgerBalance
+- Phase 3 이론 강의노트 4개 신규 작성: 두 레이어 분리, Broadcaster/Outbox, HSM/MPC/화이트리스트, EIP-1559/RPC/Nonce
+- IBlockchainAdapterV3 분리 (getFeeParams/getRpcDegradeMode → Phase 3 확장 인터페이스)
+- S14 실습 파일 컴파일 에러 수정 → 전체 통과 확인
 
 ## 다음 작업
 - [ ] docker-compose.yml + .env.example 추가

@@ -15,7 +15,7 @@ S23에서 오프체인 원장의 필요성을 배웠다. 원장이 있으면 충
 
 ```
 정상 순서:
-  NFT 발행 요청 → PENDING → SUBMITTED → CONFIRMED
+  NFT 발행 요청 → PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED
 
 실제 발생 가능한 순서:
   CONFIRMED 이벤트가 먼저 도착 → 그 다음 SUBMITTED 이벤트 도착
@@ -44,35 +44,43 @@ Redis Streams에서 Consumer Group Worker가 메시지를 병렬로 처리하다
 // LedgerService.ts 스켈레톤에 이미 정의됨
 private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
   PENDING:   ['SUBMITTED', 'FAILED'],
-  SUBMITTED: ['CONFIRMED', 'FAILED', 'REORGED'],
-  CONFIRMED: ['REORGED'],          // Reorg는 CONFIRMED 후에도 발생 가능
-  FAILED:    [],                   // 종단 상태 — 이후 전이 없음
-  REORGED:   ['SUBMITTED', 'FAILED'],  // Reorg 후 재시도(gas bump) 또는 포기
+  SUBMITTED: ['MINED',     'FAILED'],
+  MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
+  FINALIZED: ['CONFIRMED'],             // PoS 2/3+ 동의 → 원장 업데이트 트리거
+  CONFIRMED: [],                        // 종단 상태 — 원장 업데이트 완료
+  FAILED:    [],                        // 종단 상태 — 이후 전이 없음
+  REORGED:   ['MINED', 'FAILED'],       // Reorg 후 MINED 복귀(재채굴) 또는 포기
 };
 ```
 
 상태 다이어그램으로 보면:
 
 ```
-   [PENDING] ──────────────────────────────▶ [FAILED]
-       │                                        ▲
-       ▼                                        │
-  [SUBMITTED] ──────────────────────────────────┤
-       │              ▲                         │
-       ▼              │                         │
-  [CONFIRMED]    [REORGED] ────────────────────▶┘
-       │              ▲
-       └──────────────┘
+   [PENDING] ──────────────────────────────────────────▶ [FAILED]
+       │                                                      ▲
+       ▼                                                      │
+  [SUBMITTED] ─────────────────────────────────────────────── │
+       │                                                      │
+       ▼                                                      │
+    [MINED] ──────────────── [REORGED] ──────────────────────▶┘
+       │              ▲          │
+       ▼              └──────────┘
+  [FINALIZED]
+       │
+       ▼
+  [CONFIRMED]  ← 종단 (원장 업데이트 완료)
 ```
 
 각 상태의 의미:
 - `PENDING`: 발행 요청이 생성됐지만 VASP에 아직 전달 전
 - `SUBMITTED`: VASP에 TX를 제출했고 블록에 포함되길 기다리는 중
-- `CONFIRMED`: 블록에 포함됐지만 아직 Finalized 아님 (Reorg 가능성 있음)
-- `FAILED`: TX가 실패로 종결됨. 재발행하려면 새 요청 필요
-- `REORGED`: CONFIRMED 이후 체인 재편성으로 TX가 사라짐 → 재시도 대기
+- `MINED`: 블록에 포함됨, REORG 가능 구간 (PoS finality 확보 전)
+- `FINALIZED`: PoS 2/3+ validator 동의 → 절대 불변 (약 12분). 원장 업데이트 트리거
+- `CONFIRMED`: 원장 업데이트 완료 — 종단 상태
+- `FAILED`: TX가 실패로 종결됨. 재발행하려면 새 요청 필요 — 종단 상태
+- `REORGED`: MINED 구간에서 체인 재편성으로 TX가 소실 → MINED 재전이 대기
 
-`FAILED`가 종단 상태인 이유: 한 번 실패한 TX는 해당 requestId로 다시 처리하지 않는다. 재발행이 필요하면 IssuerService를 통해 새 requestId로 새 요청을 만든다.
+`FAILED`와 `CONFIRMED` 모두 종단 상태다. 한 번 CONFIRMED되면 원장에서 확정된 것으로 불변이며, FAILED된 requestId로는 재발행하지 않는다.
 
 ---
 
@@ -89,9 +97,10 @@ if (!allowed.includes(patch.status)) {
 이 두 줄이 전부다. 맵에 없는 전이는 즉시 예외를 던지고, DB 업데이트는 실행되지 않는다.
 
 예시:
-- `CONFIRMED → SUBMITTED`: `CONFIRMED`의 허용 목록은 `['REORGED']`뿐 → 예외
+- `CONFIRMED → SUBMITTED`: `CONFIRMED`의 허용 목록은 `[]`(종단) → 예외
 - `FAILED → CONFIRMED`: `FAILED`의 허용 목록은 `[]` → 예외
-- `SUBMITTED → CONFIRMED`: `SUBMITTED`의 허용 목록에 `CONFIRMED` 있음 → 통과
+- `MINED → CONFIRMED`: `MINED`의 허용 목록에 `CONFIRMED` 없음 → 예외 (반드시 FINALIZED 거쳐야)
+- `MINED → FINALIZED`: `MINED`의 허용 목록에 `FINALIZED` 있음 → 통과
 
 ---
 
@@ -109,10 +118,10 @@ M3에서도 상태머신을 배웠다. 이것과 뭐가 다를까?
 두 상태머신이 직렬로 작동한다:
 
 ```
-VASP TX 상태 (TxStateMachineService) → CONFIRMED
+VASP TX 상태 (TxStateMachineService) → FINALIZED
     → 블록체인 NFTIssued 이벤트 발행
     → ConsumerGroupWorker 수신
-    → LedgerService.updateMintRequest(CONFIRMED)
+    → LedgerService.updateMintRequest(FINALIZED)  → 원장 업데이트 후 CONFIRMED
 ```
 
 M3 상태머신이 먼저 외부 상태를 동기화하고, 그 결과가 M4 원장 상태 전이를 트리거한다.

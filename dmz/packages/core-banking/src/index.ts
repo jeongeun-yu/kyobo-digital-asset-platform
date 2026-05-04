@@ -28,5 +28,6 @@ export type {
 
 // Services
 export { LedgerService }    from './ledger/LedgerService';
+export type { MintStatus, MintRequest } from './ledger/LedgerService';
 export { AuditLogService }  from './audit/AuditLogService';
 export { ReconcileService } from './reconcile/ReconcileService';

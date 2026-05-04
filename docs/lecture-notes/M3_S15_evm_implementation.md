@@ -319,7 +319,7 @@ TxStateMachineService → SUBMITTED 상태 기록
          ↓
 getReceipt(txHash) → 주기적으로 polling → null이면 PENDING 유지
          ↓
-MINED 감지 시 → CONFIRMED 전이
+MINED 감지 시 → MINED 전이 → PoS finality 확보 → FINALIZED → CONFIRMED
 ```
 
 현재 구현은 `tx.wait()`으로 blocking하는 단순 구조다. 실제 운영에서는 TxStateMachineService의 pollStale 루프와 `getReceipt()`를 조합해야 한다.
@@ -362,7 +362,7 @@ S13의 `TxStateMachineService`가 이 null을 PENDING으로 해석하고 TIMEOUT
 |---|---|---|
 | **언제** | TX를 처음 전송할 때 | 이미 전송된 TX 상태를 확인할 때 |
 | **blocking** | tx.wait()로 대기 | 즉시 반환 (null or receipt) |
-| **S13 연계** | SUBMITTED 상태 진입 | PENDING → CONFIRMED/FAILED 전이 판단 |
+| **S13 연계** | SUBMITTED 상태 진입 | PENDING → MINED → FINALIZED → CONFIRMED/FAILED 전이 판단 |
 
 ---
 
@@ -679,13 +679,54 @@ TransactionReceipt.gasUsed?: bigint   ← optional
 
 ---
 
-## 월렛원 온보딩 체크리스트
+## S15 실습 환경 — Sepolia 테스트넷
 
-> EVMAdapter의 `rpcUrl`은 환경변수로 주입된다. 이 값은 월렛원이 제공하는 전용 엔드포인트다.  
-> **M2 시작 전까지 아래 항목을 월렛원 기술 담당자로부터 수령해야 한다.**  
-> 항목이 누락되면 S12(Finalized 블록 구독)부터 실제 연동 테스트가 불가능하다.
+> **강의 실습은 Sepolia 테스트넷을 사용한다.**  
+> 월렛원 전용 RPC 엔드포인트 없이 동일한 `EVMAdapter` 코드를 검증할 수 있다.  
+> 실제 운영 연동 시에는 `EVM_RPC_URL` 환경변수만 월렛원 엔드포인트로 교체한다.
 
-### 수령 항목
+### 실습 환경 설정
+
+```bash
+# .env 또는 셸에서 설정 (월렛원 정보 불필요)
+EVM_RPC_URL=https://rpc.sepolia.org
+EVM_CHAIN_ID=11155111
+```
+
+### 실습 파일 실행
+
+```bash
+# dmz/packages/event-engine 폴더에서
+npx ts-node src/exercises/S15_evm_lab.ts
+```
+
+### 실습 목표
+
+| 검증 | 내용 |
+|---|---|
+| [1] isConnected() | Sepolia 연결 확인 |
+| [2] getBlockNumber() | 현재 블록 번호 조회 |
+| [3] XRPLMockAdapter 작성 | IBlockchainAdapter 구현 → 컴파일 통과 확인 |
+| [4] read-only 모드 | privateKey 없을 때 mint() 에러 확인 |
+
+### Sepolia vs 프로덕션 월렛원 RPC 비교
+
+```
+강의 실습 (Sepolia):
+  EVM_RPC_URL=https://rpc.sepolia.org
+  EVM_CHAIN_ID=11155111
+  EVMAdapter 코드: 동일
+
+프로덕션 월렛원 연동:
+  EVM_RPC_URL=https://rpc.walletone.kr/kyobo?apiKey=...
+  EVM_CHAIN_ID=137  (Polygon Mainnet)
+  EVMAdapter 코드: 동일 ← 한 줄도 바뀌지 않음
+```
+
+### 월렛원 연동 체크리스트 (프로덕션 전환 시)
+
+실제 운영 배포 전에 월렛원으로부터 수령해야 할 항목.  
+Sepolia 실습과 비교하면서 각 항목이 코드 어디에 매핑되는지 확인한다.
 
 ```
 RPC 엔드포인트
@@ -736,11 +777,11 @@ Webhook (S5~S6 구현 측)
 
   S5~S11: 자체 Mock으로 개발 가능 (영향 없음)
   S12: Finalized 블록 구독 → Mock 대체 가능하나 실제 검증 불가
-  S15: EVMAdapter 실제 연동 테스트 불가
-  S22: VASP 실제 TX 상태 폴링 불가
+  S15: EVMAdapter → Sepolia 테스트넷으로 실습 가능 (이 파일 참고)
+  S22: pollStaleRequests → Mock VASP로 실습 가능 (S22_pollstale_lab.ts 참고)
 
 → 최소한 RPC URL + 컨트랙트 주소 + HMAC 키 3가지는
-  M2 시작 전에 확보되어야 한다.
+  프로덕션 전환 전에 확보되어야 한다.
 ```
 
 ---

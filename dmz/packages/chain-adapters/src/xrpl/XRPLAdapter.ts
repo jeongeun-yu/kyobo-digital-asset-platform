@@ -10,12 +10,12 @@
 //   - Travel Rule: XRPL 자체 Memo 필드 활용 가능
 //   - 결제 채널: KRW 스테이블코인의 빠른 정산에 유리
 //
-// IChainAdapter 인터페이스를 구현하므로 event-engine, issuer-service 수정 없음.
+// IBlockchainAdapter 인터페이스를 구현하므로 event-engine, issuer-service 수정 없음.
 // =============================================================================
 
-import type { IChainAdapter, ChainEvent, ContractCallParams, TransactionReceipt } from '../interfaces/IChainAdapter';
+import type { IBlockchainAdapter, ChainEvent, ContractCallParams, TransactionReceipt, MintParams, MintBatchParams, BurnParams } from '../interfaces/IBlockchainAdapter';
 
-export class XRPLAdapter implements IChainAdapter {
+export class XRPLAdapter implements IBlockchainAdapter {
   readonly chainId  = 'xrpl-mainnet';
   readonly chainType = 'XRPL' as const;
 
@@ -24,6 +24,10 @@ export class XRPLAdapter implements IChainAdapter {
 
   async isConnected(): Promise<boolean> { throw new Error('XRPLAdapter: not implemented'); }
   async getBlockNumber(): Promise<number> { throw new Error('XRPLAdapter: not implemented'); }
+  async mintNFT(_p: MintParams): Promise<TransactionReceipt> { throw new Error('XRPLAdapter: not implemented'); }
+  async mintNFTBatch(_p: MintBatchParams): Promise<TransactionReceipt> { throw new Error('XRPLAdapter: not implemented'); }
+  async burnNFT(_p: BurnParams): Promise<TransactionReceipt> { throw new Error('XRPLAdapter: not implemented'); }
+  async getBalance(_contractAddr: string, _owner: string, _tokenId: bigint): Promise<bigint> { throw new Error('XRPLAdapter: not implemented'); }
   async call(_p: ContractCallParams): Promise<unknown> { throw new Error('XRPLAdapter: not implemented'); }
   async sendTransaction(_p: ContractCallParams): Promise<TransactionReceipt> { throw new Error('XRPLAdapter: not implemented'); }
   async getReceipt(_h: string): Promise<TransactionReceipt | null> { throw new Error('XRPLAdapter: not implemented'); }

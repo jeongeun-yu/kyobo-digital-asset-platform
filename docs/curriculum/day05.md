@@ -253,20 +253,21 @@ function classifyRevertReason(reason: string): 'BALANCE' | 'PAUSED' | 'ACCESS' |
 - PoS 네트워크에서도 단기 fork 발생
 - 두 블록 동시 제안 → 체인 하나 폐기 → 폐기된 쪽 TX 소실
 
-**CONFIRMED vs FINALIZED:**
-- CONFIRMED: 아직 reorg 가능 (N 블록 이상 쌓인 상태)
-- Finalized: 2/3+ validator 동의 → 절대 불변
+**MINED / FINALIZED / CONFIRMED 구분:**
+- MINED: 블록에 포함됨, 아직 reorg 가능
+- FINALIZED: 2/3+ validator 동의 → 절대 불변 (약 12분)
+- CONFIRMED: 원장 업데이트 완료 — 종단 상태
 
 **REORGED 전이 설계:**
-- CONFIRMED TX가 reorg로 사라짐 → REORGED 전이
-- Finalized 이후 VASP 재조회 → 최종 상태 결정
+- MINED TX가 reorg로 사라짐 → REORGED 전이 (FINALIZED 이전에만 발생)
+- 5블록 대기 후 VASP 재조회 → MINED 복귀 or FAILED
 
 **3종 복구 전략 요약:**
 | 장애 유형 | 즉각 대응 | 최종 상태 |
 |---|---|---|
 | REVERT | 즉시 FAILED + reason 저장 | FAILED |
-| TIMEOUT | gas bump 재전송 | SUBMITTED → CONFIRMED |
-| REORG | 5블록 대기 후 재확인 | CONFIRMED or FAILED |
+| TIMEOUT | gas bump 재전송 | PENDING 유지 → MINED |
+| REORG | 5블록 대기 후 재확인 | MINED or FAILED |
 
 ### ✅ 완료 기준 (강의 이해 확인)
 - [ ] TIMEOUT/REORG 발생 원인 설명 가능
@@ -300,20 +301,20 @@ async handleTxTimeout(requestId: string): Promise<void> {
 // TODO: REORG 발생 시 처리
 
 async handleReorg(requestId: string): Promise<void> {
-  // TODO: CONFIRMED → REORGED 전이
+  // TODO: MINED → REORGED 전이 (FINALIZED 이전에만 REORG 가능)
   // TODO: 5블록 대기
   // TODO: VASP API에서 현재 상태 재조회
-  // TODO: 재조회 결과에 따라 CONFIRMED or FAILED 전이
+  // TODO: 재조회 결과에 따라 MINED or FAILED 전이
 }
 ```
 
 **Step 3**: REORG 시뮬레이션 테스트
 ```typescript
-it('REORG 시뮬레이션 → 재처리 후 CONFIRMED', async () => {
-  // 1. CONFIRMED 상태 설정
+it('REORG 시뮬레이션 → 재처리 후 MINED 복귀', async () => {
+  // 1. MINED 상태 설정 (REORG는 FINALIZED 이전에만)
   // 2. handleReorg 호출 → REORGED 전이
-  // 3. Mock: 5블록 후 VASP 재조회 → CONFIRMED 응답
-  // 4. 최종 상태 CONFIRMED 확인
+  // 3. Mock: 5블록 후 VASP 재조회 → mined 응답 (재채굴)
+  // 4. 최종 상태 MINED 확인 → 이후 FINALIZED → CONFIRMED 흐름 계속
 });
 ```
 
@@ -352,14 +353,14 @@ async handleTxTimeout(requestId: string): Promise<void> {
 
 // handleReorg 완성
 async handleReorg(requestId: string): Promise<void> {
-  await transitionStatus(requestId, 'CONFIRMED', 'REORGED', this.db);
+  await transitionStatus(requestId, 'MINED', 'REORGED', this.db);  // FINALIZED 이전에만 REORG 가능
   
-  // 5블록 대기 (PoS Finality ~5블록 ≈ ~1분)
+  // 5블록 대기 (재편이 진정되길 기다림)
   await new Promise((r) => setTimeout(r, 60_000));
   
   const status = await this.adapter.verifyTx(requestId);
-  if (status.confirmed) {
-    await transitionStatus(requestId, 'REORGED', 'CONFIRMED', this.db);
+  if (status.mined) {
+    await transitionStatus(requestId, 'REORGED', 'MINED', this.db);  // 재채굴 → MINED 복귀
   } else {
     await this.handleTxRevert(requestId, 'REORG_LOST');
   }
@@ -368,4 +369,4 @@ async handleReorg(requestId: string): Promise<void> {
 
 ### ✅ 완료 기준
 - [ ] TIMEOUT → gas bump 재전송 동작
-- [ ] REORG 시뮬레이션 → 재처리 후 CONFIRMED
+- [ ] REORG 시뮬레이션 → 재처리 후 MINED 복귀 → FINALIZED → CONFIRMED

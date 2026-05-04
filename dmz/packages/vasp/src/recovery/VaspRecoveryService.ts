@@ -1,4 +1,4 @@
-import type { LedgerService, MintStatus } from '../../core-banking/src/ledger/LedgerService';
+import type { LedgerService, MintStatus } from '@kyobo/core-banking';
 
 export type FailureReason = 'REVERT' | 'OUT_OF_GAS' | 'NONCE_TOO_LOW' | 'TIMEOUT' | 'NETWORK_ERROR';
 
@@ -35,7 +35,7 @@ const DEFAULT_RETRY_POLICY: RetryPolicy = {
  *   OUT_OF_GAS    → gasLimit * 1.2로 재시도
  *   NONCE_TOO_LOW → nonce 재동기화 후 재시도
  *   TIMEOUT       → SUBMITTED 유지, 폴링 대기
- *   REORG         → REORGED 전이, 새 TX로 재제출
+ *   REORG         → MINED → REORGED 전이, 새 TX로 재제출 (FINALIZED 이전에만 가능)
  */
 export class VaspRecoveryService {
   constructor(
@@ -81,7 +81,7 @@ export class VaspRecoveryService {
   ): Promise<RecoveryResult> {
     // TODO:
     // 1. ledger.getMintRequest(requestId)
-    // 2. status가 'SUBMITTED' 또는 'CONFIRMED'가 아니면 throw
+    // 2. status가 'MINED'가 아니면 throw (REORG는 MINED 구간에서만 발생, FINALIZED 이후 불가)
     // 3. ledger.updateMintRequest(requestId, { status: 'REORGED', errorMsg: `Reorg at block ${detectedAtBlock}` })
     // 4. auditLog 기록: REORG_DETECTED
     // 5. retryWithBackoff(() => vaspClient.resubmit(requestId), this.retryPolicy)

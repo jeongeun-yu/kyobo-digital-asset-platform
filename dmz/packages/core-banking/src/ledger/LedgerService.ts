@@ -5,7 +5,7 @@
  * 임시적/기술적 데이터: 트랜잭션 in-flight 상태, 이벤트 중복 방지
  *
  * 영구 금융 원장(NFT 보유 현황, 감사 로그)은 내부망 Java Gateway가 관리한다.
- * TX 확정(CONFIRMED) 시 ICoreBankingAdapter.recordNftHolding()을 호출한다.
+ * TX Finalized(FINALIZED) 시 ICoreBankingAdapter.recordNftHolding()을 호출한다.
  *
  * 데이터 수명:
  *   - mint_requests: CONFIRMED/FAILED 후 30일 자동 만료 (운영 편의)
@@ -14,7 +14,37 @@
 
 import { randomUUID } from 'crypto';
 
-export type MintStatus = 'PENDING' | 'SUBMITTED' | 'CONFIRMED' | 'FAILED' | 'REORGED';
+export type MintStatus = 'PENDING' | 'SUBMITTED' | 'MINED' | 'FINALIZED' | 'CONFIRMED' | 'FAILED' | 'REORGED';
+
+// ── 내부 원장 4단계 잔액 모델 (Phase 3: 직접 Custody 전환 시 활성화) ─────────
+//
+// 고객 자산을 4단계로 구분해 이중 인출을 선제 방지하는 모델.
+// Phase 1: NFT 발행(단방향) 위주라 RESERVE 필요성 낮음.
+//          CONFIRMED 시 Java 영구 원장에서 잔액 관리.
+// Phase 3: 교보 자체 VASP 운영 시 출금 승인 즉시 RESERVE로 잠가야 함.
+//
+// Custody Track Session 2 참조: Internal Ledger 4단계 잔액 모델
+//
+//   Available  출금 가능한 실제 잔액 (사용자에게 보이는 잔액)
+//   Reserved   출금 요청 승인(W3_APPROVED) 시 잠긴 금액 — 이중 인출 방지
+//   Pending    TX 브로드캐스트 후 온체인 확정 대기 중
+//   Settled    온체인 Finalized 후 최종 정산 완료
+
+export interface InternalLedgerBalance {
+  userId:    string;
+  tokenId:   bigint;
+  available: bigint;  // = Settled - Reserved - Pending
+  reserved:  bigint;  // 출금 승인됐으나 아직 온체인 미확정
+  pending:   bigint;  // TX 전송됨, 블록 미포함
+  settled:   bigint;  // 온체인 Finalized 기준 최종 잔액
+  updatedAt: Date;
+}
+
+// TODO (Phase 3): LedgerService에 잔액 관리 메서드 추가
+//   reserve(userId, tokenId, amount): Available → Reserved (출금 승인 시)
+//   settle(userId, tokenId, amount):  Reserved+Pending → Settled (FINALIZED 시)
+//   release(userId, tokenId, amount): Reserved → Available (출금 취소 시)
+//   getBalance(userId, tokenId): InternalLedgerBalance 반환
 
 export interface MintRequest {
   id: string;            // UUID
@@ -46,10 +76,12 @@ export class LedgerService {
   // 허용된 상태 전이 맵
   private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
     PENDING:   ['SUBMITTED', 'FAILED'],
-    SUBMITTED: ['CONFIRMED', 'FAILED', 'REORGED'],
-    CONFIRMED: ['REORGED'],
-    FAILED:    [],
-    REORGED:   ['SUBMITTED', 'FAILED'],
+    SUBMITTED: ['MINED',     'FAILED'],
+    MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
+    FINALIZED: ['CONFIRMED'],
+    CONFIRMED: [],                        // 종단 — 원장 업데이트 완료
+    FAILED:    [],                        // 종단
+    REORGED:   ['MINED',     'FAILED'],
   };
 
   constructor(
@@ -86,8 +118,9 @@ export class LedgerService {
 
     // TODO: UPDATE mint_requests SET status=$1, tx_hash=$2, ... WHERE request_id=$3
     // TODO: auditLog.log({ action: `STATUS_${patch.status}`, before: current, after: { ...current, ...patch } })
-    // NOTE: status=CONFIRMED 시 coreBankingAdapter.recordNftHolding() 호출 필요
+    // NOTE: status=FINALIZED 시 coreBankingAdapter.recordNftHolding() 호출 필요
     //       → ICoreBankingAdapter 참조 (Java blockchain-gateway가 영구 원장에 기록)
+    //       status=CONFIRMED 는 원장 기록 완료 후의 종단 상태
     throw new Error('Not implemented');
   }
 

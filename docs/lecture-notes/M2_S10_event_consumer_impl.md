@@ -520,7 +520,7 @@ export class NFTIssuedProcessor implements EventProcessor {
     // TODO: idempotencyGuard.run()으로 중복 처리 차단 + DB 트랜잭션
     await this.idempotencyGuard.run(idempotencyKey, async () => {
       await this.ledgerService.db.transaction(async (trx) => {
-        // TODO: MintRequest 상태 → CONFIRMED
+        // TODO: MintRequest 상태 → FINALIZED (PoS finality 확보 기준) → 원장 업데이트 후 CONFIRMED
         // TODO: user_nft_holdings +1
       });
     });

@@ -19,9 +19,10 @@ REQUESTED → SUBMITTED → PENDING → MINED → CONFIRMED
 - `REQUESTED→SUBMITTED`: VASP API 호출 성공
 - `SUBMITTED→PENDING`: VASP 수신 확인
 - `PENDING→MINED`: 블록에 포함됨
-- `MINED→CONFIRMED`: N개 이상 블록 쌓임
+- `MINED→FINALIZED`: PoS 2/3+ validator 동의 (약 12분, 절대 불변)
+- `FINALIZED→CONFIRMED`: 원장 업데이트 완료 — 종단 상태
 - `MINED→FAILED`: REVERT 발생
-- `CONFIRMED→REORGED`: 해당 블록 Reorg 발생
+- `MINED→REORGED`: FINALIZED 이전 REORG 발생 (FINALIZED 이후 REORG 불가)
 
 **상태머신 없이 단순 HTTP 호출만 하면:**
 - 네트워크 에러 재시도 → 중복 발행
@@ -52,7 +53,7 @@ export interface IVaspAdapter {
 // internal/packages/vasp/src/TxStateMachine.ts
 // TODO: 상태별 허용 전이 목록 정의
 
-type TxStatus = 'REQUESTED' | 'SUBMITTED' | 'PENDING' | 'MINED' | 'CONFIRMED' | 'FAILED' | 'REORGED';
+type TxStatus = 'REQUESTED' | 'SUBMITTED' | 'PENDING' | 'MINED' | 'FINALIZED' | 'CONFIRMED' | 'FAILED' | 'REORGED';
 
 const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   // TODO: 각 상태에서 허용되는 다음 상태 목록
@@ -60,6 +61,7 @@ const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   SUBMITTED: [],
   PENDING: [],
   MINED: [],
+  FINALIZED: [],
   CONFIRMED: [],
   FAILED: [],
   REORGED: [],
@@ -93,12 +95,13 @@ export interface IVaspAdapter {
 // VALID_TRANSITIONS 완성
 const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   REQUESTED: ['SUBMITTED', 'FAILED'],
-  SUBMITTED: ['PENDING', 'FAILED'],
-  PENDING:   ['MINED', 'FAILED'],
-  MINED:     ['CONFIRMED', 'FAILED', 'REORGED'],
-  CONFIRMED: ['REORGED'],
-  FAILED:    [],
-  REORGED:   ['CONFIRMED', 'FAILED'],
+  SUBMITTED: ['PENDING',   'FAILED'],
+  PENDING:   ['MINED',     'FAILED'],
+  MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
+  FINALIZED: ['CONFIRMED'],
+  CONFIRMED: [],                          // 종단 — 원장 업데이트 완료
+  FAILED:    [],                          // 종단
+  REORGED:   ['MINED',     'FAILED'],
 };
 
 // transitionStatus 완성

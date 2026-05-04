@@ -287,24 +287,24 @@ it('[통합] TIMEOUT → gas bump → PENDING 유지', async () => {
 #### REORG 시나리오
 
 ```typescript
-it('[통합] REORG 시뮬레이션 → REORGED → CONFIRMED 복귀', async () => {
+it('[통합] REORG 시뮬레이션 → REORGED → MINED 복귀', async () => {
   const service = new TxStateMachineService(repo, vaspMock, walletResolver);
 
-  // CONFIRMED 상태 세팅
+  // MINED 상태 세팅 (REORG는 FINALIZED 이전 MINED 구간에서만 발생)
   await repo.save({
     id: 'req-reorg-001', userId: 'user-1',
     tokenId: 1003n, amount: 1n,
-    status: 'CONFIRMED', txHash: '0xCONFIRMED',
+    status: 'MINED', txHash: '0xMINED',
     retryCount: 0, createdAt: new Date(), updatedAt: new Date(),
   });
 
-  // Mock: 5블록 후 confirmed 응답
-  vaspMock.setNextStatus('0xCONFIRMED', 'confirmed', 12350);
+  // Mock: 5블록 후 mined 응답 (재편 후 다시 포함됨)
+  vaspMock.setNextStatus('0xMINED', 'mined', 12350);
 
   await service.handleReorg('req-reorg-001');
 
   const req = await repo.findById('req-reorg-001');
-  expect(req?.status).toBe('CONFIRMED');
+  expect(req?.status).toBe('MINED');  // MINED 복귀 확인
 });
 ```
 
@@ -367,7 +367,7 @@ it('콜백 처리 완료 후 폴링이 중복 처리하지 않음', async () => 
 - [ ] **retryWithBackoff**: 지수 백오프 + Jitter, 5회 소진 후 FAILED
 - [ ] **handleTxRevert**: FAILED 전이 + reason 저장 + 알림
 - [ ] **handleTimeout**: gas 20% bump + 새 txHash + PENDING 유지
-- [ ] **handleReorg**: REORGED → 5블록 대기 → VASP 재조회 → CONFIRMED or FAILED
+- [ ] **handleReorg**: REORGED → 5블록 대기 → VASP 재조회 → MINED or FAILED (FINALIZED 이전에만 REORG 가능)
 - [ ] **pollStaleRequests**: 30분 초과 PENDING → VASP 직접 조회 → 결과별 전이
 - [ ] **3종 통합 테스트**: REVERT / TIMEOUT / REORG 각각 통과
 - [ ] **콜백 차단 테스트**: 폴링으로 자동 처리 확인
@@ -381,7 +381,7 @@ it('콜백 처리 완료 후 폴링이 중복 처리하지 않음', async () => 
 M3 VASP + TX 상태머신의 3가지 원칙:
 
 1. 상태머신으로 비동기 TX 추적
-   "TX는 즉시 확정되지 않는다 — REQUESTED→SUBMITTED→PENDING→MINED→CONFIRMED"
+   "TX는 즉시 확정되지 않는다 — REQUESTED→SUBMITTED→PENDING→MINED→FINALIZED→CONFIRMED"
    → 각 단계를 DB에 기록 → 재시작 후에도 어디까지 처리됐는지 알 수 있음
 
 2. 추상화 레이어로 멀티체인 대비
@@ -397,3 +397,11 @@ M3 VASP + TX 상태머신의 3가지 원칙:
 
 **다음 모듈 (M4 S23~S26):**  
 내부 원장 + 감사 로그 — M3에서 CONFIRMED 전이가 발생하면 LedgerService가 `user_nft_holdings`를 어떻게 갱신하는가. M2 ConsumerGroupWorker + IdempotencyGuard가 원장 레이어에서 어떻게 연결되는가.
+
+---
+
+> **📎 Phase 3 미리보기 연결:**  
+> 이 세션의 `pollStaleRequests` 단일 루프는 Phase 1에서 충분하다.  
+> Phase 3에서는 타임스케일이 다른 **Broadcaster(10초 루프) + ConfirmationTracker(1분 루프)**로 분리되고,  
+> DB-외부 호출 원자성을 보장하는 **Outbox 패턴**이 추가된다.  
+> → [Phase3_S2_broadcaster_outbox.md](./Phase3_S2_broadcaster_outbox.md)

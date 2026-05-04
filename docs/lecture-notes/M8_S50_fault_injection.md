@@ -29,7 +29,7 @@ M6 KyoboNFT.sol (온체인):
 
 M2~M3 DMZ 파이프라인:
   Webhook → Redis Streams → Consumer
-  PENDING → SUBMITTED → CONFIRMED
+  PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED
 
 M4 LedgerService:
   기록 (mint_request 원장)
@@ -91,7 +91,7 @@ describe('Phase 1 E2E — 앱 이벤트 → NFT 발행 → 원장', () => {
       vaspTxId: vasp.txId,
     });
 
-    // [7] DMZ Consumer: 온체인 이벤트 수신 → CONFIRMED 전이 (M2/M3)
+    // [7] DMZ Consumer: 온체인 이벤트 수신 → FINALIZED 전이 → 원장 업데이트 → CONFIRMED (M2/M3)
     await simulateOnchainConfirmation(mintRequest.id, '0xTxHash123');
     const confirmed = await ledgerService.updateMintRequest(
       mintRequest.id, 'CONFIRMED', { onChainTxHash: '0xTxHash123' },
@@ -197,7 +197,7 @@ describe('장애 주입 2 — 블록 Reorg', () => {
     // DMZ Consumer가 REORGED 이벤트 수신
     await simulateReorgEvent(mintRequest.id);
 
-    // 원장 롤백 — CONFIRMED → REORGED
+    // 원장 롤백 — MINED → REORGED (FINALIZED 이전에만 REORG 가능)
     const reorgedRequest = await ledgerService.getMintRequest(mintRequest.id);
     expect(reorgedRequest.status).toBe('REORGED');
 
@@ -322,7 +322,7 @@ describe('키 거버넌스 — 2-of-3 서명 (M8 통합)', () => {
 
 - [ ] 앱 이벤트 → 조건 판단 → NFT 발행 → 원장 업데이트 E2E 전체 동작
 - [ ] VASP 장애 → 백오프 재시도 → 복구 후 정상 복귀
-- [ ] Reorg 시뮬레이션 → 원장 롤백(REORGED) → 재확인 후 CONFIRMED
+- [ ] Reorg 시뮬레이션 → 원장 롤백(MINED→REORGED) → 재채굴 후 MINED → FINALIZED → CONFIRMED
 - [ ] Consumer 강제 종료 → 재시작 후 중복 없이 재처리
 - [ ] 감사 로그 SHA-256 체인 무결성 E2E 후 통과
 - [ ] 중간 로그 삭제 → 무결성 실패 확인

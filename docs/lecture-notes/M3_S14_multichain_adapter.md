@@ -479,3 +479,11 @@ Phase 3 (글로벌 확장): CircleAdapter
 - [ ] `queryEvents`에서 Finalized 범위만 사용하는 이유 설명 (S12 연계)
 - [ ] `raw` 필드를 어댑터 외부에서 파싱하면 안 되는 이유 설명
 - [ ] 당사 멀티체인 전환 Phase 1→2→3 순서와 근거 제시
+
+---
+
+> **📎 Phase 3 미리보기 연결:**  
+> 이 세션의 IBlockchainAdapter는 `chainType: 'UTXO' | 'BFT'`를 정의하지만 Phase 1에서 구현하지 않는다.  
+> Phase 3 직접 TX 전송 시 **EIP-1559 수수료 구조**, **RPC 다중화 + 저하 모드 5단계**,  
+> **Nonce 전략 3종(Serial/Pipelined/Pinned)**이 추가된다.  
+> → [Phase3_S4_eip1559_rpc_nonce.md](./Phase3_S4_eip1559_rpc_nonce.md)

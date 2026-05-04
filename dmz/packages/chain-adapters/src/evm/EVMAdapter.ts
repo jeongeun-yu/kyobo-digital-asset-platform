@@ -133,16 +133,18 @@ export class EVMAdapter implements IBlockchainAdapter {
 
   async call(params: ContractCallParams): Promise<unknown> {
     const iface    = new Interface(params.abi as string[]);
-    const contract = new Contract(params.contractAddr, iface, this.provider);
-    return contract[params.method](...params.args);
+    const contract = new Contract(params.contractAddr, iface, this.provider) as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+    return contract[params.method]!(...params.args);
   }
 
   async sendTransaction(params: ContractCallParams): Promise<TransactionReceipt> {
     if (!this.wallet) throw new Error('EVMAdapter: read-only mode, no private key');
 
+    type TxResponse = { wait(): Promise<{ hash: string; blockNumber: number; blockHash: string; status: number; gasUsed: bigint }> };
+    type ContractMethods = Record<string, (...args: unknown[]) => Promise<TxResponse>>;
     const iface    = new Interface(params.abi as string[]);
-    const contract = new Contract(params.contractAddr, iface, this.wallet);
-    const tx       = await contract[params.method](...params.args);
+    const contract = new Contract(params.contractAddr, iface, this.wallet) as unknown as ContractMethods;
+    const tx       = await contract[params.method]!(...params.args);
     const receipt  = await tx.wait();
 
     return {

@@ -28,16 +28,20 @@ export class ExternalVASPAdapter implements IVASPAdapter {
   async createWallet(userId: string): Promise<WalletInfo> {
     const res = await this._request('POST', '/wallets', { userId });
     return {
-      address:   res.address,
-      publicKey: res.publicKey,
-      custodyId: res.custodyId,
+      address:   res['address']   as string,
+      publicKey: res['publicKey'] as string,
+      custodyId: res['custodyId'] as string,
     };
   }
 
   async getWallet(userId: string): Promise<WalletInfo | null> {
     try {
       const res = await this._request('GET', `/wallets/${userId}`);
-      return { address: res.address, publicKey: res.publicKey, custodyId: res.custodyId };
+      return {
+        address:   res['address']   as string,
+        publicKey: res['publicKey'] as string,
+        custodyId: res['custodyId'] as string,
+      };
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('404')) return null;
       throw err;
@@ -55,21 +59,31 @@ export class ExternalVASPAdapter implements IVASPAdapter {
 
     // Travel Rule — 특금법 의무 (100만원 상당 이상 이체)
     if (req.travelRuleData) {
-      payload.travelRule = req.travelRuleData;
+      payload['travelRule'] = req.travelRuleData;
     }
 
     const res = await this._request('POST', '/transfers', payload);
-    return { txHash: res.txHash, status: res.status, fee: BigInt(res.fee ?? 0) };
+    return {
+      txHash: res['txHash'] as string,
+      status: res['status'] as TransferResult['status'],
+      fee:    BigInt((res['fee'] as string | number | bigint | boolean) ?? 0),
+    };
   }
 
   async getTransferStatus(txHash: string): Promise<TransferResult> {
     const res = await this._request('GET', `/transfers/${txHash}`);
-    return { txHash: res.txHash, status: res.status, fee: BigInt(res.fee ?? 0) };
+    return {
+      txHash: res['txHash'] as string,
+      status: res['status'] as TransferResult['status'],
+      fee:    BigInt((res['fee'] as string | number | bigint | boolean) ?? 0),
+    };
   }
 
   async screenAddress(address: string): Promise<{ flagged: boolean; reason?: string }> {
     const res = await this._request('GET', `/aml/screen/${address}`);
-    return { flagged: res.flagged, reason: res.reason };
+    const flagged = res['flagged'] as boolean;
+    const reason  = res['reason'] as string | undefined;
+    return reason !== undefined ? { flagged, reason } : { flagged };
   }
 
   private async _request(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
@@ -79,7 +93,7 @@ export class ExternalVASPAdapter implements IVASPAdapter {
         'Content-Type':  'application/json',
         'X-API-Key':     this.apiKey,
       },
-      body: body ? JSON.stringify(body) : undefined,
+      ...(body !== undefined && { body: JSON.stringify(body) }),
     });
     if (!res.ok) throw new Error(`VASP API ${res.status}: ${path}`);
     return res.json() as Promise<Record<string, unknown>>;

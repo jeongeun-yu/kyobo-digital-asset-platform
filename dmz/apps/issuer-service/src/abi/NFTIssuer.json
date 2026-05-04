@@ -1,0 +1,59 @@
+[
+  {
+    "inputs": [
+      { "internalType": "address", "name": "nft_",    "type": "address" },
+      { "internalType": "address", "name": "oracle_", "type": "address" }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true,  "internalType": "address", "name": "to",      "type": "address" },
+      { "indexed": true,  "internalType": "uint256", "name": "tokenId", "type": "uint256" },
+      { "indexed": false, "internalType": "bytes32", "name": "reason",  "type": "bytes32" }
+    ],
+    "name": "Issued",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "to",         "type": "address" },
+      { "internalType": "uint256", "name": "tokenId",    "type": "uint256" },
+      { "internalType": "bytes32", "name": "activityId", "type": "bytes32" },
+      {
+        "components": [
+          { "internalType": "bytes32", "name": "dataType",  "type": "bytes32" },
+          { "internalType": "uint256", "name": "value",     "type": "uint256" },
+          { "internalType": "uint256", "name": "timestamp", "type": "uint256" },
+          { "internalType": "bytes",   "name": "signature", "type": "bytes"   }
+        ],
+        "internalType": "struct IOracle.OracleData",
+        "name": "oracleData",
+        "type": "tuple"
+      }
+    ],
+    "name": "issueActivityNFT",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "role",    "type": "bytes32" },
+      { "internalType": "address", "name": "account", "type": "address" }
+    ],
+    "name": "grantRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "OPERATOR_ROLE",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

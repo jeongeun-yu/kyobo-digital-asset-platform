@@ -79,7 +79,7 @@ M2에서 배운 것처럼, Redis Streams는 at-least-once delivery다. 같은 NF
 
 사용자가 걷기 목표 달성 → NFT 발행 요청 생성 → VASP에 TX 제출 → 블록에 포함 대기 → 확정. 이 과정이 최소 수십 초, 길면 몇 분 걸린다. 그 사이 상태를 추적하는 테이블이다.
 
-상태: `PENDING → SUBMITTED → CONFIRMED / FAILED / REORGED`
+상태: `PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED / FAILED / REORGED`
 
 **② `processed_events` — "이미 처리한 이벤트 목록"**
 

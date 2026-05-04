@@ -6,7 +6,10 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 
 async function main() {
-  const [deployer, oracleSigner] = await ethers.getSigners();
+  const signers = await ethers.getSigners();
+  const deployer     = signers[0];
+  const oracleSigner = signers[1];
+  if (!deployer || !oracleSigner) throw new Error('Need at least 2 signers (deployer + oracleSigner)');
   console.log('발행 계정:', deployer.address);
 
   const nftProxyAddr  = process.env.KYOBO_NFT_PROXY_ADDR;
@@ -33,7 +36,7 @@ async function main() {
   const oracleData = { dataType, value, timestamp, signature };
 
   // tokenId 생성
-  const nft     = await ethers.getContractAt('KyoboNFT', nftProxyAddr);
+  const nft     = await ethers.getContractAt('KyoboNFT', nftProxyAddr) as unknown as { encodeTokenId(a: bigint, b: bigint): Promise<bigint> };
   const tokenId = await nft.encodeTokenId(1n, BigInt(Date.now() % 100000));
 
   // activityId — reason으로 Issued 이벤트에 포함됨
@@ -42,7 +45,7 @@ async function main() {
   ) as `0x${string}`;
 
   // NFTIssuer.issueActivityNFT() 호출
-  const issuer = await ethers.getContractAt('NFTIssuer', nftIssuerAddr);
+  const issuer = await ethers.getContractAt('NFTIssuer', nftIssuerAddr) as unknown as { issueActivityNFT(...args: unknown[]): Promise<{ hash: string; wait(): Promise<{ blockNumber: number } | null> }> };
 
   console.log('NFT 발행 중...');
   const tx      = await issuer.issueActivityNFT(deployer.address, tokenId, activityId, oracleData);
