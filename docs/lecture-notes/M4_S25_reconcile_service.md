@@ -95,6 +95,60 @@ async reconcile(): Promise<ReconcileResult>
 
 ---
 
+### 3-1. 자동 보정하면 안 되는 이유 — 시나리오별 상세
+
+단순히 "코드가 판단할 수 없다"는 말만으로는 설득력이 부족하다. 구체적 사례를 보자.
+
+**케이스 A: 정상 지연 vs 진짜 불일치 구분 불가**
+
+```
+mint TX → 블록에 포함 (온체인 반영)
+→ ConsumerWorker가 이벤트를 수신했지만 처리가 250ms 지연 중
+→ 이 250ms 사이에 Reconcile이 실행됨
+
+Reconcile 판단:
+  온체인: balanceOf = 1
+  원장:   holdings 없음
+  → "불일치!" → 자동 보정 실행 → 원장에 holdings 강제 삽입
+
+250ms 후 ConsumerWorker도 이벤트 처리 완료 → 원장에 또 삽입
+→ user_nft_holdings에 동일 tokenId가 2개 행
+→ 이중 발행처럼 보이는 데이터 오염
+```
+
+자동 보정이 오히려 데이터를 망가뜨린다.
+
+**케이스 B: Reorg 중 상태 불확실**
+
+```
+블록 #999 처리 중 → Reorg 발생 → 블록 #999가 폐기될지 미확정
+이 구간에 Reconcile 실행:
+  온체인 RPC: 노드마다 다른 상태를 반환할 수 있음
+  원장: 이미 #999 기준으로 기록
+  → Reconcile 결과 자체가 신뢰 불가
+  → 자동 보정이 잘못된 방향으로 원장을 덮어쓸 위험
+```
+
+Reorg 구간에서 자동 보정은 결과를 예측할 수 없다.
+
+**케이스 C: 보안 공격 경로**
+
+```
+내부 운영자가 원장을 조작:
+  UPDATE user_nft_holdings SET token_id = 99999 WHERE user_id = 'target'
+  → 자동 보정: "온체인에 99999가 없으니 원장에서 제거"
+  또는 반대로:
+  INSERT INTO user_nft_holdings (user_id, token_id) VALUES ('attacker', 888888)
+  → 자동 보정이 "온체인에 없으니 mint 발행해야 하나?" 판단하는 코드가 있다면
+  → 공격자가 원장 조작만으로 온체인 TX 유발 가능
+```
+
+자동 보정 로직이 있는 순간, 원장 조작 = 온체인 자산 조작이 되어버린다.
+
+**결론**: 불일치는 항상 사람이 원인을 판단하고 수동으로 처리해야 한다. ReconcileService의 역할은 "발견하고 알리는 것"까지다.
+
+---
+
 ### 4. KRW 스테이블코인 Reconcile — Phase 1 실제 구조
 
 스켈레톤을 보면 ReconcileService는 `user_nft_holdings`가 아닌 **KRW 스테이블코인 발행량 vs 원화 수탁 계좌 잔액**을 검증한다.
@@ -120,6 +174,158 @@ export class ReconcileService {
     },
   ) {}
 }
+```
+
+---
+
+### 4-1. ReconcileService 전체 인터페이스
+
+KRW 스테이블코인 대조 외에 NFT holdings 검증, 수동 트리거, 상태 조회 메서드도 포함된다.
+
+```typescript
+/** reconcile() 반환 타입 */
+export interface ReconcileResult {
+  /** 온체인 KRW 토큰 총 발행량 (단위: 원, bigint) */
+  onchainSupply: bigint;
+  /** 수탁 계좌 원화 잔액 (단위: 원, bigint) */
+  bankBalance: bigint;
+  /** onchainSupply - bankBalance. 양수: 과잉발행, 음수: 과소발행 */
+  disparity: bigint;
+  /** |disparity| <= tolerance 이면 true */
+  isHealthy: boolean;
+  /** Reconcile 실행 시각 (epoch ms) */
+  timestamp: number;
+}
+
+/** NFT holdings 대조 결과 타입 */
+export interface NftReconcileResult {
+  /** 불일치가 없는지 여부 */
+  isHealthy: boolean;
+  /** 불일치 항목 목록 */
+  discrepancies: Array<{
+    userId: string;
+    tokenId: bigint;
+    /** 'LEDGER_ONLY': 원장에만 있고 온체인에 없음 (원장 과잉) */
+    /** 'ONCHAIN_ONLY': 온체인에만 있고 원장에 없음 (원장 누락) */
+    type: 'LEDGER_ONLY' | 'ONCHAIN_ONLY';
+  }>;
+  checkedAt: number;
+}
+
+/** ReconcileService 전체 인터페이스 */
+export interface IReconcileService {
+  /**
+   * KRW 스테이블코인 발행량 vs 수탁 계좌 잔액 대조.
+   * 정기 크론 및 수동 Admin API에서 호출.
+   */
+  reconcile(): Promise<ReconcileResult>;
+
+  /**
+   * 특정 사용자의 NFT holdings를 온체인 balanceOf와 대조.
+   * user_nft_holdings 테이블의 각 tokenId에 대해
+   * ERC-1155 balanceOf(userAddress, tokenId) 호출 결과와 비교.
+   *
+   * @param userId  대조할 사용자 ID
+   */
+  reconcileNftHoldings(userId: string): Promise<NftReconcileResult>;
+
+  /**
+   * 전체 사용자 NFT holdings 일괄 대조 (정기 배치).
+   * user_nft_holdings 전체를 페이지 단위로 순회.
+   */
+  reconcileAllNftHoldings(): Promise<NftReconcileResult>;
+
+  /**
+   * mint/burn 이벤트 발생 즉시 호출 — 증분 대조.
+   * 전체 reconcile()보다 빠르게 단건 이상을 감지.
+   */
+  onMintEvent(tokenId: bigint, amount: bigint): Promise<void>;
+  onBurnEvent(tokenId: bigint, amount: bigint): Promise<void>;
+
+  /**
+   * 마지막 reconcile() 결과를 캐싱하여 반환.
+   * Admin 대시보드의 실시간 상태 표시에 사용.
+   */
+  getLastResult(): ReconcileResult | null;
+}
+```
+
+---
+
+### 4-2. NFT holdings Reconcile 로직
+
+KRW 스테이블코인 대조(totalSupply vs bankBalance)는 집계 단위 비교다. NFT holdings 대조는 **사용자별·토큰별 개별 비교**다.
+
+```typescript
+async reconcileNftHoldings(userId: string): Promise<NftReconcileResult> {
+  // 1. 원장에서 해당 사용자가 보유 중인 NFT 목록 조회
+  const ledgerHoldings = await this.db.query<{ token_id: string }>(
+    `SELECT token_id FROM user_nft_holdings
+     WHERE user_id = $1 AND status = 'ACTIVE'`,
+    [userId],
+  );
+
+  // 2. 해당 사용자의 온체인 주소 조회 (wallet_address 테이블)
+  const walletRow = await this.db.query<{ address: string }>(
+    `SELECT address FROM user_wallets WHERE user_id = $1 LIMIT 1`,
+    [userId],
+  );
+  if (walletRow.rows.length === 0) {
+    throw new Error(`Wallet not found for user: ${userId}`);
+  }
+  const userAddress = walletRow.rows[0].address;
+
+  const discrepancies: NftReconcileResult['discrepancies'] = [];
+
+  // 3. 원장에 있는 각 tokenId에 대해 온체인 balanceOf 확인
+  for (const row of ledgerHoldings.rows) {
+    const tokenId = BigInt(row.token_id);
+    // ERC-1155: balanceOf(account, id) → 해당 토큰 보유 수량
+    const onchainBalance = await this.onchain.balanceOf(userAddress, tokenId);
+
+    if (onchainBalance === 0n) {
+      // 원장에는 있는데 온체인에 없음 → 원장 과잉 (Reorg 또는 DB 조작)
+      discrepancies.push({ userId, tokenId, type: 'LEDGER_ONLY' });
+    }
+  }
+
+  // 4. 온체인에는 있는데 원장에 없는 경우 감지
+  //    (이벤트 미처리, Consumer 장애 등)
+  //    → 온체인 Transfer 이벤트 로그를 스캔하거나
+  //      별도 indexer 결과와 비교하는 방식으로 구현
+  //    실습에서는 단순화: coreBankingAdapter.getOnchainHoldings(userId) 사용
+  const onchainHoldings = await this.coreBanking.getOnchainNftHoldings(userId);
+  const ledgerTokenIds = new Set(ledgerHoldings.rows.map(r => r.token_id));
+
+  for (const tokenId of onchainHoldings) {
+    if (!ledgerTokenIds.has(tokenId.toString())) {
+      // 온체인에는 있는데 원장에 없음 → 원장 누락 (이벤트 미처리)
+      discrepancies.push({ userId, tokenId, type: 'ONCHAIN_ONLY' });
+    }
+  }
+
+  const isHealthy = discrepancies.length === 0;
+
+  if (!isHealthy) {
+    const severity = discrepancies.length >= 10 ? 'critical' : 'warn';
+    await this.alerter.fire(
+      `[NFT Reconcile] userId=${userId}, 불일치 ${discrepancies.length}건`,
+      severity,
+    );
+  }
+
+  return { isHealthy, discrepancies, checkedAt: Date.now() };
+}
+```
+
+**핵심 흐름 요약:**
+
+```
+user_nft_holdings (DB)
+    ↓ 각 tokenId에 대해
+ERC-1155 balanceOf(userAddress, tokenId) (온체인 RPC)
+    ↓ 비교
+불일치 목록 → alerter.fire() → 담당자 알림
 ```
 
 ---
@@ -179,9 +385,124 @@ async reconcile(): Promise<ReconcileResult> {
          → 즉시 Reconcile 트리거
 ```
 
+**정기 크론 실제 코드 예시:**
+
+NestJS + `@nestjs/schedule` 패키지를 사용하는 경우:
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { ReconcileService } from './ReconcileService';
+
+@Injectable()
+export class ReconcileScheduler {
+  private readonly logger = new Logger(ReconcileScheduler.name);
+
+  constructor(private readonly reconcileService: ReconcileService) {}
+
+  /**
+   * 매일 00:00 KST (UTC+9) → UTC 기준 전날 15:00에 실행
+   * CronExpression.EVERY_DAY_AT_MIDNIGHT 는 UTC 00:00
+   * KST 00:00 = '0 15 * * *' (UTC)
+   */
+  @Cron('0 15 * * *', { timeZone: 'Asia/Seoul' })
+  async runDailyReconcile(): Promise<void> {
+    this.logger.log('[Reconcile] 일일 정기 대조 시작');
+    try {
+      const result = await this.reconcileService.reconcile();
+      this.logger.log(
+        `[Reconcile] 완료: isHealthy=${result.isHealthy}, disparity=${result.disparity}`,
+      );
+    } catch (err) {
+      this.logger.error('[Reconcile] 실행 중 예외 발생', err);
+      // 크론 자체가 예외로 종료되면 다음 실행에 영향 없음
+      // 하지만 알림은 별도로 보내야 함
+    }
+  }
+
+  /**
+   * 매시 정각 NFT holdings 전체 대조 (선택적, 부하 고려)
+   * 운영 초기에는 하루 1회로 제한 권장
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async runHourlyNftReconcile(): Promise<void> {
+    this.logger.log('[NFT Reconcile] 시간별 대조 시작');
+    const result = await this.reconcileService.reconcileAllNftHoldings();
+    if (!result.isHealthy) {
+      this.logger.warn(
+        `[NFT Reconcile] 불일치 ${result.discrepancies.length}건 감지`,
+      );
+    }
+  }
+}
+```
+
+순수 Node.js + `node-cron` 라이브러리 사용 시:
+
+```typescript
+import cron from 'node-cron';
+import { ReconcileService } from './ReconcileService';
+
+export function startReconcileScheduler(service: ReconcileService): void {
+  // KST 00:00 = UTC 15:00 → '0 15 * * *'
+  cron.schedule('0 15 * * *', async () => {
+    console.log('[Reconcile] 일일 정기 실행');
+    const result = await service.reconcile();
+    console.log('[Reconcile] 결과:', result);
+  });
+}
+```
+
 ---
 
 ## 실습 파트 (35분)
+
+### `createService` 헬퍼 구현
+
+테스트 코드에서 `createService()`를 반복 호출하는데, 실제 구현은 아래와 같다.
+
+```typescript
+import { ReconcileService } from '../src/reconcile/ReconcileService';
+import type { ReconcileResult } from '../src/reconcile/ReconcileService';
+
+/**
+ * 테스트용 ReconcileService 팩토리 헬퍼.
+ * 실제 온체인 RPC 호출 없이 stub으로 대체.
+ *
+ * @param onchainState  getTotalSupply / getCustodyAccountBalance 반환값
+ * @param alertFn       alerter.fire() 대신 호출될 jest mock 함수 (선택)
+ */
+function createService(
+  onchainState: {
+    totalSupply: bigint;
+    bankBalance: bigint;
+  },
+  alertFn?: jest.Mock,
+): ReconcileService {
+  // 온체인 어댑터 stub
+  const onchainStub = {
+    getTotalSupply: jest.fn().mockResolvedValue(onchainState.totalSupply),
+    getCustodyAccountBalance: jest.fn().mockResolvedValue(onchainState.bankBalance),
+  };
+
+  // Core Banking 어댑터 stub (KRW Reconcile에서는 사용하지 않음)
+  const coreBankingStub = {
+    getOnchainNftHoldings: jest.fn().mockResolvedValue([]),
+  };
+
+  // 알림 stub
+  const alerterStub = {
+    fire: alertFn ?? jest.fn().mockResolvedValue(undefined),
+  };
+
+  return new ReconcileService(coreBankingStub as any, onchainStub, alerterStub);
+}
+```
+
+> **왜 헬퍼로 분리하나?**  
+> 각 테스트마다 mock 객체를 직접 생성하면 코드가 중복되고 테스트 추가 시 인터페이스 변경이 번거롭다. `createService()` 하나만 수정하면 모든 테스트에 반영된다.
+
+---
 
 ### `reconcile()` 동작 이해 테스트
 
@@ -261,9 +582,93 @@ grep -n "mintBatch\|mint(\|sendTransaction" ReconcileService.ts
 
 ---
 
+## 불일치 감지 후 담당자 대응 런북
+
+### 런북 개요
+
+ReconcileService가 `alerter.fire(message, severity)` 를 호출하면 PagerDuty / Slack / 이메일 등으로 담당자에게 알림이 전달된다. 알림을 받은 담당자는 아래 순서로 대응한다.
+
+### Step 1 — 알림 내용 확인
+
+```
+[Reconcile] 불일치: onchain=10000000, bank=9990000, diff=10000
+severity: warn
+timestamp: 2025-03-15T09:00:00Z
+```
+
+- `disparity > 0` (양수): 온체인 발행량이 수탁 잔액보다 많음 → **과잉발행 의심**
+- `disparity < 0` (음수): 수탁 잔액이 온체인 발행량보다 많음 → **과소발행** (덜 위험하지만 조사 필요)
+
+### Step 2 — 처리 지연 여부 먼저 확인
+
+```sql
+-- 최근 30분 내 처리 중인 mint/burn 이벤트가 있는지 확인
+SELECT * FROM mint_requests
+WHERE status IN ('PENDING', 'PROCESSING')
+  AND created_at > NOW() - INTERVAL '30 minutes';
+```
+
+처리 중인 이벤트가 있고, 불일치 크기가 해당 이벤트 금액과 일치하면 → **정상 처리 지연**. 30분 후 재확인.
+
+### Step 3 — 감사 로그로 최근 변경 이력 추적
+
+```sql
+-- 최근 1시간 내 KRW 토큰 관련 감사 이벤트 조회
+SELECT id, event_time, actor, action, resource_id, after_state
+FROM audit_log
+WHERE action IN ('MINT_REQUESTED', 'MINT_CONFIRMED', 'BURN_REQUESTED', 'BURN_CONFIRMED')
+  AND event_time > NOW() - INTERVAL '1 hour'
+ORDER BY id DESC;
+```
+
+### Step 4 — 온체인 직접 조회
+
+```bash
+# KRW 토큰 총 발행량 직접 확인
+cast call $KRW_TOKEN_ADDRESS "totalSupply()(uint256)" --rpc-url $RPC_URL
+
+# 수탁 계좌 잔액 확인 (Core Banking API)
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://core-banking-api/custody/balance
+```
+
+두 값의 차이와 Reconcile 결과의 `disparity`가 일치하는지 확인.
+
+### Step 5 — 원인 판정 및 처리
+
+| 원인 | 처리 방법 |
+|---|---|
+| 처리 지연 (정상) | 대기 후 재확인. 조치 없음. |
+| Consumer 장애로 이벤트 미처리 | DLQ 확인 → 수동 재처리 트리거 |
+| Reorg 후 TX 소실 | 해당 TX 재발행 여부 결정 → IssuerService 정상 프로세스 |
+| DB 직접 수정 (운영자 실수) | 감사 로그로 수정자 확인 → 원장 수동 복구 |
+| 원인 불명 (critical) | CTO/CSO 에스컬레이션 → 외부 회계사 개입 검토 |
+
+### Step 6 — 처리 완료 기록
+
+모든 처리 완료 후 감사 로그에 기록:
+
+```typescript
+await auditLog.log({
+  actor: 'ops-team/reconcile-runbook',
+  action: 'RECONCILE_RESOLVED',
+  resourceId: `reconcile-${timestamp}`,
+  afterState: {
+    cause: 'consumer_delay',
+    action_taken: 'waited_30min_resolved',
+    resolved_at: new Date().toISOString(),
+  },
+});
+```
+
+---
+
 ## 완료 기준
 
 - [ ] 강제 불일치 → Reconcile 감지 + 알림
 - [ ] 역방향 수정 코드 없음 확인
 - [ ] tolerance 기준 severity 분류 설명 가능
 - [ ] warn / critical 분기 테스트 통과
+- [ ] `createService` 헬퍼 구현 이해
+- [ ] NFT holdings reconcile 흐름 설명 가능
+- [ ] 불일치 감지 후 런북 1~6단계 숙지
