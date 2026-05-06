@@ -153,6 +153,15 @@ t=0:    handleReorg 감지
 
 ---
 
+> **M3 S17에서 배운 retryWithBackoff 패턴을 gas bump 재전송에 적용한다.**  
+> S17은 네트워크 실패 시 동일 요청을 지수 백오프로 재시도했다. S20은 같은 재시도 개념이지만 블록체인 mempool 특성을 반영한 변형이다 — 동일 nonce로 gas price만 올려 재제출하면 검증자가 기존 TX 대신 새 TX를 선택한다.
+>
+> | | M3 S17 (retryWithBackoff) | M3 S20 (gas bump) |
+> |---|---|---|
+> | 재시도 대상 | Core Banking Webhook 전송 | 블록체인 TX 전송 |
+> | 재시도 방식 | 동일 요청 반복 | 동일 nonce + gas price 인상 |
+> | 중복 방지 | requestId 멱등성 | nonce 메커니즘 (같은 nonce = 하나만 채굴) |
+
 ### 1. handleTimeout 구현
 
 ```typescript

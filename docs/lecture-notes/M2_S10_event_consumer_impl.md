@@ -5,6 +5,15 @@
 
 ---
 
+> **M2 블록 B의 집대성 세션이다. S7~S9에서 배운 모든 개념이 ConsumerGroupWorker 하나에 구현된다.**
+>
+> | 세션 | 무엇을 배웠나 | S10과의 연결 |
+> |---|---|---|
+> | M2 S7 | Redis Streams 이론 — PEL, Consumer Group, XAUTOCLAIM 원리 | `_reclaimPending()` 구현 기반 |
+> | M2 S8 | CLI 실습 — XREADGROUP, XACK, XAUTOCLAIM 직접 조작 | 코드에서 동일 커맨드를 API로 호출 |
+> | M2 S9 | At-least-once 4단계 불변 규칙, 멱등성 개념 | `_handleWithRetry()` 4단계 구현 |
+> | M2 S10 (여기) | ConsumerGroupWorker 전체 구현 | S7~S9 집대성 |
+
 ## 0. 이론 도입 — ConsumerGroupWorker는 무슨 문제를 해결하는가
 
 ### 0-1. 메시지 파이프라인에서 Consumer의 역할

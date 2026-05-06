@@ -5,7 +5,15 @@
 
 ---
 
-## S15 → S16 연결
+## S15 → S16 연결 (M2 S9 → M3 S16 → S17 흐름)
+
+> **M2 S9에서 At-least-once 설계의 개념으로 배운 멱등성을 이번 세션에서 TX 레벨 코드로 구현한다.**
+>
+> | 세션 | 레이어 | 내용 |
+> |---|---|---|
+> | M2 S9 | 개념 | At-least-once 4단계 불변 규칙, requestId 이론 |
+> | M3 S16 (여기) | TX 레벨 | requestId UUID 생성 → DB INSERT → VASP 전달 |
+> | M3 S17 | Webhook 레벨 | IdempotencyGuard + tryMark() 원자적 패턴 |
 
 S15에서 EVMAdapter가 `sendTransaction()`으로 TX를 전송하는 방법을 배웠다. 그런데 문제가 있다 — **네트워크는 언제든 실패한다.** TX를 전송했는데 응답이 없으면 재전송해야 한다. 재전송할 때 중복 발행이 일어나지 않으려면 어떻게 해야 하는가? 그것이 **Idempotency(멱등성)**이다.
 

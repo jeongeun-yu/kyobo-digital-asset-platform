@@ -54,6 +54,16 @@ S23에서 오프체인 원장의 필요성을 배웠다. 원장이 있으면 충
 
 ### 2. VALID_TRANSITIONS 맵 — 허용된 전이만 통과시킨다
 
+> **M3 S13에서 TxStateMachineService에 적용한 VALID_TRANSITIONS 패턴을 이번엔 LedgerService에 적용한다.**
+>
+> | | M3 S13 | M4 S24 |
+> |---|---|---|
+> | 서비스 | TxStateMachineService | LedgerService |
+> | 상태 타입 | TxStatus (8개, PENDING·REORGED 포함) | MintStatus (6개) |
+> | 역할 | 블록체인 TX 외부 상태 추적 | 내부 원장 상태 보호 |
+>
+> 같은 패턴을 두 레이어가 독립적으로 가져야 하는 이유: TxStateMachineService가 FINALIZED 전이를 완료하면 그 이벤트가 LedgerService의 FINALIZED 전이를 트리거한다. 두 레이어가 각자 VALID_TRANSITIONS 가드를 갖고 있어야 어느 쪽에서 중복 이벤트가 와도 안전하다.
+
 해결 방법은 단순하다. **"어떤 상태에서 어떤 상태로의 전이가 허용되는가"를 코드에 명시한다.**
 
 ```typescript

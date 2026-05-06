@@ -25,6 +25,17 @@
 
 ---
 
+> **M3~M4 전체 상태 전이의 최종 기록지가 바로 이 감사 로그다.**  
+> M3 S13의 TxStateMachineService, M4 S24의 LedgerService가 상태를 바꿀 때마다 이 테이블에 INSERT한다. S26은 그 기록들이 변조되지 않았음을 SHA-256 체인으로 봉인하는 방법을 다룬다.
+>
+> | 세션 | 역할 | 감사 로그와의 관계 |
+> |---|---|---|
+> | M3 S13 | TX 상태 전이 | 전이마다 audit_log INSERT |
+> | M4 S24 | 원장 상태 전이 | 전이마다 audit_log INSERT |
+> | M4 S26 (여기) | 감사 로그 봉인 | SHA-256 체인으로 변조 불가능하게 만들기 |
+>
+> **M4 S24의 ON CONFLICT DO NOTHING과 달리, 감사 로그에는 이 패턴을 적용하지 않는다.** audit_log는 중복 INSERT 자체를 허용하지 않는 구조(prevChecksum + sequence가 항상 유일)이고, 혹시 중복이 생기면 오히려 체인 검증에서 감지되어야 한다.
+
 ### 2. Append-only 원칙 — 수정·삭제 금지
 
 ```
@@ -960,6 +971,18 @@ it('afterState 수정 → verifyChainIntegrity 감지', async () => {
   expect(result.firstInvalidId).toBe(id1);
 });
 ```
+
+---
+
+---
+
+## Phase 3 연결 예고
+
+> **M4에서 구축한 SHA-256 체인은 Phase 3에서 전체 원장 증명으로 확장된다.**  
+> M4 S26: 개별 audit_log 레코드의 변조 불가 봉인 (단일 테이블 체인)  
+> Phase 3: 감사 로그 + 원장 잔액 + 온체인 상태를 묶어 전체 시스템 무결성을 증명 (Merkle-style proof)  
+>  
+> M4까지는 "기록이 지워지지 않았음"을 증명한다. Phase 3에서는 "기록이 온체인 사실과 일치함"을 증명한다.
 
 ---
 
