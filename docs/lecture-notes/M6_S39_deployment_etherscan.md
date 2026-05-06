@@ -7,7 +7,45 @@
 
 ---
 
-## 강의 파트 (15분)
+## 강의 파트 (25분)
+
+### 0. 배포 파이프라인 전체 구조
+
+```
+개발자 로컬
+    │
+    │  npx hardhat run scripts/deploy.ts --network sepolia
+    ▼
+Hardhat upgrades 플러그인
+    │
+    ├─① Implementation 컨트랙트 배포 TX
+    │       └── KyoboNFT 바이트코드 → Sepolia
+    │
+    ├─② ERC1967Proxy 배포 TX
+    │       └── constructor(_implementation, _data)
+    │           └── delegatecall → initialize(admin)
+    │
+    └─③ 배포 완료
+           ├── Proxy 주소 (영구 주소)
+           └── Implementation 주소 (업그레이드 시 변경)
+                   │
+                   ▼
+           deployments/proxy-address.json에 저장
+                   │
+                   ▼
+   npx hardhat verify (두 주소 각각 등록)
+                   │
+                   ▼
+   Etherscan "Read as Proxy" → KyoboNFT 함수 노출
+                   │
+                   ▼
+   issuer-service .env에 PROXY_ADDRESS 등록
+                   │
+                   ▼
+   cast call로 온체인 상태 검증
+```
+
+---
 
 ### 1. Upgradeable 배포는 일반 배포와 다르다
 
@@ -43,6 +81,28 @@ UUPS 프록시 배포: 세 단계가 필요하다.
 | Implementation 주소 | 현재 로직 컨트랙트 주소 | 업그레이드 시 바뀜 |
 
 issuer-service는 Proxy 주소만 환경변수에 저장한다. 업그레이드 후에도 변경 불필요.
+
+---
+
+### 2-1. Proxy 주소 vs Implementation 주소 — ERC-1967 슬롯
+
+"Implementation 주소는 Proxy 어디에 저장되는가?"
+
+ERC-1967 표준이 슬롯 위치를 지정한다:
+
+```
+Implementation 슬롯:
+  bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)
+  = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
+
+Admin 슬롯:
+  bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1)
+  = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103
+```
+
+Proxy와 Implementation의 상태 변수가 같은 슬롯 번호를 쓰지 않도록, OZ는 이 특수 슬롯을 사용해 Implementation 주소를 별도로 보관한다.
+
+`upgrades.erc1967.getImplementationAddress(proxyAddr)` 내부에서 이 슬롯을 직접 읽는다.
 
 ---
 
@@ -206,9 +266,24 @@ cast call PROXY_ADDR \
 
 ---
 
+### 배포 오류 트러블슈팅
+
+| 오류 메시지 | 원인 | 해결 |
+|---|---|---|
+| `insufficient funds` | Sepolia ETH 부족 | Faucet에서 충전 |
+| `nonce too low` | 이전 TX 처리 대기 중 | 잠시 대기 후 재시도 |
+| `already verified` | 이미 등록된 소스코드 | 무시해도 됨 |
+| `no bytecode at address` | 배포 전 verify 시도 | TX 확인 후 verify |
+| `New storage layout is incompatible` | Storage Collision 감지 | 슬롯 레이아웃 점검 (S40 참조) |
+
+---
+
 ## 완료 기준
 
-- [ ] Sepolia 배포 성공
-- [ ] Etherscan verify 통과
-- [ ] Read Contract에서 함수 호출 확인
-- [ ] deployments/proxy-address.json 저장 완료
+- [ ] Sepolia 배포 성공 (TX 해시 기록)
+- [ ] Proxy 주소 + Implementation 주소 양쪽 Etherscan verify 통과
+- [ ] Etherscan "Read as Proxy" 탭에서 `encodeTokenId(1, 42)` 호출 확인
+- [ ] `deployments/proxy-address.json` 저장 완료
+- [ ] `cast call`로 MINTER_ROLE 보유 확인 (true 반환)
+- [ ] 배포 파이프라인 전체 흐름(3단계) 순서 설명 가능
+- [ ] Proxy 주소와 Implementation 주소의 차이 및 ERC-1967 슬롯 설명 가능

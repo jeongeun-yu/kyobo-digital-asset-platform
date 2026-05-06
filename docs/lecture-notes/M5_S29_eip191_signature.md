@@ -126,6 +126,80 @@ if (recovered.toLowerCase() !== walletAddr.toLowerCase()) {
 
 ---
 
+### 5. 전체 서명 검증 흐름 — 아스키 다이어그램
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   EIP-191 소유권 검증 흐름                        │
+└─────────────────────────────────────────────────────────────────┘
+
+[클라이언트]                                [서버]
+     │                                        │
+     │──── GET /wallet/nonce ────────────────▶│
+     │                                        │  nonce = sha256(userId + time + random)
+     │                                        │  nonceRepo.save(userId, nonce)
+     │◀─── { nonce: "a3f2b9c1" } ────────────│
+     │                                        │
+     │  ┌─ eth_sign(privateKey, message) ─┐   │
+     │  │  message =                      │   │
+     │  │    "Kyobo Digital Asset         │   │
+     │  │     Wallet: userId:nonce"       │   │
+     │  │  → EIP-191 prefix 자동 추가     │   │
+     │  │  → ECDSA(privKey, hash(msg))    │   │
+     │  │  → sig = { r, s, v }  65bytes  │   │
+     │  └─────────────────────────────────┘   │
+     │                                        │
+     │──── POST /wallet/verify ──────────────▶│
+     │     { walletAddr, signature, nonce }   │
+     │                                        │  ① nonceRepo.find(userId)
+     │                                        │     → stored ≠ nonce? → return false
+     │                                        │  ② ecrecover(message, sig)
+     │                                        │     → ECDSA.recover(hash, r, s, v)
+     │                                        │     → pubKey → keccak256 → address
+     │                                        │  ③ recovered == walletAddr?
+     │                                        │     → NO  → return false (403)
+     │                                        │     → YES → ④ nonce 무효화
+     │                                        │           → ⑤ DB upsert(verified=true)
+     │◀─── 200 OK / 403 Forbidden ───────────│
+```
+
+**왜 이 순서인가?**
+
+- nonce 확인을 먼저 하는 이유: 서명 검증은 연산 비용이 높다 (ECDSA recover). 가짜 nonce로 연산을 낭비하는 DoS를 방지하려면 cheap check를 먼저 한다.
+- nonce 무효화를 서명 검증 성공 후에 하는 이유: 검증 실패 시 nonce를 살려두어 사용자가 다시 시도할 수 있게 한다.
+- DB 저장 전에 두 검사를 모두 완료하는 이유: 중간에 하나라도 실패하면 아무것도 저장되면 안 된다.
+
+---
+
+### 6. ECDSA 서명의 수학적 보장 — "왜 개인키 없이는 위조 불가한가"
+
+```
+ECDSA 서명 (Elliptic Curve Digital Signature Algorithm):
+
+  개인키 k (256비트 랜덤)
+      │
+      ▼ 단방향 (역산 불가)
+  공개키 K = k × G  (타원곡선 점 곱셈)
+      │
+      ▼ keccak256 + 뒤 20바이트
+  주소 addr = keccak256(K)[12:]
+
+서명 생성:
+  sig = ECDSA.sign(k, hash(message))
+  → r, s, v
+
+서명 검증 (ecrecover):
+  pubKey = ECDSA.recover(hash(message), r, s, v)
+  recovered = keccak256(pubKey)[12:]
+
+보안 근거:
+  - 이산 로그 문제: K에서 k를 역산하는 것은 현재 컴퓨터로 불가능 (2^128 연산 필요)
+  - 올바른 (r, s, v)를 만들려면 k가 반드시 필요
+  - 따라서 ecrecover(message, sig) == addr → "addr의 개인키 보유자가 message에 서명했다"는 수학적 증명
+```
+
+---
+
 ## 실습 파트 (35분)
 
 ### `verifyOwnership()` 구현
@@ -274,5 +348,8 @@ describe('verifyOwnership', () => {
 
 - [ ] eth_sign 서명 검증 통과
 - [ ] 잘못된 서명 → false 반환 (HTTP 403)
-- [ ] 중복 등록 처리 테스트
-- [ ] nonce 재사용 방지 테스트
+- [ ] 중복 등록 처리 테스트 (upsert → 최신 주소 유지)
+- [ ] nonce 재사용 방지 테스트 (같은 nonce 2번 → 두 번째 false)
+- [ ] lowercase 정규화 없이 비교하면 대소문자 불일치 케이스에서 실패함을 확인
+- [ ] EIP-191 접두사가 없으면 ecrecover 주소가 달라짐을 이해 (ethers.js가 자동 처리하는 이유)
+- [ ] nonce 확인 → ecrecover → 무효화 순서가 반드시 유지됨을 코드에서 확인

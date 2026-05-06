@@ -7,7 +7,32 @@
 
 ---
 
-## 강의 파트 (15분)
+## 강의 파트 (25분)
+
+### 0. Slither 심각도별 처리 흐름
+
+S41에서 Slither를 실행했다. 이번 세션에서는 MEDIUM 항목을 체계적으로 처리한다.
+
+```
+slither 실행
+     │
+     ├── HIGH 항목 (S41, S42에서 처리 완료)
+     │       └── 전량 수정 → 재실행에서 0건 확인
+     │
+     ├── MEDIUM 항목 ← 이번 세션 주제
+     │       │
+     │       ├── 접근 제어 누락 → 권한 modifier 추가
+     │       ├── 이벤트 누락 → emit 추가
+     │       └── 가시성 실수 → visibility 수정
+     │
+     └── LOW / INFORMATIONAL
+             │
+             ├── 실제 취약점인지 코드 흐름 직접 추적
+             ├── False Positive 판단 → // slither-disable 주석
+             └── 잔여 LOW는 감사 리포트에 기록
+```
+
+---
 
 ### 1. MEDIUM 취약점 — "지금 당장은 아니지만" 위험
 
@@ -45,6 +70,33 @@ function _authorizeUpgrade(address newImpl) public override {
     // onlyRole 체크가 있어도 public이면 외부에서 직접 호출 가능
 }
 ```
+
+---
+
+### 1-1. 이벤트(Event)가 보안에서 중요한 이유
+
+온체인 이벤트는 블록체인 로그에 영구 기록된다. 오프체인 모니터링 시스템이 이를 구독(subscribe)해서 실시간으로 이상 감지한다.
+
+```
+KyoboNFT.mint() 실행
+     │
+     └─ emit TransferSingle(operator, from, to, id, value)
+                │
+                ▼
+         Ethereum 노드 로그에 기록
+                │
+                ▼
+         issuer-service EventListener가 구독
+                │
+                ├── 발행자(operator)가 승인된 MINTER인가?
+                ├── 발행량이 정상 범위인가?
+                └── 비정상 감지 시 → 즉시 알람 → pause() 실행
+```
+
+이벤트가 없으면:
+- 누가 언제 어떤 역할을 받았는지 온체인에 기록 없음
+- 감사(audit) 시 "2025년 3월 15일 MINTER_ROLE 부여" 사실 증명 불가
+- 규제 기관 제출용 로그 부재
 
 ---
 
@@ -262,8 +314,32 @@ npx hardhat test test/SecurityAttackTests.sol
 
 ---
 
+### Slither False Positive 처리 실습
+
+모든 LOW 항목이 실제 취약점이 아닐 수 있다. 판단 기준:
+
+```bash
+# 특정 취약점 타입만 확인
+slither src/phase1/KyoboNFT.sol --detect reentrancy-eth,reentrancy-no-eth
+
+# OZ 라이브러리 경로 제외
+slither src/phase1/KyoboNFT.sol --exclude-dependencies
+
+# 특정 탐지기 무시 (코드에 주석으로)
+// slither-disable-next-line reentrancy-no-eth
+function someFunction() external { ... }
+```
+
+False Positive 예시: OZ ERC1155의 `_balances` 매핑 업데이트를 Slither가 "상태 변경 후 외부 호출 없음인데 이벤트 발생" 패턴으로 오탐할 수 있다. 이 경우 코드 흐름 직접 추적 후 False Positive로 기록한다.
+
+---
+
 ## 완료 기준
 
-- [ ] Slither HIGH/MEDIUM 0건
-- [ ] 공격 시나리오 테스트 전부 방어 확인
-- [ ] Reentrancy / Access Control / tx.origin 각각 테스트 PASS
+- [ ] Slither HIGH/MEDIUM 최종 0건 달성
+- [ ] MEDIUM 항목 각각 수정 내용 기록 (접근 제어 / 이벤트 / 가시성)
+- [ ] 이벤트 누락이 감사에 미치는 영향 설명 가능
+- [ ] False Positive 식별 기준과 처리 방법 설명 가능
+- [ ] 보안 테스트 5가지 질문 암기 + 각 질문에 대응하는 테스트 케이스 작성
+- [ ] 공격 시나리오 테스트 전부 방어 확인 (Reentrancy / Access Control / tx.origin)
+- [ ] `SecurityAttackTests.sol` 전체 테스트 PASS

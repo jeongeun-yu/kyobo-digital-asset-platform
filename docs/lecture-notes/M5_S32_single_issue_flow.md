@@ -81,7 +81,114 @@ async issueActivityNFT(params: {
 
 ---
 
-### 4. CoreBanking 알림 — `.catch()` 패턴
+### 4. 단건 발행 파이프라인 — 아스키 순서도
+
+```
+활동 이벤트 수신 (ConsumerGroupWorker)
+          │
+          ▼
+┌─────────────────────────────────────┐
+│  멱등성 체크                          │
+│  recordProcessedEvent(eventId)       │
+└──────────────┬──────────────────────┘
+               │
+        ┌──────┴──────┐
+        │ skipped=true │  → XACK (이미 처리됨, 종료)
+        └──────┬───────┘
+         skipped=false
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  조건 판단                            │
+│  EventConditionService.evaluate()    │
+└──────────────┬──────────────────────┘
+               │
+        ┌──────┴──────┐
+        │eligible=false│ → XACK (조건 미충족, 종료)
+        └──────┬───────┘
+         eligible=true
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  지갑 주소 조회                        │
+│  WalletMappingService.getWalletAddr()│
+└──────────────┬──────────────────────┘
+               │
+        ┌──────┴────────────────┐
+        │ WalletNotFoundError   │ → DLQ 이동 (지갑 미등록)
+        └──────┬────────────────┘
+          주소 반환
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  AML 스크리닝                         │
+│  vaspAdapter.screenAddress()         │
+└──────────────┬──────────────────────┘
+               │
+        ┌──────┴──────────┐
+        │ flagged=true    │ → Error (AML 차단)
+        └──────┬──────────┘
+         flagged=false
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  컨트랙트 호출                         │
+│  chainAdapter.sendTransaction()      │
+│  NFTIssuer.issueActivityNFT(...)     │
+└──────────────┬──────────────────────┘
+               │
+        ┌──────┴──────────┐
+        │ status='failed' │ → Error (TX 실패)
+        └──────┬──────────┘
+         status='success'
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  Core Banking 알림 (fire-and-forget)  │
+│  coreBanking.notifyReward().catch()  │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+        { txHash: '0x...' }  반환
+```
+
+각 단계가 실패하면 다음 단계로 진행하지 않는다. 단, Core Banking 알림 실패는 예외다 — 발행은 이미 완료됐으므로 알림 실패가 발행을 되돌리면 안 된다.
+
+---
+
+### 5. 멱등성 이중 보장 — 서비스 레이어와 컨트랙트 모두에서
+
+단건 발행에서 멱등성은 두 군데에서 동시에 보장한다.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  레이어 1: 서비스 (IssuerService)                         │
+│                                                         │
+│  activityId → idempotencyGuard.check(activityId)        │
+│    → 이미 처리됨 → 즉시 리턴 (DB 조회 끝)                │
+│    → 미처리    → 계속 진행 후 처리 완료 기록              │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼ (레이어 1 통과 시)
+┌─────────────────────────────────────────────────────────┐
+│  레이어 2: 스마트 컨트랙트 (KyoboNFT.sol — M6 구현)       │
+│                                                         │
+│  mapping(bytes32 => bool) public processedActivities;   │
+│                                                         │
+│  function issueActivityNFT(address to, bytes32 actId)   │
+│    external onlyIssuer {                                │
+│      require(!processedActivities[actId], "duplicate"); │
+│      processedActivities[actId] = true;                 │
+│      _mint(to, tokenId, 1, "");                         │
+│  }                                                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+레이어 1은 DB에서 빠르게 차단 (VASP API 호출 비용 절약). 레이어 2는 컨트랙트에서 최종 보장 (서비스 레이어 버그가 있어도 이중 발행 불가). 두 레이어 중 하나만 있어도 동작하지만, 둘 다 있어야 진짜 안전하다.
+
+---
+
+### 6. CoreBanking 알림 — `.catch()` 패턴
 
 ```typescript
 // 발행은 이미 완료됨 → 알림 실패가 발행을 롤백하면 안 됨
@@ -224,7 +331,10 @@ it('조건 미충족 이벤트 → NFT 요청 생성 안 됨', async () => {
 
 ## 완료 기준
 
-- [ ] 조건 미충족 → 요청 생성 안 됨
-- [ ] 이벤트 → VASP 전달 E2E 1건 동작
-- [ ] AML 블랙리스트 → 발행 차단 확인
-- [ ] CoreBanking 알림 실패 → 발행 TX 롤백 없음 확인
+- [ ] 조건 미충족 → createNftRequest 호출 안 됨 (Mock 검증)
+- [ ] 이벤트 → VASP 전달 E2E 1건 동작 (txHash 반환 확인)
+- [ ] AML flagged=true → Error throw, 컨트랙트 호출 안 됨 확인
+- [ ] CoreBanking 알림 실패 → 발행 TX 롤백 없음 확인 (catch 패턴)
+- [ ] 동일 activityId 두 번 호출 → 두 번째는 멱등성 체크에서 차단
+- [ ] account.status !== 'active' → 발행 차단 확인
+- [ ] WalletNotFoundError → DLQ 경로로 이동하는 것 이해 (상위 Worker에서 처리)

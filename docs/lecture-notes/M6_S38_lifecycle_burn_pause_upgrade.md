@@ -7,7 +7,39 @@
 
 ---
 
-## 강의 파트 (15분)
+## 강의 파트 (25분)
+
+### 0. 컨트랙트 생명주기 전체 흐름
+
+NFT 컨트랙트는 배포 이후에도 세 가지 생명주기 이벤트가 일어난다.
+
+```
+      배포 / initialize()
+             │
+             ▼
+     ┌───────────────┐
+     │    ACTIVE     │ ◀─────── mint / mintBatch / burn 가능
+     └───────┬───────┘
+             │ pause()  (PAUSER_ROLE)
+             ▼
+     ┌───────────────┐
+     │    PAUSED     │  mint 불가 / burn 정책에 따라 가능
+     └───────┬───────┘
+             │ unpause() (PAUSER_ROLE)
+             ▼
+     ┌───────────────┐
+     │    ACTIVE     │ ◀─────── 정상 복귀
+     └───────┬───────┘
+             │ upgradeToAndCall() (UPGRADER_ROLE)
+             ▼
+     ┌───────────────┐
+     │  UPGRADED     │  Proxy 주소 유지, Implementation 교체
+     └───────────────┘
+```
+
+ACTIVE ↔ PAUSED 전환은 긴급 상황에서 반복 가능하다. UPGRADED는 Proxy 관점에서 내부 상태 변화이고, 사용자에게는 동일 주소로 계속 서비스된다.
+
+---
 
 ### 1. NFT를 지워야 하는 상황이 존재한다
 
@@ -105,6 +137,39 @@ PAUSER_ROLE = Admin 단일 키
 ```
 
 이것이 M8에서 Gnosis Safe 2-of-3 멀티시그로 Admin을 관리하는 이유다. 키 하나가 분실돼도 나머지 두 개로 복구할 수 있다.
+
+---
+
+### 4-1. Pause 상태 흐름 순서도
+
+```
+긴급 상황 발생 (해킹 의심, 이상 트랜잭션 감지)
+         │
+         ▼
+  PAUSER_ROLE 보유자가 pause() 호출
+         │
+         ▼
+  _paused = true (Proxy storage에 기록)
+         │
+         ▼
+  모든 mint / mintBatch → EnforcedPause revert
+         │
+  (운영 정책에 따라)
+  burn → Pause에 걸리거나 예외 처리
+         │
+         ▼
+  원인 분석 / 피해 최소화 작업
+  (악의적 MINTER 키 revoke, 피해 NFT burn 등)
+         │
+         ▼
+  unpause() 호출 → 정상 복귀
+         │
+         ▼
+  사후 감사 리포트 작성
+```
+
+Pause 상태에서 할 수 있는 것들: 역할 조회, 잔액 조회, `grantRole` / `revokeRole`, PAUSER 권한이 있으면 `burn` (예외 처리 시).
+Pause 상태에서 할 수 없는 것들: `mint`, `mintBatch`, `transfer` (일반적으로).
 
 ---
 
@@ -212,9 +277,79 @@ npx hardhat test
 
 ---
 
+### 추가 테스트 — `_update` hook 통합 확인
+
+ERC-1155에서 mint / burn / transfer는 모두 `_update` 내부 함수를 거친다. `whenNotPaused`를 `_update`에 걸면 세 가지 모두 영향받는다.
+
+```solidity
+// 파라미터 의미
+// from == address(0): mint (발행)
+// to   == address(0): burn (소각)
+// otherwise         : transfer (전송)
+
+function _update(
+    address from,
+    address to,
+    uint256[] memory ids,
+    uint256[] memory values
+) internal override whenNotPaused {
+    super._update(from, to, ids, values);
+}
+```
+
+이 구현에서 Pause 시 mint / transfer / burn 모두 차단된다. 정책상 burn을 Pause 중에도 허용하려면:
+
+```solidity
+function _update(
+    address from,
+    address to,
+    uint256[] memory ids,
+    uint256[] memory values
+) internal override {
+    // burn (to == address(0))이 아닌 경우에만 Pause 체크
+    bool isBurn = (to == address(0));
+    if (!isBurn) {
+        _requireNotPaused();
+    }
+    super._update(from, to, ids, values);
+}
+```
+
+테스트:
+
+```solidity
+function test_burnAllowed_whenPaused_isBurnExempt() public {
+    uint256 tokenId = nft.encodeTokenId(1, 1);
+    nft.mint(address(this), tokenId, 5);
+
+    nft.pause();
+
+    // burn 예외 처리 버전이라면 성공, 아니라면 revert
+    // → 팀 정책 결정 후 테스트 기대값 맞추기
+    nft.burn(address(this), tokenId, 2);
+    assertEq(nft.balanceOf(address(this), tokenId), 3);
+}
+
+function test_transfer_blocked_whenPaused() public {
+    uint256 tokenId = nft.encodeTokenId(1, 1);
+    nft.mint(address(this), tokenId, 3);
+
+    nft.pause();
+
+    vm.expectRevert(); // EnforcedPause
+    nft.safeTransferFrom(address(this), address(0xBEEF), tokenId, 1, "");
+}
+```
+
+---
+
 ## 완료 기준
 
-- [ ] Pause 상태 mint/burn → revert
+- [ ] 컨트랙트 생명주기 전체 흐름(ACTIVE → PAUSED → UPGRADED) 다이어그램 설명 가능
+- [ ] Pause 상태 mint → revert 확인
+- [ ] Pause 상태 transfer → revert 확인
+- [ ] burn Pause 예외 여부 팀 정책 결정 + 테스트 반영
 - [ ] 전체 단위 테스트 PASS
-- [ ] Pause 권한 단일점 위험 설명 가능
-- [ ] _authorizeUpgrade override 이유 설명 가능
+- [ ] Pause 권한 단일점 위험 설명 가능 (→ M8 멀티시그 연결)
+- [ ] `_authorizeUpgrade` override 이유 설명 가능
+- [ ] ACTIVE ↔ PAUSED 전환 시 할 수 있는 것 / 없는 것 구분 가능

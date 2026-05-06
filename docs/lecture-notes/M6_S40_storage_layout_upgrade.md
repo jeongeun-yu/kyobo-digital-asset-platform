@@ -7,7 +7,61 @@
 
 ---
 
-## 강의 파트 (15분)
+## 강의 파트 (25분)
+
+### 0. EVM Storage 슬롯 구조 — 시각화
+
+EVM은 컨트랙트 상태를 32바이트 슬롯(slot) 단위로 저장한다. 슬롯 번호는 0부터 시작하고, 변수 선언 순서대로 할당된다.
+
+```
+KyoboNFT (v1) — 슬롯 레이아웃
+
+┌──────────────────────────────────────────────────────┐
+│ slot 0  │ ERC1155Upgradeable._uri (string)            │
+├──────────────────────────────────────────────────────┤
+│ slot 1  │ ERC1155Upgradeable._balances (mapping)      │
+├──────────────────────────────────────────────────────┤
+│ slot 2  │ ERC1155Upgradeable._operatorApprovals       │
+├──────────────────────────────────────────────────────┤
+│ slot 3  │ AccessControlUpgradeable._roles (mapping)   │
+├──────────────────────────────────────────────────────┤
+│ slot 4  │ PausableUpgradeable._paused (bool)          │
+├──────────────────────────────────────────────────────┤
+│ slot 5  │ UUPSUpgradeable (내부 슬롯)                  │
+├──────────────────────────────────────────────────────┤
+│ slot 6+ │ (비어 있음 — 직접 선언 변수 없음)             │
+└──────────────────────────────────────────────────────┘
+
+❌ KyoboNFTV2_BAD — 앞에 변수 삽입
+
+┌──────────────────────────────────────────────────────┐
+│ slot 0  │ newFeature (address) ← 새로 삽입됨!         │
+├──────────────────────────────────────────────────────┤
+│ slot 1  │ ERC1155Upgradeable._uri ← 뒤로 밀림!        │
+├──────────────────────────────────────────────────────┤
+│ slot 2  │ ERC1155Upgradeable._balances ← 뒤로 밀림!   │
+├──────────────────────────────────────────────────────┤
+│ ...     │ 모든 슬롯이 1칸씩 밀려 잔액 데이터 파괴      │
+└──────────────────────────────────────────────────────┘
+
+✅ KyoboNFTV2 — 끝에 변수 추가
+
+┌──────────────────────────────────────────────────────┐
+│ slot 0  │ ERC1155Upgradeable._uri (변경 없음)          │
+├──────────────────────────────────────────────────────┤
+│ slot 1  │ ERC1155Upgradeable._balances (변경 없음)     │
+├──────────────────────────────────────────────────────┤
+│ ...     │ (기존 슬롯 모두 유지)                        │
+├──────────────────────────────────────────────────────┤
+│ slot 6  │ _baseTokenURI (새 변수 — 끝에 추가)          │
+├──────────────────────────────────────────────────────┤
+│ slot 7  │ _maxSupplyPerToken (새 변수 — 끝에 추가)     │
+└──────────────────────────────────────────────────────┘
+```
+
+슬롯 번호가 바뀌지 않으면 기존 데이터를 그대로 읽을 수 있다. 슬롯 번호가 바뀌면 같은 비트를 다른 타입으로 해석하므로 데이터가 파괴된다.
+
+---
 
 ### 1. Storage Layout 변경이 왜 토큰을 파괴하는가
 
@@ -85,6 +139,25 @@ function initializeV2(
 - v1의 `initializer` = `reinitializer(1)`: 한 번만 실행
 - v2의 `reinitializer(2)`: v1과 충돌 없이, 한 번만 실행
 - `reinitializer(1)`(v1 initialize) 재호출 → 여전히 revert
+
+---
+
+### 3-1. `reinitializer(N)` 버전 관리 흐름
+
+```
+v1 배포 시:
+  initialize(admin) 호출 → _initialized = 1 기록
+
+v2 업그레이드 후:
+  initializeV2(...) 호출 → _initialized = 2 기록
+  (v1 initialize 재호출 시도 → _initialized >= 1 → revert)
+
+v3 업그레이드 후:
+  initializeV3(...) 호출 → _initialized = 3 기록
+  (v1, v2 initialize 재호출 시도 → 각각 revert)
+```
+
+N은 단조 증가해야 한다. `reinitializer(2)` 이후에 `reinitializer(1)`은 절대 실행되지 않는다. 버전 번호를 건너뛰면 안 된다 (v1 → v3는 v2 번호를 영원히 잠근다).
 
 ---
 
@@ -243,9 +316,40 @@ it('reinitializer(2) 이중 호출 → revert', async () => {
 
 ---
 
+### 업그레이드 안전 체크리스트 — 실제 운영 절차
+
+업그레이드 스크립트를 실행하기 전에 반드시 확인:
+
+```
+사전 확인
+  [ ] v2 컨트랙트 로컬 테스트 전부 PASS
+  [ ] hardhat-upgrades 레이아웃 체크 통과 (에러 없음)
+  [ ] Sepolia 테스트넷에서 업그레이드 사전 검증 완료
+  [ ] 업그레이드 내용 내부 코드 리뷰 완료
+
+업그레이드 실행
+  [ ] proxyAddr 파일(proxy-address.json) 정확한 주소 확인
+  [ ] scripts/upgrade.ts의 PROXY_ADDRESS 일치 확인
+  [ ] upgradeProxy() 실행 → 새 implAddr 확인
+  [ ] initializeV2() 호출 완료
+
+사후 확인
+  [ ] 기존 토큰 잔액 보존 확인 (balanceOf 호출)
+  [ ] 새 기능(baseTokenURI 등) 정상 동작 확인
+  [ ] Etherscan verify — 새 Implementation 주소 등록
+  [ ] deployments/upgrade-v2.json 저장
+```
+
+---
+
 ## M6 완료 기준
 
-- [ ] Sepolia 배포 + Etherscan 검증
-- [ ] v2 업그레이드 후 기존 tokenId 보존
-- [ ] Storage layout 충돌 없음
-- [ ] reinitializer(2) 이중 호출 방지 확인
+- [ ] EVM 슬롯 레이아웃 구조 다이어그램 설명 가능
+- [ ] Storage Collision 발생 원인과 복구 불가능성 설명 가능
+- [ ] `reinitializer(N)` 버전 번호 단조 증가 규칙 설명 가능
+- [ ] hardhat-upgrades 레이아웃 체커 에러 메시지 해석 가능
+- [ ] Sepolia 배포 + Etherscan 검증 완료 (S39)
+- [ ] v2 업그레이드 후 기존 tokenId 잔액 보존 확인
+- [ ] 의도적 충돌 유발 → `upgradeProxy` 에러 확인
+- [ ] `reinitializer(2)` 이중 호출 → revert 확인
+- [ ] 업그레이드 안전 체크리스트 항목 전부 이해

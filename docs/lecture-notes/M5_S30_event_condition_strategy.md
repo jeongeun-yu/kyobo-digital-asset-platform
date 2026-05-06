@@ -123,7 +123,61 @@ service.registerStrategy(new PremiumConditionStrategy());
 
 ---
 
-### 4. tokenId 인코딩 — M6 컨트랙트와 동기화
+### 4. Strategy 패턴 적용 전후 구조 비교 — 아스키 다이어그램
+
+**적용 전 (Monolithic 조건 분기):**
+
+```
+┌──────────────────────────────────────────────┐
+│           EventConditionService              │
+│                                              │
+│  evaluate(event)                             │
+│    │                                         │
+│    ├─ if WALK_GOAL_MET ──── 걷기 로직         │
+│    ├─ if HEALTH_CHECK_DONE ─ 건강검진 로직    │
+│    ├─ if COUPON_CLAIM ──── 쿠폰 로직          │
+│    ├─ if PREMIUM_PAID ──── 납입 로직          │
+│    └─ if NEW_EVENT ... ─── ← 여기 추가 필요  │
+│                                              │
+│  새 이벤트마다 이 파일을 수정해야 함           │
+└──────────────────────────────────────────────┘
+```
+
+**적용 후 (Strategy 패턴):**
+
+```
+┌───────────────────────────────────────────────────────────┐
+│                EventConditionService                       │
+│                                                           │
+│  strategies: Map<eventType, IConditionStrategy>           │
+│                                                           │
+│  evaluate(event)                                          │
+│    └─ strategy = strategies.get(event.eventType)          │
+│         └─ strategy.evaluate(event) ──────────────────┐   │
+└───────────────────────────────────────────────────────│───┘
+                                                        │
+         ┌──────────────────────────────────────────────┘
+         │
+         ▼  (런타임에 주입된 구현체 중 하나 호출)
+┌────────────────────┐  ┌────────────────────┐  ┌─────────────────────┐
+│ActivityCondition   │  │CouponCondition     │  │PremiumCondition     │
+│Strategy            │  │Strategy            │  │Strategy             │
+│                    │  │                    │  │                     │
+│WALK_GOAL_MET       │  │COUPON_CLAIM        │  │PREMIUM_PAID         │
+│HEALTH_CHECK_DONE   │  │CAMPAIGN_REWARD     │  │                     │
+│                    │  │                    │  │← 새 이벤트 추가 시   │
+│steps 검증          │  │eligibility 조회    │  │  이 파일만 새로 만듦  │
+└────────────────────┘  └────────────────────┘  └─────────────────────┘
+```
+
+**OCP(개방-폐쇄 원칙)가 적용된 이유:**
+- `EventConditionService`는 수정에 대해 **닫혀** 있다 (코드 변경 없음)
+- 새 이벤트에 대해 **열려** 있다 (새 Strategy 클래스 추가만 하면 됨)
+- `registerStrategy(new PremiumConditionStrategy())` 한 줄이 전부
+
+---
+
+### 5. tokenId 인코딩 — M6 컨트랙트와 동기화
 
 `ActivityConditionStrategy`의 `evaluate()`는 조건 충족 여부뿐 아니라 `tokenId`도 계산한다:
 
@@ -252,11 +306,49 @@ export class PremiumConditionStrategy implements IConditionStrategy {
 }
 ```
 
+**구현 힌트:**
+
+1. `event.data['amount']`는 `number | undefined` 타입이다. `undefined`이면 `0`으로 취급한다.
+2. `threshold`는 `bigint`다. `amount`를 `BigInt()`로 변환한 후 비교해야 한다.
+3. `amount < threshold`이면 `eligible: false`와 `reason` 문자열을 반환한다.
+4. tokenId 비트 레이아웃: `(PRODUCT_PREMIUM << PRODUCT_CODE_SHIFT) | BigInt(event.eventCode)` — ActivityConditionStrategy와 동일한 패턴.
+
+**구현 답안 (실습 후 확인):**
+
+```typescript
+async evaluate(event: ActivityEvent): Promise<ConditionResult> {
+  const amount = BigInt(Number(event.data['amount'] ?? 0));
+
+  if (amount < this.threshold) {
+    return {
+      eligible: false,
+      reason: `amount ${amount} < threshold ${this.threshold}`,
+    };
+  }
+
+  const tokenId =
+    (PremiumConditionStrategy.PRODUCT_PREMIUM << PremiumConditionStrategy.PRODUCT_CODE_SHIFT)
+    | BigInt(event.eventCode);
+
+  return { eligible: true, tokenId, amount: 1n };
+}
+```
+
+**등록 방법 (앱 초기화 시):**
+
+```typescript
+// threshold: 10만원 (단위: 원)
+conditionService.registerStrategy(new PremiumConditionStrategy(BigInt(100_000)));
+```
+
 ---
 
 ## 완료 기준
 
 - [ ] 지갑 없는 userId → WalletNotFoundError
-- [ ] IConditionStrategy 인터페이스 + 샘플 2개
-- [ ] 새 전략 등록 후 EventConditionService 코드 변경 없음 확인
+- [ ] IConditionStrategy 인터페이스 + 샘플 2개 (Activity, Coupon)
+- [ ] PremiumConditionStrategy 구현 완료 (threshold 비교 + tokenId 계산)
+- [ ] 새 전략 registerStrategy() 한 줄로 추가 — EventConditionService 코드 변경 없음 확인
 - [ ] tokenId 비트 인코딩이 M6 KyoboNFT.sol과 동일함 확인
+- [ ] 미등록 eventType → `eligible: false, reason: 'unsupported ...'` (예외 아님) 확인
+- [ ] false positive 위험이 false negative보다 큰 이유를 설명할 수 있음

@@ -55,6 +55,60 @@ const lenientResult = await lenientService.evaluate(sameEvent);  // true (기준
 
 ---
 
+### 4. Mock vs Stub vs Fake — 테스트 더블 구분
+
+조건 평가 로직은 외부 의존성을 많이 사용한다. 테스트에서 어떤 대체물을 사용할지 구분해야 한다.
+
+| 이름 | 특징 | 사용 시점 |
+|---|---|---|
+| Mock | 호출 기록 검증 가능 (jest.fn()) | "이 메서드가 몇 번 호출됐는가" 확인 필요 시 |
+| Stub | 고정 값 반환, 검증 없음 | 외부 서비스 응답을 고정해 줄 때 |
+| Fake | 실제 동작하는 가벼운 구현 | InMemory DB, 단순 계산 로직 |
+
+`CouponConditionStrategy`의 `eligibilityChecker`는 외부 서비스 호출이므로 **Stub**으로 대체:
+
+```typescript
+// Stub: 고정 응답만 반환 (호출 횟수 검증 불필요)
+const stubChecker = {
+  async isEligible(userId: string) { return userId === 'eligible-user'; },
+};
+```
+
+반면 "eligibilityChecker가 실제로 호출됐는가"를 검증해야 한다면 **Mock**:
+
+```typescript
+const mockChecker = { isEligible: jest.fn().mockResolvedValue(true) };
+// 테스트 후:
+expect(mockChecker.isEligible).toHaveBeenCalledWith('user1', 'COUPON_CLAIM');
+```
+
+---
+
+### 5. 테스트 구조 설계 원칙 — AAA 패턴
+
+```
+테스트 구조: Arrange → Act → Assert
+
+it('steps=9999 → eligible=false', async () => {
+  // Arrange: 테스트 데이터 준비
+  const event = {
+    userId: 'u1', eventType: 'WALK_GOAL_MET',
+    eventCode: 1, data: { steps: 9999 }, occurredAt: new Date(),
+  };
+
+  // Act: 실제 호출
+  const result = await strategy.evaluate(event);
+
+  // Assert: 결과 검증
+  expect(result.eligible).toBe(false);
+  expect(result.reason).toContain('9999 < goal');
+});
+```
+
+AAA를 명확히 분리하면 테스트 의도가 한눈에 보인다.
+
+---
+
 ## 실습 파트 (40분)
 
 ### ActivityConditionStrategy 경계값 테스트
@@ -262,7 +316,14 @@ describe('PremiumConditionStrategy', () => {
 
 ## 완료 기준
 
-- [ ] 조건 미충족 → false 반환
-- [ ] 플러그인 교체 테스트 통과
-- [ ] 경계값 테스트 PASS
-- [ ] steps 누락 → 예외 없이 eligible=false
+- [ ] 조건 미충족 → eligible=false, reason 포함하여 반환
+- [ ] 플러그인 교체 테스트 통과 (같은 이벤트, 다른 전략 → 다른 결과)
+- [ ] 경계값(steps=10000 정확히 목표치) 테스트 PASS
+- [ ] off-by-one(steps=9999) 테스트 PASS
+- [ ] steps 누락(data={}) → 예외 없이 eligible=false
+- [ ] HEALTH_CHECK_DONE → steps와 무관하게 eligible=true
+- [ ] tokenId 비트 인코딩 계산값이 기대값과 일치 확인
+- [ ] 미등록 eventType → eligible=false, reason에 'unsupported' 포함
+- [ ] 동일 eventType 재등록 → 나중 전략으로 덮어쓰기 동작 확인
+- [ ] CouponConditionStrategy의 eligibilityChecker가 실제로 호출됐는지 Mock으로 검증
+- [ ] PremiumConditionStrategy 경계값(amount == threshold) → eligible=true (이상≥)

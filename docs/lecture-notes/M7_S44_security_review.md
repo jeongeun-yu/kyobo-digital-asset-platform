@@ -7,7 +7,30 @@
 
 ---
 
-## 강의 파트 (15분)
+## 강의 파트 (25분)
+
+### 0. M7 보안 세션 전체 흐름 요약
+
+```
+S41: 공격 벡터 파악 + Slither 실행
+  └── HIGH/MEDIUM/LOW 항목 목록 확보
+
+S42: HIGH 항목 제거
+  └── tx.origin 제거, ReentrancyGuard 적용, CEI 패턴
+
+S43: MEDIUM 항목 제거
+  └── 접근 제어 보완, 이벤트 추가, 가시성 수정
+  └── 보안 공격 테스트 전부 PASS
+
+S44: 업그레이드 거버넌스 + 최종 감사 리포트  ← 이번 세션
+  └── 다중 서명 절차 이해
+  └── 잔여 항목 정리 + 리포트 작성
+  └── M7 전체 완료
+```
+
+보안은 "한 번 완료"가 아니다. 업그레이드할 때마다 같은 프로세스를 반복한다.
+
+---
 
 ### 1. 업그레이드 거버넌스 — 실무에서 어떻게 하는가
 
@@ -38,6 +61,40 @@
 ```
 
 개발자 혼자 `upgradeProxy()`를 실행할 수 없다. 반드시 2-of-3 승인이 필요하다.
+
+---
+
+### 1-1. Gnosis Safe 업그레이드 흐름 — 다이어그램
+
+```
+개발자
+  │
+  │  새 Implementation 배포 (Implementation만, Proxy 아님)
+  │  → 새 impl 주소 확보
+  ▼
+Gnosis Safe UI
+  │
+  │  upgradeToAndCall(newImpl, initData) 트랜잭션 제안
+  │  → Safe에 "pending TX" 등록
+  ▼
+서명자 1 (VASP 담당자)
+  │  트랜잭션 내용 검토 → 서명
+  ▼
+서명자 2 (교보IT 담당자)
+  │  트랜잭션 내용 검토 → 서명
+  │  (2-of-3 threshold 도달)
+  ▼
+Safe.execTransaction() 자동 실행
+  │
+  ▼
+Proxy → Implementation v2 교체 완료
+  │
+  ▼
+온체인 로그: Upgraded(newImpl) 이벤트 기록
+  (언제, 누가 서명했는지 영구 기록)
+```
+
+서명자 3명 중 2명이면 충분하다. 1명이 키를 분실해도 나머지 2명으로 업그레이드 가능. 1명이 악의적이어도 2명의 동의 없이 단독 실행 불가.
 
 ---
 
@@ -179,10 +236,45 @@ it('v2 업그레이드 후 v1 initialize 재호출 → revert', async () => {
 
 ---
 
+### 추가 테스트 — 전체 보안 회귀 테스트
+
+보안 리포트를 작성하기 전에 전체 테스트 스위트를 한 번 더 실행한다.
+
+```bash
+# Forge 전체 테스트
+forge test -vvv
+
+# 또는 Hardhat
+npx hardhat test
+
+# 예상 결과 (M6 + M7 통합)
+# ✅ S35: tokenId 인코딩/디코딩 (3건)
+# ✅ S36: initialize 재호출 → revert (1건)
+# ✅ S37: MINTER_ROLE 없음 → mint revert (2건)
+# ✅ S37: mintBatch 500건 가스 측정 (1건)
+# ✅ S38: Pause → mint revert (2건)
+# ✅ S38: burn → 잔액 감소 (1건)
+# ✅ S40: v2 upgrade → 기존 잔액 보존 (1건)
+# ✅ S40: reinitializer(2) 이중 호출 → revert (1건)
+# ✅ S41: Reentrancy 공격 → ReentrancyGuard 차단 (1건)
+# ✅ S42: tx.origin 공격 → msg.sender 체크로 차단 (1건)
+# ✅ S43: 전체 보안 공격 시나리오 (7건)
+# ✅ S44: Storage Collision → upgradeProxy 에러 (1건)
+# ✅ S44: v1 initialize 재호출 → revert (1건)
+```
+
+모든 테스트가 PASS한 상태에서 감사 리포트를 작성하고 커밋한다.
+
+---
+
 ## M7 완료 기준
 
-- [ ] Slither HIGH/MEDIUM 최종 0건
-- [ ] Storage layout 충돌 없음
-- [ ] reinitializer 이중 호출 방지
-- [ ] 보안 리포트 작성 완료
-- [ ] 업그레이드 거버넌스 절차 설명 가능
+- [ ] M7 전체 흐름(S41→S42→S43→S44) 순서 설명 가능
+- [ ] Gnosis Safe 2-of-3 업그레이드 흐름 다이어그램 설명 가능
+- [ ] Slither HIGH/MEDIUM 최종 0건 확인
+- [ ] Storage layout 충돌 없음 (hardhat-upgrades 체크 통과)
+- [ ] `reinitializer` 이중 호출 방지 테스트 PASS
+- [ ] 전체 테스트 스위트 PASS (M6 + M7 통합)
+- [ ] 보안 감사 리포트 작성 완료 (5개 항목 모두 포함)
+- [ ] 업그레이드 거버넌스 5단계 절차 설명 가능
+- [ ] "왜 개발자 단독으로 upgradeProxy를 실행하면 안 되는가" 설명 가능
