@@ -472,6 +472,171 @@ Phase 3 (글로벌 확장): CircleAdapter
 
 ---
 
+## 10. 실습 — XRPLStubAdapter 완성 + DI 교체 시뮬레이션
+
+S14의 핵심 명제: "어댑터만 바꿔도 비즈니스 코드는 변하지 않는다"를 코드로 직접 확인한다.
+
+### 실습 A — XRPLStubAdapter 작성 (30분)
+
+```typescript
+// 실습 파일: dmz/packages/chain-adapters/src/xrpl/XRPLStubAdapter.ts
+
+// TODO 1: IBlockchainAdapter를 implements 선언 (컴파일 타임 인터페이스 충족 강제)
+export class XRPLStubAdapter /* TODO: implements ... */ {
+  // TODO 2: chainId, chainType 읽기 전용 필드 선언
+  //   chainId   = 'xrpl-testnet'
+  //   chainType = 'XRPL' as const
+
+  // TODO 3: isConnected() → true 반환
+  // TODO 4: getBlockNumber() → 임의의 숫자 반환 (예: 99999999)
+  // TODO 5: mintNFT(params) → TransactionReceipt 반환
+  //   txHash:      `XRPL_STUB_${params.requestId}`
+  //   blockNumber: 99999999
+  //   blockHash:   `XRPLHASH_${Date.now()}`
+  //   status:      'success'
+  //   timestamp:   Date.now()
+  //   ← gasUsed 필드 없음: XRPL은 가스 개념 없음 (S14 TransactionReceipt.gasUsed? 연계)
+
+  // TODO 6: 나머지 메서드 (mintNFTBatch, burnNFT, getBalance, call, sendTransaction,
+  //          getReceipt, subscribeEvents, queryEvents) → throw 또는 stub 반환
+  //   subscribeEvents → () => {} (no-op unsubscribe)
+  //   queryEvents     → [] (빈 배열)
+  //   getReceipt      → null
+  //   getBalance      → 1n
+}
+```
+
+**답안:**
+
+```typescript
+import type {
+  IBlockchainAdapter, MintParams, MintBatchParams, BurnParams,
+  ContractCallParams, TransactionReceipt, ChainEvent,
+} from '../interfaces/IBlockchainAdapter';
+
+export class XRPLStubAdapter implements IBlockchainAdapter {
+  readonly chainId   = 'xrpl-testnet';
+  readonly chainType = 'XRPL' as const;
+
+  async isConnected(): Promise<boolean> { return true; }
+  async getBlockNumber(): Promise<number> { return 99_999_999; }
+
+  async mintNFT(params: MintParams): Promise<TransactionReceipt> {
+    return {
+      txHash:      `XRPL_STUB_${params.requestId}`,
+      blockNumber: 99_999_999,
+      blockHash:   `XRPLHASH_${Date.now()}`,
+      status:      'success',
+      // gasUsed 생략 — XRPL은 가스 개념 없음
+      timestamp:   Date.now(),
+    };
+  }
+
+  async mintNFTBatch(_p: MintBatchParams): Promise<TransactionReceipt> {
+    throw new Error('XRPLStubAdapter: mintNFTBatch not implemented');
+  }
+  async burnNFT(_p: BurnParams): Promise<TransactionReceipt> {
+    throw new Error('XRPLStubAdapter: burnNFT not implemented');
+  }
+  async getBalance(_c: string, _o: string, _id: bigint): Promise<bigint> {
+    return 1n;
+  }
+  async call(_p: ContractCallParams): Promise<unknown> { return null; }
+  async sendTransaction(_p: ContractCallParams): Promise<TransactionReceipt> {
+    throw new Error('XRPLStubAdapter: sendTransaction not supported on XRPL');
+  }
+  async getReceipt(_txHash: string): Promise<TransactionReceipt | null> { return null; }
+
+  async subscribeEvents(
+    _contractAddr: string, _abi: unknown[], _eventNames: string[],
+    _fromBlock: number, _handler: (e: ChainEvent) => Promise<void>,
+  ): Promise<() => void> {
+    return () => {};   // no-op unsubscribe
+  }
+
+  async queryEvents(
+    _contractAddr: string, _abi: unknown[], _eventName: string,
+    _fromBlock: number, _toBlock: number,
+  ): Promise<ChainEvent[]> {
+    return [];
+  }
+}
+```
+
+**채점 기준:**
+
+```
+✅ implements IBlockchainAdapter 선언 → 컴파일 통과
+✅ mintNFT 반환에 gasUsed 없음 (XRPL = 가스 없음)
+✅ subscribeEvents → () => {} 반환 (no-op unsubscribe)
+✅ queryEvents → [] 반환 (빈 이벤트 목록)
+✅ chainType = 'XRPL' as const
+```
+
+---
+
+### 실습 B — DI 교체 시뮬레이션 (15분)
+
+어댑터를 교체해도 호출 코드(IssuerService 역할의 테스트 함수)가 변하지 않음을 확인한다.
+
+```typescript
+// 실습: 두 어댑터를 동일 함수로 실행해 코드 무변경 확인
+
+async function runAdapterTest(adapter: IBlockchainAdapter): Promise<void> {
+  const connected = await adapter.isConnected();
+  const block     = await adapter.getBlockNumber();
+  console.log(`[${adapter.chainType}] connected=${connected}, block=${block}`);
+
+  const receipt = await adapter.mintNFT({
+    contractAddr: '0xKyoboNFT',
+    to:           '0xAlice',
+    tokenId:      1001n,
+    amount:       1n,
+    requestId:    'test-uuid-001',
+  });
+  console.log(`[${adapter.chainType}] txHash=${receipt.txHash}, gasUsed=${receipt.gasUsed ?? 'N/A'}`);
+}
+
+// TODO: EVMAdapter (read-only, Sepolia) → runAdapterTest 호출
+// TODO: XRPLStubAdapter              → runAdapterTest 호출
+// 기대 출력:
+//   [EVM] connected=true, block=<실제 Sepolia 블록>
+//   [EVM] txHash=<Error: read-only mode> or <0x...>
+//   [XRPL] connected=true, block=99999999
+//   [XRPL] txHash=XRPL_STUB_test-uuid-001, gasUsed=N/A
+```
+
+**포인트:**
+
+```
+runAdapterTest 함수는 한 줄도 바뀌지 않았다.
+어댑터 종류만 DI로 교체됐다.
+gasUsed가 EVM은 bigint, XRPL은 undefined → 상위 레이어에서 gasUsed에 의존하면 안 되는 이유 체감.
+```
+
+---
+
+### 실습 C — raw 파싱 금지 위반 시뮬레이션 (선택, 5분)
+
+```typescript
+// ❌ 나쁜 패턴: IssuerService가 ChainEvent.raw를 직접 파싱
+function badIssuerService(event: ChainEvent): string {
+  // XRPL로 교체하면 이 코드가 런타임 에러 발생
+  const evmLog = event.raw as { topics: string[]; data: string };
+  return evmLog.topics[1]; // EVM 전용 구조 — XRPL은 topics 없음
+}
+
+// ✅ 좋은 패턴: args만 사용
+function goodIssuerService(event: ChainEvent): string {
+  return String(event.args['to']); // 어댑터가 이미 named args로 변환해둠
+}
+
+// XRPLStubAdapter의 queryEvents가 ChainEvent를 반환할 때
+// args에 { to, tokenId, amount } 구조가 있으면 goodIssuerService는 변경 없이 동작
+```
+
+---
+
 **완료 기준:**
 - [ ] EVM·XRPL·Circle ARC 패러다임 핵심 차이 3가지 이상 설명 가능
 - [ ] IBlockchainAdapter 설계 원칙 — Strategy Pattern 적용 이유 설명
@@ -479,6 +644,9 @@ Phase 3 (글로벌 확장): CircleAdapter
 - [ ] `queryEvents`에서 Finalized 범위만 사용하는 이유 설명 (S12 연계)
 - [ ] `raw` 필드를 어댑터 외부에서 파싱하면 안 되는 이유 설명
 - [ ] 당사 멀티체인 전환 Phase 1→2→3 순서와 근거 제시
+- [ ] `XRPLStubAdapter` 직접 작성 → `implements IBlockchainAdapter` 컴파일 통과 확인
+- [ ] `runAdapterTest` 함수 코드 무변경으로 두 어댑터 모두 실행 확인
+- [ ] `gasUsed`가 EVM은 bigint, XRPL은 undefined임을 실습에서 직접 확인
 
 ---
 

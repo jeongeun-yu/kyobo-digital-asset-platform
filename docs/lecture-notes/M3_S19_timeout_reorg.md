@@ -218,6 +218,147 @@ FINALIZED
 | **TIMEOUT** | Gas 부족으로 mempool stuck | PENDING 30분 초과 (pollStaleRequests) | Gas 20% bump + 동일 Nonce 재전송 |
 | **REORG** | 블록 재편으로 TX 소실 | MINED TX가 사라짐 감지 (FINALIZED 이전) | REORGED 전이 → 5블록 대기 → VASP 재조회 → MINED or FAILED |
 
+---
+
+### 6. TX 생애주기 전체 지도 — 3종 장애 발생 위치
+
+아래 다이어그램에서 TIMEOUT / REVERT / REORG가 전이도의 어느 지점에서 발생하는지 확인한다.
+
+```
+REQUESTED ──────────────────────────────────────────── submitMintRequest()
+    │
+    ▼
+SUBMITTED ──────────────────────────────────────────── VASP TX 전송 완료, txHash 획득
+    │
+    ▼
+PENDING ─────────────────────────────────────────────── mempool 진입 (체인으로 전송됨)
+    │                                   │
+    │                            [TIMEOUT 발생 구간]
+    │                            30분 초과, gas 부족
+    │                            → gas bump → 동일 Nonce 재전송
+    │                            → 새 txHash로 PENDING 유지
+    │
+    ▼
+  MINED ──────────────────────────────────────────────── 블록 포함 (채굴 완료)
+    │              │
+    │        [REORG 발생 구간]
+    │        MINED ~ FINALIZED 사이에서만 발생
+    │        → REORGED 전이 → 재채굴 대기
+    │        → 성공 시 MINED 재진입
+    │        → 실패 시 FAILED
+    │
+  REVERT 발생 지점 ──────────── receipt.status = 0 (블록에는 포함됨)
+  (MINED 직후 감지)             → 즉시 FAILED 전이
+    │
+    ▼
+FINALIZED ──────────────────────────────────────────── PoS 2/3+ 동의, 번복 불가
+    │
+    ▼
+CONFIRMED ──────────────────────────────────────────── 원장 업데이트 완료 (종단)
+
+   [FAILED] ─────────────────────────────────────────── REVERT 또는 최종 실패 (종단)
+```
+
+**핵심 구간 요약:**
+
+```
+mempool (PENDING) : TIMEOUT 가능 → gas bump로 복구
+블록 내 (MINED)   : REVERT 감지 → 즉시 FAILED, REORG 가능 → REORGED
+FINALIZED 이후    : 어떤 장애도 없음 — 번복 불가 확정 구간
+```
+
+---
+
+### 7. Gas Bump 상세 — EIP-1559와 Replace-by-Fee
+
+```
+EIP-1559 이전 (Legacy):
+  gasPrice = 단일 값
+  RBF: 동일 Nonce + gasPrice × 1.1 이상 → mempool 교체
+
+EIP-1559 이후 (Type-2 TX):
+  maxFeePerGas        = 기꺼이 내는 최대 fee
+  maxPriorityFeePerGas = 검증자에게 줄 팁 (Priority Fee)
+  RBF: 동일 Nonce + maxPriorityFeePerGas × 1.1 이상
+
+우리 시스템 GAS_BUMP_PERCENT = 20:
+  기존: maxPriorityFeePerGas = 2 gwei
+  bump: maxPriorityFeePerGas = 2.4 gwei (20% 인상)
+  → mempool에서 기존 TX 교체 → 채굴 우선순위 상승
+```
+
+**retryCount 상한 — 왜 제한이 필요한가:**
+
+```
+gas bump 무한 반복 시:
+  bump 1: 20 → 24 gwei
+  bump 2: 24 → 28.8 gwei
+  bump 3: 28.8 → 34.6 gwei
+  ...bump 10: 123 gwei
+  → 가스 비용 폭발 → 단일 NFT 발행에 수만 원 소비 가능
+
+운영 정책:
+  MintRequest.retryCount ≥ MAX_RETRIES → FAILED 전이
+  (MAX_RETRIES = 3, TxStateMachineService.ts 참고)
+```
+
+---
+
+### 8. REORG 발생 빈도와 실용적 처리
+
+**Ethereum 메인넷에서의 실제 REORG 빈도:**
+
+```
+1블록 REORG: 드물게 발생 (수개월에 한 번)
+2블록 REORG: 매우 드묾
+3블록 이상:  거의 없음 (PoS 전환 이후)
+
+우리 시스템 REORG_WAIT_BLOCKS = 5:
+  "MINED 후 5블록이 더 쌓인 다음 getStatus 재조회"
+  = 더 긴 체인에 포함됐을 가능성 기다림
+
+참고: Finality는 보통 2 에포크 = 약 12분
+     실용적으로 5블록 = 약 1분 대기로도 충분한 경우가 많음
+```
+
+**REORGED 상태에서의 전이 경로:**
+
+```
+REORGED
+    │
+    ├── 5블록 대기 후 vasp.getStatus() 재조회
+    │
+    ├── 'mined'     → MINED 재진입 (재채굴됨)
+    │
+    ├── 'confirmed' → FINALIZED → CONFIRMED (Finality 확보)
+    │
+    ├── 'not_found' → 재제출 필요
+    │                 TxStateMachineService가 새 TX 발행
+    │                 requestId 동일 → Idempotency 보장
+    │
+    └── 재시도 초과 → FAILED 전이
+```
+
+---
+
+### 9. 원장 업데이트 안전 구간 — 왜 FINALIZED 이후인가
+
+```
+MINED에서 원장 업데이트 시:
+
+  t=0: TX MINED → 원장 +1 (NFT 발행 기록)
+  t=5: REORG 발생 → 해당 블록 무효
+  t=5: 온체인 NFT 없음 ≠ 원장 +1 → 불일치 🚨
+
+FINALIZED 이후 원장 업데이트 시:
+
+  t=0: TX MINED
+  t=12분: FINALIZED (PoS 2/3+ 동의) → 번복 불가
+  t=12분: 원장 +1 → 온체인 NFT 존재 = 원장 +1 → 일치 ✅
+
+원칙: "번복 가능한 상태에서 영구 기록 생성 금지"
+```
+
 **Finality 확보 후 원장 업데이트 흐름:**
 
 ```
@@ -230,8 +371,14 @@ LedgerService.recordHolding(+1)   ← M4 S23에서 구현
 user_nft_holdings 업데이트
 ```
 
+---
+
 **완료 기준:**
+- [ ] TX 생애주기 전체 지도에서 TIMEOUT / REVERT / REORG 발생 위치 설명
 - [ ] TIMEOUT 발생 원인 (Nonce 관리 + Stuck TX) 설명 가능
-- [ ] Gas Bump (RBF) 원리 설명
-- [ ] CONFIRMED vs FINALIZED 차이 설명
+- [ ] Gas Bump (RBF) 원리 — EIP-1559 기준 maxPriorityFeePerGas 20% 인상 설명
+- [ ] retryCount 상한이 필요한 이유 설명 — 가스 비용 폭발 방지
+- [ ] CONFIRMED(MINED) vs FINALIZED 차이 — 원장 업데이트 안전 구간 설명
+- [ ] REORGED 상태에서 vasp.getStatus() 결과별 전이 경로 (mined/confirmed/not_found) 설명
 - [ ] 3종 복구 전략 (REVERT/TIMEOUT/REORG) 각각 서술 가능
+- [ ] 원장 업데이트를 MINED가 아닌 FINALIZED 이후에만 허용하는 이유 — REORG 오염 시나리오 설명

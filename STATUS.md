@@ -7,13 +7,11 @@
 | 교육 시작 | 4/27 (웅진씽크빅) — 교보생명 58시간 확정 |
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
-## 마지막 작업 (2026-05-05)
-- TX 8상태 머신(FINALIZED 추가) 스켈레톤·실습·강의노트 전체 반영
-- Custody Track S2/3/5/6 vs 교보 커리큘럼 갭 분석 리포트 작성 (`docs/custody-gap-analysis.md`)
-- Phase 3 stub 파일 9개 신규 생성: TxAttempt, Broadcaster, ConfirmationTracker, NonceManager, OutboxWorker, ISignerService, WhitelistAddressService, Eip1559FeeParams/FeePolicyId/RpcDegradeMode 타입, InternalLedgerBalance
-- Phase 3 이론 강의노트 4개 신규 작성: 두 레이어 분리, Broadcaster/Outbox, HSM/MPC/화이트리스트, EIP-1559/RPC/Nonce
-- IBlockchainAdapterV3 분리 (getFeeParams/getRpcDegradeMode → Phase 3 확장 인터페이스)
-- S14 실습 파일 컴파일 에러 수정 → 전체 통과 확인
+## 마지막 작업 (2026-05-06)
+- S3 강의 PPT 슬라이드 제작 (S3_skeleton_dependency.pptx, 64장)
+- 주제: 스켈레톤 코드 구조 + 의존 방향 원칙 + Strategy Pattern + DMZ→내부망 RPC
+- 카드 overflow 전면 수정: h별 최대 줄 수 규칙 적용 (h=2.0→5줄, h=2.5→7줄, h=3.0→9줄, h=3.5→11줄, h=3.8→12줄)
+- M3 강의 노트 8개 보강 (S13~S21, S20·S22 제외): S14 실습 3종 추가, S18 시나리오 5개 추가, S19 전체 지도 다이어그램+이론 보강, S21 설계 의사결정 섹션+판단 문제 추가
 
 ## 다음 작업
 - [ ] docker-compose.yml + .env.example 추가

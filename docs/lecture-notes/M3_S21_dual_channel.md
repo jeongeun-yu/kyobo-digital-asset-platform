@@ -280,10 +280,181 @@ IdempotencyGuard + DB 트랜잭션
 user_nft_holdings +1
 ```
 
+---
+
+### 7. 설계 의사결정 — 왜 이 구조로 만들었는가
+
+#### 7-1. "폴링을 없애고 Webhook만 쓰면 안 되는가?"
+
+```
+Webhook 단독:
+  VASP SLA: "Webhook 99.9% 전달 보장"
+  의미: 1000건 중 1건은 유실 가능
+  교보 NFT 발행 규모: 월 100만 건 목표
+  → 월 1000건 유실 가능
+  → 금융 자산 기록 누락 → 규제 위반
+
+  추가 문제: VASP 자체 장애 시 Webhook 발신 불가
+           (VASP 서버가 죽으면 Webhook을 보낼 수 없음)
+
+결론: Webhook만으로는 100% 처리 보장 불가
+```
+
+#### 7-2. "폴링만 쓰고 Webhook을 없애면 안 되는가?"
+
+```
+폴링 단독 (5분 크론):
+  최대 지연: 30분(타임아웃) + 5분(폴링 주기) = 35분
+  사용자 경험: NFT 발행 후 35분 후에나 앱에 반영
+  → 사용자 불만
+  → 금융 서비스에서 35분 지연은 허용 불가
+
+  추가 문제: 전체 PENDING 조회 시 DB 부하 폭발
+           (초당 수십 건 발행 × 30분 대기 = 수만 건 상시 PENDING)
+
+결론: 폴링만으로는 실시간성 + 성능 두 가지 모두 불만족
+```
+
+#### 7-3. "왜 30분이 기준인가 — 다른 값은 안 되는가?"
+
+```
+VASP SLA 정상 처리 시간 분포 (가정):
+  P50 (중간값): 2분
+  P95:          5분
+  P99:          10분
+  P99.9:        15분 (네트워크 혼잡 포함)
+
+30분 = P99.9 × 2배 = "최악의 정상 케이스의 2배 여유"
+
+너무 짧게 설정 (5분):
+  P95~P99 구간 TX가 "비정상"으로 오탐 → 불필요한 gas bump
+  → 가스 낭비 + VASP 부하
+
+너무 길게 설정 (2시간):
+  진짜 stuck TX 감지 지연 → 사용자 2시간 대기
+  → 고객 센터 문의 폭발
+
+30분 = "오탐 최소화 + 합리적 지연" 균형점
+→ 실제 운영 중 VASP SLA 수치가 바뀌면 재조정 필요
+```
+
+#### 7-4. "두 채널이 동시에 처리하면 중복 발행이 일어나지 않는가?"
+
+```
+우려: 채널 A와 채널 B가 동시에 handleConfirmed() 호출
+     → user_nft_holdings +1 두 번 → NFT 2개 기록 🚨
+
+실제: findPendingOlderThan()이 자연스러운 필터 역할
+     채널 A가 CONFIRMED 처리 → status = 'CONFIRMED'
+     채널 B: findPendingOlderThan() → PENDING인 건만 조회
+            → 이미 CONFIRMED → 조회 결과에서 제외
+            → handleConfirmed() 호출 안 됨 ✅
+
+추가 안전장치: handleConfirmed() 내부 guard
+  if (req.status !== 'MINED') return;  ← CONFIRMED에서 재호출 시 return
+  → 두 채널이 동시에 호출해도 멱등성 보장
+```
+
+---
+
+### 8. 이중 채널 수신 경로 전체 아스키 다이어그램
+
+```
+블록체인 이벤트 발생
+       │
+  ┌────┴────────────────────────────────────────────────┐
+  │                                                      │
+  ▼                                                      ▼
+[채널 A: Push]                                   [채널 B: Pull]
+VASP Webhook 발신                          5분 크론 pollStaleRequests()
+       │                                          │
+       ▼                                          ▼
+WebhookReceiver                        PENDING 30분 초과 건 DB 조회
+       │                                          │
+  Redis XADD 성공?                       vasp.getStatus(txHash)
+  │           │                                   │
+  ✅ 성공     ❌ 실패                    결과별 분기:
+  │           │                         confirmed → handleConfirmed()
+  ▼           ▼                         failed    → handleFailed()
+ConsumerGroupWorker  [경로3 유실]        not_found → handleFailed()
+       │             → 채널 B가 복구    pending   → 다음 폴링 대기
+       ▼                                mined     → handleMined()
+handleConfirmed()                                 │
+       │                                          ▼
+TxStateMachineService                  TxStateMachineService
+  MINED → FINALIZED → CONFIRMED          상태 전이
+       │                                          │
+       └──────────────────┬───────────────────────┘
+                          │
+                          ▼
+                  LedgerService.recordHolding()
+                  user_nft_holdings +1
+
+[채널 A 성공 + 채널 B 실행]:
+  채널 B findPendingOlderThan() → 이미 CONFIRMED → 조회 결과 없음 → skip
+  = 중복 처리 없음 ✅
+```
+
+---
+
+### 9. 실습 설계 문제 — 이중 채널 판단 연습
+
+아래 시나리오별로 채널 A / 채널 B 중 어느 쪽이 처리하는지, 최종 상태는 무엇인지 판단한다.
+
+```
+시나리오 1:
+  t=0:  submitMintRequest → PENDING (txHash=0xaaa)
+  t=3분: VASP TX 완료 → Webhook 수신 → handleMined() → MINED
+  t=15분: Finality 확보 → handleConfirmed() → CONFIRMED
+  t=35분: pollStaleRequests() 실행
+  
+  Q: 채널 B가 0xaaa를 처리하는가?
+  A: ________
+
+시나리오 2:
+  t=0:  submitMintRequest → PENDING (txHash=0xbbb)
+  t=3분: VASP TX 완료 → Webhook 전송 중 네트워크 유실
+  t=35분: pollStaleRequests() 실행
+  
+  Q: 채널 B가 처리하는가? 최종 상태는?
+  A: ________
+
+시나리오 3:
+  t=0:  submitMintRequest → PENDING (txHash=0xccc)
+  t=30분: pollStaleRequests() 실행 → vasp.getStatus() = 'not_found'
+  
+  Q: 최종 상태는? 왜 not_found인가?
+  A: ________
+
+시나리오 4:
+  t=0:  submitMintRequest → PENDING (txHash=0xddd)
+  t=5분: WebhookReceiver 수신 → Redis XADD 실패 → Webhook 경로 유실
+  t=35분: pollStaleRequests() 실행 → vasp.getStatus() = 'confirmed'
+  
+  Q: 어느 채널이 최종 처리하는가?
+  A: ________
+```
+
+**정답:**
+
+```
+시나리오 1: 채널 B 실행 시 CONFIRMED → findPendingOlderThan에서 제외 → skip (처리 안 함)
+시나리오 2: 채널 B가 처리. vasp.getStatus() = 'confirmed' → handleConfirmed() → CONFIRMED
+시나리오 3: FAILED 전이. not_found = mempool에서 TX 드롭됨 (gas 너무 낮아 삭제)
+시나리오 4: 채널 B (폴링)가 최종 처리. WebhookReceiver 실패(경로 3)는 XAUTOCLAIM 불가
+           → Stream에 적재조차 안 됐으므로 XAUTOCLAIM이 복구할 대상 없음
+           → 채널 B가 커버
+```
+
+---
+
 **완료 기준:**
 - [ ] 이중 채널 필요성 — 콜백(빠름, 유실 가능) + 폴링(느림, 확실) 역할 구분 설명
 - [ ] 콜백 누락 4가지 경로 설명 (네트워크 유실 / VASP 재전송 없음 / WebhookReceiver 실패 / Consumer 장애)
-- [ ] 30분 타임아웃 기준 근거 설명 — 너무 짧으면 오탐, 너무 길면 감지 지연
+- [ ] 30분 타임아웃 기준 근거 설명 — VASP SLA P99.9 × 2배 여유, 너무 짧으면 오탐, 너무 길면 감지 지연
 - [ ] pollStaleRequests 결과별 전이 설계 — confirmed/failed/not_found/pending/mined 각각
 - [ ] 콜백 성공 후 폴링이 중복 처리하지 않는 이유 (PENDING이 아니므로 findPendingOlderThan에서 제외)
 - [ ] WebhookReceiver 실패(경로 3)가 XAUTOCLAIM으로 커버되지 않는 이유 설명
+- [ ] "Webhook만" / "폴링만" 사용 시 각각 어떤 문제가 생기는지 설명
+- [ ] 두 채널이 동시에 handleConfirmed()를 호출해도 중복 처리가 없는 이유 설명 (guard + findPendingOlderThan 필터)
+- [ ] 시나리오 1~4 판단 문제 정답 설명

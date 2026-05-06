@@ -264,12 +264,81 @@ async function detectRevert(adapter: EVMAdapter, txHash: string): Promise<string
 }
 ```
 
-### 6. 실습 — handleTxRevert + REVERT 시뮬레이션
+### 6. REVERT reason 카테고리별 운영 대응 흐름
+
+REVERT는 재시도 없이 즉시 FAILED로 전이하지만, 이후 운영 대응은 reason에 따라 달라진다.
+
+```
+REVERT reason 수신
+       │
+       ▼
+  reason 분류
+       │
+  ┌────┴──────────────────────────────────────────────────┐
+  │                                                        │
+  ▼                                                        ▼
+"Contract is paused"                          "Caller is not minter"
+  → FAILED 전이                                → FAILED 전이
+  → 운영팀 알림: "컨트랙트 일시정지 상태"       → 운영팀 알림: "MINTER_ROLE 누락"
+  → 대응: Owner가 unpause() 실행               → 대응: 역할 부여 후 재발행 요청
+  → 재발행: 수동 승인 후 새 TX 제출            → 재발행: 수동 승인 후 새 TX 제출
+
+  ▼                                                        ▼
+"Insufficient balance"                        "Token already exists"
+  → FAILED 전이                                → FAILED 전이
+  → 운영팀 알림: "잔액 부족"                   → 운영팀 알림: "중복 tokenId 감지"
+  → 대응: 잔액 충전 후 재발행                  → 대응: requestId 로그 확인
+                                              → 이미 발행됐으면 CONFIRMED 처리
+```
+
+**중요 운영 원칙**: REVERT 후 "재발행"은 코드에서 자동 처리하지 않는다. 운영팀이 원인을 확인하고 수동 승인 후 재발행한다. 자동 재시도 시 같은 REVERT가 반복될 수 있기 때문이다.
+
+---
+
+### 7. handleNonceConflict — 논스 충돌 처리 (S19 연계)
+
+REVERT와 달리 NONCE_TOO_LOW는 재시도 가능 에러다.
 
 ```typescript
-// 실습: REVERT 시나리오별 분기 처리
+// VaspRecoveryService.ts (실습 참고)
+async handleNonceConflict(requestId: string): Promise<RecoveryResult> {
+  // 논스 재동기화 후 재시도
+  // 1. vaspClient.resyncNonce() — VASP 측 논스 상태 리셋
+  // 2. retryWithBackoff(() => vaspClient.submitMint(...)) — 백오프 재전송
+  // 3. 성공 시: SUBMITTED 상태 유지 (txHash 교체)
+  // 4. 실패 시: FAILED 전이
+}
+```
+
+**REVERT vs NONCE_TOO_LOW 처리 비교:**
+
+```
+REVERT:           재시도 ❌ → 즉시 FAILED
+                  원인: 컨트랙트 로직 오류 (내부 요인)
+
+NONCE_TOO_LOW:    재시도 ✅ → resyncNonce 후 재전송
+                  원인: 논스 불일치 (외부/인프라 요인)
+                  동일 nonce로 재전송 → 성공 가능
+```
+
+---
+
+### 8. 실습 — handleTxRevert + REVERT 시뮬레이션
+
+```typescript
+// 실습 공통 픽스처
+const mockReq = {
+  id: 'req-001', userId: 'user-1', tokenId: 1001n, amount: 1n,
+  status: 'SUBMITTED' as TxStatus, txHash: '0xabc',
+  retryCount: 0, createdAt: new Date(), updatedAt: new Date(),
+};
+
+// 실습 1: Paused revert → FAILED + reason 저장
 it('Paused revert → FAILED + reason 저장', async () => {
-  const recovery = new VaspRecoveryService(ledger, vaspClient, notifier);
+  const ledger    = new InMemoryLedger();
+  const notifier  = new MockNotifier();
+  const recovery  = new VaspRecoveryService(ledger, vaspClient, notifier);
+  await ledger.saveMintRequest(mockReq);
 
   await recovery.handleTxRevert(
     'req-001',
@@ -280,12 +349,21 @@ it('Paused revert → FAILED + reason 저장', async () => {
   const req = await ledger.getMintRequest('req-001');
   expect(req?.status).toBe('FAILED');
   expect(req?.errorMsg).toContain('paused');
+  // notifier가 TX_FAILED 이벤트를 발송했는지 확인
+  expect(notifier.sentEvents).toContainEqual(
+    expect.objectContaining({ type: 'TX_FAILED', requestId: 'req-001' }),
+  );
 });
 
-it('MINTER_ROLE 없음 revert → FAILED', async () => {
+// 실습 2: MINTER_ROLE 없음 revert → FAILED
+it('MINTER_ROLE 없음 revert → FAILED + errorMsg 저장', async () => {
+  const ledger   = new InMemoryLedger();
+  const notifier = new MockNotifier();
+  const recovery = new VaspRecoveryService(ledger, vaspClient, notifier);
+  await ledger.saveMintRequest({ ...mockReq, id: 'req-002', txHash: '0xdef' });
+
   await recovery.handleTxRevert(
-    'req-002',
-    '0xdef',
+    'req-002', '0xdef',
     'execution reverted: Caller is not minter',
   );
 
@@ -293,12 +371,51 @@ it('MINTER_ROLE 없음 revert → FAILED', async () => {
   expect(req?.status).toBe('FAILED');
   expect(req?.errorMsg).toContain('not minter');
 });
+
+// 실습 3: 잘못된 상태에서 handleTxRevert 호출 → 예외
+it('status가 SUBMITTED가 아닌 건 → InvalidStateTransitionError', async () => {
+  const ledger   = new InMemoryLedger();
+  const recovery = new VaspRecoveryService(ledger, vaspClient, notifier);
+  // 이미 CONFIRMED된 요청
+  await ledger.saveMintRequest({ ...mockReq, id: 'req-003', status: 'CONFIRMED' });
+
+  await expect(
+    recovery.handleTxRevert('req-003', '0xghi', 'Contract is paused'),
+  ).rejects.toThrow(InvalidStateTransitionError);
+});
+
+// 실습 4: 존재하지 않는 requestId → MintRequestNotFoundError
+it('존재하지 않는 requestId → MintRequestNotFoundError', async () => {
+  const ledger   = new InMemoryLedger();
+  const recovery = new VaspRecoveryService(ledger, vaspClient, notifier);
+
+  await expect(
+    recovery.handleTxRevert('nonexistent', '0x000', 'some reason'),
+  ).rejects.toThrow(MintRequestNotFoundError);
+});
+
+// 실습 5: handleFailed 중복 호출 안전성 확인
+it('handleFailed 중복 호출 → FAILED 유지 (guard 없어도 안전)', async () => {
+  const repo = new InMemoryTxRepository();
+  const svc  = new TxStateMachineService(repo, vaspMock, walletMock);
+  await repo.save({ ...mockReq, id: 'req-004', status: 'FAILED', failReason: 'first' });
+
+  // 두 번 호출해도 에러 없이 FAILED 유지
+  await svc.handleFailed('req-004', 'second call');
+  const req = await repo.findById('req-004');
+  expect(req?.status).toBe('FAILED');
+});
 ```
 
+---
+
 **완료 기준:**
+- [ ] EVM "All-or-Nothing" 실행 모델 설명 — 왜 REVERT 시 체인 상태가 변하지 않는가
+- [ ] REVERT / TIMEOUT / REORG 3종 비교표 암기 — 발생 시점, 재시도 가능 여부, 처리 전략
 - [ ] REVERT → FAILED 전이 확인 + `failReason` DB 저장 확인
 - [ ] `handleTxRevert` TODO 완성 — ledger 업데이트 + notifier 발송
 - [ ] REVERT reason 3가지 (paused / not minter / insufficient balance) 시나리오 테스트 통과
+- [ ] status가 SUBMITTED가 아닌 건에서 handleTxRevert 호출 → InvalidStateTransitionError 확인
 - [ ] REVERT가 NonRetryableError인 이유 설명 — "재시도해도 동일 결과"
 - [ ] `handleFailed`가 guard 없는 이유 설명 — FAILED는 최종 상태, 중복 호출 안전
 - [ ] `VaspRecoveryService.handleTxRevert`와 `TxStateMachineService.handleFailed` 역할 구분 설명
