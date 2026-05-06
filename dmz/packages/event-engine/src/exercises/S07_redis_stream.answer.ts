@@ -97,43 +97,31 @@ const consumerRedis = {
   },
 };
 
-// ── 실습 1: NFTIssuedProcessor를 구현하라 ────────────────────────────────
-// EventProcessor 인터페이스:
-//   eventTypes: string[]        — 처리할 이벤트 타입 목록
-//   process(msg): Promise<void> — 실제 처리 로직 (멱등성 보장 필수)
-//
-// 구현 요구사항:
-//   - eventTypes: ['NFT_ISSUED']
-//   - process: msg.fields['payload']를 JSON.parse → tokenId, owner 출력
-//              msg.fields['requestId'] 출력
-//              '[processor] NFT_ISSUED 처리 완료' 로그 출력
-//
-// 힌트: const nftIssuedProcessor: EventProcessor = { eventTypes: [...], async process(msg) { ... } }
 const nftIssuedProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
-  async process(_msg: StreamMessage): Promise<void> {
-    throw new Error('TODO: 구현하세요');
-    // 힌트:
-    // const payload   = JSON.parse(msg.fields['payload'] ?? '{}');
-    // const requestId = msg.fields['requestId'];
-    // console.log(`[processor] NFT_ISSUED — tokenId: ${payload.tokenId}, owner: ${payload.owner}`);
-    // console.log(`[processor] requestId: ${requestId}`);
-    // console.log('[processor] NFT_ISSUED 처리 완료');
+
+  async process(msg: StreamMessage): Promise<void> {
+    const payload   = JSON.parse(msg.fields['payload'] ?? '{}');
+    const requestId = msg.fields['requestId'];
+    console.log(`[processor] NFT_ISSUED — tokenId: ${payload.tokenId}, owner: ${payload.owner}`);
+    console.log(`[processor] requestId: ${requestId}`);
+    console.log('[processor] NFT_ISSUED 처리 완료');
   },
 };
 
-// ── 실습 2: ConsumerGroupWorker 인스턴스를 생성하라 ──────────────────────
-// new ConsumerGroupWorker(redis, processors, dlq, config) 형태로 생성한다.
-// config:
-//   streamKey:  'kyobo:events'
-//   groupName:  'issuer-consumers'
-//   consumerId: 'consumer-1'
-//   batchSize:  10
-//   blockMs:    500
-//   minIdleMs:  30_000
-//
-// 힌트: const worker = new ConsumerGroupWorker(consumerRedis, [nftIssuedProcessor], mockDLQ, { ... })
-const worker: ConsumerGroupWorker = (() => { throw new Error('TODO: ConsumerGroupWorker 인스턴스를 생성하세요'); })();
+const worker = new ConsumerGroupWorker(
+  consumerRedis,
+  [nftIssuedProcessor],
+  mockDLQ,
+  {
+    streamKey:  'kyobo:events',
+    groupName:  'issuer-consumers',
+    consumerId: 'consumer-1',
+    batchSize:  10,
+    blockMs:    500,
+    minIdleMs:  30_000,
+  },
+);
 
 // ══════════════════════════════════════════════════════════════════════════
 // 실행
@@ -141,19 +129,11 @@ const worker: ConsumerGroupWorker = (() => { throw new Error('TODO: ConsumerGrou
 (async () => {
   console.log('=== Part 1: RedisStreamPublisher ===\n');
 
-  // ── 실습 3: RedisStreamPublisher 인스턴스를 생성하라 ─────────────────
-  // new RedisStreamPublisher(publisherRedis) 형태로 생성한다.
-  // 힌트: const publisher = new RedisStreamPublisher(publisherRedis)
-  const publisher: RedisStreamPublisher = (() => { throw new Error('TODO: RedisStreamPublisher 인스턴스를 생성하세요'); })();
+  const publisher = new RedisStreamPublisher(publisherRedis);
 
-  // ── 실습 4: initialize()를 호출하라 ──────────────────────────────────
-  // → [XGROUP CREATE] 로그 출력되는지 확인
-  // → 두 번 호출해도 에러 없는지 확인 (BUSYGROUP 처리)
-  // 힌트: await publisher.initialize()
-  throw new Error('TODO: publisher.initialize()를 두 번 호출하세요');
+  await publisher.initialize();
+  await publisher.initialize(); // 두 번째 호출 → BUSYGROUP 무시 확인
 
-  // ── 실습 5: 아래 이벤트를 publish()로 발행하라 ───────────────────────
-  // publisher.publish(event) 의 반환값(messageId)을 받아 출력한다.
   const event: StreamEvent = {
     streamKey:   'kyobo:events',
     eventType:   'NFT_ISSUED',
@@ -163,8 +143,7 @@ const worker: ConsumerGroupWorker = (() => { throw new Error('TODO: ConsumerGrou
     requestId:   'req-001',
   };
 
-  // 힌트: const messageId = await publisher.publish(event)
-  const messageId: string = (() => { throw new Error('TODO: event를 publish()로 발행하고 messageId를 출력하세요'); })();
+  const messageId = await publisher.publish(event);
   console.log('[result] messageId:', messageId);
   console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
 
@@ -176,13 +155,12 @@ const worker: ConsumerGroupWorker = (() => { throw new Error('TODO: ConsumerGrou
     blockNumber: 18500002,
     requestId:   'req-002',
   };
-  const burnedId: string = (() => { throw new Error('TODO: burned 이벤트도 publish()로 발행하세요'); })();
+  const burnedId = await publisher.publish(burned);
   console.log('[result] NFT_BURNED messageId:', burnedId);
 
   console.log('\n=== Part 2: ConsumerGroupWorker ===\n');
   console.log('[worker] 시작 — 3초 후 자동 종료');
 
-  // 실습 1~2 완성 후 아래 블록이 동작합니다.
   setTimeout(() => {
     console.log('[worker] stop() 호출');
     worker.stop();

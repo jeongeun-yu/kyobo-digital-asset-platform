@@ -1,15 +1,7 @@
 /**
  * S05 실습 — HMAC 서명 생성 스크립트 (Step 3용)
  *
- * 실행: npx ts-node src/exercises/S05_make_sig.ts
- *
- * 목표:
- *   crypto.createHmac을 사용해 HMAC-SHA256 서명을 계산하고 콘솔에 출력한다.
- *
- * 힌트:
- *   crypto.createHmac('sha256', secret)
- *         .update(Buffer.from(data))
- *         .digest('hex')
+ * 실행: npx tsx src/exercises/S05_make_sig.ts
  */
 
 import crypto from 'crypto';
@@ -21,16 +13,13 @@ const payload = JSON.stringify({
   requestId: 'test-001',
 });
 
-// TODO: crypto.createHmac 으로 HMAC-SHA256 서명을 계산하라
-// · 알고리즘: 'sha256'
-// · 키(secret): 'dev-secret-kyobo'
-// · 입력: Buffer.from(payload)
-// · 출력 형식: hex 문자열
-const sig: string = (() => { throw new Error('TODO: 구현하세요'); })();
+const sig = crypto
+  .createHmac('sha256', 'dev-secret-kyobo')
+  .update(Buffer.from(payload))
+  .digest('hex');
 
 console.log('signature:', sig);
 console.log('payload:  ', payload);
-
 console.log('\n--- [올바른 서명] PowerShell 명령어 → 202 기대 ---');
 console.log(`Invoke-WebRequest -Uri http://localhost:3001 -Method POST \`
   -Headers @{ "Content-Type" = "application/json"; "X-Kyobo-Signature" = "${sig}" } \`

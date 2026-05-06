@@ -201,12 +201,8 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   const reqMined = makeRequest('req-mined', '0xhash-mined', 'MINED');
   await repo3.save(reqMined);
 
-  // ── 실습 3: handleFinalized() → handleConfirmed() 순서로 호출하라 ──
-  // MINED → FINALIZED: await svc3.handleFinalized('req-mined')
-  // FINALIZED → CONFIRMED: await svc3.handleConfirmed('req-mined')
-  //
-  // 힌트: 반드시 이 순서를 지켜야 한다 (FINALIZED를 건너뛰면 오류 발생)
-  throw new Error('TODO: handleFinalized() → handleConfirmed() 순서로 호출하세요');
+  await svc3.handleFinalized('req-mined');  // MINED → FINALIZED
+  await svc3.handleConfirmed('req-mined');  // FINALIZED → CONFIRMED
 
   const r3 = await repo3.findById('req-mined');
   check(`상태: ${r3?.status} (기대: CONFIRMED)`, r3?.status === 'CONFIRMED');
@@ -237,9 +233,7 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   const reqTimeout = makeRequest('req-timeout', '0xhash-timeout', 'PENDING');
   await repo4.save(reqTimeout);
 
-  // ── 실습 4: handleTimeout()를 직접 호출하라 ────────────────────────
-  // 힌트: await svc4.handleTimeout('req-timeout')
-  throw new Error('TODO: handleTimeout()을 호출하세요');
+  await svc4.handleTimeout('req-timeout');
 
   const r4 = await repo4.findById('req-timeout');
   check(`상태 유지: ${r4?.status} (기대: PENDING)`, r4?.status === 'PENDING');

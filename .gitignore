@@ -8,6 +8,10 @@ dist/
 packages/contracts/artifacts/
 packages/contracts/cache/
 packages/contracts/typechain-types/
+blockchain/artifacts/
+blockchain/cache/
+*.abi
+*.bin
 
 # 프라이빗 키 관련 파일 — 절대 커밋 금지
 *.pem

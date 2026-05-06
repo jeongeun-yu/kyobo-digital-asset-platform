@@ -9,6 +9,13 @@
  * 목표:
  *   Part 1 — 3회 실패 → DLQ 이동 시나리오 관찰
  *   Part 2 — DLQHandler.listPending() / requeueMessage() 운영 절차 실습
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * 실습 방법
+ *   1. 각 실습 블록에서 // 주석을 해제(Ctrl+/)하거나 직접 타이핑한다
+ *   2. 한 블록씩 풀고 실행해서 출력을 확인한다
+ *   3. 막히면 바로 위 주석이 답이다
+ * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../dmz/ConsumerGroupWorker';
@@ -74,29 +81,30 @@ function makeConsumerRedis(msg: StreamMessage) {
 // ══════════════════════════════════════════════════════════════════════════
 // 실습 1 — DLQHandler 생성
 // ══════════════════════════════════════════════════════════════════════════
+//
 // DLQHandler는 실패 메시지를 DLQ 스트림으로 옮기고 운영자에게 알림을 보내는 클래스다.
 // 생성자: new DLQHandler(redis, notifier, sourceStreamKey)
-//   - redis            : 위에서 만든 dlqRedis
-//   - notifier         : 위에서 만든 dlqNotifier
-//   - sourceStreamKey  : 'kyobo:events'  ← DLQ 스트림 키가 'kyobo:events:dlq'로 결정됨
+//   - redis        : 위에서 만든 dlqRedis
+//   - notifier     : 위에서 만든 dlqNotifier
+//   - sourceStreamKey : 'kyobo:events'  ← DLQ 스트림 키가 'kyobo:events:dlq'로 결정됨
 //
-// 힌트: export const dlqHandler = new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events')
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const dlqHandler: DLQHandler = null as any; // TODO: new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events') 로 교체하세요
+// 아래 주석을 해제하면 바로 실행된다:
+export const dlqHandler = new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events');
 
 // ══════════════════════════════════════════════════════════════════════════
 // 실습 2 — 항상 실패하는 EventProcessor 구현
 // ══════════════════════════════════════════════════════════════════════════
+//
 // ConsumerGroupWorker에 넘길 processor를 만든다.
 // eventTypes: ['NFT_BURNED']  ← 이 타입의 메시지만 처리
 // process(): 항상 throw new Error('DB connection failed')
 //   → 3회 재시도 후 DLQ로 이동하는 흐름을 확인하기 위해 의도적으로 실패
 //
-// 힌트: export const brokenProcessor: EventProcessor = { eventTypes: [...], async process() { throw ... } }
+// 아래 주석을 해제하면 바로 실행된다:
 export const brokenProcessor: EventProcessor = {
   eventTypes: ['NFT_BURNED'],
   async process(_msg: StreamMessage): Promise<void> {
-    throw new Error('TODO: 항상 실패하는 processor를 구현하세요 (의도적 실패)');
+    throw new Error('DB connection failed');
   },
 };
 
@@ -107,13 +115,7 @@ export const brokenProcessor: EventProcessor = {
 async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
   console.log('\n=== Part 2: 운영자 DLQ 처리 절차 ===\n');
 
-  // 실습 3 — DLQ 항목 조회
-  // dlqHandler.listPending()으로 현재 DLQ에 쌓인 메시지 목록을 가져온다.
-  // 반환값: DLQItem[]  (messageId, event, reason, failedAt 등 포함)
-  //
-  // 힌트: const pending = await dlqHandler.listPending()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pending: DLQItem[] = null as any; // TODO: await dlqHandler.listPending() 으로 교체하세요
+  const pending = await dlqHandler.listPending();
 
   console.log(`[listPending] DLQ 항목 수: ${pending.length}`);
   for (const item of pending) {
@@ -125,27 +127,17 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
     return;
   }
 
-  // 실습 4 — 첫 번째 DLQ 항목 재큐잉
-  // dlqHandler.requeueMessage(messageId) → { newMessageId: string }
-  //   - DLQ에서 메시지를 꺼내 kyobo:events에 다시 XADD
-  //   - DLQ에서는 XDEL로 제거
-  //
-  // 힌트: const result = await dlqHandler.requeueMessage(pending[0]!.messageId)
   const first = pending[0]!;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result: { newMessageId: string } = null as any; // TODO: await dlqHandler.requeueMessage(first.messageId) 로 교체하세요
+  const result = await dlqHandler.requeueMessage(first.messageId);
   console.log(`[requeue] 재큐잉 완료: ${result.newMessageId}`);
 
-  // 실습 5 — 재큐잉 후 DLQ 항목 수 확인
-  // 힌트: const afterRequeue = await dlqHandler.listPending()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const afterRequeue: DLQItem[] = null as any; // TODO: await dlqHandler.listPending() 으로 교체하세요
+  const afterRequeue = await dlqHandler.listPending();
   console.log(`[listPending after requeue] DLQ 항목 수: ${afterRequeue.length}`);
   console.log(pending.length - afterRequeue.length === 1 ? '✅ 재큐잉 후 항목 1개 감소' : '❌ 항목 수 불일치');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// 실행 — 실습 1~2 완성 후 실습 6 블록을 완성한다
+// 실행 — 실습 1~2가 완성되면 아래 주석을 해제한다
 // ══════════════════════════════════════════════════════════════════════════
 
 (async () => {
@@ -162,21 +154,19 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
     },
   };
 
-  // 실습 6 — ConsumerGroupWorker 생성 및 실행
-  // ConsumerGroupWorker(redis, processors, dlqHandler, config)
-  //   config: streamKey, groupName, consumerId, batchSize, blockMs, minIdleMs
-  //
-  // 힌트:
-  //   const redis = makeConsumerRedis(msg);
-  //   const worker = new ConsumerGroupWorker(redis, [brokenProcessor], dlqHandler, { ... });
-  //   const timeout = setTimeout(() => worker.stop(), 2000);
-  //   await worker.start();
-  //   clearTimeout(timeout);
-  throw new Error('TODO: ConsumerGroupWorker를 생성하고 실행한 뒤 DLQ 이동을 확인하세요');
+  const redis = makeConsumerRedis(msg);
+  const worker = new ConsumerGroupWorker(
+    redis, [brokenProcessor], dlqHandler,
+    { streamKey: 'kyobo:events', groupName: 'issuer-consumers',
+      consumerId: 'consumer-s11', batchSize: 1, blockMs: 0, minIdleMs: 30_000 },
+  );
+  const timeout = setTimeout(() => worker.stop(), 2000);
+  await worker.start();
+  clearTimeout(timeout);
 
-  // 완성 후 아래 체크 코드와 runOperatorWorkflow(dlqHandler)를 실행하세요.
-  // const dlqStream = getStream('kyobo:events:dlq');
-  // console.log('\n[check] DLQ 항목 수:', dlqStream.length);
-  // console.log(dlqStream.length >= 1 ? '✅ DLQ 이동 확인' : '❌ DLQ 이동 실패');
-  // await runOperatorWorkflow(dlqHandler);
+  const dlqStream = getStream('kyobo:events:dlq');
+  console.log('\n[check] DLQ 항목 수:', dlqStream.length);
+  console.log(dlqStream.length >= 1 ? '✅ DLQ 이동 확인' : '❌ DLQ 이동 실패');
+
+  await runOperatorWorkflow(dlqHandler);
 })();

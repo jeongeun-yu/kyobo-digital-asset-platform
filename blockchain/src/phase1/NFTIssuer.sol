@@ -130,7 +130,7 @@ contract NFTIssuer is AccessControl, ReentrancyGuard {
         bytes32 requestId
     ) external onlyRole(OPERATOR_ROLE) nonReentrant {
         require(!issued[requestId], "NFTIssuer: batch already issued");
-        require(to.length <= MAX_BATCH_SIZE, "NFTIssuer: batch too large — split in 500");
+        require(to.length <= MAX_BATCH_SIZE, "NFTIssuer: batch too large - split in 500");
         require(
             to.length == tokenIds.length && tokenIds.length == amounts.length,
             "NFTIssuer: array length mismatch"

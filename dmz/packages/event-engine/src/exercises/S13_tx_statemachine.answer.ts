@@ -7,10 +7,10 @@
  *   npx ts-node src/exercises/S13_tx_statemachine.ts
  *
  * 목표:
- *   [1] VALID_TRANSITIONS 맵 — 8개 상태 전이 규칙 정의
+ *   [1] VALID_TRANSITIONS 맵 — 7개 상태 전이 규칙 정의
  *   [2] transitionStatus() — 허용되지 않은 전이 시 InvalidStatusTransitionError
- *   [3] 정상 전이 케이스 — 예외 없음
- *   [4] 금지 전이 케이스 — 예외 발생
+ *   [3] 정상 전이 케이스 3가지 — 예외 없음
+ *   [4] 금지 전이 케이스 3가지 — 예외 발생
  *   [5] 실제 TxStateMachineService 핸들러 가드 패턴 확인
  */
 
@@ -19,38 +19,25 @@ import { TxStateMachineService, MintRequestNotFoundError } from '@kyobo/vasp';
 import type { TxRepository, VaspTxClient, WalletResolver, MintRequest } from '@kyobo/vasp';
 
 // ══════════════════════════════════════════════════════════════════════════
-// 실습 1: VALID_TRANSITIONS 맵을 완성하라
+// 실습 1 + 2: VALID_TRANSITIONS 맵 + transitionStatus 구현
 //
 // TX 상태 전이도:
 //   REQUESTED → SUBMITTED → PENDING → MINED → FINALIZED → CONFIRMED
 //                     ↓         ↓        ↓        ↓
 //                   FAILED    FAILED   FAILED   REORGED → MINED / FAILED
+//                                      ↓
+//                                    FAILED
 //
-// 각 상태에서 허용되는 다음 상태 목록을 채운다.
-// 힌트: 종단 상태(FAILED, CONFIRMED)는 빈 배열 []
-// ══════════════════════════════════════════════════════════════════════════
-
-// TODO: 아래 각 항목에서 throw를 지우고 올바른 TxStatus 배열을 채우세요.
-// 예: REQUESTED: ['SUBMITTED', 'FAILED'],
 const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
-  REQUESTED: null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  SUBMITTED: null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  PENDING:   null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  MINED:     null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  FINALIZED: null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  CONFIRMED: null! as TxStatus[], // TODO: 종단 상태 — 전이 없음
-  FAILED:    null! as TxStatus[], // TODO: 종단 상태 — 전이 없음
-  REORGED:   null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
+  REQUESTED: ['SUBMITTED', 'FAILED'],
+  SUBMITTED: ['PENDING',   'FAILED'],
+  PENDING:   ['MINED',     'FAILED'],
+  MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
+  FINALIZED: ['CONFIRMED'],
+  CONFIRMED: [],                          // 종단 — 원장 업데이트 완료
+  FAILED:    [],                          // 종단
+  REORGED:   ['MINED',     'FAILED'],
 };
-
-// ══════════════════════════════════════════════════════════════════════════
-// 실습 2: transitionStatus를 구현하라
-//
-// 허용되지 않은 전이 시 InvalidStatusTransitionError를 던진다.
-// 힌트:
-//   1. VALID_TRANSITIONS[current]에서 허용 목록을 가져온다
-//   2. next가 포함되지 않으면 InvalidStatusTransitionError를 throw
-// ══════════════════════════════════════════════════════════════════════════
 
 class InvalidStatusTransitionError extends Error {
   constructor(from: TxStatus, to: TxStatus) {
@@ -60,7 +47,10 @@ class InvalidStatusTransitionError extends Error {
 }
 
 function transitionStatus(current: TxStatus, next: TxStatus): void {
-  throw new Error('TODO: 구현하세요');
+  const allowed = VALID_TRANSITIONS[current] ?? [];
+  if (!allowed.includes(next)) {
+    throw new InvalidStatusTransitionError(current, next);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -168,6 +158,9 @@ function expectNoThrow(label: string, fn: () => void) {
   expectThrows('PENDING   → PENDING',    () => transitionStatus('PENDING',   'PENDING'));
 
   // ── [5] 실제 TxStateMachineService 핸들러 가드 패턴 확인 ────────────
+  //
+  // handleMined: req.status !== 'PENDING' && !== 'SUBMITTED' 이면 return (throw 아님)
+  // → At-least-once 재배달 시 DLQ 이동 없이 조용히 무시
   console.log('\n[검증 5] handleMined 가드 — 이미 CONFIRMED 상태면 조용히 무시');
 
   const repo   = new InMemoryTxRepository();

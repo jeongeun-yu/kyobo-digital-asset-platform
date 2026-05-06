@@ -1,0 +1,8 @@
+node_modules/
+dist/
+
+# 환경변수 — 개인키 포함, 절대 커밋 금지
+.env
+
+# 템플릿은 커밋 대상
+!.env.example

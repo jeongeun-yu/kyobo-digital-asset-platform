@@ -140,26 +140,41 @@ function check(label: string, pass: boolean) {
   // 2. WebhookPublishHandler(publisher, idempotencyWebhook) 생성
   // 3. server.on('NFT_ISSUED', handler.createHandler()) 로 등록
   //
-  // 힌트:
-  //   const server  = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
-  //   const handler = new WebhookPublishHandler(publisher, idempotencyWebhook);
-  //   server.on('NFT_ISSUED', handler.createHandler());
-  const server: WebhookServer = (() => { throw new Error('TODO: WebhookServer를 생성하고 핸들러를 등록하세요'); })();
-  const handler: WebhookPublishHandler = (() => { throw new Error('TODO: WebhookPublishHandler를 생성하세요'); })();
+  // 아래 주석을 해제하면 바로 실행된다:
+  // const server  = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
+  // const handler = new WebhookPublishHandler(publisher, idempotencyWebhook);
+  // server.on('NFT_ISSUED', handler.createHandler());
+
+  // 실습 1 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
+  const server  = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
+  const handler = new WebhookPublishHandler(publisher, idempotencyWebhook);
+  server.on('NFT_ISSUED', handler.createHandler());
 
   // ── 실습 2: NFTIssuedProcessor 인스턴스를 생성하라 ───────────────────
   // new NFTIssuedProcessor(idempotencyConsumer, ledger)
   //
-  // 힌트: const processor = new NFTIssuedProcessor(idempotencyConsumer, ledger)
-  const processor: NFTIssuedProcessor = (() => { throw new Error('TODO: NFTIssuedProcessor 인스턴스를 생성하세요'); })();
+  // 아래 주석을 해제하면 바로 실행된다:
+  // const processor = new NFTIssuedProcessor(idempotencyConsumer, ledger);
+
+  // 실습 2 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
+  const processor = new NFTIssuedProcessor(idempotencyConsumer, ledger);
 
   // ── 실습 3: ConsumerGroupWorker 인스턴스를 생성하라 ──────────────────
   // new ConsumerGroupWorker(mockRedis, [processor], mockDLQ, config)
   // config: streamKey='kyobo:events', groupName='issuer-consumers',
   //         consumerId='worker-s12', batchSize=10, blockMs=30, minIdleMs=30_000
   //
-  // 힌트: const worker = new ConsumerGroupWorker(mockRedis, [processor], mockDLQ, { ... })
-  const worker: ConsumerGroupWorker = (() => { throw new Error('TODO: ConsumerGroupWorker 인스턴스를 생성하세요'); })();
+  // 아래 주석을 해제하면 바로 실행된다:
+  // const worker = new ConsumerGroupWorker(
+  //   mockRedis, [processor], mockDLQ,
+  //   { streamKey: 'kyobo:events', groupName: 'issuer-consumers', consumerId: 'worker-s12', batchSize: 10, blockMs: 30, minIdleMs: 30_000 },
+  // );
+
+  // 실습 3 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
+  const worker = new ConsumerGroupWorker(
+    mockRedis, [processor], mockDLQ,
+    { streamKey: 'kyobo:events', groupName: 'issuer-consumers', consumerId: 'worker-s12', batchSize: 10, blockMs: 30, minIdleMs: 30_000 },
+  );
 
   // ── 서버 + Worker 시작 ────────────────────────────────────────────────
   await server.listen();
@@ -196,8 +211,12 @@ function check(label: string, pass: boolean) {
   // ── 실습 4: 동일 BODY(동일 requestId)를 한 번 더 전송하라 ────────────
   // sendWebhook(BODY, sign(BODY)) 를 다시 호출하고 상태 코드를 확인한다.
   //
-  // 힌트: const status2 = await sendWebhook(BODY, sign(BODY))
-  const status2: number = (() => { throw new Error('TODO: 동일 BODY를 한 번 더 전송하세요'); })();
+  // 아래 주석을 해제하면 바로 실행된다:
+  // const status2 = await sendWebhook(BODY, sign(BODY));
+  // check(`HTTP 상태: ${status2} (기대: 202)`, status2 === 202);
+
+  // 실습 4 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
+  const status2 = await sendWebhook(BODY, sign(BODY));
   check(`HTTP 상태: ${status2} (기대: 202)`, status2 === 202);
 
   await new Promise(r => setTimeout(r, 150));
@@ -211,8 +230,12 @@ function check(label: string, pass: boolean) {
   // ── 실습 5: 잘못된 서명으로 요청을 전송하고 상태 코드를 확인하라 ────────
   // sendWebhook(BODY, 'wrong-signature') 를 호출하고 401인지 확인한다.
   //
-  // 힌트: const status3 = await sendWebhook(BODY, 'wrong-signature')
-  const status3: number = (() => { throw new Error('TODO: 잘못된 서명으로 요청을 전송하세요'); })();
+  // 아래 주석을 해제하면 바로 실행된다:
+  // const status3 = await sendWebhook(BODY, 'wrong-signature');
+  // check(`HTTP 상태: ${status3} (기대: 401)`, status3 === 401);
+
+  // 실습 5 완성 전까지는 이 줄을 쓴다 → 완성하면 삭제
+  const status3 = await sendWebhook(BODY, 'wrong-signature');
   check(`HTTP 상태: ${status3} (기대: 401)`, status3 === 401);
 
   // ── 정리 ─────────────────────────────────────────────────────────────

@@ -13,15 +13,20 @@
 
 import crypto from 'crypto';
 
-// ── 실습 1: verifySignature를 구현하라 ───────────────────────────────────────
-// 구현 규칙:
-//   1. signature가 빈 문자열이면 즉시 false 반환
-//   2. crypto.createHmac('sha256', secret).update(rawBody).digest('hex') 로 expected 계산
-//   3. Buffer.from(signature, 'hex') / Buffer.from(expected, 'hex') 로 각각 버퍼 변환
-//   4. 두 버퍼 길이가 다르면 false 반환 (timingSafeEqual은 길이가 다르면 throw)
-//   5. crypto.timingSafeEqual(sigBuf, expBuf) 결과 반환
 function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
-  throw new Error('TODO: 구현하세요');
+  if (!signature) return false;
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex');
+
+  const sigBuf = Buffer.from(signature, 'hex');
+  const expBuf = Buffer.from(expected,  'hex');
+
+  if (sigBuf.length !== expBuf.length) return false;
+
+  return crypto.timingSafeEqual(sigBuf, expBuf);
 }
 
 // ── Timing Attack 시연용: === 비교 ────────────────────────────────────────────
@@ -156,6 +161,10 @@ const CORRECT_SIG = computeHmac(PAYLOAD, SECRET);
   console.log('  ↑ JS끼리는 삽입 순서가 보존돼서 결국 일치 — 실제 불일치를 보려면 7c 참조\n');
 
   // 시나리오 7c: Python 발신자 시뮬레이션 (실제 불일치)
+  // Python json.dumps 기본값: 콜론·쉼표 뒤 공백 있음
+  //   {"eventType": "ACTIVITY_ACHIEVED", "data": {"userId": "u-001", ...}}
+  // JS JSON.stringify 기본값: 공백 없음
+  //   {"eventType":"ACTIVITY_ACHIEVED","data":{"userId":"u-001",...}}
   const PAYLOAD_PYTHON = Buffer.from(
     '{"eventType": "ACTIVITY_ACHIEVED", "data": {"userId": "u-001", "activityId": "steps-10k"}, "timestamp": 1714000000, "requestId": "test-s08"}'
   );

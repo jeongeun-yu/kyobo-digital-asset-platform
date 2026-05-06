@@ -46,6 +46,7 @@ const naiveProcessor: EventProcessor = {
 //       b. processedIds에 이미 있으면 '[멱등성] 중복 요청 무시: {requestId}' 로그 후 return
 //       c. payload 파싱 → credit(tokenId, owner) 호출
 //       d. processedIds에 requestId 추가
+// 주석을 풀면 바로 실행 가능. 직접 타이핑도 가능.
 // ══════════════════════════════════════════════════════════════════════════
 
 const processedIds = new Set<string>();
@@ -54,16 +55,16 @@ export const idempotentProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
 
   async process(msg: StreamMessage): Promise<void> {
-    throw new Error('TODO: 구현하세요');
-    // 힌트:
-    // const requestId = msg.fields['requestId'] ?? '';
-    // if (processedIds.has(requestId)) {
-    //   console.log(`    [멱등성] 중복 요청 무시: ${requestId}`);
-    //   return;
-    // }
-    // const { tokenId, owner } = JSON.parse(msg.fields['payload'] ?? '{}');
-    // credit(tokenId, owner);
-    // processedIds.add(requestId);
+    const requestId = msg.fields['requestId'] ?? '';
+
+    if (processedIds.has(requestId)) {
+      console.log(`    [멱등성] 중복 요청 무시: ${requestId}`);
+      return;
+    }
+
+    const { tokenId, owner } = JSON.parse(msg.fields['payload'] ?? '{}');
+    credit(tokenId, owner);
+    processedIds.add(requestId);
   },
 };
 

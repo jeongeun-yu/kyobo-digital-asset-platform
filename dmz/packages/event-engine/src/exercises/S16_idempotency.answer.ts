@@ -43,22 +43,14 @@ class InMemoryTxRepository implements TxRepository {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// VaspMockClient — 실습 핵심: requestId 기반 멱등성 구현
+// VaspMockClient — 실습 2 핵심: requestId 기반 멱등성 구현
 //
-// 실습 1: VaspMockClient.submitMint()를 완성하라
+// ── 실습 1: VaspMockClient를 완성하라 ──────────────────────────────────
+// submitMint에서 requestId 기반 멱등성을 구현한다.
 //   · 같은 requestId → 같은 txHash 반환 (Map으로 관리)
 //   · 새 requestId → 신규 txHash 생성 + pending 상태 등록
 //
-// 힌트:
-//   private submitted = new Map<string, string>();  // requestId → txHash
-//   private txStatus  = new Map<string, { status: ... }>();
-//
-//   submitMint() 안에서:
-//     if (this.submitted.has(params.requestId)) return { txHash: this.submitted.get(...)! };
-//     const txHash = `0xMOCK_${Date.now().toString(16)}`;
-//     this.submitted.set(params.requestId, txHash);
-//     this.txStatus.set(txHash, { status: 'pending' });
-//     return { txHash };
+// 아래 주석을 해제하면 바로 실행된다:
 // ══════════════════════════════════════════════════════════════════════════
 
 class VaspMockClient implements VaspTxClient {
@@ -73,15 +65,13 @@ class VaspMockClient implements VaspTxClient {
   async submitMint(params: {
     to: string; tokenId: bigint; amount: bigint; requestId: string;
   }): Promise<{ txHash: string }> {
-    throw new Error('TODO: requestId 기반 멱등성을 구현하세요');
-    // 힌트:
-    // if (this.submitted.has(params.requestId)) {
-    //   return { txHash: this.submitted.get(params.requestId)! };
-    // }
-    // const txHash = `0xMOCK_${(++this.counter).toString().padStart(4, '0')}_${Date.now().toString(16)}`;
-    // this.submitted.set(params.requestId, txHash);
-    // this.txStatus.set(txHash, { status: 'pending' });
-    // return { txHash };
+    if (this.submitted.has(params.requestId)) {
+      return { txHash: this.submitted.get(params.requestId)! };
+    }
+    const txHash = `0xMOCK_${(++this.counter).toString().padStart(4, '0')}_${Date.now().toString(16)}`;
+    this.submitted.set(params.requestId, txHash);
+    this.txStatus.set(txHash, { status: 'pending' });
+    return { txHash };
   }
 
   setTxStatus(txHash: string, status: { status: 'pending' | 'mined' | 'confirmed' | 'failed' | 'not_found'; revertReason?: string }) {
@@ -127,11 +117,7 @@ function check(label: string, pass: boolean) {
   const wallet  = new MockWalletResolver();
   const svc1    = new TxStateMachineService(repo1, vasp1, wallet);
 
-  // ── 실습 2: submitMintRequest를 호출하라 ─────────────────────────────
-  // svc1.submitMintRequest({ userId, tokenId, amount }) → requestId(string)
-  //
-  // 힌트: const requestId = await svc1.submitMintRequest({ userId: 'user-1', tokenId: 1001n, amount: 1n })
-  const requestId: string = (() => { throw new Error('TODO: submitMintRequest를 호출하세요'); })();
+  const requestId = await svc1.submitMintRequest({ userId: 'user-1', tokenId: 1001n, amount: 1n });
 
   const req1 = await repo1.findById(requestId);
   check(`상태: ${req1?.status} (기대: SUBMITTED)`, req1?.status === 'SUBMITTED');
@@ -177,6 +163,7 @@ function check(label: string, pass: boolean) {
   }
   check('submitMintRequest → throw 발생 (VASP 실패)', didThrow);
 
+  // DB에 FAILED 기록 남아 있음 확인
   const allReqs = repo3.all();
   const failedReq = allReqs.find(r => r.status === 'FAILED');
   check('DB에 FAILED 기록 존재', !!failedReq);
@@ -221,6 +208,13 @@ function check(label: string, pass: boolean) {
   console.log('    2. repo.save(REQUESTED)    ← DB INSERT 먼저');
   console.log('    3. vasp.submitMint({ requestId })  ← VASP 호출 나중');
   console.log('    4. repo.updateStatus(SUBMITTED, txHash)');
+  console.log('');
+  console.log('  VASP가 먼저였다면:');
+  console.log('    VASP 전송 성공 → 크래시 → DB 기록 없음 → 상태 알 수 없음 → 중복 발행 위험');
+
+  // REQUESTED 상태가 먼저 저장되는지 검증:
+  // submitMintRequest 호출 즉시 가로채기는 어려우므로
+  // 실패 케이스에서 FAILED 기록이 남는 것으로 "DB 먼저" 원칙을 검증함 (검증 3)
   check('DB INSERT 먼저 원칙: 실패 시 FAILED 기록 남음 (검증 3에서 확인)', !!failedReq);
 
   // ── 정리 ─────────────────────────────────────────────────────────────

@@ -92,7 +92,8 @@ async function tryCheck(label: string, fn: () => Promise<boolean>) {
 async function issuanceHealth(adapter: IBlockchainAdapter): Promise<{
   chain: string; type: string; connected: boolean;
 }> {
-  throw new Error('TODO: 구현하세요');
+  const connected = await adapter.isConnected().catch(() => false);
+  return { chain: adapter.chainId, type: adapter.chainType, connected };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -103,7 +104,7 @@ async function issuanceHealth(adapter: IBlockchainAdapter): Promise<{
 // ════════════════════════════════════════════════════════════════════════════
 
 function formatGas(receipt: TransactionReceipt): string {
-  throw new Error('TODO: 구현하세요');
+  return receipt.gasUsed !== undefined ? receipt.gasUsed.toString() : 'N/A';
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -114,7 +115,10 @@ function formatGas(receipt: TransactionReceipt): string {
 // ════════════════════════════════════════════════════════════════════════════
 
 async function withSubscription(adapter: IBlockchainAdapter): Promise<boolean> {
-  throw new Error('TODO: 구현하세요');
+  const unsubscribe = await adapter.subscribeEvents('0x0', [], ['Transfer'], 0, async () => {});
+  const isFunc = typeof unsubscribe === 'function';
+  unsubscribe();
+  return isFunc;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -130,7 +134,12 @@ async function withSubscription(adapter: IBlockchainAdapter): Promise<boolean> {
 // ════════════════════════════════════════════════════════════════════════════
 
 function getFeeModel(adapter: IBlockchainAdapter): string {
-  throw new Error('TODO: 구현하세요');
+  switch (adapter.chainType) {
+    case 'EVM':  return '가스(gas) 기반 — EIP-1559';
+    case 'XRPL': return '고정 수수료 — XRP drops';
+    case 'BFT':  return '수수료 없음 — Circle 자체 부담';
+    case 'UTXO': return 'UTXO 차액 — 채굴자 수수료';
+  }
 }
 
 const CONTRACT = contractConfig.mockERC1155 || '0xD7B7586bd890C1A2791c2C18cbAEB7e0c30DB93F';
@@ -149,7 +158,13 @@ class IssuerService {
   constructor(private adapter: IBlockchainAdapter) {}
 
   async issue(to: string, tokenId: bigint): Promise<TransactionReceipt> {
-    throw new Error('TODO: 구현하세요');
+    return this.adapter.mintNFT({
+      contractAddr: CONTRACT,
+      to,
+      tokenId,
+      amount:    1n,
+      requestId: `issue-${Date.now()}`,
+    });
   }
 }
 
