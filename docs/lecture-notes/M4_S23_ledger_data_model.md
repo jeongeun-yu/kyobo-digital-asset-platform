@@ -75,21 +75,115 @@ M2에서 배운 것처럼, Redis Streams는 at-least-once delivery다. 같은 NF
 
 ### 3. 4개 테이블이 각각 무엇을 담당하는가
 
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         오프체인 원장                              │
+│                                                                  │
+│  ┌─────────────────┐        ┌──────────────────┐                │
+│  │  mint_requests  │        │ processed_events │                │
+│  │  (진행 중 추적)  │        │  (중복 방지 장치)  │                │
+│  └────────┬────────┘        └──────────────────┘                │
+│           │ 발행 확정 시                                           │
+│           ▼                                                      │
+│  ┌─────────────────┐        ┌──────────────────┐                │
+│  │user_nft_holdings│        │   audit_log      │                │
+│  │  (현재 보유 캐시) │        │  (변경 불가 기록)  │                │
+│  └─────────────────┘        └──────────────────┘                │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 **① `mint_requests` — "진행 중인 발행 요청 추적"**
 
 사용자가 걷기 목표 달성 → NFT 발행 요청 생성 → VASP에 TX 제출 → 블록에 포함 대기 → 확정. 이 과정이 최소 수십 초, 길면 몇 분 걸린다. 그 사이 상태를 추적하는 테이블이다.
 
-상태: `PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED / FAILED / REORGED`
+상태 전이 다이어그램:
+
+```
+REQUESTED ──→ SUBMITTED ──→ MINED ──→ FINALIZED ──→ CONFIRMED
+    │              │            │           │
+    │              │            ▼           ▼
+    │              │         REORGED ──→ MINED (복귀, confirmation 재시작)
+    │              │
+    └──────────────┴──────────────────────→ FAILED
+```
+
+각 상태의 의미:
+
+| 상태 | 의미 | 누가 설정하나 |
+|---|---|---|
+| `REQUESTED` | 발행 요청 생성됨 | IssuerService |
+| `SUBMITTED` | VASP에 TX 제출 완료 | TxStateMachineService |
+| `MINED` | 블록에 포함됨 (아직 finality 미달) | TxStateMachineService (콜백/폴링) |
+| `FINALIZED` | 충분한 confirmation 확보 | TxStateMachineService |
+| `CONFIRMED` | 내부 원장 최종 반영 완료 | LedgerService |
+| `REORGED` | 체인 재편으로 블록에서 제거됨 (임시) | TxStateMachineService |
+| `FAILED` | 발행 실패 (REVERT, 재시도 소진 등) | TxStateMachineService |
+
+실제 레코드 예시:
+
+```
+request_id  : "a1b2c3d4-..."
+user_id     : "K-20240001"
+policy_id   : "WALK-10000"
+status      : "MINED"
+tx_hash     : "0x3f2a...8e91"
+token_id    : NULL          ← 아직 확정 전이라 모름
+error_msg   : NULL
+created_at  : 2024-03-15 09:01:00
+updated_at  : 2024-03-15 09:01:45  ← SUBMITTED 때 갱신
+```
+
+---
 
 **② `processed_events` — "이미 처리한 이벤트 목록"**
 
 블록체인 이벤트(NFTIssued)를 처음 받았을 때만 처리하고, 재전달 시 무시하기 위한 테이블.
 
-핵심은 `(tx_hash, log_index)` 복합 UNIQUE 제약이다. 왜 `tx_hash`만으로 안 되냐? 한 트랜잭션 안에 여러 이벤트가 있을 수 있다. `log_index`가 각 이벤트를 구분한다.
+핵심은 `(tx_hash, log_index)` 복합 UNIQUE 제약이다.
+
+왜 `tx_hash`만으로 안 되냐?
+
+```
+TX 0x3f2a...8e91 안에:
+  log[0] = NFTIssued(tokenId=1001, to=0xAAA)  ← 서로 다른 이벤트
+  log[1] = NFTIssued(tokenId=1002, to=0xBBB)
+```
+
+한 트랜잭션 안에 여러 이벤트가 있을 수 있다. `log_index`가 각 이벤트를 구분한다. `tx_hash`만 UNIQUE로 걸면 두 번째 이벤트(log[1])가 "이미 처리됨"으로 잘못 차단된다.
+
+실제 레코드 예시:
+
+```
+id           : 1
+tx_hash      : "0x3f2a...8e91"
+log_index    : 0
+event_name   : "NFTIssued"
+block_number : 12345
+payload      : {"tokenId": 1001, "to": "0xAAA..."}
+processed_at : 2024-03-15 09:01:50
+```
+
+---
 
 **③ `user_nft_holdings` — "지금 누가 뭘 가지고 있나"**
 
 현재 보유 현황 캐시. 앱에서 "내 NFT" 목록을 보여줄 때 이 테이블을 읽는다. ReconcileService(S25)가 주기적으로 온체인과 비교한다.
+
+`UNIQUE (user_id, token_id)` 제약이 걸려 있다. 같은 사람이 같은 tokenId를 두 번 INSERT 시도하면 DB가 자동으로 막는다 — at-least-once 재처리 방어의 마지막 보루.
+
+실제 레코드 예시:
+
+```
+id          : 1
+user_id     : "K-20240001"
+token_id    : 1001
+policy_id   : "WALK-10000"
+acquired_at : 2024-03-15 09:01:50
+```
+
+---
 
 **④ `audit_log` — "무슨 일이 있었나 — 변경 불가 기록"**
 
@@ -97,7 +191,23 @@ M2에서 배운 것처럼, Redis Streams는 at-least-once delivery다. 같은 NF
 - 전자금융감독규정 §34: 접근 기록 1년 이상 보존
 - 가상자산이용자보호법 §15: 거래 기록 5년 보존
 
-레코드는 **한 번 삽입되면 수정/삭제 불가**다. 보정이 필요하면 새 레코드를 추가한다. S26에서 상세히 다룬다.
+레코드는 **한 번 삽입되면 수정/삭제 불가**다. 보정이 필요하면 새 레코드를 추가한다.
+
+`checksum` 컬럼은 왜 있나? `SHA-256(event_time + actor + action + resource_id + after_state)`를 저장해서, 나중에 레코드가 DB 수준에서 변조됐는지 검증한다. S26에서 상세히 다룬다.
+
+실제 레코드 예시:
+
+```
+id            : 1
+event_time    : 2024-03-15 09:01:00
+actor         : "system:IssuerService"
+action        : "MINT_REQUESTED"
+resource_type : "mint_request"
+resource_id   : "a1b2c3d4-..."
+before_state  : NULL
+after_state   : {"status": "REQUESTED", "userId": "K-20240001"}
+checksum      : "e3b0c44298fc..."
+```
 
 ---
 
@@ -107,35 +217,127 @@ M2에서 배운 것처럼, Redis Streams는 at-least-once delivery다. 같은 NF
 ① 사용자가 걷기 목표 달성
         │
         ▼
-② IssuerService → mint_requests INSERT (status=PENDING)
-                 → audit_log INSERT (MINT_REQUESTED)
+② IssuerService
+   → mint_requests INSERT (status=REQUESTED)
+   → audit_log INSERT (MINT_REQUESTED)
         │
         ▼
 ③ TxStateMachineService → VASP에 TX 제출
-   → mint_requests UPDATE (status=SUBMITTED, txHash=0x...)
+   → mint_requests UPDATE (status=SUBMITTED, tx_hash=0x...)
    → audit_log INSERT (STATUS_SUBMITTED)
         │
-        ▼ (블록에 포함됨)
+        ▼ (블록에 포함됨 — 콜백 또는 폴링으로 감지)
         │
         ▼
-④ ConsumerGroupWorker가 NFTIssued 이벤트 수신
+④ TxStateMachineService
+   → mint_requests UPDATE (status=MINED, block_number=12345)
+   → audit_log INSERT (STATUS_MINED)
         │
-        ├─ processed_events INSERT (tx_hash, log_index) ← 중복 방지
-        │       이미 있으면 → 종료 (중복 이벤트)
-        │       없으면 → 계속
+        ▼ (finality 확보)
         │
-        ├─ mint_requests UPDATE (status=CONFIRMED, tokenId=...)
+        ▼
+⑤ TxStateMachineService
+   → mint_requests UPDATE (status=FINALIZED)
+   → [LedgerService.confirmMint() 호출]
         │
-        ├─ user_nft_holdings INSERT (userId, tokenId)
+        ▼
+⑥ LedgerService.confirmMint()
         │
-        ├─ audit_log INSERT (STATUS_CONFIRMED)
+        ├─ processed_events INSERT (tx_hash, log_index)
+        │       ON CONFLICT DO NOTHING
+        │       rows.length === 0 → 중복 이벤트 → 즉시 종료
+        │       rows.length === 1 → 신규 이벤트 → 계속
         │
-        └─ Java Gateway 호출 → 영구 금융 원장 기록
+        ├─ mint_requests UPDATE (status=CONFIRMED, token_id=1001)
+        │
+        ├─ user_nft_holdings INSERT (user_id, token_id)
+        │       ON CONFLICT DO NOTHING  (holdings도 중복 방어)
+        │
+        └─ audit_log INSERT (STATUS_CONFIRMED)
+```
+
+**읽기 경로 — 앱이 데이터를 어떻게 조회하나**
+
+```
+앱: "내 NFT 목록 보여줘"
+  → SELECT * FROM user_nft_holdings WHERE user_id = 'K-20240001'
+  → 5ms 응답
+
+앱: "발행 요청 상태 확인"
+  → SELECT status FROM mint_requests WHERE request_id = 'a1b2c3d4'
+  → 3ms 응답
+
+(온체인 RPC 호출 없음)
 ```
 
 ---
 
-### 5. 역방향 수정 금지 — 이게 왜 "절대"인가
+### 5. `ON CONFLICT DO NOTHING` 패턴 — 이게 핵심이다
+
+이벤트 처리에서 멱등성을 보장하는 패턴이다.
+
+**일반 INSERT vs ON CONFLICT DO NOTHING 비교:**
+
+```sql
+-- 일반 INSERT: 중복이면 에러 발생
+INSERT INTO processed_events (tx_hash, log_index, ...)
+VALUES ('0x3f2a', 0, ...);
+-- ERROR: duplicate key value violates unique constraint
+
+-- ON CONFLICT DO NOTHING: 중복이면 조용히 무시
+INSERT INTO processed_events (tx_hash, log_index, ...)
+VALUES ('0x3f2a', 0, ...)
+ON CONFLICT (tx_hash, log_index) DO NOTHING
+RETURNING id;
+-- 신규: id = 1 반환
+-- 중복: 아무 행도 반환 안 됨 (rows.length === 0)
+```
+
+TypeScript에서 이걸 어떻게 쓰나:
+
+```typescript
+async recordProcessedEvent(txHash, logIndex, ...): Promise<ProcessedEventResult> {
+  const rows = await this.db.query(`
+    INSERT INTO processed_events (tx_hash, log_index, event_name, block_number, payload)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (tx_hash, log_index) DO NOTHING
+    RETURNING id
+  `, [txHash, logIndex, eventName, blockNumber, payload]);
+
+  if (rows.length === 0) {
+    return { skipped: true };   // 이미 처리한 이벤트 → 상위에서 바로 return
+  }
+  return { skipped: false };    // 신규 이벤트 → 계속 처리
+}
+```
+
+호출부에서 이렇게 쓴다:
+
+```typescript
+const result = await ledger.recordProcessedEvent(txHash, logIndex, ...);
+if (result.skipped) {
+  return;  // 중복 이벤트 → 아무것도 안 함
+}
+
+// 여기까지 오면 반드시 신규 이벤트
+await ledger.confirmMint(requestId, tokenId);
+await ledger.updateHoldings(userId, tokenId);
+```
+
+**왜 애플리케이션 레벨 체크("먼저 SELECT해서 있으면 스킵")로 안 하나?**
+
+```
+Worker-A: SELECT → 없음 → INSERT 준비 중...
+Worker-B: SELECT → 없음 → INSERT 준비 중...
+Worker-A: INSERT 완료
+Worker-B: INSERT 완료 ← 중복! 이미 있는데 또 발행
+```
+
+동시에 두 Worker가 처리하면 SELECT 시점에 둘 다 "없음"으로 읽는다. DB의 UNIQUE 제약 + ON CONFLICT가 유일하게 안전한 방법이다.
+
+---
+
+### 6. 역방향 수정 금지 — 이게 왜 "절대"인가
 
 ReconcileService를 처음 보면 이런 생각이 든다:
 
@@ -163,13 +365,17 @@ CREATE TABLE mint_requests (
   request_id   UUID PRIMARY KEY,
   user_id      VARCHAR(64)  NOT NULL,
   policy_id    VARCHAR(64)  NOT NULL,
-  status       VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
-  tx_hash      VARCHAR(66),
-  token_id     NUMERIC,
-  error_msg    TEXT,
+  status       VARCHAR(16)  NOT NULL DEFAULT 'REQUESTED',
+  tx_hash      VARCHAR(66),                    -- SUBMITTED 이후 설정
+  token_id     NUMERIC,                         -- CONFIRMED 이후 설정
+  block_number NUMERIC,                         -- MINED 이후 설정
+  error_msg    TEXT,                            -- FAILED 시 설정
+  retry_count  INTEGER      NOT NULL DEFAULT 0,
   created_at   TIMESTAMPTZ  DEFAULT NOW(),
   updated_at   TIMESTAMPTZ  DEFAULT NOW()
 );
+CREATE INDEX idx_mint_requests_user   ON mint_requests(user_id);
+CREATE INDEX idx_mint_requests_status ON mint_requests(status);  -- 폴링 쿼리용
 
 -- ② processed_events — (tx_hash, log_index) 복합 UNIQUE가 핵심
 CREATE TABLE processed_events (
@@ -191,11 +397,11 @@ CREATE TABLE user_nft_holdings (
   token_id    NUMERIC     NOT NULL,
   policy_id   VARCHAR(64),
   acquired_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (user_id, token_id)
+  UNIQUE (user_id, token_id)            -- 동일 tokenId 중복 보유 방지
 );
 CREATE INDEX idx_holdings_user ON user_nft_holdings(user_id);
 
--- ④ audit_log — INSERT-only (Row Security Policy 별도 적용)
+-- ④ audit_log — INSERT-only
 CREATE TABLE audit_log (
   id            SERIAL PRIMARY KEY,
   event_time    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -207,26 +413,50 @@ CREATE TABLE audit_log (
   after_state   JSONB        NOT NULL,
   ip_address    INET,
   session_id    VARCHAR(128),
-  checksum      VARCHAR(64)  NOT NULL
+  checksum      VARCHAR(64)  NOT NULL  -- SHA-256(event_time+actor+action+resource_id+after_state)
 );
+CREATE INDEX idx_audit_resource ON audit_log(resource_type, resource_id);
+CREATE INDEX idx_audit_actor    ON audit_log(actor);
 ```
 
-### 스켈레톤 코드와 연결
+---
+
+### 스켈레톤 코드 전체 구조
 
 ```typescript
-// LedgerService.ts — 스켈레톤에 이미 있는 구조
+// LedgerService.ts
 export class LedgerService {
   constructor(
     private readonly db: DatabaseClient,
     private readonly auditLog: AuditLogClient,
   ) {}
 
+  // ── mint_requests ──────────────────────────────────────────
+
   async createMintRequest(userId: string, policyId: string): Promise<MintRequest> {
     const requestId = randomUUID();
-    // TODO: DB INSERT into mint_requests (requestId, userId, policyId, status='PENDING')
-    // TODO: auditLog.log({ actor: 'system', action: 'MINT_REQUESTED', ... })
+    // TODO: INSERT INTO mint_requests (request_id, user_id, policy_id, status='REQUESTED')
+    // TODO: auditLog.log({ actor: 'system:IssuerService', action: 'MINT_REQUESTED', ... })
     throw new Error('Not implemented');
   }
+
+  async updateMintRequestStatus(
+    requestId: string,
+    status: MintStatus,
+    extra?: { txHash?: string; tokenId?: bigint; blockNumber?: bigint; errorMsg?: string },
+  ): Promise<void> {
+    // TODO: UPDATE mint_requests SET status=$2, tx_hash=$3, ..., updated_at=NOW()
+    //       WHERE request_id=$1
+    // TODO: auditLog.log({ action: 'STATUS_' + status, ... })
+    throw new Error('Not implemented');
+  }
+
+  async getMintRequest(requestId: string): Promise<MintRequest | null> {
+    // TODO: SELECT * FROM mint_requests WHERE request_id=$1
+    throw new Error('Not implemented');
+  }
+
+  // ── processed_events ───────────────────────────────────────
 
   async recordProcessedEvent(
     txHash: string,
@@ -236,23 +466,53 @@ export class LedgerService {
     payload: unknown,
   ): Promise<ProcessedEventResult> {
     // TODO:
-    // INSERT INTO processed_events (tx_hash, log_index, ...)
-    // ON CONFLICT (tx_hash, log_index) DO NOTHING   ← 이게 핵심
+    // INSERT INTO processed_events (tx_hash, log_index, event_name, block_number, payload)
+    // VALUES ($1, $2, $3, $4, $5)
+    // ON CONFLICT (tx_hash, log_index) DO NOTHING
     // RETURNING id
     //
-    // rows.length === 0 → { skipped: true }   (중복 이벤트)
-    // rows.length === 1 → { skipped: false }  (신규 이벤트)
+    // rows.length === 0 → { skipped: true }   (중복 이벤트 → 상위에서 즉시 return)
+    // rows.length === 1 → { skipped: false }  (신규 이벤트 → 계속 처리)
+    throw new Error('Not implemented');
+  }
+
+  // ── user_nft_holdings ──────────────────────────────────────
+
+  async addHolding(userId: string, tokenId: bigint, policyId: string): Promise<void> {
+    // TODO:
+    // INSERT INTO user_nft_holdings (user_id, token_id, policy_id)
+    // VALUES ($1, $2, $3)
+    // ON CONFLICT (user_id, token_id) DO NOTHING  ← holdings도 중복 방어
+    throw new Error('Not implemented');
+  }
+
+  async getHoldings(userId: string): Promise<UserNftHolding[]> {
+    // TODO: SELECT * FROM user_nft_holdings WHERE user_id=$1
     throw new Error('Not implemented');
   }
 }
 ```
 
-`ON CONFLICT DO NOTHING`이 왜 중요한지 이해했으면 이 코드가 왜 이렇게 생겼는지 자연스럽게 보인다. `processed_events` 테이블의 UNIQUE 제약과 이 SQL이 한 쌍이다.
+**각 메서드가 언제 호출되나:**
+
+| 메서드 | 호출 시점 | 호출하는 서비스 |
+|---|---|---|
+| `createMintRequest` | 걷기 목표 달성 이벤트 수신 | IssuerService |
+| `updateMintRequestStatus('SUBMITTED')` | VASP TX 제출 직후 | TxStateMachineService |
+| `updateMintRequestStatus('MINED')` | 블록 포함 확인 | TxStateMachineService |
+| `updateMintRequestStatus('FINALIZED')` | finality 확보 | TxStateMachineService |
+| `recordProcessedEvent` | NFTIssued 이벤트 수신 | ConsumerGroupWorker |
+| `updateMintRequestStatus('CONFIRMED')` | recordProcessedEvent 신규 확인 후 | ConsumerGroupWorker |
+| `addHolding` | CONFIRMED 처리 중 | ConsumerGroupWorker |
+| `updateMintRequestStatus('FAILED')` | REVERT / 재시도 소진 | TxStateMachineService |
 
 ---
 
 ## 완료 기준
 
-- [ ] 4개 테이블 마이그레이션 완성
-- [ ] UNIQUE 제약 + 인덱스 설계
+- [ ] 4개 테이블 마이그레이션 완성 + 인덱스 설계
+- [ ] `recordProcessedEvent` — `ON CONFLICT DO NOTHING` + `RETURNING id` 구현
+- [ ] `{ skipped: true }` 반환 조건을 말로 설명 가능 ("rows.length === 0이 왜 중복인가")
+- [ ] 왜 SELECT-then-INSERT가 아닌 ON CONFLICT를 써야 하는지 동시성 관점에서 설명 가능
+- [ ] 상태 전이 7가지 (`REQUESTED → ... → CONFIRMED / FAILED / REORGED`) 각 의미 설명 가능
 - [ ] "역방향 수정 금지"를 이유와 함께 설명 가능
