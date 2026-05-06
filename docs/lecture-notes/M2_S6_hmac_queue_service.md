@@ -1,6 +1,6 @@
 # M2 S6 — Webhook 보안 검증과 QueueService 구현
 
-> Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 15분 + 실습 30분  
+> Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 25분 + 실습 30분  
 > 대상: `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
 
 ---
@@ -58,7 +58,86 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
 
 ---
 
-# 1부 — HMAC-SHA256 서명 검증 원리 (15분)
+# 1부 — HMAC-SHA256 서명 검증 원리 (25분)
+
+## 0. 왜 이 세션이 필요한가 — 금융 시스템의 Webhook 보안 요구 (5분)
+
+### 0-1. Webhook 인증 문제의 본질
+
+S5에서 WebhookServer가 202를 반환하고 Queue에 적재하는 구조를 배웠다. 그런데 한 가지 질문이 남는다.
+
+```
+교보 앱 서버만 이 Webhook을 호출해야 한다.
+그런데 공격자가 같은 엔드포인트로 HTTP POST를 보내면?
+
+→ 서버는 합법적인 요청인지, 공격인지 어떻게 구분하는가?
+```
+
+HTTP 엔드포인트는 공개되어 있다. IP 필터링은 우회 가능하다. **암호학적 서명**이 유일한 신뢰 기반이다.
+
+### 0-2. 전체 보안 위협 모델
+
+```
+위협 1: 위조 요청 (Forgery)
+  공격자가 임의의 payload를 만들어 POST 전송
+  → HMAC 없으면 서버가 처리 → 가짜 NFT 발행
+  → HMAC 있으면: secret을 모르면 올바른 서명 계산 불가 → 401 ✅
+
+위협 2: 재전송 공격 (Replay Attack)
+  공격자가 합법적인 요청을 캡처해서 나중에 재전송
+  → timestamp 유효 기간 체크 + requestId 중복 차단으로 방어 (S9에서 상세)
+
+위협 3: 타이밍 공격 (Timing Attack)
+  일반 문자열 비교로 서명 검증 시, 응답 시간으로 서명 추측 가능
+  → timingSafeEqual로 항상 동일 시간에 비교 → 정보 누출 없음 ✅
+
+위협 4: 본문 변조 (Tampering)
+  중간자가 HTTP body를 바꿔서 전달
+  → 서명은 원본 body로 계산됨 → body 바뀌면 서명 불일치 → 401 ✅
+```
+
+이 세션에서 구현하는 `_verifySignature`가 위협 1, 3, 4를 막는다.
+
+### 0-3. HMAC vs 단순 해시 vs 비대칭 서명
+
+```
+┌────────────────────┬──────────────────────────────────┬─────────────────────┐
+│ 방식               │ 특성                              │ Webhook에 적합?     │
+├────────────────────┼──────────────────────────────────┼─────────────────────┤
+│ 단순 해시 (SHA256) │ 키 없음 → 누구나 계산 가능        │ ❌ 위조 방지 불가   │
+│ HMAC-SHA256        │ 대칭키(공유 secret)               │ ✅ 표준 Webhook 방식│
+│ RSA/ECDSA          │ 비대칭키 (공개키/개인키)          │ 가능, 오버킬 경우多 │
+└────────────────────┴──────────────────────────────────┴─────────────────────┘
+
+왜 HMAC이 표준인가?
+  - GitHub Webhooks: X-Hub-Signature-256 (HMAC-SHA256)
+  - Stripe Webhooks: Stripe-Signature (HMAC-SHA256)
+  - Slack Events: X-Slack-Signature (HMAC-SHA256)
+  → 업계 표준. 검증 라이브러리와 레퍼런스가 풍부.
+  → 비대칭 서명보다 성능 우수, 구현 단순.
+```
+
+### 0-4. 금융 시스템에서 추가로 고려해야 할 것
+
+```
+일반 Webhook 검증으로 충분하지 않은 이유:
+
+1. Secret 로테이션 정책
+   - Secret 유출 의심 시 즉시 교체 가능해야 함
+   - 교체 과도기(rollover): 현재 키 + 이전 키 동시 검증 → 무중단 교체
+   - 교보 프로젝트: 90일 주기 Secret 자동 교체 (AWS Secrets Manager)
+
+2. Timestamp 검증
+   - Replay Attack 방어: 요청의 timestamp가 현재 시각 ±5분 이내만 허용
+   - 이 코드에는 없음 → S9 IdempotencyGuard가 requestId로 보완
+
+3. TLS 전제
+   - HMAC은 TLS(HTTPS) 위에서 동작해야 함
+   - HTTP에서는 서명이 맞아도 네트워크 도청으로 replay 가능
+   - 교보 프로젝트: 모든 Webhook 통신은 TLS 1.3 이상 필수
+```
+
+---
 
 ![_verifySignature분석](images/M2_S6_verify_signature_flow.png)
 

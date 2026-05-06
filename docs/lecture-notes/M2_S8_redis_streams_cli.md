@@ -46,6 +46,81 @@ Q3. Consumer 2개가 메시지를 어떻게 나눠 가져가는가?
 
 ---
 
+## 1-1. CLI 실습 전 개념 정리 — 손으로 직접 만지는 이유
+
+S7에서 Redis Streams 내부 구조(PEL, Consumer Group, XAUTOCLAIM)를 이론으로 배웠다.  
+S8의 목표는 그것을 **눈으로 직접 보는 것**이다.
+
+```
+이론에서 배운 것:          CLI에서 확인할 것:
+─────────────────────    ───────────────────────────────────────────
+PEL이 존재한다            XPENDING 결과에서 직접 확인
+XREADGROUP 후 PEL 등록   XREADGROUP > 전후로 XPENDING 수 변화 관찰
+XACK 후 PEL 제거         XACK 전후 XPENDING 비교
+Consumer crash 복구       XAUTOCLAIM으로 소유자 변경 직접 확인
+수평 확장 분배            터미널 2개에서 각자 다른 메시지 수신 확인
+```
+
+---
+
+## 1-2. ConsumerGroupWorker 내부 루프 — CLI 명령과의 1:1 대응
+
+ConsumerGroupWorker가 실제로 실행하는 루프를 CLI로 직접 따라해보는 것이 S8의 핵심이다.
+
+```
+ConsumerGroupWorker.start() 루프:         CLI에서 직접 실행:
+────────────────────────────────────────────────────────────────
+① _reclaimPending()                      XAUTOCLAIM kyobo:events issuer-consumers
+  XAUTOCLAIM(idle > minIdleMs)           consumer-2 0 0-0 COUNT 10
+
+② _processNew()                          XREADGROUP GROUP issuer-consumers
+  XREADGROUP GROUP ... > COUNT n         consumer-1 COUNT 10 STREAMS kyobo:events >
+  BLOCK ms
+
+③ _handleWithRetry(msg)
+  - processor.process(msg) 성공          XACK kyobo:events issuer-consumers <id>
+  - 실패 → retryCount +1, XACK 안 함    (XACK 호출 없음 → PEL 잔류)
+
+※ CLI로는 루프를 흉내내므로 하나씩 수동 실행.
+  실제 ConsumerGroupWorker는 while(running)으로 자동 반복.
+```
+
+### CLI ↔ TypeScript 코드 대응표
+
+| CLI 명령 | TypeScript 메서드 | 설명 |
+|---------|-----------------|------|
+| `XADD kyobo:events * eventType NFT_ISSUED ...` | `publisher.publish(event)` | 이벤트 발행 |
+| `XGROUP CREATE kyobo:events issuer-consumers 0 MKSTREAM` | `publisher.initialize()` | 그룹 생성 |
+| `XREADGROUP GROUP issuer-consumers consumer-1 COUNT 10 STREAMS kyobo:events >` | `redis.xreadgroup(group, consumer, ...)` | 새 메시지 읽기 |
+| `XACK kyobo:events issuer-consumers <id>` | `redis.xack(streamKey, groupName, id)` | 처리 완료 선언 |
+| `XAUTOCLAIM kyobo:events issuer-consumers consumer-2 0 0-0 COUNT 10` | `redis.xautoclaim(...)` | idle 메시지 인계 |
+| `XPENDING kyobo:events issuer-consumers - + 10` | (모니터링 전용) | PEL 상태 조회 |
+
+---
+
+## 1-3. 메시지 ID 형식과 실습에서의 활용
+
+```
+Redis가 자동 생성하는 messageId:
+  1714000001000-0
+  │             │
+  │             └── sequence number (같은 밀리초 내 순서)
+  └── Unix timestamp (밀리초)
+
+CLI 실습에서 이 ID를 어떻게 쓰는가:
+
+XACK kyobo:events issuer-consumers 1714000001000-0
+                                    └──────────────── XREADGROUP 반환값을 복붙
+
+XAUTOCLAIM kyobo:events issuer-consumers consumer-2 0 0-0 COUNT 10
+                                                          └──── 시작 ID = 스트림 처음부터
+
+실제 반환되는 ID는 실습 시점 타임스탬프 기반.
+→ XREADGROUP 결과에서 반환된 ID를 직접 복사해서 XACK에 붙여넣어야 함.
+```
+
+---
+
 ## 4. At-least-once vs Exactly-once
 
 > 설계 원칙과 처리 순서 불변 규칙은 **S9 참조**

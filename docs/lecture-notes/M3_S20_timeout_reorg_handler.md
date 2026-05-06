@@ -201,7 +201,7 @@ async handleTimeout(requestId: string): Promise<void> {
 // TxStateMachineService.ts:255
 async handleReorg(requestId: string): Promise<void> {
   const req = await this._getOrThrow(requestId);
-  if (req.status !== 'CONFIRMED' || !req.txHash) return;  // 가드
+  if (req.status !== 'MINED' || !req.txHash) return;  // MINED(INCLUDED) 구간에서만 REORG 가능 — finalized 이전
 
   // 1. REORGED 전이
   await this.repo.updateStatus(requestId, 'REORGED');
@@ -209,8 +209,8 @@ async handleReorg(requestId: string): Promise<void> {
   // TODO (S20 실습): 5블록 대기 + VASP 재조회
   //   await this._waitBlocks(TxStateMachineService.REORG_WAIT_BLOCKS);
   //   const result = await this.vasp.getStatus(req.txHash);
-  //   if (result.status === 'confirmed') {
-  //     await this.repo.updateStatus(requestId, 'CONFIRMED');
+  //   if (result.status === 'mined') {
+  //     await this.repo.updateStatus(requestId, 'MINED');   // INCLUDED로 복귀 — 재확인 대기 필요
   //   } else {
   //     await this.repo.updateStatus(requestId, 'FAILED', {
   //       failReason: 'reorg: tx not found after wait',
@@ -223,7 +223,7 @@ async handleReorg(requestId: string): Promise<void> {
 // 답안
 async handleReorg(requestId: string): Promise<void> {
   const req = await this._getOrThrow(requestId);
-  if (req.status !== 'CONFIRMED' || !req.txHash) return;
+  if (req.status !== 'MINED' || !req.txHash) return;  // MINED(INCLUDED) 구간에서만 REORG 가능
 
   await this.repo.updateStatus(requestId, 'REORGED');
 
@@ -231,8 +231,8 @@ async handleReorg(requestId: string): Promise<void> {
 
   const result = await this.vasp.getStatus(req.txHash);
 
-  if (result.status === 'confirmed') {
-    await this.repo.updateStatus(requestId, 'CONFIRMED');
+  if (result.status === 'mined') {
+    await this.repo.updateStatus(requestId, 'MINED');   // INCLUDED 복귀 — confirmation 카운트 재시작
   } else {
     await this.repo.updateStatus(requestId, 'FAILED', {
       failReason: 'reorg: tx not found after wait',
@@ -338,8 +338,8 @@ it('handleTimeout → gas bump → 새 txHash로 PENDING', async () => {
 });
 
 // REORG 시뮬레이션
-it('handleReorg → REORGED → 재조회 → MINED 복귀', async () => {
-  // MINED 상태 세팅 (REORG는 FINALIZED 이전 MINED 구간에서만 발생)
+it('handleReorg → REORGED → 재조회 → MINED 복귀 (confirmation 재시작)', async () => {
+  // MINED 상태 세팅 (REORG는 CONFIRMED 이전 MINED(INCLUDED) 구간에서만 발생)
   await repo.save({
     id: 'req-reorg-1', userId: 'user-1',
     tokenId: 1002n, amount: 1n,
@@ -347,20 +347,20 @@ it('handleReorg → REORGED → 재조회 → MINED 복귀', async () => {
     createdAt: new Date(), updatedAt: new Date(),
   });
 
-  // Mock: 5블록 대기 후 mined 응답 (재편 후 다시 포함됨)
+  // Mock: 5블록 대기 후 mined 응답 (재편 후 다시 포함됨 → MINED 복귀, confirmation 카운트 재시작)
   vaspMock.setNextStatus('0xMINED', 'mined', 12350);
 
   await service.handleReorg('req-reorg-1');
 
   const req = await repo.findById('req-reorg-1');
-  expect(req?.status).toBe('MINED');  // MINED 복귀 확인
+  expect(req?.status).toBe('MINED');  // INCLUDED 복귀 — 이후 poller가 confirmation 재카운트
 });
 ```
 
 **완료 기준:**
 - [ ] `handleTimeout` TODO 완성 — gas bump 재전송 + 새 txHash + retryCount 증가
 - [ ] `handleTimeout`에서 상태가 PENDING → PENDING으로 유지되는 이유 설명 (아직 미채굴)
-- [ ] `handleReorg` TODO 완성 — REORGED 전이 → 5블록 대기 → VASP 재조회 → MINED or FAILED (FINALIZED 이전에만 REORG 가능)
+- [ ] `handleReorg` TODO 완성 — REORGED 전이 → 5블록 대기 → VASP 재조회 → MINED(INCLUDED 복귀, confirmation 재시작) or FAILED (MINED 구간에서만 REORG 가능, CONFIRMED 이후 불가)
 - [ ] gas bump 후 기존 TX가 나중에 채굴될 경우 중복 방어 원리 설명 (requestId Idempotency)
 - [ ] `VaspRecoveryService.handleReorg`와 `TxStateMachineService.handleReorg` 역할 구분 설명
 - [ ] REORG 시뮬레이션 + TIMEOUT 시뮬레이션 테스트 각각 통과

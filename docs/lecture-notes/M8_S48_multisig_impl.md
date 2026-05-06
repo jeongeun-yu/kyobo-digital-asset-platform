@@ -7,24 +7,174 @@
 
 ---
 
-## 강의 파트 (10분)
+## 강의 파트 (25분)
 
-### SafeTx 생명주기 재확인
+### 1. SafeTx 생명주기 — 상태 전이 다이어그램
 
-S47에서 설계한 흐름을 코드로 구현한다.
+S47에서 설계한 흐름을 상태 전이 관점으로 정리한다.
 
 ```
-proposeTx  → PENDING_SIGNATURES (DB 저장, 알림)
-addSignature × n → 서명 수집 (DB 업데이트)
-threshold 도달 → READY_TO_EXECUTE
-executeTx  → Safe.execTransaction (온체인) → EXECUTED
+                    ┌─────────────────────────────────────────────┐
+                    │           SafeTx 상태 전이 (DB 관리)          │
+                    └─────────────────────────────────────────────┘
+
+                         proposeTx()
+  (시작) ──────────────────────────────────► PENDING_SIGNATURES
+                                                    │
+                                  addSignature() ×n │  (collected < required)
+                                  (반복 가능)        │
+                                                    │ collected >= required
+                                                    ▼
+                                            READY_TO_EXECUTE
+                                                    │
+                                     executeTx()   │
+                                                    ▼
+                                               EXECUTED ◄── (종단: 온체인 확정)
+                                                    
+  PENDING_SIGNATURES ──── cancelTx() ────► CANCELLED ◄── (종단: 취소)
+  READY_TO_EXECUTE   ────────────────────►
+
+  [불가능한 전이]
+  EXECUTED  → 어떤 상태로도 전이 불가 (실행 완료)
+  CANCELLED → 어떤 상태로도 전이 불가 (취소 완료)
 ```
 
-각 함수가 DB와 Safe 클라이언트를 어떻게 조율하는지 코드에서 직접 확인한다.
+**왜 상태를 DB에서 관리하는가?**
+
+Safe 컨트랙트는 서명 수집 상태를 온체인에 기록하지 않는다. 서명자들이 오프체인에서 각자 서명하고, 모아서 한 번에 제출한다. "현재 서명이 몇 개 모였는가"는 DB가 관리해야 한다.
+
+```
+온체인(Safe 컨트랙트):  서명 검증 + TX 실행만 담당
+오프체인(DB):          서명 수집 현황 + 상태 추적 담당
+```
 
 ---
 
-## 실습 파트 (50분)
+### 2. KeyGovernanceService 설계 — 3가지 설계 결정
+
+구현 전에 "왜 이렇게 설계했는가"를 이해한다.
+
+**결정 1: 왜 서명 수를 DB에서 세는가?**
+
+```
+대안: Safe 컨트랙트에서 직접 조회
+문제: Safe는 off-chain 서명(EIP-712)을 체인에 기록하지 않음
+     → 체인을 조회해도 "서명이 몇 개 모였는지" 알 수 없음
+     → 실행(execTransaction) 전까지 체인은 아무것도 모른다
+
+해결: DB가 오프체인 서명 수집 대기열 역할
+```
+
+**결정 2: 왜 중복 서명을 서버에서 막는가?**
+
+```
+Safe 컨트랙트도 ecrecover로 서명자를 검증한다.
+그런데 서비스 레이어에서도 중복을 검사한다.
+
+이유:
+  1. 조기 차단: 온체인 TX를 보내기 전에 서비스 레이어에서 막으면 가스 낭비 방지
+  2. UX: 운영자에게 "이미 서명하셨습니다" 명확한 에러 메시지 제공
+  3. 보안: 같은 서명자가 서명을 여러 번 제출해 threshold를 빠르게 채우는 시도 방지
+```
+
+**결정 3: executeTx에서 왜 Safe.execTransaction 전에 DB 상태를 확인하는가?**
+
+```
+흐름:
+  1. DB에서 READY_TO_EXECUTE 확인 → 아니면 즉시 에러 (가스 낭비 없음)
+  2. 서명들 DB에서 로드
+  3. Safe.execTransaction 호출 (가스 소모)
+
+이유:
+  - 온체인 TX는 가스비가 발생한다
+  - threshold를 충족하지 않으면 Safe가 GS020으로 revert → 가스만 낭비
+  - 서비스 레이어에서 사전 차단 → 불필요한 온체인 호출 방지
+```
+
+---
+
+### 3. DB 스키마 — pending_txs 테이블
+
+```sql
+CREATE TABLE pending_txs (
+  id                   UUID PRIMARY KEY,
+  tx_hash              VARCHAR(66) NOT NULL UNIQUE,  -- EIP-712 SafeTx 해시 (32바이트 hex)
+  params               JSONB NOT NULL,               -- SafeTxParams (to, value, data, operation)
+  status               VARCHAR(32) NOT NULL
+                         DEFAULT 'PENDING_SIGNATURES'
+                         CHECK (status IN (
+                           'PENDING_SIGNATURES',
+                           'READY_TO_EXECUTE',
+                           'EXECUTED',
+                           'CANCELLED'
+                         )),
+  required_signatures  INT NOT NULL,                 -- Safe threshold 값
+  collected_signatures JSONB NOT NULL DEFAULT '[]',  -- [{signer, signature, signedAt}]
+  proposed_by          VARCHAR(128) NOT NULL,
+  proposed_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  executed_tx_hash     VARCHAR(66),                  -- 온체인 TX 해시 (EXECUTED 후 기록)
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- tx_hash로 빠른 조회 (중복 방지 + 조회 최적화)
+CREATE UNIQUE INDEX idx_pending_txs_tx_hash ON pending_txs (tx_hash);
+
+-- 활성 TX 목록 조회 (EXECUTED/CANCELLED 제외)
+CREATE INDEX idx_pending_txs_active ON pending_txs (status)
+  WHERE status IN ('PENDING_SIGNATURES', 'READY_TO_EXECUTE');
+```
+
+**`tx_hash UNIQUE` 제약이 중요한 이유:**
+
+같은 SafeTx 내용은 항상 동일한 해시를 생성한다. 동일한 TX를 두 번 제안하면 DB UNIQUE 위반으로 즉시 차단된다. 실수로 동일한 업그레이드 TX를 두 번 제안하는 것을 방지한다.
+
+---
+
+### 4. 전체 호출 흐름 — Admin API → KeyGovernanceService → Safe
+
+```
+관리자 (Admin UI)
+    │
+    │  POST /admin/governance/propose
+    │  { to, value, data, operation, travelRuleData? }
+    ▼
+AdminController.proposeGovernanceTx()
+    │
+    │  ADMIN_ROLE 확인 (requireRole 미들웨어)
+    ▼
+KeyGovernanceService.proposeTx()
+    ├── Travel Rule 검증 (value >= 100만원이면 travelRuleData 필수)
+    ├── safeClient.buildSafeTx(params) → SafeTx 구조체 생성
+    ├── safeClient.calcTxHash(safeTx)  → EIP-712 해시 계산
+    ├── DB INSERT pending_txs (PENDING_SIGNATURES)
+    ├── auditLog.log(TX_PROPOSED)
+    └── notifier.send(SIGNATURE_REQUESTED) → 서명자들에게 알림
+    │
+    │  (서명자 A가 알림 수신)
+    │  POST /admin/governance/{txId}/sign
+    │  { signer: "signerA", signature: "0x..." }
+    ▼
+KeyGovernanceService.addSignature()
+    ├── DB 조회 + 상태 확인 (PENDING_SIGNATURES만 가능)
+    ├── 중복 서명 방지
+    ├── safeClient.verifySignature() → ecrecover 검증
+    ├── DB UPDATE (collected_signatures 추가)
+    ├── collected >= required → status = READY_TO_EXECUTE
+    └── auditLog.log(SIGNATURE_ADDED)
+    │
+    │  (2-of-3 충족 → 실행자가 실행)
+    │  POST /admin/governance/{txId}/execute
+    ▼
+KeyGovernanceService.executeTx()
+    ├── DB 조회 + READY_TO_EXECUTE 확인
+    ├── safeClient.execTransaction(params, collectedSigs) → 온체인 TX
+    ├── DB UPDATE (EXECUTED + executed_tx_hash)
+    └── auditLog.log(TX_EXECUTED)
+```
+
+---
+
+## 실습 파트 (35분)
 
 ### KeyGovernanceService 전체 구현
 

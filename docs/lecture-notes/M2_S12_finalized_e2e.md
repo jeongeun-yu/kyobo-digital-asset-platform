@@ -451,6 +451,221 @@ TODO 4: 동일 BODY(requestId) 재전송 → 멱등성 확인
 TODO 5: 잘못된 서명으로 전송 → 401 확인
 ```
 
+---
+
+## E2E 실습 스켈레톤과 답안
+
+### 스켈레톤 구조
+
+```typescript
+// src/exercises/S12_e2e.ts
+
+import { WebhookServer }         from '../webhook/WebhookServer';
+import { WebhookPublishHandler } from '../webhook/WebhookPublishHandler';
+import { IdempotencyGuard, InMemoryIdempotencyStore } from '../webhook/IdempotencyGuard';
+import { ConsumerGroupWorker }   from '../dmz/ConsumerGroupWorker';
+import { DLQHandler }            from '../dmz/DLQHandler';
+import { NFTIssuedProcessor, InMemoryLedgerService } from '../processors/NFTIssuedProcessor';
+import { MockRedisStream }       from '../test-utils/MockRedisStream';
+import crypto from 'crypto';
+
+async function runE2E() {
+  const SECRET       = 'test-secret-s12';
+  const mockRedis    = new MockRedisStream();  // Redis 없이 메모리로 시뮬레이션
+  const ledger       = new InMemoryLedgerService();
+  const dlqHandler   = new DLQHandler(mockRedis);
+
+  // TODO 1: WebhookPublishHandler와 서버 설정
+  //   1-a. InMemoryIdempotencyStore로 IdempotencyGuard 생성 (server 측)
+  //   1-b. WebhookPublishHandler 생성 (publisherIdempotency, mockRedis 발행자 사용)
+  //   1-c. WebhookServer 생성 (port: 3099, secret: SECRET, maxBodyKb: 64)
+  //   1-d. server.on('NFT_ISSUED', handler.createHandler())
+
+  // TODO 2: NFTIssuedProcessor 생성
+  //   2-a. InMemoryIdempotencyStore로 별도 IdempotencyGuard 생성 (consumer 측)
+  //   2-b. NFTIssuedProcessor 생성 (idempotencyConsumer, ledger)
+
+  // TODO 3: ConsumerGroupWorker 생성
+  //   config: streamKey='kyobo:events', groupName='issuer-consumers',
+  //           consumerId='worker-s12', batchSize=10, blockMs=30, minIdleMs=30_000
+  //   processors: [nftIssuedProcessor]
+
+  // 서버 기동
+  // await server.listen();
+  // worker.start();  // 백그라운드 실행 (await 없이)
+
+  // 검증 1~5 ...
+}
+```
+
+### 답안
+
+```typescript
+async function runE2E() {
+  const SECRET    = 'test-secret-s12';
+  const mockRedis = new MockRedisStream();
+  const ledger    = new InMemoryLedgerService();
+  const dlqHandler = new DLQHandler(mockRedis);
+
+  // TODO 1 답안: WebhookPublishHandler + WebhookServer
+  const publisherIdempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
+  const publisher = {
+    publish: async (event: any) => {
+      return await mockRedis.xadd('kyobo:events', {
+        eventType:   event.eventType,
+        payload:     JSON.stringify(event.payload),
+        requestId:   event.requestId,
+        publishedAt: String(Date.now()),
+      });
+    },
+    initialize: async () => {},
+  };
+  const handler = new WebhookPublishHandler(publisher, publisherIdempotency);
+  const server = new WebhookServer({ port: 3099, secret: SECRET, maxBodyKb: 64 });
+  server.on('NFT_ISSUED', handler.createHandler());
+
+  // TODO 2 답안: NFTIssuedProcessor
+  const idempotencyConsumer = new IdempotencyGuard(new InMemoryIdempotencyStore());
+  const nftIssuedProcessor  = new NFTIssuedProcessor(idempotencyConsumer, ledger);
+
+  // TODO 3 답안: ConsumerGroupWorker
+  const worker = new ConsumerGroupWorker({
+    redis:      mockRedis,
+    config: {
+      streamKey:   'kyobo:events',
+      groupName:   'issuer-consumers',
+      consumerId:  'worker-s12',
+      batchSize:   10,
+      blockMs:     30,
+      minIdleMs:   30_000,
+    },
+    processors: [nftIssuedProcessor],
+    dlq:        dlqHandler,
+  });
+
+  await server.listen();
+  worker.start();  // 백그라운드
+
+  // 잠시 대기 (worker가 초기화될 시간)
+  await sleep(50);
+
+  // ──────────────── 검증 1: 정상 Webhook → 202 ────────────────
+  const body1 = JSON.stringify({
+    eventType: 'NFT_ISSUED',
+    data:      { to: '0xABCD', tokenId: '42' },
+    timestamp: Date.now(),
+    requestId: 'req-e2e-001',
+  });
+  const sig1 = hmac(SECRET, body1);
+  const res1 = await postWebhook('http://localhost:3099', body1, sig1);
+  console.assert(res1 === 202, `[1] expected 202, got ${res1}`);
+  console.log('[1] 정상 Webhook → 202 ✅');
+
+  await sleep(100);  // worker 처리 대기
+
+  // ──────────────── 검증 2: Stream 적재 ────────────────
+  console.assert(mockRedis.messageCount('kyobo:events') === 1,
+    `[2] expected 1 message, got ${mockRedis.messageCount('kyobo:events')}`);
+  console.log('[2] Stream 적재 확인 (1건) ✅');
+
+  // ──────────────── 검증 3: 원장 업데이트 ────────────────
+  const balance1 = await ledger.getNFTBalance('0xABCD', '42');
+  console.assert(balance1 === 1, `[3] expected balance=1, got ${balance1}`);
+  console.log(`[3] 원장 업데이트 확인 (balance=${balance1}) ✅`);
+
+  // ──────────────── 검증 4: 멱등성 (동일 requestId 재전송) ────────────────
+  // TODO 4 답안: 같은 body + 같은 sig로 두 번 전송
+  const res4 = await postWebhook('http://localhost:3099', body1, sig1);
+  console.assert(res4 === 202, `[4] expected 202, got ${res4}`);
+  await sleep(100);
+  const balance2 = await ledger.getNFTBalance('0xABCD', '42');
+  console.assert(balance2 === 1, `[4] expected balance still 1, got ${balance2}`);
+  console.log(`[4] 멱등성 확인 (balance=${balance2}, Stream count=${mockRedis.messageCount('kyobo:events')}) ✅`);
+
+  // ──────────────── 검증 5: HMAC 검증 실패 → 401 ────────────────
+  // TODO 5 답안: 잘못된 서명 전송
+  const res5 = await postWebhook('http://localhost:3099', body1, 'invalid-signature');
+  console.assert(res5 === 401, `[5] expected 401, got ${res5}`);
+  console.log('[5] HMAC 검증 실패 → 401 ✅');
+
+  worker.stop();
+  await server.close();
+  console.log('\n✅ M2 E2E 검증 완료');
+}
+
+// 헬퍼 함수
+function hmac(secret: string, body: string): string {
+  return crypto.createHmac('sha256', secret)
+               .update(Buffer.from(body))
+               .digest('hex');
+}
+
+async function postWebhook(url: string, body: string, sig: string): Promise<number> {
+  const http = require('http');
+  return new Promise((resolve) => {
+    const req = http.request(url, {
+      method:  'POST',
+      headers: {
+        'Content-Type':       'application/json',
+        'X-Kyobo-Signature':  sig,
+        'Content-Length':     Buffer.byteLength(body),
+      },
+    }, (res: any) => resolve(res.statusCode));
+    req.write(body);
+    req.end();
+  });
+}
+
+function sleep(ms: number) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+runE2E().catch(console.error);
+```
+
+---
+
+### E2E 흐름 아스키 다이어그램
+
+```
+runE2E() 실행 흐름:
+
+[테스트 코드]
+     │
+     │  HTTP POST /webhook (body + HMAC 서명)
+     ▼
+[WebhookServer :3099]
+     │  _verifySignature() → 통과
+     │  202 즉시 응답
+     │  handler.createHandler()(payload) → 비동기
+     ▼
+[WebhookPublishHandler]
+     │  IdempotencyGuard.run(requestId) → 신규 확인
+     │  publisher.publish()
+     ▼
+[MockRedisStream: kyobo:events]
+     │  XADD → messageId
+     │
+     │  (백그라운드 worker polling)
+     ▼
+[ConsumerGroupWorker]
+     │  _processNew(): XREADGROUP > → 메시지 수신
+     │  _handleWithRetry(msg)
+     │     processors.filter(NFT_ISSUED) → NFTIssuedProcessor
+     ▼
+[NFTIssuedProcessor]
+     │  IdempotencyGuard.run(`NFTIssued:${requestId}`)
+     │  ledger.creditNFT(to, tokenId)
+     ▼
+[InMemoryLedgerService]
+     holdings: { '0xABCD:42': 1 }
+     │
+     └── XACK → PEL 제거
+
+[테스트 코드]
+     ledger.getNFTBalance('0xABCD', '42') === 1 ✅
+```
+
 ## 6. M2 모듈 완료 기준 체크리스트
 
 - [ ] **At-least-once + 멱등성**: 동일 이벤트 2회 → 원장 1회만 반영

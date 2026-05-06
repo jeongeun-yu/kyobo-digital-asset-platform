@@ -1009,7 +1009,7 @@ PEL에 남은 채로 XDEL하면 XREADGROUP 시 빈 결과 반환 → XACK 없이
 
 # 코드 실습 (S7)
 
-S6 실습은 하나의 파일로 구성된다. `exercises/` 폴더에서 실행한다.
+S7 실습은 두 파트로 구성된다. `exercises/` 폴더에서 실행한다.
 
 | 파일 | 내용 |
 |---|---|
@@ -1021,6 +1021,176 @@ npx ts-node src/exercises/S07_redis_stream.ts
 ```
 
 답안: `S07_redis_stream.answer.ts`
+
+---
+
+## 실습 스켈레톤과 답안
+
+### Part 1: RedisStreamPublisher — initialize() + publish()
+
+```typescript
+// S07_redis_stream.ts — Part 1 스켈레톤
+
+import { RedisStreamPublisher } from '../dmz/RedisStreamPublisher';
+import { createRedisClient }    from '../test-utils/MockRedisStream';
+
+async function part1() {
+  const mockRedis  = createRedisClient();  // MockRedisStream or ioredis
+  const publisher  = new RedisStreamPublisher(mockRedis, 'kyobo:events');
+
+  // TODO 1: publisher를 초기화하라 (Consumer Group 생성)
+  //   - 그룹 이름: 'issuer-consumers'
+  //   - 이미 그룹이 있어도 에러 없이 통과해야 함
+
+  // TODO 2: NFT_ISSUED 이벤트를 1건 발행하라
+  //   이벤트 필드:
+  //     streamKey:   'kyobo:events'
+  //     eventType:   'NFT_ISSUED'
+  //     payload:     { to: '0xABCD', tokenId: '42' }
+  //     txHash:      '0xdeadbeef'
+  //     blockNumber: 18500001
+  //     requestId:   'req-s07-001'
+  //   반환된 messageId를 콘솔에 출력하라
+
+  // TODO 3: publisher.ping()으로 연결 상태를 확인하라
+  //   결과가 true이면 '연결 정상' 출력
+}
+```
+
+**Part 1 답안:**
+
+```typescript
+async function part1() {
+  const mockRedis = createRedisClient();
+  const publisher = new RedisStreamPublisher(mockRedis, 'kyobo:events');
+
+  // TODO 1 답안
+  await publisher.initialize('issuer-consumers');
+  console.log('[Part 1] Consumer Group 생성 완료');
+
+  // TODO 2 답안
+  const messageId = await publisher.publish({
+    streamKey:   'kyobo:events',
+    eventType:   'NFT_ISSUED',
+    payload:     { to: '0xABCD', tokenId: '42' },
+    txHash:      '0xdeadbeef',
+    blockNumber: 18500001,
+    requestId:   'req-s07-001',
+  });
+  console.log(`[Part 1] 이벤트 발행 완료: messageId=${messageId}`);
+
+  // TODO 3 답안
+  const isAlive = await publisher.ping();
+  if (isAlive) {
+    console.log('[Part 1] 연결 정상 ✅');
+  } else {
+    console.error('[Part 1] 연결 실패 ❌');
+  }
+}
+```
+
+**기대 출력:**
+```
+[Part 1] Consumer Group 생성 완료
+[Part 1] 이벤트 발행 완료: messageId=1714000001000-0
+[Part 1] 연결 정상 ✅
+```
+
+---
+
+### Part 2: EventProcessor 구현 + ConsumerGroupWorker 연동
+
+```typescript
+// S07_redis_stream.ts — Part 2 스켈레톤
+
+import type { EventProcessor, StreamMessage } from '../dmz/ConsumerGroupWorker';
+
+// TODO 4: SimpleNFTProcessor 클래스를 구현하라
+//   - EventProcessor 인터페이스 구현
+//   - eventTypes: ['NFT_ISSUED']
+//   - process(): payload를 파싱해서 "NFT 처리 완료: tokenId=XX, owner=YY" 출력
+
+class SimpleNFTProcessor /* TODO: implements ... */ {
+  // TODO: eventTypes 선언
+
+  async process(message: StreamMessage): Promise<void> {
+    // TODO: payload 파싱 + 출력
+  }
+}
+
+async function part2() {
+  const mockRedis = createRedisClient();
+  const processor = new SimpleNFTProcessor();
+
+  // TODO 5: ConsumerGroupWorker를 생성하고 1초간 실행 후 중지하라
+  //   config: streamKey='kyobo:events', groupName='issuer-consumers',
+  //           consumerId='s07-consumer', batchSize=5, blockMs=100, minIdleMs=5_000
+  //   실행 후 1초 대기 → worker.stop()
+}
+```
+
+**Part 2 답안:**
+
+```typescript
+import { ConsumerGroupWorker } from '../dmz/ConsumerGroupWorker';
+import { DLQHandler }          from '../dmz/DLQHandler';
+
+class SimpleNFTProcessor implements EventProcessor {
+  // TODO 4 답안
+  readonly eventTypes = ['NFT_ISSUED'];
+
+  async process(message: StreamMessage): Promise<void> {
+    const payload = JSON.parse(message.fields['payload'] ?? '{}');
+    console.log(`[SimpleNFTProcessor] NFT 처리 완료: tokenId=${payload.tokenId}, owner=${payload.to}`);
+  }
+}
+
+async function part2() {
+  const mockRedis = createRedisClient();
+  const dlqHandler = new DLQHandler(mockRedis);
+  const processor  = new SimpleNFTProcessor();
+
+  // TODO 5 답안
+  const worker = new ConsumerGroupWorker({
+    redis:  mockRedis,
+    config: {
+      streamKey:  'kyobo:events',
+      groupName:  'issuer-consumers',
+      consumerId: 's07-consumer',
+      batchSize:  5,
+      blockMs:    100,
+      minIdleMs:  5_000,
+    },
+    processors: [processor],
+    dlq:        dlqHandler,
+  });
+
+  worker.start();
+  await new Promise(r => setTimeout(r, 1000));
+  worker.stop();
+  console.log('[Part 2] Worker 종료');
+}
+```
+
+**기대 출력 (Part 1에서 발행한 메시지가 있는 경우):**
+```
+[SimpleNFTProcessor] NFT 처리 완료: tokenId=42, owner=0xABCD
+[Part 2] Worker 종료
+```
+
+---
+
+## 완료 기준
+
+```
+[ ] Part 1: publisher.initialize() → Consumer Group 생성 + BUSYGROUP 에러 무시 확인
+[ ] Part 1: publisher.publish() → messageId 반환 확인
+[ ] Part 1: publisher.ping() → true 반환 확인
+[ ] Part 2: SimpleNFTProcessor가 EventProcessor 인터페이스 만족 확인
+[ ] Part 2: ConsumerGroupWorker 실행 → Part 1에서 발행한 메시지 처리 확인
+[ ] Part 2: worker.stop() 후 루프 종료 확인
+[ ] Redis Streams 필드는 모두 string 타입임을 확인 (publish() 내 String() 변환)
+```
 
 ---
 

@@ -116,13 +116,14 @@ S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈�
           │                     │
           │               handleTimeout()     ← S20 (gas bump)
           │
-          └── [CONFIRMED 전이 후]
+          └── [MINED 전이 후, CONFIRMED 이전]
                     │
                REORG 감지 → handleReorg()    ← S20
                     │
           ┌─────────┴───────────┐
           │                     │
-    CONFIRMED 복귀          FAILED 전이
+      MINED 복귀            FAILED 전이
+  (confirmation 재시작)
   
   [모든 상태 전이]
        │

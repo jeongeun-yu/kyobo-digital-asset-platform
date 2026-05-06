@@ -5,7 +5,45 @@
 
 ---
 
-## 강의 파트 (15분)
+## 강의 파트 (25분)
+
+### 0. Admin API 전체 구조 — 한 눈에 보기
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     Admin API 아키텍처                        │
+│                                                              │
+│  운영자 (사내망)                                              │
+│      │  HTTPS (IP 화이트리스트)                              │
+│      ▼                                                       │
+│  Admin Service (Express)                                     │
+│      ├── requireRole('ADMIN_ROLE')  ← 미들웨어               │
+│      ├── POST /admin/contract/pause                          │
+│      ├── POST /admin/contract/unpause                        │
+│      ├── POST /admin/reconcile      ← ReconcileService (M4)  │
+│      ├── GET  /admin/issuance/stats ← DB 직접 집계           │
+│      ├── POST /admin/roles/grant    ← KyoboNFT.grantRole()  │
+│      └── POST /admin/roles/revoke   ← KyoboNFT.revokeRole() │
+│                                                              │
+│  모든 호출 → AuditLogService (M4) → SHA-256 체인에 기록      │
+│                                                              │
+│  실행 대상                                                    │
+│      ├── KyoboNFT.sol (온체인)                               │
+│      ├── ReconcileService (M4)                               │
+│      └── mint_requests 테이블 (DB)                           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**이 세션이 전체 시스템에서 차지하는 위치:**
+
+```
+M4 ReconcileService ──────────────────────────────┐
+M4 AuditLogService  ──────────────────────────────┤
+M6 KyoboNFT.sol     ── pause/grantRole/revokeRole ─┼─→  Admin API  ← 이번 세션
+M5 LedgerService    ── mint_requests 통계 ─────────┘
+```
+
+---
 
 ### 1. "버튼이 없는 시스템" — 왜 Admin API가 필요한가
 

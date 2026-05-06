@@ -160,7 +160,325 @@ DB 상태와 온체인 상태가 분리되어 있다. DB는 "현재 서명이 �
 
 ---
 
-### 참고: KeyGovernanceService 스켈레톤 미리 보기
+## 실습 파트 (30분)
+
+### 실습 1: EIP-712 SafeTx 해시 직접 계산
+
+EIP-712 해시를 라이브러리 없이 직접 계산해 본다. 내부 원리를 이해하면 디버깅과 서명 검증에서 정확성이 높아진다.
+
+```typescript
+// test/eip712/safetx-hash.test.ts
+import { ethers } from 'ethers';
+
+describe('EIP-712 SafeTx 해시 수동 계산', () => {
+  // Safe 컨트랙트 배포 주소 (테스트용)
+  const SAFE_ADDRESS = '0x1234567890123456789012345678901234567890';
+  const CHAIN_ID = 31337;  // hardhat local
+
+  // SafeTx 타입 해시 (Gnosis Safe 스펙)
+  const SAFE_TX_TYPEHASH = ethers.keccak256(
+    ethers.toUtf8Bytes(
+      'SafeTx(address to,uint256 value,bytes data,uint8 operation,' +
+      'uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,' +
+      'address gasToken,address refundReceiver,uint256 nonce)'
+    )
+  );
+
+  it('도메인 분리자(domainSeparator) 계산', () => {
+    // TODO: EIP-712 DOMAIN_SEPARATOR 계산
+    // keccak256(DOMAIN_TYPEHASH + chainId + verifyingContract)
+    //
+    // 힌트:
+    //   DOMAIN_TYPEHASH = keccak256("EIP712Domain(uint256 chainId,address verifyingContract)")
+    //   domainSeparator = keccak256(abi.encode(DOMAIN_TYPEHASH, chainId, safeAddress))
+
+    const DOMAIN_TYPEHASH = ethers.keccak256(
+      ethers.toUtf8Bytes('EIP712Domain(uint256 chainId,address verifyingContract)')
+    );
+
+    const domainSeparator = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['bytes32', 'uint256', 'address'],
+        [DOMAIN_TYPEHASH, CHAIN_ID, SAFE_ADDRESS]
+      )
+    );
+
+    // domainSeparator는 항상 32바이트 hex
+    expect(domainSeparator).toMatch(/^0x[0-9a-f]{64}$/);
+    console.log('domainSeparator:', domainSeparator);
+  });
+
+  it('structHash(SafeTx) 계산 — pause() 호출', () => {
+    // KyoboNFT.pause() 호출을 담은 SafeTx
+    const safeTx = {
+      to:             '0xKyoboNFTContractAddress0000000000000000',
+      value:          0n,
+      data:           '0x8456cb59',  // pause() 함수 selector
+      operation:      0,             // CALL
+      safeTxGas:      0n,
+      baseGas:        0n,
+      gasPrice:       0n,
+      gasToken:       ethers.ZeroAddress,
+      refundReceiver: ethers.ZeroAddress,
+      nonce:          0n,
+    };
+
+    // TODO: structHash 계산
+    // keccak256(abi.encode(SAFE_TX_TYPEHASH, to, value, keccak256(data), ...))
+    //
+    // 힌트: bytes 타입은 keccak256으로 먼저 해시해야 한다
+
+    const dataHash = ethers.keccak256(safeTx.data);
+
+    const structHash = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['bytes32','address','uint256','bytes32','uint8',
+         'uint256','uint256','uint256','address','address','uint256'],
+        [
+          SAFE_TX_TYPEHASH,
+          safeTx.to,
+          safeTx.value,
+          dataHash,            // bytes → keccak256
+          safeTx.operation,
+          safeTx.safeTxGas,
+          safeTx.baseGas,
+          safeTx.gasPrice,
+          safeTx.gasToken,
+          safeTx.refundReceiver,
+          safeTx.nonce,
+        ]
+      )
+    );
+
+    expect(structHash).toMatch(/^0x[0-9a-f]{64}$/);
+    console.log('structHash:', structHash);
+  });
+
+  it('최종 SafeTx 해시 = "\\x19\\x01" + domainSeparator + structHash', () => {
+    // TODO: 최종 safeTxHash 계산
+    // "\x19\x01" prefix + domainSeparator + structHash
+    //
+    // 힌트: ethers.solidityPackedKeccak256 또는 수동 concat
+
+    const DOMAIN_TYPEHASH = ethers.keccak256(
+      ethers.toUtf8Bytes('EIP712Domain(uint256 chainId,address verifyingContract)')
+    );
+    const domainSeparator = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['bytes32','uint256','address'],
+        [DOMAIN_TYPEHASH, CHAIN_ID, SAFE_ADDRESS]
+      )
+    );
+
+    const dataHash = ethers.keccak256('0x8456cb59');
+    const structHash = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['bytes32','address','uint256','bytes32','uint8',
+         'uint256','uint256','uint256','address','address','uint256'],
+        [SAFE_TX_TYPEHASH, '0xKyoboNFTContractAddress0000000000000000',
+         0n, dataHash, 0, 0n, 0n, 0n,
+         ethers.ZeroAddress, ethers.ZeroAddress, 0n]
+      )
+    );
+
+    // EIP-712 최종 해시: keccak256(0x1901 + domainSeparator + structHash)
+    const safeTxHash = ethers.keccak256(
+      ethers.concat(['0x1901', domainSeparator, structHash])
+    );
+
+    expect(safeTxHash).toMatch(/^0x[0-9a-f]{64}$/);
+    console.log('safeTxHash (최종):', safeTxHash);
+  });
+});
+```
+
+---
+
+### 실습 2: 오프체인 서명 + ecrecover 검증
+
+서명자가 SafeTx 해시에 서명하고, 검증자가 ecrecover로 서명자 주소를 복원하는 흐름을 구현한다.
+
+```typescript
+// test/eip712/signature-verify.test.ts
+describe('EIP-712 서명 생성 + ecrecover 검증', () => {
+  it('개인키로 safeTxHash에 서명 → ecrecover로 주소 복원', async () => {
+    // 테스트용 지갑 (실제 운영에서는 HSM/AWS KMS 사용)
+    const signerWallet = ethers.Wallet.createRandom();
+
+    // safeTxHash (이전 테스트에서 계산된 값 사용)
+    const safeTxHash = '0x' + 'ab'.repeat(32);  // 테스트용 더미 해시
+
+    // TODO: safeTxHash에 EIP-712 서명
+    // 힌트: ethers Wallet의 signMessage는 EIP-191 서명이므로
+    //       EIP-712 해시에는 직접 ECDSA 서명 필요
+    //
+    // wallet.signingKey.sign(safeTxHash) 또는
+    // Safe SDK: safeSdk.signTransactionHash(safeTxHash)
+
+    const signingKey = signerWallet.signingKey;
+    const sig = signingKey.sign(safeTxHash);
+
+    // 서명 직렬화 (r + s + v)
+    const signature = ethers.Signature.from(sig).serialized;
+    console.log('서명값:', signature);
+
+    // TODO: ecrecover로 서명자 주소 복원
+    // 힌트: ethers.recoverAddress(safeTxHash, signature)
+    const recovered = ethers.recoverAddress(safeTxHash, signature);
+
+    // 복원된 주소 = 서명자 지갑 주소
+    expect(recovered.toLowerCase()).toBe(signerWallet.address.toLowerCase());
+    console.log('복원된 주소:', recovered);
+    console.log('서명자 주소:', signerWallet.address);
+  });
+
+  it('다른 해시에 서명 → ecrecover가 다른 주소 반환', async () => {
+    const signerWallet = ethers.Wallet.createRandom();
+    const correctHash = '0x' + 'ab'.repeat(32);
+    const wrongHash   = '0x' + 'cd'.repeat(32);  // 다른 해시
+
+    const sig = signerWallet.signingKey.sign(correctHash);
+    const signature = ethers.Signature.from(sig).serialized;
+
+    // 잘못된 해시로 ecrecover
+    const recovered = ethers.recoverAddress(wrongHash, signature);
+
+    // 복원 주소가 서명자와 다름 → 서명 위조 감지
+    expect(recovered.toLowerCase()).not.toBe(signerWallet.address.toLowerCase());
+    console.log('해시 불일치 시 복원 주소 (다름):', recovered);
+  });
+
+  it('replay attack — 다른 chainId Safe에서 동일 서명 재사용 불가', () => {
+    // domainSeparator에 chainId가 포함되므로
+    // mainnet(1) 서명을 testnet(31337)에서 재사용하면 ecrecover 결과가 달라진다
+
+    const DOMAIN_TYPEHASH = ethers.keccak256(
+      ethers.toUtf8Bytes('EIP712Domain(uint256 chainId,address verifyingContract)')
+    );
+    const SAFE_ADDRESS = '0x1234567890123456789012345678901234567890';
+
+    const mainnetDomain = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['bytes32','uint256','address'], [DOMAIN_TYPEHASH, 1, SAFE_ADDRESS]
+      )
+    );
+    const testnetDomain = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['bytes32','uint256','address'], [DOMAIN_TYPEHASH, 31337, SAFE_ADDRESS]
+      )
+    );
+
+    // chainId가 다르면 domainSeparator가 다름 → safeTxHash가 다름
+    expect(mainnetDomain).not.toBe(testnetDomain);
+    console.log('mainnet domainSeparator:', mainnetDomain);
+    console.log('testnet domainSeparator:', testnetDomain);
+  });
+});
+```
+
+---
+
+### 실습 3: SafeTx 제안 → 서명 수집 → 실행 전체 흐름
+
+S48에서 구현할 KeyGovernanceService의 흐름을 Gnosis Safe SDK로 직접 검증한다.
+
+```typescript
+// test/eip712/safetx-flow.test.ts
+import { ethers } from 'hardhat';
+import Safe, { EthersAdapter } from '@safe-global/protocol-kit';
+
+describe('SafeTx 전체 흐름 — 제안 → 서명 수집 → 실행', () => {
+  let safeAddress: string;
+  let signerA: ethers.Signer;
+  let signerB: ethers.Signer;
+  let signerC: ethers.Signer;
+
+  before(async () => {
+    [signerA, signerB, signerC] = await ethers.getSigners();
+
+    // Safe 배포 (S46에서 완료)
+    const sdkA = await Safe.create({
+      ethAdapter: new EthersAdapter({ ethers, signerOrProvider: signerA }),
+      safeAccountConfig: {
+        owners: [
+          await signerA.getAddress(),
+          await signerB.getAddress(),
+          await signerC.getAddress(),
+        ],
+        threshold: 2,
+      },
+    });
+    safeAddress = await sdkA.getAddress();
+  });
+
+  it('proposeTx → safeTxHash 계산 → 2-of-3 서명 → execTransaction', async () => {
+    // [1] Safe SDK로 SafeTx 생성
+    const sdkA = await Safe.create({
+      ethAdapter: new EthersAdapter({ ethers, signerOrProvider: signerA }),
+      safeAddress,
+    });
+
+    const safeTransaction = await sdkA.createTransaction({
+      transactions: [{
+        to: safeAddress,          // self-call 테스트
+        value: '0',
+        data: '0x',               // 빈 호출
+        operation: 0,
+      }],
+    });
+
+    // [2] safeTxHash 계산
+    const safeTxHash = await sdkA.getTransactionHash(safeTransaction);
+    expect(safeTxHash).toMatch(/^0x[0-9a-f]{64}$/);
+    console.log('safeTxHash:', safeTxHash);
+
+    // [3] 서명자 A 서명 (오프체인)
+    const signedTxA = await sdkA.signTransaction(safeTransaction);
+    console.log('서명자 A 서명 완료 (오프체인)');
+
+    // [4] 서명자 B 서명 (오프체인)
+    const sdkB = await Safe.create({
+      ethAdapter: new EthersAdapter({ ethers, signerOrProvider: signerB }),
+      safeAddress,
+    });
+    const signedTxB = await sdkB.signTransaction(signedTxA);
+    console.log('서명자 B 서명 완료 (오프체인)');
+
+    // threshold = 2 충족 → 실행 가능
+
+    // [5] execTransaction (on-chain TX — 가스 1회)
+    const executeTxResponse = await sdkA.executeTransaction(signedTxB);
+    await executeTxResponse.transactionResponse?.wait();
+
+    console.log('execTransaction 성공, txHash:', executeTxResponse.hash);
+    expect(executeTxResponse.hash).toMatch(/^0x/);
+  });
+
+  it('서명자 1명만으로 execTransaction → revert (GS020)', async () => {
+    const sdkA = await Safe.create({
+      ethAdapter: new EthersAdapter({ ethers, signerOrProvider: signerA }),
+      safeAddress,
+    });
+
+    const safeTransaction = await sdkA.createTransaction({
+      transactions: [{ to: safeAddress, value: '0', data: '0x', operation: 0 }],
+    });
+
+    // TODO: 서명자 A만 서명 후 실행 시도 → revert 확인
+    // 힌트: Safe 컨트랙트가 GS020 에러로 revert
+    const signedTx = await sdkA.signTransaction(safeTransaction);
+
+    // execTransaction은 Safe 컨트랙트에서 revert
+    await expect(
+      sdkA.executeTransaction(signedTx)
+    ).rejects.toThrow();  // GS020: threshold not met
+  });
+});
+```
+
+---
+
+## 완료 기준
 
 ```typescript
 // dmz/packages/vasp/src/governance/KeyGovernanceService.ts
