@@ -114,55 +114,18 @@ requestId가 S13(TxStateMachineService) → S14(MintParams) → S15(EVMAdapter) 
 
 ---
 
-## 3. submitMintRequest — DB 먼저, VASP 나중
+## 3. submitMintRequest — 멱등성 관점으로 다시 읽기
 
-```typescript
-// TxStateMachineService.ts:128
-async submitMintRequest(params: {
-  userId:  string;
-  tokenId: bigint;
-  amount:  bigint;
-}): Promise<string> {
-  const { userId, tokenId, amount } = params;
+> **M3 S13에서 이미 다룬 함수다.** 코드 구조와 "DB 먼저" 원칙은 S13 참조.  
+> 여기서는 같은 함수를 **requestId 멱등성** 관점에서 재읽는다.
 
-  // 1. UUID requestId 생성 — Idempotency key
-  const id  = randomUUID();
-  const now = new Date();
+S13에서 "DB 먼저"는 크래시 복구를 위한 순서였다. S16에서 같은 순서가 멱등성의 기반이 된다는 것을 확인한다.
 
-  // 2. DB INSERT — REQUESTED 상태로 먼저 기록
-  const req: MintRequest = {
-    id, userId, tokenId, amount,
-    status: 'REQUESTED', retryCount: 0,
-    createdAt: now, updatedAt: now,
-  };
-  await this.repo.save(req);    // ← 반드시 먼저
-
-  // 3. VASP 전송
-  try {
-    const walletAddr = await this.wallet.getWalletAddr(userId);
-    const { txHash } = await this.vasp.submitMint({
-      to: walletAddr, tokenId, amount, requestId: id,
-    });
-    // 4. SUBMITTED 전이 + txHash 저장
-    await this.repo.updateStatus(id, 'SUBMITTED', { txHash });
-  } catch (err) {
-    // 5. 실패 시 FAILED 전이
-    await this.repo.updateStatus(id, 'FAILED', {
-      failReason: `submit failed: ${String(err)}`,
-    });
-    throw err;
-  }
-
-  return id;
-}
-```
-
-### DB 먼저 저장하는 이유
-
-| 순서 | 서버 크래시 발생 시 결과 |
-|---|---|
-| **DB 먼저** → VASP 전송 | DB에 REQUESTED 기록 있음 → 재시작 후 미처리 건 발견 → 재처리 가능 |
-| **VASP 먼저** → DB 저장 | VASP 전송 성공, DB INSERT 전 크래시 → 기록 없음 → 상태 알 수 없음 → 중복 발행 위험 |
+| 관점 | S13의 해석 | S16의 해석 |
+|---|---|---|
+| `await this.repo.save(req)` 먼저 | 크래시 후 고아 TX 방지 | **requestId가 DB에 기록됨 = 이 요청이 존재함의 증거** |
+| `requestId: id` VASP 전달 | 트래킹용 | **VASP도 같은 ID로 중복 차단** |
+| 재시작 후 재처리 | REQUESTED 건 재발견 | **requestId 이미 있음 → 중복 INSERT 차단** |
 
 **"DB에 기록된 것만 처리 완료로 인정"** — 이 원칙이 Idempotency의 기반이다.
 

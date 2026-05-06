@@ -225,6 +225,10 @@ Consumer-2가 정상 처리 + XACK
 
 ## 5. 처리 + 재시도 — _handleWithRetry()
 
+> **M2 S9에서 4단계 불변 규칙으로 개념화한 함수의 실제 구현이다.**  
+> XACK는 항상 처리 완료 후 — 이 원칙 자체는 S9 참조.  
+> 여기서는 S9에 없던 실제 구현 디테일(DLQ 분기, 처리자 매칭, retryCount 관리)에 집중한다.
+
 ```typescript
 // ConsumerGroupWorker.ts:164
 private async _handleWithRetry(msg: StreamMessage): Promise<void> {

@@ -616,13 +616,12 @@ async handleFailed(requestId: string, reason: string): Promise<void> {
 
 **`return` vs `throw`:**
 
-가드에서 `throw` 대신 `return`을 쓰는 이유:
+M2 S9에서 정의한 At-least-once 가드 원칙 그대로다 — 이미 처리된 상태에서 중복 호출이 오면 에러(throw)가 아닌 조용한 무시(return)가 맞다.
 
 ```
-콜백이 중복으로 올 수 있다 (At-least-once delivery).
-이미 CONFIRMED된 TX에 handleMined가 다시 오면
-→ throw → 에러 로그 → 불필요한 알람
-→ return → 조용히 무시 → 멱등 처리
+이미 CONFIRMED된 TX에 handleMined가 다시 오면 (At-least-once 재배달)
+→ throw → 에러 로그 → DLQ 이동 → 불필요한 운영 알람
+→ return → 조용히 무시 → PEL 정상 XACK → 멱등 처리 ✅
 ```
 
 ---
