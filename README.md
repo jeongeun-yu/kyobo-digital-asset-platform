@@ -102,7 +102,7 @@ node -v; npm -v; git --version
 
 ```powershell
 # 레포지토리 클론
-git clone <레포지토리-URL>
+git clone https://github.com/coincraft12/kyobo-digital-asset-platform.git
 cd kyobo-digital-asset-platform
 
 # 환경 변수 파일 복사
