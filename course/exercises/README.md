@@ -2,16 +2,16 @@
 
 ## 시작 전 체크
 
-```bash
-# 루트에서 의존성 설치
+```powershell
+# 루트에서 의존성 설치 (1회만)
 npm install
 
-# 로컬 Hardhat 노드 + Docker(PostgreSQL/Redis) 기동
-npx hardhat node &
-docker-compose -f infrastructure/docker/docker-compose.yml up -d
+# 환경 변수 파일 복사
+Copy-Item .env.example .env
 ```
 
-`.env.example` → `.env` 복사 후 값 채우기
+`.env.example` → `.env` 복사 후 강사 안내에 따라 필요한 값 채우기  
+(M2 실습은 Mock 환경이므로 `.env` 없이도 동작)
 
 ---
 
@@ -66,7 +66,11 @@ docker-compose -f infrastructure/docker/docker-compose.yml up -d
 | `M5/_check_mint.ts` | 발행 결과 온체인 확인 |
 | `M5/_check_balance.ts` | ERC-1155 잔액 조회 |
 
-실행: `npx ts-node course/exercises/M5/_deploy_mock.ts`
+실행 (dmz\packages\event-engine 폴더에서):
+
+```powershell
+npx ts-node ..\..\..\..\course\exercises\M5\_deploy_mock.ts
+```
 배포 후 `MOCK_CONTRACT_ADDR` 를 `.env`에 기록
 
 ---
@@ -77,9 +81,13 @@ docker-compose -f infrastructure/docker/docker-compose.yml up -d
 - `S##_이름.answer.ts` — 정답 파일 (막힐 때만 참고)
 - `__tests__/` — 실습 검증 테스트
 
-```bash
-# 특정 실습 테스트 실행
-npx jest course/exercises/__tests__/atleastonce.test.ts
+```powershell
+# 특정 실습 채점
+cd dmz\packages\event-engine
+npx jest --config jest.exercises.config.json --testPathPattern S09
+
+# 전체 채점
+npm run test:exercises
 ```
 
 ---

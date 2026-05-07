@@ -57,7 +57,6 @@ contract KyoboNFT is
         __ERC1155_init("");
         __AccessControl_init();
         __Pausable_init();
-        __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(MINTER_ROLE,        admin);

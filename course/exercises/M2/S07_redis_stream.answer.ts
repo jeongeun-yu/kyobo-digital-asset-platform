@@ -13,13 +13,14 @@
  *   Part 2 — ConsumerGroupWorker:  EventProcessor 구현 → XREADGROUP → XACK
  */
 
-import { RedisStreamPublisher, type StreamEvent } from '../dmz/RedisStreamPublisher';
-import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import {
+  RedisStreamPublisher, ConsumerGroupWorker, DLQHandler,
+  type StreamEvent, type EventProcessor, type StreamMessage,
+} from '@kyobo/event-engine';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Part 1 — RedisStreamPublisher
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 // ── Mock Redis (Publisher용) ───────────────────────────────────────────────
 const publisherRedis = {
@@ -37,9 +38,9 @@ const publisherRedis = {
   },
 };
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Part 2 — ConsumerGroupWorker
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 // ── Mock DLQ ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(
@@ -123,9 +124,9 @@ const worker = new ConsumerGroupWorker(
   },
 );
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실행
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 (async () => {
   console.log('=== Part 1: RedisStreamPublisher ===\n');
 

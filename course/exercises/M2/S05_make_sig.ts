@@ -21,12 +21,10 @@ const payload = JSON.stringify({
   requestId: 'test-001',
 });
 
-// TODO: crypto.createHmac 으로 HMAC-SHA256 서명을 계산하라
-// · 알고리즘: 'sha256'
-// · 키(secret): 'dev-secret-kyobo'
-// · 입력: Buffer.from(payload)
-// · 출력 형식: hex 문자열
-const sig: string = (() => { throw new Error('TODO: 구현하세요'); })();
+const sig = crypto
+  .createHmac('sha256', 'dev-secret-kyobo')
+  .update(Buffer.from(payload))
+  .digest('hex');
 
 console.log('signature:', sig);
 console.log('payload:  ', payload);

@@ -13,7 +13,7 @@
 
 import crypto from 'crypto';
 
-function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
+export function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
   if (!signature) return false;
 
   const expected = crypto

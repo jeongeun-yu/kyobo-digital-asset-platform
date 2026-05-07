@@ -55,9 +55,9 @@ contract InvestorCompliance is ICompliance, AccessControl {
      */
     function canTransfer(
         address /* from */,
-        address to,
-        uint256 amount
-    ) external view override returns (bool) {
+        address /* to */,
+        uint256 /* amount */
+    ) external pure override returns (bool) {
         // TODO Phase 3: 아래 로직 구현
 
         // 1. 투자자 등록 여부
@@ -98,7 +98,7 @@ contract InvestorCompliance is ICompliance, AccessControl {
     /**
      * @notice KYC 등록 여부 — InvestorRegistry 조회
      */
-    function isVerified(address account) external view override returns (bool) {
+    function isVerified(address /* account */) external pure override returns (bool) {
         // TODO Phase 3: return investorRegistry.isRegistered(account);
         return true;
     }

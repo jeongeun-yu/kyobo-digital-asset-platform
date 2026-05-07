@@ -1,6 +1,5 @@
-import { _handleWithRetry } from '../S10_handle_with_retry';
-import { type EventProcessor, type StreamMessage, type RedisConsumerClient } from '../../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../../dmz/DLQHandler';
+import { _handleWithRetry } from '../M2/S10_handle_with_retry';
+import { DLQHandler, type EventProcessor, type StreamMessage, type RedisConsumerClient } from '@kyobo/event-engine';
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 function makeMsg(overrides: Partial<StreamMessage['fields']> = {}): StreamMessage {
@@ -47,7 +46,7 @@ const failProcessor: EventProcessor = {
 };
 
 // ── 채점 테스트 ────────────────────────────────────────────────────────────
-describe('S09 채점 — _handleWithRetry', () => {
+describe('S10 채점 — _handleWithRetry', () => {
   it('TODO 1: retryCount >= 3 → DLQ 이동 + XACK', async () => {
     const { redis, xackIds } = makeRedis();
     const { dlq, movedIds } = makeDLQ();

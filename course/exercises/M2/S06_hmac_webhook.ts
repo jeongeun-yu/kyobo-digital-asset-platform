@@ -20,8 +20,20 @@ import crypto from 'crypto';
 //   3. Buffer.from(signature, 'hex') / Buffer.from(expected, 'hex') 로 각각 버퍼 변환
 //   4. 두 버퍼 길이가 다르면 false 반환 (timingSafeEqual은 길이가 다르면 throw)
 //   5. crypto.timingSafeEqual(sigBuf, expBuf) 결과 반환
-function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
-  throw new Error('TODO: 구현하세요');
+export function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
+  if (!signature) return false;
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex');
+
+  const sigBuf = Buffer.from(signature, 'hex');
+  const expBuf = Buffer.from(expected,  'hex');
+
+  if (sigBuf.length !== expBuf.length) return false;
+
+  return crypto.timingSafeEqual(sigBuf, expBuf);
 }
 
 // ── Timing Attack 시연용: === 비교 ────────────────────────────────────────────
@@ -67,9 +79,8 @@ const PAYLOAD = Buffer.from(JSON.stringify({
 
 const CORRECT_SIG = computeHmac(PAYLOAD, SECRET);
 
-// ── 시나리오 실행 ─────────────────────────────────────────────────────────────
-
-(async () => {
+// ── 시나리오 실행 — ts-node로 직접 실행할 때만 동작 ─────────────────────────────
+if (require.main === module) (async () => {
   console.log('=== 기본 검증 시나리오 ===\n');
 
   // 시나리오 1: 서명 없음
@@ -193,4 +204,4 @@ const CORRECT_SIG = computeHmac(PAYLOAD, SECRET);
     console.log(`  throw 발생    : ${(err as Error).message}`);
     console.log('  ↑ 이래서 length 사전 체크가 필수다.');
   }
-})();
+})(); // end if (require.main === module)

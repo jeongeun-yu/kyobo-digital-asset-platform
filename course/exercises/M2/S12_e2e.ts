@@ -25,17 +25,15 @@
 import http from 'http';
 import crypto from 'crypto';
 
-import { WebhookServer }         from '../webhook/WebhookServer';
-import { WebhookPublishHandler } from '../webhook/WebhookPublishHandler';
-import { IdempotencyGuard, InMemoryIdempotencyStore } from '../webhook/IdempotencyGuard';
-import { RedisStreamPublisher, type RedisStreamClient } from '../dmz/RedisStreamPublisher';
-import { ConsumerGroupWorker, type RedisConsumerClient, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
-import { NFTIssuedProcessor, InMemoryLedgerService } from '../processors/NFTIssuedProcessor';
+import {
+  WebhookServer, WebhookPublishHandler, IdempotencyGuard, InMemoryIdempotencyStore,
+  RedisStreamPublisher, ConsumerGroupWorker, DLQHandler, NFTIssuedProcessor, InMemoryLedgerService,
+  type RedisStreamClient, type RedisConsumerClient, type StreamMessage,
+} from '@kyobo/event-engine';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Mock Redis — publisher + consumer 공유 (메모리 스트림)
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class MockRedisStream implements RedisStreamClient, RedisConsumerClient {
   private store: StreamMessage[] = [];
@@ -76,9 +74,9 @@ class MockRedisStream implements RedisStreamClient, RedisConsumerClient {
   get messageCount() { return this.store.length; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 const SECRET = 'dev-secret-kyobo-s12';
 const PORT   = 3012;
@@ -111,9 +109,9 @@ function check(label: string, pass: boolean) {
   if (!pass) process.exitCode = 1;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 진입점
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== S12 E2E: DMZ 이벤트 파이프라인 완주 ===\n');
@@ -136,30 +134,18 @@ function check(label: string, pass: boolean) {
   );
 
   // ── 실습 1: WebhookPublishHandler를 생성하고 server에 등록하라 ──────────
-  // 1. WebhookServer 생성: { port: PORT, secret: SECRET, maxBodyKb: 64 }
-  // 2. WebhookPublishHandler(publisher, idempotencyWebhook) 생성
-  // 3. server.on('NFT_ISSUED', handler.createHandler()) 로 등록
-  //
-  // 힌트:
-  //   const server  = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
-  //   const handler = new WebhookPublishHandler(publisher, idempotencyWebhook);
-  //   server.on('NFT_ISSUED', handler.createHandler());
-  const server: WebhookServer = (() => { throw new Error('TODO: WebhookServer를 생성하고 핸들러를 등록하세요'); })();
-  const handler: WebhookPublishHandler = (() => { throw new Error('TODO: WebhookPublishHandler를 생성하세요'); })();
+  const server  = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
+  const handler = new WebhookPublishHandler(publisher, idempotencyWebhook);
+  server.on('NFT_ISSUED', handler.createHandler());
 
   // ── 실습 2: NFTIssuedProcessor 인스턴스를 생성하라 ───────────────────
-  // new NFTIssuedProcessor(idempotencyConsumer, ledger)
-  //
-  // 힌트: const processor = new NFTIssuedProcessor(idempotencyConsumer, ledger)
-  const processor: NFTIssuedProcessor = (() => { throw new Error('TODO: NFTIssuedProcessor 인스턴스를 생성하세요'); })();
+  const processor = new NFTIssuedProcessor(idempotencyConsumer, ledger);
 
   // ── 실습 3: ConsumerGroupWorker 인스턴스를 생성하라 ──────────────────
-  // new ConsumerGroupWorker(mockRedis, [processor], mockDLQ, config)
-  // config: streamKey='kyobo:events', groupName='issuer-consumers',
-  //         consumerId='worker-s12', batchSize=10, blockMs=30, minIdleMs=30_000
-  //
-  // 힌트: const worker = new ConsumerGroupWorker(mockRedis, [processor], mockDLQ, { ... })
-  const worker: ConsumerGroupWorker = (() => { throw new Error('TODO: ConsumerGroupWorker 인스턴스를 생성하세요'); })();
+  const worker = new ConsumerGroupWorker(
+    mockRedis, [processor], mockDLQ,
+    { streamKey: 'kyobo:events', groupName: 'issuer-consumers', consumerId: 'worker-s12', batchSize: 10, blockMs: 30, minIdleMs: 30_000 },
+  );
 
   // ── 서버 + Worker 시작 ────────────────────────────────────────────────
   await server.listen();
@@ -194,10 +180,7 @@ function check(label: string, pass: boolean) {
   console.log('\n[검증 4] 동일 requestId 재전송 → 원장 변화 없음');
 
   // ── 실습 4: 동일 BODY(동일 requestId)를 한 번 더 전송하라 ────────────
-  // sendWebhook(BODY, sign(BODY)) 를 다시 호출하고 상태 코드를 확인한다.
-  //
-  // 힌트: const status2 = await sendWebhook(BODY, sign(BODY))
-  const status2: number = (() => { throw new Error('TODO: 동일 BODY를 한 번 더 전송하세요'); })();
+  const status2 = await sendWebhook(BODY, sign(BODY));
   check(`HTTP 상태: ${status2} (기대: 202)`, status2 === 202);
 
   await new Promise(r => setTimeout(r, 150));
@@ -209,10 +192,7 @@ function check(label: string, pass: boolean) {
   console.log('\n[검증 5] 잘못된 서명 → 401');
 
   // ── 실습 5: 잘못된 서명으로 요청을 전송하고 상태 코드를 확인하라 ────────
-  // sendWebhook(BODY, 'wrong-signature') 를 호출하고 401인지 확인한다.
-  //
-  // 힌트: const status3 = await sendWebhook(BODY, 'wrong-signature')
-  const status3: number = (() => { throw new Error('TODO: 잘못된 서명으로 요청을 전송하세요'); })();
+  const status3 = await sendWebhook(BODY, 'wrong-signature');
   check(`HTTP 상태: ${status3} (기대: 401)`, status3 === 401);
 
   // ── 정리 ─────────────────────────────────────────────────────────────

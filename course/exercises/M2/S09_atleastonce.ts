@@ -12,8 +12,7 @@
  *   핵심: 처리 순서 불변 규칙 — 멱등성 확인 → 처리 → (XACK는 Worker가 처리)
  */
 
-import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import { ConsumerGroupWorker, DLQHandler, type EventProcessor, type StreamMessage } from '@kyobo/event-engine';
 
 // ── 인메모리 원장 (실습용 시뮬레이션) ──────────────────────────────────────
 export const ledger: Map<string, number> = new Map();
@@ -24,9 +23,9 @@ function credit(tokenId: string, owner: string): void {
   console.log(`    [원장] ${tokenId} → ${owner} | 누적 처리 횟수: ${prev + 1}`);
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Part 1 — 멱등성 없는 Naive Processor (버그 재현용, 수정하지 않는다)
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 const naiveProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
   async process(msg: StreamMessage): Promise<void> {
@@ -35,7 +34,7 @@ const naiveProcessor: EventProcessor = {
   },
 };
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Part 2 — 실습: IdempotentNftProcessor를 구현하라
 //
 // 구현 규칙:
@@ -46,7 +45,7 @@ const naiveProcessor: EventProcessor = {
 //       b. processedIds에 이미 있으면 '[멱등성] 중복 요청 무시: {requestId}' 로그 후 return
 //       c. payload 파싱 → credit(tokenId, owner) 호출
 //       d. processedIds에 requestId 추가
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 const processedIds = new Set<string>();
 
@@ -54,16 +53,16 @@ export const idempotentProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
 
   async process(msg: StreamMessage): Promise<void> {
-    throw new Error('TODO: 구현하세요');
-    // 힌트:
-    // const requestId = msg.fields['requestId'] ?? '';
-    // if (processedIds.has(requestId)) {
-    //   console.log(`    [멱등성] 중복 요청 무시: ${requestId}`);
-    //   return;
-    // }
-    // const { tokenId, owner } = JSON.parse(msg.fields['payload'] ?? '{}');
-    // credit(tokenId, owner);
-    // processedIds.add(requestId);
+    const requestId = msg.fields['requestId'] ?? '';
+
+    if (processedIds.has(requestId)) {
+      console.log(`    [멱등성] 중복 요청 무시: ${requestId}`);
+      return;
+    }
+
+    const { tokenId, owner } = JSON.parse(msg.fields['payload'] ?? '{}');
+    credit(tokenId, owner);
+    processedIds.add(requestId);
   },
 };
 

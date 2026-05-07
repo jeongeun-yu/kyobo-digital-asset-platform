@@ -116,7 +116,7 @@ interface ISecurityToken is IToken {
      * @notice 전송 가능 여부 확인 — 규제 훅 포함
      * @return statusCode ERC-1400 상태 코드 (0x50 = 성공)
      * @return reasonCode 거부 사유 코드
-     * @return partition   실제 전송될 파티션
+     * @return partition_ 실제 전송될 파티션
      */
     function canTransferByPartition(
         address from,
@@ -130,7 +130,6 @@ interface ISecurityToken is IToken {
 
     /**
      * @notice 파티션 지정 전송 — 투자자 등록·보유 한도·락업 검증 통과 후 실행
-     * @return 실제 전송된 파티션
      */
     function transferByPartition(
         bytes32        partition,

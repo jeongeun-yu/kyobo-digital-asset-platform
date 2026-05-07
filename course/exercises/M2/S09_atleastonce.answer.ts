@@ -12,8 +12,7 @@
  *   핵심: 처리 순서 불변 규칙 — 멱등성 확인 → 처리 → (XACK는 Worker가 처리)
  */
 
-import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import { ConsumerGroupWorker, DLQHandler, type EventProcessor, type StreamMessage } from '@kyobo/event-engine';
 
 // ── 인메모리 원장 (실습용 시뮬레이션) ──────────────────────────────────────
 export const ledger: Map<string, number> = new Map();
@@ -24,9 +23,9 @@ function credit(tokenId: string, owner: string): void {
   console.log(`    [원장] ${tokenId} → ${owner} | 누적 처리 횟수: ${prev + 1}`);
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Part 1 — 멱등성 없는 Naive Processor (버그 재현용, 수정하지 않는다)
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 const naiveProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
   async process(msg: StreamMessage): Promise<void> {
@@ -35,7 +34,7 @@ const naiveProcessor: EventProcessor = {
   },
 };
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Part 2 — 실습: IdempotentNftProcessor를 구현하라
 //
 // 구현 규칙:
@@ -47,7 +46,7 @@ const naiveProcessor: EventProcessor = {
 //       c. payload 파싱 → credit(tokenId, owner) 호출
 //       d. processedIds에 requestId 추가
 // 주석을 풀면 바로 실행 가능. 직접 타이핑도 가능.
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 const processedIds = new Set<string>();
 

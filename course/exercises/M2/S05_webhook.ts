@@ -11,7 +11,7 @@
  *   생성된 PowerShell 명령어로 직접 전송
  */
 
-import { WebhookServer } from '../webhook/WebhookServer';
+import { WebhookServer } from '@kyobo/event-engine';
 
 const server = new WebhookServer({
   port:      3001,
@@ -19,15 +19,11 @@ const server = new WebhookServer({
   maxBodyKb: 64,
 });
 
-// ── 실습 1: NFT_ISSUED 핸들러를 등록하라 ────────────────────────────────────
-// server.on('NFT_ISSUED', async (payload) => { ... }) 형태로 등록한다.
-// 핸들러 안에서 해야 할 일:
-//   1. payload를 JSON.stringify로 콘솔 출력
-//   2. 200ms 슬립 (처리 시뮬레이션) — await new Promise(r => setTimeout(r, 200))
-//   3. '[handler] NFT_ISSUED processed' 로그 출력
-//
-// 힌트: server.on(eventType, async (payload) => { ... })
-throw new Error('TODO: server.on()으로 NFT_ISSUED 핸들러를 등록하세요');
+server.on('NFT_ISSUED', async (payload) => {
+  console.log('[handler] NFT_ISSUED received:', JSON.stringify(payload, null, 2));
+  await new Promise(r => setTimeout(r, 200));
+  console.log('[handler] NFT_ISSUED processed');
+});
 
 (async () => {
   await server.listen();

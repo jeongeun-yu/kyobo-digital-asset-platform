@@ -11,7 +11,7 @@
  *   curl 명령어로 직접 전송
  */
 
-import { WebhookServer } from '../webhook/WebhookServer';
+import { WebhookServer } from '@kyobo/event-engine';
 
 const server = new WebhookServer({
   port:      3001,

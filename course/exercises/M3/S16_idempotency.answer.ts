@@ -17,9 +17,9 @@
 import type { TxRepository, VaspTxClient, WalletResolver, MintRequest, TxStatus } from '@kyobo/vasp';
 import { TxStateMachineService } from '@kyobo/vasp';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // In-memory TxRepository
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class InMemoryTxRepository implements TxRepository {
   private store = new Map<string, MintRequest>();
@@ -42,7 +42,7 @@ class InMemoryTxRepository implements TxRepository {
   all(): MintRequest[] { return [...this.store.values()]; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // VaspMockClient — 실습 2 핵심: requestId 기반 멱등성 구현
 //
 // ── 실습 1: VaspMockClient를 완성하라 ──────────────────────────────────
@@ -51,7 +51,7 @@ class InMemoryTxRepository implements TxRepository {
 //   · 새 requestId → 신규 txHash 생성 + pending 상태 등록
 //
 // 아래 주석을 해제하면 바로 실행된다:
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class VaspMockClient implements VaspTxClient {
   private submitted = new Map<string, string>();  // requestId → txHash
@@ -93,18 +93,18 @@ class MockWalletResolver implements WalletResolver {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 function check(label: string, pass: boolean) {
   console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
   if (!pass) process.exitCode = 1;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 진입점
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== S16: Idempotency — requestId 기반 중복 TX 방어 ===\n');

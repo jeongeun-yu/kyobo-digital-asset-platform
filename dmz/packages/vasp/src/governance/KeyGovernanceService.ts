@@ -120,7 +120,7 @@ export class KeyGovernanceService {
       `INSERT INTO pending_txs
          (id, tx_hash, params, status, required_signatures, collected_signatures, proposed_by, proposed_at)
        VALUES ($1,$2,$3,'PENDING_SIGNATURES',$4,'[]',$5,$6)`,
-      [id, txHash, JSON.stringify(params), threshold, proposer, now.toISOString()],
+      [id, txHash, JSON.stringify(params, (_k, v) => typeof v === 'bigint' ? v.toString() : v), threshold, proposer, now.toISOString()],
     );
 
     await this.auditLog.log({ actor: proposer, action: 'TX_PROPOSED', resourceId: id, afterState: pendingTx });

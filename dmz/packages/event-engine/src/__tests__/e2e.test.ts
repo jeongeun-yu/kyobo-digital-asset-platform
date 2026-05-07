@@ -63,7 +63,7 @@ async function runWorkerUntilIdle(worker: ConsumerGroupWorker, ms = 80): Promise
 
 // ── 채점 테스트 ────────────────────────────────────────────────────────────
 
-describe('S12 채점 — WebhookPublishHandler', () => {
+describe('WebhookPublishHandler', () => {
   it('createHandler() 반환 함수가 RedisStreamPublisher.publish()를 호출한다', async () => {
     const redis = new MockRedisStream();
     const publisher = new RedisStreamPublisher(redis);
@@ -104,7 +104,7 @@ describe('S12 채점 — WebhookPublishHandler', () => {
   });
 });
 
-describe('S12 채점 — NFTIssuedProcessor', () => {
+describe('NFTIssuedProcessor', () => {
   it('NFT_ISSUED 처리 후 원장에 반영된다', async () => {
     const redis = new MockRedisStream();
     const ledger = new InMemoryLedgerService();
@@ -173,7 +173,7 @@ describe('S12 채점 — NFTIssuedProcessor', () => {
   });
 });
 
-describe('S12 채점 — 전체 파이프라인 통합', () => {
+describe('전체 파이프라인 통합', () => {
   it('Webhook → Stream 적재 → Consumer 처리 → 원장 1건', async () => {
     const redis = new MockRedisStream();
     const publisher = new RedisStreamPublisher(redis);

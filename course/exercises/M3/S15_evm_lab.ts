@@ -29,16 +29,16 @@ import type {
 } from '@kyobo/chain-adapters';
 import { EVMAdapter } from '@kyobo/chain-adapters';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Sepolia 테스트넷 설정 (강의 전용 — 프로덕션에서는 환경변수 주입)
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 const SEPOLIA_RPC_URL    = process.env['EVM_RPC_URL']          ?? 'https://rpc.sepolia.org';
 const SEPOLIA_CHAIN_ID   = process.env['EVM_CHAIN_ID']         ?? '11155111';
 const MOCK_CONTRACT_ADDR = process.env['MOCK_CONTRACT_ADDR'];   // MockERC1155 Sepolia 주소 (선택)
 const EVM_SIGNER_KEY     = process.env['EVM_SIGNER_KEY'];       // write 모드 활성화 (선택)
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 3: XRPLMockAdapter — IBlockchainAdapter 직접 구현
 //
 // 목표: XRPL로 체인을 교체한다고 가정.
@@ -57,7 +57,7 @@ const EVM_SIGNER_KEY     = process.env['EVM_SIGNER_KEY'];       // write 모드 
 //     각각 MOCK_RECEIPT 기반 또는 0n/null/() => {} 반환
 //   queryEvents() → [] 반환
 //   subscribeEvents() → () => {} 반환
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 const MOCK_RECEIPT: TransactionReceipt = {
   txHash:      '0xmock',
@@ -72,39 +72,39 @@ class XRPLMockAdapter implements IBlockchainAdapter {
   readonly chainType = 'XRPL' as const;
 
   async isConnected(): Promise<boolean> {
-    throw new Error('TODO: 구현하세요 — 힌트: 항상 true 반환');
+    return true;
   }
 
   async getBlockNumber(): Promise<number> {
-    throw new Error('TODO: 구현하세요 — 힌트: XRPL은 레저 인덱스, 99_999_999 반환');
+    return 99_999_999;
   }
 
   async mintNFT(_params: MintParams): Promise<TransactionReceipt> {
-    throw new Error('TODO: 구현하세요 — 힌트: MOCK_RECEIPT 기반으로 txHash를 xrpl-mint로 변경');
+    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-mint' };
   }
 
   async mintNFTBatch(_params: MintBatchParams): Promise<TransactionReceipt> {
-    throw new Error('TODO: 구현하세요 — 힌트: { ...MOCK_RECEIPT } 반환');
+    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-mintbatch' };
   }
 
   async burnNFT(_params: BurnParams): Promise<TransactionReceipt> {
-    throw new Error('TODO: 구현하세요 — 힌트: { ...MOCK_RECEIPT } 반환');
+    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-burn' };
   }
 
   async getBalance(_contractAddr: string, _owner: string, _tokenId: bigint): Promise<bigint> {
-    throw new Error('TODO: 구현하세요 — 힌트: 0n 반환');
+    return 0n;
   }
 
   async call(_params: ContractCallParams): Promise<unknown> {
-    throw new Error('TODO: 구현하세요 — 힌트: null 반환');
+    return null;
   }
 
   async sendTransaction(_params: ContractCallParams): Promise<TransactionReceipt> {
-    throw new Error('TODO: 구현하세요 — 힌트: { ...MOCK_RECEIPT } 반환');
+    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-tx' };
   }
 
   async getReceipt(_txHash: string): Promise<TransactionReceipt | null> {
-    throw new Error('TODO: 구현하세요 — 힌트: null 반환');
+    return null;
   }
 
   async queryEvents(
@@ -114,7 +114,7 @@ class XRPLMockAdapter implements IBlockchainAdapter {
     _fromBlock: number,
     _toBlock: number,
   ): Promise<ChainEvent[]> {
-    throw new Error('TODO: 구현하세요 — 힌트: [] 반환');
+    return [];
   }
 
   async subscribeEvents(
@@ -124,22 +124,22 @@ class XRPLMockAdapter implements IBlockchainAdapter {
     _fromBlock: number,
     _handler: (event: ChainEvent) => Promise<void>,
   ): Promise<() => void> {
-    throw new Error('TODO: 구현하세요 — 힌트: no-op 함수 () => {} 반환');
+    return () => { /* no-op */ };
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 function check(label: string, pass: boolean) {
   console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
   if (!pass) process.exitCode = 1;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 진입점
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== S15: EVMAdapter 실습 (Sepolia 테스트넷) ===\n');
@@ -154,11 +154,10 @@ function check(label: string, pass: boolean) {
   }
 
   // ── 실습 1: EVMAdapter 인스턴스를 생성하라 (read-only 모드) ────────────
-  // privateKey를 전달하지 않으면 read-only 모드로 동작한다.
-  // mintNFT / sendTransaction 호출 시 "wallet is null" 에러가 발생한다.
-  //
-  // 힌트: const evm = new EVMAdapter({ rpcUrl: SEPOLIA_RPC_URL, chainId: SEPOLIA_CHAIN_ID })
-  const evm: EVMAdapter = (() => { throw new Error('TODO: EVMAdapter 인스턴스를 생성하세요 (read-only 모드)'); })();
+  const evm = new EVMAdapter({
+    rpcUrl:  SEPOLIA_RPC_URL,
+    chainId: SEPOLIA_CHAIN_ID,
+  });
 
   // ── [1] Sepolia 연결 확인 ─────────────────────────────────────────────
   console.log('[검증 1] isConnected() → Sepolia 연결');

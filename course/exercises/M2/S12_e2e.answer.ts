@@ -25,17 +25,15 @@
 import http from 'http';
 import crypto from 'crypto';
 
-import { WebhookServer }         from '../webhook/WebhookServer';
-import { WebhookPublishHandler } from '../webhook/WebhookPublishHandler';
-import { IdempotencyGuard, InMemoryIdempotencyStore } from '../webhook/IdempotencyGuard';
-import { RedisStreamPublisher, type RedisStreamClient } from '../dmz/RedisStreamPublisher';
-import { ConsumerGroupWorker, type RedisConsumerClient, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
-import { NFTIssuedProcessor, InMemoryLedgerService } from '../processors/NFTIssuedProcessor';
+import {
+  WebhookServer, WebhookPublishHandler, IdempotencyGuard, InMemoryIdempotencyStore,
+  RedisStreamPublisher, ConsumerGroupWorker, DLQHandler, NFTIssuedProcessor, InMemoryLedgerService,
+  type RedisStreamClient, type RedisConsumerClient, type StreamMessage,
+} from '@kyobo/event-engine';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Mock Redis — publisher + consumer 공유 (메모리 스트림)
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class MockRedisStream implements RedisStreamClient, RedisConsumerClient {
   private store: StreamMessage[] = [];
@@ -76,9 +74,9 @@ class MockRedisStream implements RedisStreamClient, RedisConsumerClient {
   get messageCount() { return this.store.length; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 const SECRET = 'dev-secret-kyobo-s12';
 const PORT   = 3012;
@@ -111,9 +109,9 @@ function check(label: string, pass: boolean) {
   if (!pass) process.exitCode = 1;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 진입점
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== S12 E2E: DMZ 이벤트 파이프라인 완주 ===\n');

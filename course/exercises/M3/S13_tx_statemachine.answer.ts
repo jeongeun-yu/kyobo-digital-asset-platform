@@ -18,7 +18,7 @@ import type { TxStatus } from '@kyobo/vasp';
 import { TxStateMachineService, MintRequestNotFoundError } from '@kyobo/vasp';
 import type { TxRepository, VaspTxClient, WalletResolver, MintRequest } from '@kyobo/vasp';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 1 + 2: VALID_TRANSITIONS 맵 + transitionStatus 구현
 //
 // TX 상태 전이도:
@@ -53,9 +53,9 @@ function transitionStatus(current: TxStatus, next: TxStatus): void {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 5용 In-memory TxRepository
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class InMemoryTxRepository implements TxRepository {
   private store = new Map<string, MintRequest>();
@@ -86,9 +86,9 @@ class MockWalletResolver implements WalletResolver {
   async getWalletAddr(userId: string) { return `0x${userId.padEnd(40, '0')}`; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 function check(label: string, pass: boolean) {
   console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
@@ -115,9 +115,9 @@ function expectNoThrow(label: string, fn: () => void) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 진입점
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== S13: TX 상태머신 — VALID_TRANSITIONS + transitionStatus ===\n');

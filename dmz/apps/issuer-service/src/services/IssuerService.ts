@@ -33,16 +33,13 @@ export class IssuerService {
   }): Promise<{ txHash: string; tokenId?: string }> {
     const { userId, activityId, oracleData } = params;
 
-    // 1. Core Banking에서 사용자 계정·지갑 주소 조회
     const account = await this.deps.coreBanking.getUserAccount(userId);
     if (!account) throw new Error(`IssuerService: user not found: ${userId}`);
     if (account.status !== 'active') throw new Error(`IssuerService: account not active: ${userId}`);
 
-    // 2. AML 스크리닝 — 블랙리스트 주소 차단
     const aml = await this.deps.vaspAdapter.screenAddress(account.walletAddr);
     if (aml.flagged) throw new Error(`IssuerService: AML flagged: ${aml.reason}`);
 
-    // 3. 컨트랙트 호출 — NFTIssuer.issueActivityNFT
     const receipt = await this.deps.chainAdapter.sendTransaction({
       contractAddr: this.deps.nftIssuerAddr,
       abi:          NFT_ISSUER_ABI,
@@ -63,7 +60,7 @@ export class IssuerService {
       throw new Error(`IssuerService: tx failed: ${receipt.txHash}`);
     }
 
-    // 4. Core Banking 알림 (비동기 — 실패해도 발행은 완료)
+    // fire-and-forget: 알림 실패가 발행 결과에 영향 주지 않음
     this.deps.coreBanking.notifyReward({
       userId,
       rewardType: 'ACTIVITY_NFT',

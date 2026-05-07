@@ -18,7 +18,7 @@ import type { TxStatus, TxTransitionEvent } from '@kyobo/vasp';
 import { TxStateMachineService, MintRequestNotFoundError } from '@kyobo/vasp';
 import type { TxRepository, VaspTxClient, WalletResolver, MintRequest } from '@kyobo/vasp';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 1: VALID_TRANSITIONS 맵을 완성하라
 //
 // TX 상태 전이도:
@@ -28,29 +28,29 @@ import type { TxRepository, VaspTxClient, WalletResolver, MintRequest } from '@k
 //
 // 각 상태에서 허용되는 다음 상태 목록을 채운다.
 // 힌트: 종단 상태(FAILED, CONFIRMED)는 빈 배열 []
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 // TODO: 아래 각 항목에서 throw를 지우고 올바른 TxStatus 배열을 채우세요.
 // 예: REQUESTED: ['SUBMITTED', 'FAILED'],
 const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
-  REQUESTED: null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  SUBMITTED: null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  PENDING:   null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  MINED:     null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  FINALIZED: null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
-  CONFIRMED: null! as TxStatus[], // TODO: 종단 상태 — 전이 없음
-  FAILED:    null! as TxStatus[], // TODO: 종단 상태 — 전이 없음
-  REORGED:   null! as TxStatus[], // TODO: 허용되는 다음 상태 목록을 채우세요
+  REQUESTED: ['SUBMITTED', 'FAILED'],
+  SUBMITTED: ['PENDING',   'FAILED'],
+  PENDING:   ['MINED',     'FAILED'],
+  MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
+  FINALIZED: ['CONFIRMED'],
+  CONFIRMED: [],                          // 종단 — 원장 업데이트 완료
+  FAILED:    [],                          // 종단
+  REORGED:   ['MINED',     'FAILED'],
 };
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 2: transitionStatus를 구현하라
 //
 // 허용되지 않은 전이 시 InvalidStatusTransitionError를 던진다.
 // 힌트:
 //   1. VALID_TRANSITIONS[current]에서 허용 목록을 가져온다
 //   2. next가 포함되지 않으면 InvalidStatusTransitionError를 throw
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class InvalidStatusTransitionError extends Error {
   constructor(from: TxStatus, to: TxStatus) {
@@ -60,12 +60,15 @@ class InvalidStatusTransitionError extends Error {
 }
 
 function transitionStatus(current: TxStatus, next: TxStatus): void {
-  throw new Error('TODO: 구현하세요');
+  const allowed = VALID_TRANSITIONS[current] ?? [];
+  if (!allowed.includes(next)) {
+    throw new InvalidStatusTransitionError(current, next);
+  }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 5용 In-memory TxRepository
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class InMemoryTxRepository implements TxRepository {
   private store = new Map<string, MintRequest>();
@@ -96,9 +99,9 @@ class MockWalletResolver implements WalletResolver {
   async getWalletAddr(userId: string) { return `0x${userId.padEnd(40, '0')}`; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 function check(label: string, pass: boolean) {
   console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
@@ -125,9 +128,9 @@ function expectNoThrow(label: string, fn: () => void) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 진입점
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== S13: TX 상태머신 — VALID_TRANSITIONS + transitionStatus ===\n');

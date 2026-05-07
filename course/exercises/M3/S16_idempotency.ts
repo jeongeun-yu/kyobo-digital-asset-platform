@@ -17,9 +17,9 @@
 import type { TxRepository, VaspTxClient, WalletResolver, MintRequest, TxStatus } from '@kyobo/vasp';
 import { TxStateMachineService } from '@kyobo/vasp';
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // In-memory TxRepository
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class InMemoryTxRepository implements TxRepository {
   private store = new Map<string, MintRequest>();
@@ -42,7 +42,7 @@ class InMemoryTxRepository implements TxRepository {
   all(): MintRequest[] { return [...this.store.values()]; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // VaspMockClient — 실습 핵심: requestId 기반 멱등성 구현
 //
 // 실습 1: VaspMockClient.submitMint()를 완성하라
@@ -59,7 +59,7 @@ class InMemoryTxRepository implements TxRepository {
 //     this.submitted.set(params.requestId, txHash);
 //     this.txStatus.set(txHash, { status: 'pending' });
 //     return { txHash };
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 class VaspMockClient implements VaspTxClient {
   private submitted = new Map<string, string>();  // requestId → txHash
@@ -73,15 +73,13 @@ class VaspMockClient implements VaspTxClient {
   async submitMint(params: {
     to: string; tokenId: bigint; amount: bigint; requestId: string;
   }): Promise<{ txHash: string }> {
-    throw new Error('TODO: requestId 기반 멱등성을 구현하세요');
-    // 힌트:
-    // if (this.submitted.has(params.requestId)) {
-    //   return { txHash: this.submitted.get(params.requestId)! };
-    // }
-    // const txHash = `0xMOCK_${(++this.counter).toString().padStart(4, '0')}_${Date.now().toString(16)}`;
-    // this.submitted.set(params.requestId, txHash);
-    // this.txStatus.set(txHash, { status: 'pending' });
-    // return { txHash };
+    if (this.submitted.has(params.requestId)) {
+      return { txHash: this.submitted.get(params.requestId)! };
+    }
+    const txHash = `0xMOCK_${(++this.counter).toString().padStart(4, '0')}_${Date.now().toString(16)}`;
+    this.submitted.set(params.requestId, txHash);
+    this.txStatus.set(txHash, { status: 'pending' });
+    return { txHash };
   }
 
   setTxStatus(txHash: string, status: { status: 'pending' | 'mined' | 'confirmed' | 'failed' | 'not_found'; revertReason?: string }) {
@@ -103,18 +101,18 @@ class MockWalletResolver implements WalletResolver {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 function check(label: string, pass: boolean) {
   console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
   if (!pass) process.exitCode = 1;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 실습 진입점
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 
 (async () => {
   console.log('=== S16: Idempotency — requestId 기반 중복 TX 방어 ===\n');
@@ -128,10 +126,7 @@ function check(label: string, pass: boolean) {
   const svc1    = new TxStateMachineService(repo1, vasp1, wallet);
 
   // ── 실습 2: submitMintRequest를 호출하라 ─────────────────────────────
-  // svc1.submitMintRequest({ userId, tokenId, amount }) → requestId(string)
-  //
-  // 힌트: const requestId = await svc1.submitMintRequest({ userId: 'user-1', tokenId: 1001n, amount: 1n })
-  const requestId: string = (() => { throw new Error('TODO: submitMintRequest를 호출하세요'); })();
+  const requestId = await svc1.submitMintRequest({ userId: 'user-1', tokenId: 1001n, amount: 1n });
 
   const req1 = await repo1.findById(requestId);
   check(`상태: ${req1?.status} (기대: SUBMITTED)`, req1?.status === 'SUBMITTED');

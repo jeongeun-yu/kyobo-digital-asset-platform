@@ -2,7 +2,7 @@
   "name": "kyobo-digital-asset-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "교보생명 디지털 자산 플랫폼 — 행동 보상 NFT · 스테이블코인 · 증권형 토큰",
+  "description": "Kyobo Digital Asset Platform",
   "workspaces": [
     "blockchain",
     "dmz/apps/*",
@@ -11,7 +11,9 @@
   ],
   "scripts": {
     "build":               "npm run build --workspaces",
-    "test":                "npm run test --workspaces",
+    "build:all":           "npm run build --workspaces --if-present && cd blockchain && npx hardhat compile",
+    "test":                "npm run test --workspaces --if-present",
+    "test:exercises":      "npm run test:exercises --workspace=dmz/packages/event-engine",
     "typecheck":           "npm run typecheck --workspaces --if-present",
     "node:local":          "cd blockchain && npx hardhat node",
     "deploy:local":        "cd blockchain && npx hardhat run scripts/deploy/deploy-rewards.ts --network localhost",

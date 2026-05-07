@@ -1,6 +1,5 @@
-import { idempotentProcessor, ledger } from '../S09_atleastonce';
-import { ConsumerGroupWorker, type StreamMessage } from '../../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../../dmz/DLQHandler';
+import { idempotentProcessor, ledger } from '../M2/S09_atleastonce';
+import { ConsumerGroupWorker, DLQHandler, type StreamMessage } from '@kyobo/event-engine';
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(
@@ -46,7 +45,7 @@ async function run(msgs: StreamMessage[]): Promise<void> {
 }
 
 // ── 채점 테스트 ────────────────────────────────────────────────────────────
-describe('S08 채점 — IdempotentNftProcessor', () => {
+describe('S09 채점 — IdempotentNftProcessor', () => {
   beforeEach(() => ledger.clear());
 
   it('TODO: eventTypes에 NFT_ISSUED가 포함되어야 한다', () => {

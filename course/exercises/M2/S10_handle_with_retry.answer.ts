@@ -11,8 +11,7 @@
  *   4가지 시나리오로 retryCount 분기, DLQ 이동, ACK 패턴을 검증한다.
  */
 
-import { type EventProcessor, type StreamMessage, type RedisConsumerClient } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import { DLQHandler, type EventProcessor, type StreamMessage, type RedisConsumerClient } from '@kyobo/event-engine';
 
 const MAX_RETRIES = 3;
 const STREAM_KEY  = 'kyobo:events';
@@ -58,9 +57,9 @@ export async function _handleWithRetry(
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // Mock & 헬퍼
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 function makeMsg(overrides: Partial<StreamMessage['fields']> = {}): StreamMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -106,9 +105,9 @@ function check(label: string, pass: boolean): void {
   console.log(`    ${pass ? '✅' : '❌'} ${label}`);
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 // 4가지 시나리오
-// ══════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────
 if (require.main === module) (async () => {
   console.log('=== S10 실습: _handleWithRetry 구현 ===\n');
 

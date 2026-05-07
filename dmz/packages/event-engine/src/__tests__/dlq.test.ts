@@ -54,7 +54,7 @@ const BASE_ITEM = {
 };
 
 // ── 채점 테스트 ────────────────────────────────────────────────────────────
-describe('S11 채점 — DLQHandler', () => {
+describe('DLQHandler', () => {
   describe('move()', () => {
     it('DLQ 스트림에 XADD한다', async () => {
       const redis = makeDLQRedis();
@@ -112,7 +112,7 @@ describe('S11 채점 — DLQHandler', () => {
       await dlq.move(BASE_ITEM);
       const [item] = await dlq.listPending();
       expect(item!.reason).toBe('max retries (3) exceeded');
-      expect(item!.messageId).toBe('1714000000000-0');
+      expect(item!.messageId).toBe(redis.store[0]!.id); // DLQ 스트림 entry ID
       expect(item!.failedAt).toBeInstanceOf(Date);
     });
   });

@@ -93,9 +93,9 @@ class ControllableAdapter implements IBlockchainAdapter {
   async queryEvents():   Promise<ChainEvent[]> { return []; }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 // [1] LoggingAdapterDecorator — 경과 시간 측정
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 
 async function section1() {
   console.log('[1] LoggingAdapterDecorator — 경과 시간 측정');
@@ -133,9 +133,9 @@ async function section1() {
   check('실패 시 ERROR 로그 발생',                  logs2.some(l => l.startsWith('ERROR:')));
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 // [2] RetryAdapterDecorator — 일시적 실패 자동 재시도
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 
 async function section2() {
   console.log('\n[2] RetryAdapterDecorator — 일시적 실패 자동 재시도');
@@ -175,12 +175,12 @@ async function section2() {
   check('callCount === maxAttempts (2회 시도)',       inner2.callCount === 2);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 // [3] NON_RETRYABLE — REVERT/잔액 부족은 즉시 throw
 //
 // "execution reverted", "insufficient funds", "nonce too high" 패턴은
 // 재시도해도 소용 없는 오류 — 즉시 throw해서 DLQ로 보내야 한다.
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 
 async function section3() {
   console.log('\n[3] NON_RETRYABLE — 비즈니스 오류는 즉시 throw');
@@ -210,7 +210,7 @@ async function section3() {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 // [4] Decorator 조합 — Retry(Logging(adapter))
 //
 // 데코레이터는 중첩 가능하다. 안쪽부터 바깥쪽 순으로 감싼다:
@@ -219,7 +219,7 @@ async function section3() {
 //       EVMAdapter
 //     )
 //   )
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 
 async function section4() {
   console.log('\n[4] Decorator 조합 — Retry(Logging(adapter))');
@@ -234,9 +234,10 @@ async function section4() {
   const inner   = new ControllableAdapter();
   inner.failUntil = 1;
 
-  // TODO: stacked를 Retry(Logging(inner)) 형태로 직접 합성하세요.
-  //   힌트: new RetryAdapterDecorator(new LoggingAdapterDecorator(inner, logger), { ... })
-  const stacked: IBlockchainAdapter = null as any;  // TODO: 구현하세요
+  const stacked = new RetryAdapterDecorator(
+    new LoggingAdapterDecorator(inner, logger),
+    { maxAttempts: 3, initialDelayMs: 10, maxDelayMs: 50, backoffFactor: 2 },
+  );
 
   const receipt = await stacked.mintNFT({
     contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r6',
@@ -248,19 +249,20 @@ async function section4() {
   check('ERROR 로그 1건 (첫 번째 시도 실패)',         logs.filter(l => l.startsWith('ERROR:')).length >= 1);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 // [5] CircuitBreaker — CLOSED → OPEN → HALF_OPEN 상태 전이
 //
 // 외부 서비스(Core Banking, VASP)가 연속 실패할 때
 // 무한 재시도 대신 빠른 실패(fail-fast)로 전환해 리소스 낭비 방지.
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 
 async function section5() {
   console.log('\n[5] CircuitBreaker — 상태 전이');
 
-  // TODO: failureThreshold=3, recoveryTimeMs=100 으로 CircuitBreaker를 직접 생성하세요.
-  //   힌트: new CircuitBreaker({ failureThreshold: ..., recoveryTimeMs: ... })
-  const cb: CircuitBreaker = null as any;  // TODO: 구현하세요
+  const cb = new CircuitBreaker({
+    failureThreshold: 3,
+    recoveryTimeMs:   100,
+  });
 
   // 초기 상태: CLOSED
   check('초기 상태: CLOSED',                         cb.getState() === 'CLOSED');
@@ -303,9 +305,9 @@ async function section5() {
   check('HALF_OPEN에서 실패 → OPEN 재진입',          cb2.getState() === 'OPEN');
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 // [보너스] Sepolia 실제 연결 (선택 실습)
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 
 async function sectionBonus() {
   console.log('\n[보너스] Sepolia + Decorator 스택 (실제 RPC)');
@@ -330,9 +332,9 @@ async function sectionBonus() {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 // 실습 진입점
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────══
 
 (async () => {
   console.log('=== S17: Decorator 패턴 + Circuit Breaker ===\n');

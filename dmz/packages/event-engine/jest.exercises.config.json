@@ -1,7 +1,12 @@
 {
   "preset": "ts-jest",
   "testEnvironment": "node",
-  "testMatch": ["**/src/exercises/__tests__/**/*.test.ts"],
+  "forceExit": true,
+  "roots": ["<rootDir>/../../../course/exercises/__tests__"],
+  "testMatch": ["**/*.test.ts"],
+  "moduleNameMapper": {
+    "^@kyobo/event-engine$": "<rootDir>/src/index.ts"
+  },
   "transform": {
     "^.+\\.ts$": ["ts-jest", {
       "tsconfig": {
