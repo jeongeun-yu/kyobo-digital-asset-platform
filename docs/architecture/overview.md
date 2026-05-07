@@ -60,7 +60,8 @@
 │  │Adapter       │  │ChainEventListener │  │ExternalVAS│ │
 │  │EVMAdapter    │  │dmz/               │  │KyoboVASP* │ │
 │  │XRPLAdapter*  │  │  RedisStreamPub   │  │tx/        │ │
-│  └──────────────┘  │  ConsumerGroupWkr │  │TxStateMach│ │
+│  │CircleAdapter*│  │  ConsumerGroupWkr │  │TxStateMach│ │
+│  └──────────────┘  │  DLQHandler       │  └───────────┘ │
 │                    │  DLQHandler       │  └───────────┘ │
 │  ┌──────────────┐  └───────────────────┘                 │
 │  │ compliance   │  ┌───────────────────┐                 │
@@ -77,13 +78,14 @@
 └───────────────────┬──────────────────────────────────────┘
                     │
 ┌───────────────────▼──────────────────────────────────────┐
-│               contracts/                                  │
-│  interfaces/   base/      phase1/     phase2*  phase3*   │
-│  IToken        BaseToken  KyoboNFT    KRWStbl  SecurityTk│
-│  ICompliance   (non-UUPS  (ERC-1155   (ERC-20) (ERC-1400)│
-│  IOracle        shared)    +UUPS)                        │
-│  IBlockchain              NFTIssuer                      │
-│  Adapter                  ActivityO                      │
+│               blockchain/src/                             │
+│  interfaces/   base/      rewards/    stablecoin* securities*│
+│  IToken        BaseToken  ActivityO   KRWStbl   SecurityTk│
+│  ICompliance   (non-UUPS  racle       coin       (ERC-1400)│
+│  IOracle        shared)   (ERC-1155   (ERC-20)            │
+│  IInvestorReg             +UUPS*)                         │
+│  IDividendDist compliance/                                │
+│                PermissiveC                                │
 └──────────────────────────────────────────────────────────┘
 
 * = stub (Phase 2+ 구현 예정)
@@ -99,8 +101,8 @@
 | M3 (VASP 추상화) | packages/vasp, chain-adapters | `TxStateMachineService`, `IBlockchainAdapter` |
 | M4 (원장·감사) | packages/core-banking | `LedgerService`, `AuditLogService` |
 | M5 (비즈니스 로직) | apps/issuer-service | `EventConditionService`, `WalletMappingService`, `BulkIssueService` |
-| M6 (ERC-1155) | contracts/phase1 | `KyoboNFT.sol` — UUPS + tokenId 인코딩 |
-| M7 (보안 감사) | contracts/phase1 | `KyoboNFTV2.sol` — Storage layout 검증 |
+| M6 (ERC-1155) | blockchain/src/rewards | `ActivityOracle.sol` — UUPS + tokenId 인코딩 (ERC-1155) |
+| M7 (보안 감사) | blockchain/src/rewards | Storage layout 검증 실습 — UUPS 업그레이드 패턴 |
 | M8 (키 거버넌스) | packages/vasp | `KeyGovernanceService` — EIP-712 SafeTx, Travel Rule |
 
 ---

@@ -259,7 +259,7 @@ it('Phase 1 정상 E2E', async () => {
 });
 ```
 
-### ✅ Phase 1 Prototype 완성 조건 (전부 통과해야 프로토타입)
+### ✅ M8 완료 기준 — Phase 1 Prototype 완성 조건 (전부 통과해야 프로토타입)
 
 - [ ] 앱 이벤트 → NFT 발행 → 원장 E2E 전체 동작
 - [ ] VASP 장애 → 복구 후 정상 복귀

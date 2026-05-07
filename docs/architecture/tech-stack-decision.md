@@ -325,21 +325,27 @@ EVM 호환 체인을 사용하는 한 Solidity가 유일한 현실적 선택이�
                                │ ChainAdapter interface
               ┌────────────────┼────────────────┐
               ▼                ▼                ▼
-   EthereumAdapter      XRPLAdapter       CircleArcAdapter
+   EVMAdapter           XRPLAdapter*      CircleAdapter*
    (Phase 1 구현)       (Phase 2 예정)    (Phase 2 예정)
    ethers.js v6         xrpl.js           Circle API
 ```
 
-**`ChainAdapter` 인터페이스 (추상화 대상 메서드)**:
+**`IBlockchainAdapter` 인터페이스 (추상화 대상 메서드)**:
 ```typescript
-interface ChainAdapter {
-  getBalance(address: string, tokenContract?: string): Promise<bigint>;
-  transfer(params: TransferParams): Promise<TransactionReceipt>;
-  getTransaction(txHash: string): Promise<TransactionDetail>;
-  waitForConfirmation(txHash: string, confirmations?: number): Promise<void>;
-  subscribeToTransfers(address: string, callback: TransferEventCallback): Unsubscribe;
-  estimateFee(params: TransferParams): Promise<FeeEstimate>;
-  validateAddress(address: string): boolean;
+interface IBlockchainAdapter {
+  readonly chainId:   string;
+  readonly chainType: 'EVM' | 'XRPL' | 'UTXO' | 'BFT';
+  isConnected(): Promise<boolean>;
+  getBlockNumber(): Promise<number>;
+  mintNFT(params: MintParams): Promise<TransactionReceipt>;
+  mintNFTBatch(params: MintBatchParams): Promise<TransactionReceipt>;
+  burnNFT(params: BurnParams): Promise<TransactionReceipt>;
+  getBalance(contractAddr: string, owner: string, tokenId: bigint): Promise<bigint>;
+  call(params: ContractCallParams): Promise<unknown>;
+  sendTransaction(params: ContractCallParams): Promise<TransactionReceipt>;
+  getReceipt(txHash: string): Promise<TransactionReceipt | null>;
+  subscribeEvents(...): Promise<() => void>;
+  queryEvents(...): Promise<ChainEvent[]>;
 }
 ```
 
@@ -366,7 +372,7 @@ interface ChainAdapter {
 | 스마트컨트랙트 언어 | **Solidity** | 사실상 고정 |
 | VASP | **월렛원** | Phase 1 확정 |
 | 블록체인 (Phase 1) | **Ethereum Mainnet** | 월렛원 연동 |
-| 블록체인 (Phase 2+) | **ChainAdapter 추상화** | XRPL / Circle ARC 확장 대비 |
+| 블록체인 (Phase 2+) | **IBlockchainAdapter 추상화** | XRPL / Circle ARC 확장 대비 |
 
 이 추천은 블록체인 플랫폼 특성과 교보생명의 일반적 금융기관 환경을 고려한 것이다. 교보DTS의 실제 인프라 현황, 기존 운영 조직, 내부 보안 정책에 따라 최종 결정이 달라질 수 있으며, **최종 결정 권한은 교보생명/교보DTS에 있다.**
 
