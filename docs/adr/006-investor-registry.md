@@ -35,5 +35,6 @@ STO 투자자 등록·한도·락업 정보를 어디에 저장할지 결정해�
 ## 결과
 
 - `InvestorCompliance.canTransfer()` → `IInvestorRegistry.canAcceptTransfer()` 호출 경로
+  - **스켈레톤 상태**: Phase 3 구현 전까지 해당 호출은 주석 처리(`InvestorCompliance.sol:67`). Phase 3 착수 시 주석 해제 및 통합 테스트 필수.
 - 투자자 수가 증가하면 오프체인 캐시(Redis) 레이어 추가 고려
 - `InvestorType.PROFESSIONAL`은 `maxHolding = 0`(한도 없음)으로 설정 — 전문투자자 규정 준수

@@ -17,9 +17,10 @@ Phase 2+ (KRW 스테이블코인, STO)에서 XRP Ledger, BFT 체인 등
 
 ```
 IBlockchainAdapter
-├── EVMAdapter        ← Phase 1 (Ethereum/Polygon)
-├── XRPLAdapter       ← Phase 2+ stub
-└── UTXOAdapter       ← Phase 3+ stub
+├── evm/EVMAdapter        ← Phase 1 (Ethereum/Polygon)
+├── circle/CircleAdapter  ← Phase 2 (Circle USDC — KRW 스테이블코인 연동)
+├── xrpl/XRPLAdapter      ← Phase 2+ stub
+└── utxo/UTXOAdapter      ← Phase 3+ stub
 ```
 
 ## 이유
