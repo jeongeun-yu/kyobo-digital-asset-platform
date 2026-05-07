@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>교보생명 블록체인 시스템 아키텍처</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 32px; }
+  h1 { text-align: center; font-size: 20px; color: #f8fafc; margin-bottom: 6px; }
+  .subtitle { text-align: center; color: #94a3b8; font-size: 13px; margin-bottom: 6px; }
+  .phase-note { text-align: center; color: #64748b; font-size: 11px; margin-bottom: 28px; }
+
+  .arch { display: flex; flex-direction: column; gap: 0; max-width: 1100px; margin: 0 auto; }
+
+  .zone { border-radius: 12px; overflow: hidden; margin-bottom: 4px; }
+  .zone-header { padding: 10px 20px; font-size: 13px; font-weight: 700; letter-spacing: 0.05em; display: flex; justify-content: space-between; align-items: center; }
+  .zone-phase { font-size: 10px; font-weight: 600; opacity: 0.8; }
+  .zone-body { padding: 16px 20px; display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
+
+  .zone-user    { border: 2px solid #6366f1; }
+  .zone-user .zone-header    { background: #4338ca; }
+  .zone-user .zone-body      { background: #1e1b4b; }
+
+  .zone-chain   { border: 2px solid #3b82f6; }
+  .zone-chain .zone-header   { background: #1d4ed8; }
+  .zone-chain .zone-body     { background: #172554; }
+
+  .zone-vasp    { border: 2px solid #f59e0b; }
+  .zone-vasp .zone-header    { background: #92400e; }
+  .zone-vasp .zone-body      { background: #1c1208; }
+
+  .zone-dmz     { border: 2px solid #f97316; }
+  .zone-dmz .zone-header     { background: #9a3412; }
+  .zone-dmz .zone-body       { background: #1c0f08; }
+
+  .zone-internal { border: 2px solid #10b981; }
+  .zone-internal .zone-header { background: #065f46; }
+  .zone-internal .zone-body   { background: #071f18; }
+
+  .zone-ext { border: 2px solid #8b5cf6; }
+  .zone-ext .zone-header { background: #5b21b6; }
+  .zone-ext .zone-body   { background: #13092e; }
+
+  .box { background: #1e293b; border-radius: 8px; padding: 12px 14px; min-width: 140px; flex: 1; }
+  .box-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .box-desc  { font-size: 11px; color: #94a3b8; line-height: 1.5; }
+  .box-tag   { display: inline-block; font-size: 10px; border-radius: 4px; padding: 1px 6px; margin-top: 5px; }
+  .box-ext   { border: 1px dashed #8b5cf6; background: #1a1030; }
+
+  .tag-kyobo  { background: #064e3b; color: #6ee7b7; }
+  .tag-vasp   { background: #451a03; color: #fcd34d; }
+  .tag-shared { background: #1e3a5f; color: #93c5fd; }
+  .tag-chain  { background: #1e1b4b; color: #a5b4fc; }
+  .tag-p2     { background: #3b1f6e; color: #c4b5fd; }
+  .tag-p3     { background: #1e3040; color: #7dd3fc; }
+
+  .arrow { text-align: center; padding: 6px 0; display: flex; align-items: center; justify-content: center; gap: 16px; }
+  .arrow-line { flex: 1; height: 2px; background: linear-gradient(90deg, transparent, #475569, transparent); }
+  .arrow-label { white-space: nowrap; font-size: 15px; font-weight: 800; letter-spacing: 0.04em; color: #e2e8f0; background: #1e293b; border: 1px solid #475569; border-radius: 20px; padding: 5px 18px; }
+
+  .subgroup { border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; flex: 2; min-width: 280px; }
+  .subgroup-title { font-size: 11px; color: #64748b; margin-bottom: 8px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+  .subgroup-body { display: flex; gap: 8px; flex-wrap: wrap; }
+  .subgroup .box { min-width: 120px; }
+
+  .ext-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; width: 100%; }
+  .ext-col { }
+  .ext-col-title { font-size: 11px; font-weight: 700; color: #a78bfa; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #334155; }
+
+  .legend { display: flex; gap: 16px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #94a3b8; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  @media print {
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    @page { margin: 12mm 10mm; size: A4 landscape; }
+    html, body { background: #ffffff !important; color: #1e293b !important; padding: 12px !important; }
+    h1 { color: #0f172a !important; }
+    .subtitle { color: #334155 !important; }
+    .phase-note { color: #475569 !important; }
+    .zone { page-break-inside: avoid; break-inside: avoid; margin-bottom: 3px !important; }
+    .zone-user .zone-body    { background: #f5f3ff !important; }
+    .zone-chain .zone-body   { background: #eff6ff !important; }
+    .zone-vasp .zone-body    { background: #fffbeb !important; }
+    .zone-dmz .zone-body     { background: #fff7ed !important; }
+    .zone-internal .zone-body { background: #ecfdf5 !important; }
+    .zone-ext .zone-body     { background: #f5f3ff !important; }
+    .zone-body { padding: 10px 14px !important; gap: 8px !important; }
+    .zone-user .zone-header    { background: #4338ca !important; color: #fff !important; }
+    .zone-chain .zone-header   { background: #1d4ed8 !important; color: #fff !important; }
+    .zone-vasp .zone-header    { background: #b45309 !important; color: #fff !important; }
+    .zone-dmz .zone-header     { background: #c2410c !important; color: #fff !important; }
+    .zone-internal .zone-header { background: #065f46 !important; color: #fff !important; }
+    .zone-ext .zone-header     { background: #5b21b6 !important; color: #fff !important; }
+    .box { background: #ffffff !important; border: 1px solid #e2e8f0 !important; padding: 10px 12px !important; }
+    .box-ext { background: #faf5ff !important; border: 1px dashed #8b5cf6 !important; }
+    .box-title { color: #0f172a !important; }
+    .box-desc  { color: #334155 !important; }
+    .tag-kyobo  { background: #d1fae5 !important; color: #065f46 !important; }
+    .tag-vasp   { background: #fef3c7 !important; color: #92400e !important; }
+    .tag-shared { background: #dbeafe !important; color: #1e40af !important; }
+    .tag-chain  { background: #e0e7ff !important; color: #4338ca !important; }
+    .tag-p2     { background: #ede9fe !important; color: #5b21b6 !important; }
+    .tag-p3     { background: #e0f2fe !important; color: #0369a1 !important; }
+    .subgroup { border-color: #e2e8f0 !important; background: #f8fafc !important; }
+    .subgroup-title { color: #334155 !important; }
+    .ext-col-title { color: #6d28d9 !important; }
+    .arrow-label { color: #0f172a !important; background: #f1f5f9 !important; border-color: #94a3b8 !important; }
+    .legend-item { color: #334155 !important; }
+  }
+</style>
+</head>
+<body>
+
+<h1>교보생명 블록체인 시스템 아키텍처</h1>
+<p class="subtitle">Phase 1 구현 — NFT 라이프사이클 + VASP 위탁 커스터디 (Phase 2·3 확장 고려 설계)</p>
+<p class="phase-note">Phase 1: EVM NFT 라이프사이클 | Phase 2·3  (검토 중): Circle Arc + USDC/KRW1 결제 | XRPL RWA + 직접 Custody</p>
+
+<div class="arch">
+
+  <!-- USER LAYER -->
+  <div class="zone zone-user">
+    <div class="zone-header">
+      <span>👤 사용자 레이어</span>
+      <span class="zone-phase">Phase 1·2·3 공통</span>
+    </div>
+    <div class="zone-body">
+      <div class="box" style="display:flex;flex-direction:column;">
+        <div class="box-title">당사 앱</div>
+        <div class="box-desc">(예시) 이벤트 달성·혜택 조회 / NFT 보유 현황 확인</div>
+        <div style="margin-top:auto;padding-top:8px;">
+          <div style="padding:6px 8px;background:#ffffff08;border:1px dashed #6366f160;border-radius:6px;font-size:10px;color:#a5b4fc;">
+            📦 딥링크 / WalletConnect SDK<br>
+            <span style="color:#64748b">TX 서명 요청 시 지갑 팝업 UX</span>
+          </div>
+          <span class="box-tag tag-kyobo" style="margin-top:8px;display:inline-block;">당사 소유</span>
+        </div>
+      </div>
+      <div class="box" style="display:flex;flex-direction:column;">
+        <div class="box-title">사용자 지갑</div>
+        <div class="box-desc">월렛원 Web3 연동 검토 or 앱 내장 지갑 (VASP 선정 후 확정)</div>
+        <span class="box-tag tag-shared" style="align-self:flex-start;">미확정</span>
+      </div>
+      <div style="width:100%;font-size:13px;padding:10px 16px;background:#1c1208;border:1px dashed #f59e0b80;border-radius:8px;color:#fbbf24;line-height:1.7;text-align:center;">
+        <strong>VASP 선정 결과에 따라 구조 결정</strong> — 월렛원 선택 시 당사 앱에 Web3 지갑 내장, 위 박스 통합 / MetaMask 딥링크 or 코다 선택 시 당사 앱·사용자 지갑 분리 유지
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-label">↕ 앱 API / 이벤트 수신 → 이벤트 조건 판단</div>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- INTERNAL NETWORK -->
+  <div class="zone zone-internal">
+    <div class="zone-header">
+      <span>🔒 내부망 — 당사 직접 운영</span>
+      <span class="zone-phase">Phase 1 핵심 구현 영역 (자체구축 확정)</span>
+    </div>
+    <div class="zone-body">
+
+      <div class="subgroup">
+        <div class="subgroup-title">비즈니스 로직</div>
+        <div class="subgroup-body" style="align-items:stretch;flex-wrap:nowrap;">
+          <div style="flex:1;display:flex;align-items:center;">
+            <div class="box" style="width:100%;flex:none;">
+              <div class="box-title">이벤트 조건 판단</div>
+              <div class="box-desc"><em style="color:#94a3b8;font-size:11px;">(예시)</em> 걷기 n보 달성 여부<br>쿠폰 발행 조건 처리</div>
+              <span class="box-tag tag-kyobo">당사 소유</span>
+            </div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:0;">
+            <div class="box">
+              <div class="box-title">벌크 발행 관리</div>
+              <div class="box-desc">수만 명 동시 배포 시<br>배치 오케스트레이션 + 재시도·진행률 추적</div>
+              <span class="box-tag tag-kyobo">당사 소유</span>
+            </div>
+            <div style="text-align:center;font-size:11px;color:#60a5fa;padding:3px 0;">↓ 단건 위임</div>
+            <div class="box">
+              <div class="box-title">NFT 요청 생성</div>
+              <div class="box-desc">단건 발행·소각·전송 요청을<br>VASP 추상화 레이어로 전달</div>
+              <span class="box-tag tag-kyobo">당사 소유</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="subgroup">
+        <div class="subgroup-title">데이터 관리</div>
+        <div class="subgroup-body">
+          <div class="box">
+            <div class="box-title">내부 원장</div>
+            <div class="box-desc">사용자별 NFT 보유 현황<br>온체인 상태와 동기화<br>상태머신 기반 TX 추적</div>
+            <span class="box-tag tag-kyobo">당사 소유</span>
+          </div>
+          <div class="box">
+            <div class="box-title">감사 로그</div>
+            <div class="box-desc">모든 원장 변경 이력<br>금융 규제 감사 대응<br>불변 append-only 기록</div>
+            <span class="box-tag tag-kyobo">당사 소유</span>
+          </div>
+          <div class="box">
+            <div class="box-title">사용자 서비스</div>
+            <div class="box-desc">사용자 인증<br>지갑 주소 매핑</div>
+            <span class="box-tag tag-kyobo">당사 소유</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="subgroup">
+        <div class="subgroup-title">거버넌스</div>
+        <div class="subgroup-body">
+          <div class="box">
+            <div class="box-title">멀티시그 보조키</div>
+            <div class="box-desc">당사 보유 서명키<br>대형 TX — 당사 승인 필요<br>Gnosis Safe 2-of-3</div>
+            <span class="box-tag tag-shared">당사+VASP 공유</span>
+          </div>
+          <div class="box">
+            <div class="box-title">Admin 대시보드</div>
+            <div class="box-desc">컨트랙트 Pause·정책 변경<br>발행 현황 모니터링<br>reconcile 트리거</div>
+            <span class="box-tag tag-kyobo">당사 소유</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-label">↕ 트랜잭션 요청 / 이벤트 전달</div>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- DMZ -->
+  <div class="zone zone-dmz">
+    <div class="zone-header">
+      <span>🛡 DMZ — 게이트웨이 레이어</span>
+      <span class="zone-phase">Phase 2·3: Consumer 확장만으로 체인 추가</span>
+    </div>
+    <div class="zone-body">
+      <div class="box">
+        <div class="box-title">Webhook Receiver</div>
+        <div class="box-desc">온체인 이벤트 수신<br>즉시 202 응답 + 큐 적재<br>(직접 DB 처리 금지)</div>
+        <span class="box-tag tag-kyobo">당사 소유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">Redis Streams / Kafka</div>
+        <div class="box-desc">수신·처리 완전 분리<br>멱등성 보장<br>Dead Letter Queue<br><em style="color:#60a5fa;font-size:11px;">기존 Kafka 인프라 존재 시 교체</em></div>
+        <span class="box-tag tag-shared" style="align-self:flex-start;">미확정</span>
+      </div>
+      <div class="box">
+        <div class="box-title">Event Consumer</div>
+        <div class="box-desc">NFTIssued·NFTBurned 처리<br>원장 업데이트 + 알림<br>txHash+logIndex 멱등키</div>
+        <span class="box-tag tag-kyobo">당사 소유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">VASP 추상화 레이어</div>
+        <div class="box-desc">VASP API 단일 인터페이스<br>재시도·Idempotency Key<br>Phase 3: 직접 Custody로 교체</div>
+        <span class="box-tag tag-kyobo">당사 소유</span>
+      </div>
+      <div class="box" style="border:1px solid #6366f1;">
+        <div class="box-title" style="color:#a5b4fc;">IBlockchainAdapter</div>
+        <div class="box-desc">체인 무관 추상화 — 발행·소각·잔액 조회·TX 검증·이벤트 구독<br>EVM·XRPL·Circle ARC 교체 시 비즈니스 로직 무변경<br>IVaspAdapter와 동일한 Strategy Pattern</div>
+        <span class="box-tag tag-kyobo">당사 소유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">Private RPC Node</div>
+        <div class="box-desc">전용 EVM 노드<br>BaaS 위탁 또는 자체구축<br>(VASP 선정 후 확정)</div>
+        <span class="box-tag tag-shared">미확정</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-label">↕ 서명 요청 / TX 브로드캐스트</div>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- VASP -->
+  <div class="zone zone-vasp">
+    <div class="zone-header">
+      <span>🏦 인가 VASP — 외부 커스터디 (Phase 1·2 위탁)</span>
+      <span class="zone-phase">Phase 3: 당사 직접 Custody 인가로 전환</span>
+    </div>
+    <div style="font-size:11px;padding:8px 16px;background:#1c1208;color:#fbbf24;border-bottom:1px solid #1e293b;">
+      ⚠ 후보 검토 중 (4월 내 선정 예정) — <strong>월렛원</strong> (IR팀 검토, B2C·신한은행 레퍼런스) &nbsp;·&nbsp; <strong>코다</strong> (당사 투자사, 금융권 Custody) &nbsp;·&nbsp; <strong>EQBR</strong> (신사업기획팀 검토, 엔터프라이즈 특화)
+    </div>
+    <div style="font-size:11px;padding:6px 16px;background:#0f1a2e;color:#93c5fd;border-bottom:1px solid #1e293b;">
+      🔑 <strong>VASP 선정 결과에 따른 구조 변경</strong> — 멀티시그·보조키 정책: 월렛원(제어 제한 가능성) · 코다(MPC 기반, 계약 조건 따라 상이) · EQBR(자유도 높음). 당사 보조키 미보유 시 VASP 폐업·해킹 시 자산 접근 불가 리스크
+    </div>
+    <div class="zone-body">
+      <div class="box">
+        <div class="box-title">커스터디 지갑</div>
+        <div class="box-desc">NFT 발행·전송·소각용<br>핫월렛(20%) / 콜드월렛(80%)<br>특금법 §10의2 요건</div>
+        <span class="box-tag tag-vasp">VASP 소유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">프라이빗 키 (주키)</div>
+        <div class="box-desc">MPC or HSM 보관<br>당사 접근 불가 (Phase 1·2)</div>
+        <span class="box-tag tag-vasp">VASP 소유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">멀티시그 주키</div>
+        <div class="box-desc">Gnosis Safe 2-of-3<br>당사 보조키와 쌍</div>
+        <span class="box-tag tag-shared">당사+VASP 공유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">Node/RPC · BaaS</div>
+        <div class="box-desc">블록체인 인프라 위탁<br>월렛원·EQBR BaaS 검토<br>or 당사 자체구축</div>
+        <span class="box-tag tag-shared">미확정</span>
+      </div>
+      <div class="box">
+        <div class="box-title">TX 서명·브로드캐스트</div>
+        <div class="box-desc">당사 요청 수신 →<br>서명 후 메인넷 전송</div>
+        <span class="box-tag tag-vasp">VASP 실행</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-label">↕ 서명된 TX 브로드캐스트 / 이벤트 발생</div>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- BLOCKCHAIN -->
+  <div class="zone zone-chain">
+    <div class="zone-header">
+      <span>🌐 퍼블릭 블록체인 — EVM (Ethereum Mainnet)</span>
+      <span class="zone-phase">Phase 2ㆍ3 (검토 중): Circle Arc | XRPL 추가</span>
+    </div>
+    <div class="zone-body">
+      <div class="box">
+        <div class="box-title">ERC-1155 NFT 컨트랙트</div>
+        <div class="box-desc">발행·소각·벌크 전송<br>UUPS · AccessControl · Pausable<br>오너십: 당사</div>
+        <span class="box-tag tag-kyobo">당사 소유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">거버넌스 컨트랙트</div>
+        <div class="box-desc">정책 변경·권한 관리<br>Gnosis Safe 멀티시그 실행</div>
+        <span class="box-tag tag-shared">당사+VASP 공유</span>
+      </div>
+      <div class="box">
+        <div class="box-title">Chainlink Oracle</div>
+        <div class="box-desc">KRW/USD 환율 피드<br>회로차단기 + Fallback<br>Phase 2 USDC 결제 필요</div>
+        <span class="box-tag tag-p2">Phase 2 이후 활성화</span>
+      </div>
+      <div class="box">
+        <div class="box-title">온체인 이벤트</div>
+        <div class="box-desc">Transfer · Mint · Burn<br>Webhook → DMZ로 전달</div>
+        <span class="box-tag tag-chain">블록체인</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-label" style="background:#13092e;border-color:#8b5cf6;color:#c4b5fd">↓ Phase 2·3 확장 경로</div>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- PHASE 2·3 EXTENSION -->
+  <div class="zone zone-ext">
+    <div class="zone-header">
+      <span>🔮 Phase 2·3 확장 레이어 — 현재 코드에서 이 부분만 추가·교체</span>
+      <span class="zone-phase">Phase 1 코드 재작성 없음</span>
+    </div>
+    <div class="zone-body">
+      <div class="ext-grid">
+
+        <div class="ext-col">
+          <div class="ext-col-title">Phase 2·3 (검토 중) — Circle Arc + 결제</div>
+          <div class="box box-ext" style="margin-bottom:8px">
+            <div class="box-title">Circle Arc EVM</div>
+            <div class="box-desc">EVM 완전 호환 (Reth)<br>Finality 100~350ms<br>가스 토큰: USDC</div>
+            <span class="box-tag tag-p2">RPC URL·ChainID만 변경</span>
+          </div>
+          <div class="box box-ext" style="margin-bottom:8px">
+            <div class="box-title">USDC / KRW1 결제</div>
+            <div class="box-desc">보험료 USDC 납입<br>KRW1 (우리은행 Escrow)<br>Chainlink 환율 연동</div>
+            <span class="box-tag tag-p2">신규 추가 (ERC-20)</span>
+          </div>
+          <div class="box box-ext">
+            <div class="box-title">CCTP 크로스체인</div>
+            <div class="box-desc">Ethereum ↔ Arc<br>USDC 원자적 이전</div>
+            <span class="box-tag tag-p2">신규 추가</span>
+          </div>
+        </div>
+
+        <div class="ext-col">
+          <div class="ext-col-title">Phase 2·3 (검토 중) — XRPL RWA</div>
+          <div class="box box-ext" style="margin-bottom:8px">
+            <div class="box-title">XRPL 토큰화</div>
+            <div class="box-desc">국채·채권·부동산 RWA<br>TrustSet·Payment·NFTokenMint<br>내장 DEX 활용</div>
+            <span class="box-tag tag-p3">신규 체인 추가</span>
+          </div>
+          <div class="box box-ext" style="margin-bottom:8px">
+            <div class="box-title">EVM ↔ XRPL 브릿지</div>
+            <div class="box-desc">크로스체인 자산 이동<br>중앙화 브릿지 (규제 적합)</div>
+            <span class="box-tag tag-p3">신규 추가</span>
+          </div>
+          <div class="box box-ext">
+            <div class="box-title">DMZ Consumer 확장</div>
+            <div class="box-desc">XRPL 이벤트 Consumer 추가<br>기존 구조 변경 없음</div>
+            <span class="box-tag tag-p3">Consumer만 추가</span>
+          </div>
+        </div>
+
+        <div class="ext-col">
+          <div class="ext-col-title">Phase 3 — 직접 Custody</div>
+          <div class="box box-ext" style="margin-bottom:8px">
+            <div class="box-title">직접 Custody 인가</div>
+            <div class="box-desc">VASP 의존 제거<br>당사 직접 키 보관<br>MPC 내재화</div>
+            <span class="box-tag tag-p3">추상화 레이어 교체</span>
+          </div>
+          <div class="box box-ext" style="margin-bottom:8px">
+            <div class="box-title">HSM 키 관리</div>
+            <div class="box-desc">프라이빗 키 당사 직접 보관<br>Gnosis Safe → MPC 전환</div>
+            <span class="box-tag tag-p3">거버넌스 전환</span>
+          </div>
+          <div class="box box-ext">
+            <div class="box-title">온체인 보험금 자동 실행</div>
+            <div class="box-desc">보험 조건 충족 →<br>스마트컨트랙트 자동 지급</div>
+            <span class="box-tag tag-p3">신규 컨트랙트</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#6ee7b7"></div>당사 직접 소유·운영</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fcd34d"></div>VASP 소유·실행</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#93c5fd"></div>당사+VASP 공동 거버넌스</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a5b4fc"></div>블록체인 / 외부 인프라</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#c4b5fd"></div>Phase 2 확장</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7dd3fc"></div>Phase 3 확장</div>
+</div>
+
+</body>
+</html>

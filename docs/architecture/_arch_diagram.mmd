@@ -1,0 +1,49 @@
+flowchart TB
+    subgraph EXT["🌐 외부망 — 퍼블릭 블록체인"]
+        BC["Ethereum Mainnet"]
+        EVENTS["온체인 이벤트\n(Logs / Webhooks)"]
+        SC["Smart Contract\n(토큰·NFT·권한 관리)"]
+    end
+
+    subgraph DMZ["🔒 DMZ 존 — 게이트웨이 레이어"]
+        RPC["Private RPC Node\n(전용 노드 / Dedicated)"]
+        GW["Gateway Server\n(내부↔외부 중계)"]
+        WH["Webhook Receiver\n(이벤트 수신)"]
+        MQ["메시지 큐\n(Redis Streams)"]
+        DISP["Transaction Dispatcher\n(트랜잭션 제출)"]
+        RELAY["Relayer Service\n(가스리스 처리)"]
+    end
+
+    subgraph INT["🏢 내부망 — 교보생명 코어 시스템"]
+        CORE["Core System\n(자산 관리·원장)"]
+        APPROVE["승인 워크플로우\n(다단계 서명 승인)"]
+        MPC["MPC Key Management\n(키 분산 관리)"]
+        HSM["HSM\n(Hardware Security Module)"]
+        AUDIT["감사 로그 DB\n(Audit Trail)"]
+
+        subgraph WALLET["지갑 구조"]
+            HOT["🔥 Hot Wallet\n소액·자동처리"]
+            COLD["🧊 Cold Wallet\n대액·수동승인"]
+        end
+    end
+
+    BC --> EVENTS
+    BC <--> RPC
+    EVENTS --> WH
+    WH --> MQ
+    MQ --> DISP
+    MQ --> CORE
+    RPC --> GW
+    GW --> RPC
+    DISP --> GW
+    HOT --> RELAY
+    RELAY --> GW
+    CORE --> APPROVE
+    APPROVE --> MPC
+    MPC --> HSM
+    HSM --> HOT
+    HSM --> COLD
+    COLD --> APPROVE
+    SC -.-> EVENTS
+    DISP -.-> SC
+    CORE --> AUDIT
