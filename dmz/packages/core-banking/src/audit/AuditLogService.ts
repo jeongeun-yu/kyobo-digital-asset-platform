@@ -49,7 +49,7 @@ export class AuditLogService {
 
   async log(params: LogParams): Promise<number> {
     const eventTime = new Date();
-    const checksum = this.generateChecksum(
+    const checksum  = this.generateChecksum(
       eventTime,
       params.actor,
       params.action,
@@ -57,25 +57,46 @@ export class AuditLogService {
       params.afterState,
     );
 
-    // TODO:
-    // INSERT INTO audit_log
-    //   (event_time, actor, action, resource_type, resource_id,
-    //    before_state, after_state, ip_address, session_id, checksum)
-    // VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-    // RETURNING id
-    //
-    // return rows[0].id
-    throw new Error('Not implemented');
+    const { rows } = await this.db.query(
+      `INSERT INTO audit_log
+         (event_time, actor, action, resource_type, resource_id,
+          before_state, after_state, ip_address, session_id, checksum)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING id`,
+      [
+        eventTime.toISOString(),
+        params.actor,
+        params.action,
+        params.resourceType,
+        params.resourceId,
+        params.beforeState !== undefined ? JSON.stringify(params.beforeState) : null,
+        JSON.stringify(params.afterState),
+        params.ipAddress ?? null,
+        params.sessionId ?? null,
+        checksum,
+      ],
+    );
+    return rows[0]!['id'] as number;
   }
 
   async verifyIntegrity(id: number): Promise<VerifyResult> {
-    // TODO:
-    // 1. SELECT * FROM audit_log WHERE id = $1
-    // 2. 저장된 checksum 추출
-    // 3. 나머지 필드로 checksum 재계산
-    // 4. storedChecksum === computedChecksum 비교
-    // return { id, valid, storedChecksum, computedChecksum }
-    throw new Error('Not implemented');
+    const { rows } = await this.db.query(
+      'SELECT * FROM audit_log WHERE id = $1',
+      [id],
+    );
+    if (rows.length === 0) throw new Error(`AuditLog not found: ${id}`);
+
+    const row             = rows[0]!;
+    const storedChecksum  = row['checksum'] as string;
+    const computedChecksum = this.generateChecksum(
+      new Date(row['event_time'] as string),
+      row['actor'] as string,
+      row['action'] as string,
+      row['resource_id'] as string,
+      JSON.parse(row['after_state'] as string),
+    );
+
+    return { id, valid: storedChecksum === computedChecksum, storedChecksum, computedChecksum };
   }
 
   async queryByResource(
@@ -83,24 +104,27 @@ export class AuditLogService {
     resourceId: string,
     opts?: { limit?: number; offset?: number },
   ): Promise<AuditEntry[]> {
-    // TODO:
-    // SELECT * FROM audit_log
-    // WHERE resource_type = $1 AND resource_id = $2
-    // ORDER BY event_time ASC
-    // LIMIT $3 OFFSET $4
-    throw new Error('Not implemented');
+    const limit  = opts?.limit  ?? 100;
+    const offset = opts?.offset ?? 0;
+
+    const { rows } = await this.db.query(
+      `SELECT * FROM audit_log
+       WHERE resource_type = $1 AND resource_id = $2
+       ORDER BY event_time ASC
+       LIMIT $3 OFFSET $4`,
+      [resourceType, resourceId, limit, offset],
+    );
+    return rows.map(this._rowToEntry);
   }
 
-  async queryByActor(
-    actor: string,
-    from: Date,
-    to: Date,
-  ): Promise<AuditEntry[]> {
-    // TODO:
-    // SELECT * FROM audit_log
-    // WHERE actor = $1 AND event_time BETWEEN $2 AND $3
-    // ORDER BY event_time ASC
-    throw new Error('Not implemented');
+  async queryByActor(actor: string, from: Date, to: Date): Promise<AuditEntry[]> {
+    const { rows } = await this.db.query(
+      `SELECT * FROM audit_log
+       WHERE actor = $1 AND event_time BETWEEN $2 AND $3
+       ORDER BY event_time ASC`,
+      [actor, from.toISOString(), to.toISOString()],
+    );
+    return rows.map(this._rowToEntry);
   }
 
   // ── Private ───────────────────────────────────────────────────
@@ -112,12 +136,24 @@ export class AuditLogService {
     resourceId: string,
     afterState: unknown,
   ): string {
-    // TODO:
-    // 입력: eventTime.toISOString() + actor + action + resourceId + JSON.stringify(afterState)
-    // 알고리즘: SHA-256
-    // return hex digest
     const raw = `${eventTime.toISOString()}${actor}${action}${resourceId}${JSON.stringify(afterState)}`;
     return createHash('sha256').update(raw, 'utf8').digest('hex');
+  }
+
+  private _rowToEntry(row: Record<string, unknown>): AuditEntry {
+    return {
+      id:           row['id'] as number,
+      eventTime:    new Date(row['event_time'] as string),
+      actor:        row['actor'] as string,
+      action:       row['action'] as string,
+      resourceType: row['resource_type'] as string,
+      resourceId:   row['resource_id'] as string,
+      beforeState:  row['before_state'] ? JSON.parse(row['before_state'] as string) : undefined,
+      afterState:   JSON.parse(row['after_state'] as string),
+      ipAddress:    row['ip_address'] as string | undefined,
+      sessionId:    row['session_id'] as string | undefined,
+      checksum:     row['checksum'] as string,
+    };
   }
 }
 

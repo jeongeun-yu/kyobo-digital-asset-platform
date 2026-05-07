@@ -23,6 +23,11 @@
  *   - 410: Gone — 영구 제거된 리소스.
  *   → 즉시 DLQ로 보내 개발자가 원인 파악 후 수정해야 함.
  *     재시도 지연만 발생시키고 Core Banking에 불필요한 부하를 줌.
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 실습: course/exercises/M2/S10_handle_with_retry.ts  ← 재시도 로직 직접 구현
+ *       course/exercises/M2/S11_dlq.ts                 ← DLQ push 로직 구현
  */
 
 import { logger } from '../infra/logger';
@@ -154,14 +159,50 @@ export class RetryHandler {
   }
 }
 
+// ── DLQ 영속성 인터페이스 ──────────────────────────────────────────────────────
+
+export interface DLQItem {
+  id:         string;
+  requestId:  string;
+  targetUrl:  string;
+  payload:    Record<string, unknown>;
+  error:      string;
+  attempts:   number;
+  failedAt:   Date;
+}
+
+/** DLQ 저장소 — DB / Kafka / SQS 등으로 교체 가능 */
+export interface DLQStore {
+  save(item: DLQItem): Promise<void>;
+}
+
 /**
- * DeadLetterQueue — 최종 실패 이벤트 보관
- * Phase 1: 로그 기록 + DB 저장 (수동 재처리)
- * Phase 2+: 메시지 큐(Kafka/SQS) 연동으로 교체 가능
+ * DeadLetterQueue — 최종 실패 이벤트 영속 보관
+ *
+ * store 주입 시 → DB/Kafka에 저장 (수동 재처리 가능)
+ * store 미주입 시 → 로그만 기록 (개발/테스트 환경)
  */
 export class DeadLetterQueue {
+  constructor(private readonly store?: DLQStore) {}
+
   async push(item: { event: OutboundEvent; error: string; attempts: number }): Promise<void> {
-    // TODO: DB 저장 또는 Kafka DLQ 발행
-    logger.error('outbound event failed', { requestId: item.event.requestId, attempts: item.attempts, error: item.error });
+    logger.error('outbound event failed', {
+      requestId: item.event.requestId,
+      attempts:  item.attempts,
+      error:     item.error,
+    });
+
+    if (this.store) {
+      const dlqItem: DLQItem = {
+        id:        `dlq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        requestId: item.event.requestId,
+        targetUrl: item.event.targetUrl,
+        payload:   item.event.payload,
+        error:     item.error,
+        attempts:  item.attempts,
+        failedAt:  new Date(),
+      };
+      await this.store.save(dlqItem);
+    }
   }
 }

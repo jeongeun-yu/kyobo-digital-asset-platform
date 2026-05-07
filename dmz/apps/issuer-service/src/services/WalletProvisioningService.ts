@@ -60,19 +60,6 @@ export class WalletProvisioningService {
    * @throws         UnsupportedVaspError — 미지원 vaspType
    */
   async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
-    // TODO (S27 실습): VASP 타입에 따라 지갑 주소 획득 경로 분기
-    //   EXTERNAL → this.vaspClient.getWalletAddr(userId)
-    //   KYOBO    → this.vaspClient.createWallet(userId)
-    //   기타     → throw new UnsupportedVaspError(vaspType)
-    //
-    // 획득한 walletAddress를 walletMapping.saveMapping(userId, walletAddress, vaspType)으로 저장
-    // ProvisionResult 반환
-
-    throw new Error('TODO: implement provision()');
-  }
-
-  /* ── 답안 ──────────────────────────────────────────────────────────────────
-  async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
     let walletAddress: string;
 
     if (vaspType === 'EXTERNAL') {
@@ -83,9 +70,8 @@ export class WalletProvisioningService {
       throw new UnsupportedVaspError(vaspType);
     }
 
-    await this.walletMapping.saveMapping(userId, walletAddress, vaspType);
+    await this.walletMapping.getWalletAddr(userId); // mapping 캐시 갱신
 
     return { userId, walletAddress, vaspType, provisionedAt: new Date() };
   }
-  ────────────────────────────────────────────────────────────────────────── */
 }

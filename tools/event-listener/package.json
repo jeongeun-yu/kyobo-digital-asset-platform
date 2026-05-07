@@ -1,0 +1,19 @@
+{
+  "name": "@kyobo/event-listener",
+  "version": "1.0.0",
+  "private": true,
+  "description": "온체인 이벤트 리스너 — 로컬 개발 및 운영 디버깅 도구",
+  "scripts": {
+    "start":   "ts-node src/run-listener.ts",
+    "recover": "ts-node src/recover-events.ts"
+  },
+  "dependencies": {
+    "@kyobo/chain-adapters": "*",
+    "@kyobo/event-engine":   "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "ts-node":    "^10.9.0",
+    "@types/node": "^20.0.0"
+  }
+}

@@ -11,15 +11,16 @@ import path from 'path';
 import fs   from 'fs';
 import dotenv from 'dotenv';
 
-// 어느 패키지에서 import하든 dmz/ 루트 .env를 찾아 로드
-const DMZ_ROOT = path.resolve(__dirname, '..', '..', '..'); // shared/src → dmz/
-const ENV_PATH = path.join(DMZ_ROOT, '.env');
+// 어느 패키지에서 import하든 레포 루트 .env를 찾아 로드
+// shared/src → packages → dmz → root
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const ENV_PATH  = path.join(REPO_ROOT, '.env');
 
 if (fs.existsSync(ENV_PATH)) {
   dotenv.config({ path: ENV_PATH });
 } else {
   console.warn(`[config] .env 파일 없음: ${ENV_PATH}`);
-  console.warn(`[config] ${ENV_PATH.replace('.env', '.env.example')} 을 복사해 .env를 만드세요.`);
+  console.warn(`[config] 레포 루트의 .env.example 을 복사해 .env를 만드세요.`);
 }
 
 // ── EVM ──────────────────────────────────────────────────────────────────────

@@ -31,6 +31,11 @@ import { logger } from '../infra/logger';
  * 함정 3 — 일반 문자열 비교 (=== / .equals()):
  *   첫 번째 다른 문자를 만나면 즉시 false 반환 → 응답 시간으로 서명 추측 가능 (Timing Attack).
  *   timingSafeEqual은 길이가 같으면 항상 동일 시간에 비교한다.
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 실습: course/exercises/M2/S05_webhook.ts       ← WebhookServer 직접 기동
+ *       course/exercises/M2/S06_hmac_webhook.ts  ← HMAC 검증 로직 직접 구현
  */
 
 export type WebhookPayload = {

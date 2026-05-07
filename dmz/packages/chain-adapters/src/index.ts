@@ -1,5 +1,12 @@
 export type { IBlockchainAdapter, IBlockchainAdapterV3, TransactionReceipt, ChainEvent, ContractCallParams, MintParams, MintBatchParams, BurnParams, Eip1559FeeParams, FeePolicyId, RpcDegradeMode } from './interfaces/IBlockchainAdapter';
-export { EVMAdapter } from './evm/EVMAdapter';
-export { XRPLAdapter } from './xrpl/XRPLAdapter';
+export { EVMAdapter }    from './evm/EVMAdapter';
+export { XRPLAdapter }   from './xrpl/XRPLAdapter';
 export { CircleAdapter } from './circle/CircleAdapter';
-export { UTXOAdapter } from './utxo/UTXOAdapter';
+export { UTXOAdapter }   from './utxo/UTXOAdapter';
+export { ChainAdapterFactory, UnsupportedChainError } from './ChainAdapterFactory';
+export type { ChainType, AdapterConfig }               from './ChainAdapterFactory';
+export { AdapterDecorator }         from './decorators/AdapterDecorator';
+export { LoggingAdapterDecorator }  from './decorators/LoggingAdapterDecorator';
+export type { Logger }              from './decorators/LoggingAdapterDecorator';
+export { RetryAdapterDecorator }    from './decorators/RetryAdapterDecorator';
+export type { RetryOptions }        from './decorators/RetryAdapterDecorator';

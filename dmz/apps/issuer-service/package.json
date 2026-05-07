@@ -1,0 +1,23 @@
+{
+  "name": "@kyobo/issuer-service",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@kyobo/chain-adapters": "*",
+    "@kyobo/vasp":           "*",
+    "@kyobo/core-banking":   "*",
+    "@kyobo/event-engine":   "*",
+    "@kyobo/compliance":     "*",
+    "@kyobo/shared":         "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "ts-node":    "^10.9.0",
+    "@types/node": "^20.0.0"
+  }
+}

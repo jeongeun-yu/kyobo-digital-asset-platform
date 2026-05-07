@@ -2,7 +2,7 @@
 
 **날짜**: 2026-04-21  
 **상태**: 확정  
-**결정자**: CoinCraft (Sharon Kim)
+**결정자**: CoinCraft (EJ Kim)
 
 ## 맥락
 

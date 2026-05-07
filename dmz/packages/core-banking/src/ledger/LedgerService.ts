@@ -93,14 +93,44 @@ export class LedgerService {
 
   async createMintRequest(userId: string, policyId: string): Promise<MintRequest> {
     const requestId = randomUUID();
-    // TODO: DB INSERT into mint_requests (requestId, userId, policyId, status='PENDING')
-    // TODO: auditLog.log({ actor: 'system', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: requestId, afterState: { userId, policyId, status: 'PENDING' } })
-    throw new Error('Not implemented');
+    const now       = new Date();
+
+    await this.db.query(
+      `INSERT INTO mint_requests (id, user_id, policy_id, status, created_at, updated_at)
+       VALUES ($1,$2,$3,'PENDING',$4,$4)`,
+      [requestId, userId, policyId, now.toISOString()],
+    );
+
+    await this.auditLog.log({
+      actor:        'system',
+      action:       'MINT_REQUESTED',
+      resourceType: 'MintRequest',
+      resourceId:   requestId,
+      afterState:   { userId, policyId, status: 'PENDING' },
+    });
+
+    return { id: requestId, userId, policyId, status: 'PENDING', createdAt: now, updatedAt: now };
   }
 
   async getMintRequest(requestId: string): Promise<MintRequest | null> {
-    // TODO: SELECT * FROM mint_requests WHERE request_id = requestId
-    throw new Error('Not implemented');
+    const { rows } = await this.db.query(
+      'SELECT * FROM mint_requests WHERE id = $1',
+      [requestId],
+    );
+    if (rows.length === 0) return null;
+
+    const r = rows[0]!;
+    return {
+      id:        r['id'] as string,
+      userId:    r['user_id'] as string,
+      policyId:  r['policy_id'] as string,
+      status:    r['status'] as MintStatus,
+      txHash:    r['tx_hash'] as string | undefined,
+      tokenId:   r['token_id'] ? BigInt(r['token_id'] as string) : undefined,
+      errorMsg:  r['error_msg'] as string | undefined,
+      createdAt: new Date(r['created_at'] as string),
+      updatedAt: new Date(r['updated_at'] as string),
+    };
   }
 
   async updateMintRequest(
@@ -110,18 +140,36 @@ export class LedgerService {
     const current = await this.getMintRequest(requestId);
     if (!current) throw new MintRequestNotFoundError(requestId);
 
-    // 상태 전이 guard
     const allowed = LedgerService.VALID_TRANSITIONS[current.status];
     if (!allowed.includes(patch.status)) {
       throw new InvalidStateTransitionError(current.status, patch.status);
     }
 
-    // TODO: UPDATE mint_requests SET status=$1, tx_hash=$2, ... WHERE request_id=$3
-    // TODO: auditLog.log({ action: `STATUS_${patch.status}`, before: current, after: { ...current, ...patch } })
-    // NOTE: status=FINALIZED 시 coreBankingAdapter.recordNftHolding() 호출 필요
-    //       → ICoreBankingAdapter 참조 (Java blockchain-gateway가 영구 원장에 기록)
-    //       status=CONFIRMED 는 원장 기록 완료 후의 종단 상태
-    throw new Error('Not implemented');
+    const now = new Date();
+    await this.db.query(
+      `UPDATE mint_requests
+       SET status=$1, tx_hash=$2, token_id=$3, error_msg=$4, updated_at=$5
+       WHERE id=$6`,
+      [
+        patch.status,
+        patch.txHash   ?? null,
+        patch.tokenId  !== undefined ? patch.tokenId.toString() : null,
+        patch.errorMsg ?? null,
+        now.toISOString(),
+        requestId,
+      ],
+    );
+
+    await this.auditLog.log({
+      actor:        'system',
+      action:       `STATUS_${patch.status}`,
+      resourceType: 'MintRequest',
+      resourceId:   requestId,
+      beforeState:  current,
+      afterState:   { ...current, ...patch, updatedAt: now },
+    });
+
+    return { ...current, ...patch, updatedAt: now };
   }
 
   // ── Event Idempotency ─────────────────────────────────────────
@@ -133,15 +181,16 @@ export class LedgerService {
     blockNumber: bigint,
     payload: unknown,
   ): Promise<ProcessedEventResult> {
-    // TODO:
-    // INSERT INTO processed_events (tx_hash, log_index, event_name, block_number, payload)
-    // VALUES ($1,$2,$3,$4,$5)
-    // ON CONFLICT (tx_hash, log_index) DO NOTHING
-    // RETURNING id
-    //
-    // rows.length === 0 → { skipped: true }
-    // rows.length === 1 → { skipped: false, id: rows[0].id }
-    throw new Error('Not implemented');
+    const { rows } = await this.db.query(
+      `INSERT INTO processed_events (tx_hash, log_index, event_name, block_number, payload)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (tx_hash, log_index) DO NOTHING
+       RETURNING id`,
+      [txHash, logIndex, eventName, blockNumber.toString(), JSON.stringify(payload)],
+    );
+
+    if (rows.length === 0) return { skipped: true };
+    return { skipped: false, id: rows[0]!['id'] as number };
   }
 }
 

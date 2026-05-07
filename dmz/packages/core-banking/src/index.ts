@@ -6,8 +6,12 @@ export type {
   BalanceSyncRequest,
 } from './interfaces/ICoreBankingAdapter';
 
+// Circuit Breaker
+export { CircuitBreaker, CircuitOpenError } from './adapters/CircuitBreaker';
+export type { CircuitState, CircuitBreakerOptions } from './adapters/CircuitBreaker';
+
 // HTTP client → internal/blockchain-gateway
-export { InternalGatewayClient, InternalGatewayError } from './adapters/InternalGatewayClient';
+export { InternalGatewayClient, InternalGatewayError, CircuitOpenError as GatewayCircuitOpenError } from './adapters/InternalGatewayClient';
 export type {
   GatewayUserAccountResponse,
   GatewayNftHoldingRequest,

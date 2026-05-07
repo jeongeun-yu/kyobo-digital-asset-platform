@@ -2,22 +2,24 @@
   "name": "kyobo-digital-asset-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "교보생명 디지털 자산 플랫폼 — Phase 1~4 전체 아키텍처",
+  "description": "교보생명 디지털 자산 플랫폼 — 행동 보상 NFT · 스테이블코인 · 증권형 토큰",
   "workspaces": [
+    "blockchain",
     "dmz/apps/*",
     "dmz/packages/*",
-    "blockchain"
+    "tools/event-listener"
   ],
   "scripts": {
-    "build":      "npm run build --workspaces",
-    "test":       "npm run test --workspaces",
-    "typecheck":  "npm run typecheck --workspaces",
-    "node:local": "cd blockchain && npx hardhat node",
-    "deploy:local": "cd blockchain && npx hardhat run scripts/deploy/deploy-phase1.ts --network localhost",
-    "isms:check": "cd dmz/apps/issuer-service && npx ts-node src/scripts/isms-check.ts"
+    "build":               "npm run build --workspaces",
+    "test":                "npm run test --workspaces",
+    "typecheck":           "npm run typecheck --workspaces --if-present",
+    "node:local":          "cd blockchain && npx hardhat node",
+    "deploy:local":        "cd blockchain && npx hardhat run scripts/deploy/deploy-rewards.ts --network localhost",
+    "deploy:securities":   "cd blockchain && npx hardhat run scripts/deploy/deploy-securities.ts --network localhost",
+    "isms:check":          "cd dmz/apps/issuer-service && npx ts-node src/scripts/isms-check.ts"
   },
   "devDependencies": {
-    "typescript":      "^5.4.0",
-    "@types/node":     "^20.0.0"
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
   }
 }

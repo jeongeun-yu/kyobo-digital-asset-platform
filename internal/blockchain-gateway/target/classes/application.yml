@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: kyobo-blockchain-gateway
+
+  datasource:
+    # 로컬/테스트넷 개발: PostgreSQL
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/kyobo_internal}
+    username: ${DB_USERNAME:kyobo}
+    password: ${DB_PASSWORD:kyobo}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+    # 운영 (Oracle): driver-class-name: oracle.jdbc.OracleDriver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate   # 운영: validate (스키마 변경 금지), 개발: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: ${JPA_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
+        # 운영 (Oracle): org.hibernate.dialect.OracleDialect
+        format_sql: true
+
+server:
+  port: ${PORT:8080}
+
+kyobo:
+  core-banking:
+    base-url: ${CORE_BANKING_URL:http://localhost:9090}  # TODO: 교보DTS 실제 URL
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    io.coincraft.kyobo: INFO
+    org.springframework.web: WARN

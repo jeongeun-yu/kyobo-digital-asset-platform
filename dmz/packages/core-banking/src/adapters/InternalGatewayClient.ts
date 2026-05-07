@@ -12,7 +12,14 @@
  * 향후: mTLS로 전환 예정 (Phase 2 보안 강화)
  *
  * Node.js 18+ built-in fetch 사용. undici 추가 설치 불필요.
+ *
+ * Circuit Breaker 통합:
+ *   5회 연속 실패 시 OPEN → 30초 차단 → HALF_OPEN 복구 탐색.
+ *   health() 엔드포인트로 수동 복구 확인 가능.
  */
+
+import { CircuitBreaker } from './CircuitBreaker';
+export { CircuitOpenError } from './CircuitBreaker';
 
 // ── Java DTO mirror types ─────────────────────────────────────────────────────
 
@@ -57,17 +64,23 @@ export interface GatewayRewardNotificationRequest {
 
 export class InternalGatewayClient {
   private readonly baseUrl: string;
-  private readonly secret: string;
+  private readonly secret:  string;
+  private readonly cb:      CircuitBreaker;
 
   constructor(config: {
     /** e.g. "http://blockchain-gateway:8080" — 내부망 호스트 */
     baseUrl: string;
     /** X-Internal-Secret 값 — 환경변수 INTERNAL_GATEWAY_SECRET에서 주입 */
     secret: string;
+    /** Circuit breaker 설정 (기본: 5회 실패 → 30초 차단) */
+    circuitBreaker?: { failureThreshold?: number; recoveryTimeMs?: number };
   }) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
-    this.secret = config.secret;
+    this.secret  = config.secret;
+    this.cb      = new CircuitBreaker(config.circuitBreaker);
   }
+
+  getCircuitState() { return this.cb.getState(); }
 
   private headers(): Record<string, string> {
     return {
@@ -81,21 +94,23 @@ export class InternalGatewayClient {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: this.headers(),
-      ...(body !== undefined && { body: JSON.stringify(body) }),
+    return this.cb.execute(async () => {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: this.headers(),
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new InternalGatewayError(method, path, res.status, text);
+      }
+
+      // 200 OK with no body (void endpoints)
+      const ct = res.headers.get('content-type') ?? '';
+      if (!ct.includes('application/json')) return undefined as T;
+      return res.json() as Promise<T>;
     });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new InternalGatewayError(method, path, res.status, text);
-    }
-
-    // 200 OK with no body (void endpoints)
-    const ct = res.headers.get('content-type') ?? '';
-    if (!ct.includes('application/json')) return undefined as T;
-    return res.json() as Promise<T>;
   }
 
   // ── Endpoints ──────────────────────────────────────────────────────────────

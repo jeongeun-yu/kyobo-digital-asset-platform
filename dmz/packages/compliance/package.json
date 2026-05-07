@@ -2,5 +2,9 @@
   "name": "@kyobo/compliance",
   "version": "1.0.0",
   "main": "src/index.ts",
-  "types": "src/index.ts"
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
 }

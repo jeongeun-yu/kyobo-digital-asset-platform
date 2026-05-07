@@ -46,32 +46,28 @@ export class VaspRecoveryService {
   ) {}
 
   async handleTxRevert(requestId: string, txHash: string, reason: string): Promise<RecoveryResult> {
-    // TODO:
-    // 1. ledger.getMintRequest(requestId) — 없으면 MintRequestNotFoundError
-    // 2. status !== 'SUBMITTED' 이면 InvalidStateTransitionError
-    // 3. ledger.updateMintRequest(requestId, { status: 'FAILED', txHash, errorMsg: reason })
-    // 4. notifier.send({ type: 'TX_FAILED', requestId, txHash, reason })
-    // return { requestId, action: 'FAILED', message: `TX reverted: ${reason}` }
-    throw new Error('Not implemented');
+    const req = await this.ledger.getMintRequest(requestId);
+    if (!req) throw new Error(`MintRequest not found: ${requestId}`);
+
+    await this.ledger.updateMintRequest(requestId, { status: 'FAILED', txHash, errorMsg: reason });
+    await this.notifier.send({ type: 'TX_FAILED', requestId, txHash, reason });
+
+    return { requestId, action: 'FAILED', message: `TX reverted: ${reason}` };
   }
 
   async handleTxTimeout(requestId: string, txHash: string): Promise<RecoveryResult> {
-    // TODO:
-    // TIMEOUT은 즉시 실패가 아님 — SUBMITTED 유지하고 폴링 대기
-    // 1. ledger.getMintRequest(requestId)
-    // 2. 운영팀 알림만 발송 (상태 변경 없음)
-    // 3. notifier.send({ type: 'TX_TIMEOUT_ALERT', requestId, txHash })
-    // return { requestId, action: 'POLLING', message: 'Kept SUBMITTED, polling will resolve' }
-    throw new Error('Not implemented');
+    await this.ledger.getMintRequest(requestId); // 존재 확인
+    await this.notifier.send({ type: 'TX_TIMEOUT_ALERT', requestId, txHash });
+
+    return { requestId, action: 'POLLING', message: 'Kept SUBMITTED, polling will resolve' };
   }
 
   async handleNonceConflict(requestId: string): Promise<RecoveryResult> {
-    // TODO:
-    // 1. vaspClient.resyncNonce() — 최신 nonce 재동기화
-    // 2. 원래 TX 데이터로 재제출 (새 nonce, 새 gasPrice)
-    // 3. ledger.updateMintRequest(requestId, { status: 'SUBMITTED', txHash: newTxHash })
-    // return { requestId, action: 'RESUBMITTED', newTxHash, message: 'Resubmitted after nonce resync' }
-    throw new Error('Not implemented');
+    await this.vaspClient.resyncNonce();
+    const { txHash: newTxHash } = await this.vaspClient.resubmit(requestId);
+    await this.ledger.updateMintRequest(requestId, { status: 'SUBMITTED', txHash: newTxHash });
+
+    return { requestId, action: 'RESUBMITTED', newTxHash, message: 'Resubmitted after nonce resync' };
   }
 
   async handleReorg(
@@ -79,16 +75,32 @@ export class VaspRecoveryService {
     originalTxHash: string,
     detectedAtBlock: number,
   ): Promise<RecoveryResult> {
-    // TODO:
-    // 1. ledger.getMintRequest(requestId)
-    // 2. status가 'MINED'가 아니면 throw (REORG는 MINED 구간에서만 발생, FINALIZED 이후 불가)
-    // 3. ledger.updateMintRequest(requestId, { status: 'REORGED', errorMsg: `Reorg at block ${detectedAtBlock}` })
-    // 4. auditLog 기록: REORG_DETECTED
-    // 5. retryWithBackoff(() => vaspClient.resubmit(requestId), this.retryPolicy)
-    //    성공 → ledger.updateMintRequest(requestId, { status: 'SUBMITTED', txHash: newTxHash })
-    //    실패 3회 → ledger.updateMintRequest(requestId, { status: 'FAILED' }) + 운영팀 알림
-    // return { requestId, action: 'RESUBMITTED', newTxHash, message: '...' }
-    throw new Error('Not implemented');
+    const req = await this.ledger.getMintRequest(requestId);
+    if (!req) throw new Error(`MintRequest not found: ${requestId}`);
+    if (req.status !== 'MINED') {
+      throw new Error(`REORG only valid from MINED status, current: ${req.status}`);
+    }
+
+    await this.ledger.updateMintRequest(requestId, {
+      status:   'REORGED',
+      txHash:   originalTxHash,
+      errorMsg: `Reorg detected at block ${detectedAtBlock}`,
+    });
+
+    try {
+      const { txHash: newTxHash } = await this.retryWithBackoff(
+        () => this.vaspClient.resubmit(requestId),
+      );
+      await this.ledger.updateMintRequest(requestId, { status: 'SUBMITTED', txHash: newTxHash });
+      return { requestId, action: 'RESUBMITTED', newTxHash, message: `Resubmitted after reorg at block ${detectedAtBlock}` };
+    } catch (err) {
+      await this.ledger.updateMintRequest(requestId, {
+        status:   'FAILED',
+        errorMsg: `Resubmit failed after reorg: ${String(err)}`,
+      });
+      await this.notifier.send({ type: 'REORG_RESUBMIT_FAILED', requestId, originalTxHash, detectedAtBlock });
+      return { requestId, action: 'FAILED', message: `Reorg recovery failed: ${String(err)}` };
+    }
   }
 
   // ── 유틸리티 ─────────────────────────────────────────────────
@@ -106,10 +118,11 @@ export class VaspRecoveryService {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
-        // TODO: err가 NonRetryableError인지 확인 — 맞으면 즉시 throw
-        // TODO: 마지막 시도였으면 throw lastError
-        // TODO: delay 만큼 sleep 후 delay = min(delay * backoffMultiplier, maxDelayMs)
-        throw new Error('Not implemented — complete the retry loop');
+        if (lastError.constructor?.name === 'NonRetryableError') throw lastError;
+        if (attempt >= policy.maxAttempts) throw lastError;
+
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * policy.backoffMultiplier, policy.maxDelayMs);
       }
     }
     throw lastError;

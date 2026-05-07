@@ -32,8 +32,12 @@ public class BlockchainGatewayController {
      */
     @GetMapping("/users/{userId}")
     public ResponseEntity<UserAccountResponse> getUserAccount(@PathVariable String userId) {
-        // TODO: coreBankingClient.getUserAccount(userId) 호출 후 반환
-        throw new UnsupportedOperationException("Not implemented — Core Banking API spec 수신 후 구현");
+        Object account = coreBankingClient.getUserAccount(userId);
+        if (account == null) {
+            log.warn("[Gateway] getUserAccount: Core Banking stub — userId={}", userId);
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok((UserAccountResponse) account);
     }
 
     /**
@@ -67,8 +71,9 @@ public class BlockchainGatewayController {
      */
     @PostMapping("/rewards/notify")
     public ResponseEntity<Void> notifyReward(@Valid @RequestBody RewardNotificationRequest request) {
-        // TODO: coreBankingClient.notifyReward(request) 호출
-        throw new UnsupportedOperationException("Not implemented — Core Banking 리워드 API spec 수신 후 구현");
+        log.info("[Gateway] notifyReward: userId={} rewardType={} tokenId={}", request.userId(), request.rewardType(), request.tokenId());
+        coreBankingClient.notifyReward(request.userId(), request.rewardType(), request.tokenId());
+        return ResponseEntity.ok().build();
     }
 
     /**

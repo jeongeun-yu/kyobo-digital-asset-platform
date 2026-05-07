@@ -24,6 +24,7 @@ import { ISMSChecklist }           from '@kyobo/compliance';
 
 import { IssuerService }   from './services/IssuerService';
 import { ActivityRouter }  from './api/ActivityRouter';
+import NFTIssuerABI        from './abi/NFTIssuer.json';
 
 async function bootstrap() {
   // ── 환경 변수 검증 ──────────────────────────────────────────────────────────
@@ -93,11 +94,11 @@ async function bootstrap() {
     [nftIssuedHandler],
     [{
       addr:       process.env.NFT_CONTRACT_ADDR!,
-      abi:        [], // TODO: KyoboNFT ABI import
+      abi:        NFTIssuerABI,
       eventNames: ['Issued', 'Revoked'],
     }],
     {
-      // TODO: DB 기반 스테이트 스토어로 교체
+      // Phase 2: Redis/DB 기반 스테이트 스토어로 교체 (재시작 내성)
       async getLastProcessedBlock() { return 0; },
       async setLastProcessedBlock(_b: number) {},
     },
@@ -114,7 +115,13 @@ async function bootstrap() {
   activityRouter.register(webhookServer);
 
   // ── ISMS 자동 점검 (주기적 실행) ─────────────────────────────────────────────
-  const isms = new ISMSChecklist();
+  const isms = new ISMSChecklist({
+    rpcUrl:          process.env.RPC_URL!,
+    nftContractAddr: process.env.NFT_CONTRACT_ADDR!,
+    contractCall:    (addr, abi, method) =>
+      chainAdapter.call({ contractAddr: addr, abi, method, args: [] }),
+    queryLatestAuditLog: async () => null,  // Phase 2: DB 연동으로 교체
+  });
   setInterval(async () => {
     const results = await isms.runAll();
     const summary = isms.getSummary(results);

@@ -31,8 +31,12 @@ public class CoreBankingClient {
      * @param userId 교보생명 내부 사용자 ID
      */
     public Object getUserAccount(String userId) {
-        // TODO: GET ${baseCoBankingUrl}/api/users/{userId}
-        throw new UnsupportedOperationException("교보DTS Core Banking API spec 수신 후 구현 예정");
+        // Phase 2: 교보DTS Core Banking API spec 수신 후 아래 구현으로 교체
+        // ResponseEntity<UserAccountDto> response = restTemplate.getForEntity(
+        //     baseCoBankingUrl + "/api/users/" + userId, UserAccountDto.class);
+        // return response.getBody();
+        log.warn("[CoreBankingClient] getUserAccount not connected — stub response for userId={}", userId);
+        return null;
     }
 
     /**
@@ -40,7 +44,10 @@ public class CoreBankingClient {
      * 포인트 적립 / 혜택 발행 등 교보 내부 보상 시스템 연동
      */
     public void notifyReward(String userId, String policyId, Long tokenId) {
-        // TODO: POST ${baseCoBankingUrl}/api/rewards/notify
-        throw new UnsupportedOperationException("교보DTS Core Banking 리워드 API spec 수신 후 구현 예정");
+        // Phase 2: 교보DTS Core Banking 리워드 API spec 수신 후 아래 구현으로 교체
+        // restTemplate.postForEntity(
+        //     baseCoBankingUrl + "/api/rewards/notify",
+        //     new RewardRequest(userId, policyId, tokenId), Void.class);
+        log.warn("[CoreBankingClient] notifyReward not connected — stub for userId={} policyId={} tokenId={}", userId, policyId, tokenId);
     }
 }

@@ -51,8 +51,11 @@ export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
   // ── Phase 2 stub ──────────────────────────────────────────────────────────────
 
   async syncBalance(req: BalanceSyncRequest): Promise<{ confirmed: boolean }> {
-    // TODO Phase 2: 원화 ↔ 스테이블코인 잔액 동기화 — Java Gateway 엔드포인트 미정
-    throw new Error(`KyoboCoreBankingAdapter.syncBalance not implemented (Phase 2): ${req.txHash}`);
+    // Phase 2: 원화 ↔ 스테이블코인 잔액 동기화
+    // Java Gateway /api/internal/balance/sync 엔드포인트 스펙 확정 전까지
+    // confirmed: false 반환 → 호출자가 pending 상태로 처리.
+    console.warn(`[KyoboCoreBankingAdapter] syncBalance degraded (Phase 2 endpoint pending): txHash=${req.txHash}`);
+    return { confirmed: false };
   }
 
   // ── 감사·원장 (Java 영구 저장) ─────────────────────────────────────────────────

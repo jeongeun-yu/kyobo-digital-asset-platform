@@ -26,7 +26,7 @@ const ERC1155_ABI = [
 /**
  * EVMAdapter — IBlockchainAdapter EVM 구현체 (Ethereum / Polygon)
  *
- * M4 S17 핵심:
+ * M3 S15 핵심:
  *   IBlockchainAdapter 인터페이스만 구현하면 XRPL/Circle 교체 시
  *   상위 레이어(IssuerService, ChainEventListener) 코드 변경 없음.
  *
@@ -38,6 +38,12 @@ const ERC1155_ABI = [
  * Missed event 복구 (M7):
  *   재시작 시 DB에 저장된 마지막 처리 블록부터 queryEvents()로 보충
  *   Finalized 블록 범위만 queryEvents → 재조정 공격(REORG) 안전
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 (M3 S15 실습 포인트 2개 있음)
+ * 실습: course/exercises/M3/S15_evm_lab.ts    ← EVMAdapter mintNFT 직접 구현
+ *       course/exercises/M3/S14_multichain_adapter.ts ← Strategy 패턴 체인 교체
+ * 실습 포인트: mintNFT() (line 88), mintNFTBatch() (line 103) — TODO 주석 참고
  */
 export class EVMAdapter implements IBlockchainAdapter {
   readonly chainId:   string;

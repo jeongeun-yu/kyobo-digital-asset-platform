@@ -32,7 +32,15 @@ export class ActivityRouter {
     });
   }
 
-  private async _handleCouponIssued(_payload: WebhookPayload): Promise<void> {
-    // TODO: 쿠폰 NFT 발행 로직
+  private async _handleCouponIssued(payload: WebhookPayload): Promise<void> {
+    const { userId, couponId, oracleData } = payload.data as {
+      userId:     string;
+      couponId:   string;
+      oracleData: { dataType: string; value: number; timestamp: number; signature: string };
+    };
+
+    await this.idempotency.run(`coupon:${payload.requestId}`, async () => {
+      await this.issuer.issueActivityNFT({ userId, activityId: couponId, oracleData });
+    });
   }
 }

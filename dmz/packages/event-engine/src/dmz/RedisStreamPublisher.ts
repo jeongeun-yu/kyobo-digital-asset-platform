@@ -15,7 +15,7 @@
  *      Group:  "issuer-consumers"
  *      Consumer: consumer-{N} (수평 확장)
  *
- * Redis Streams 내부 구조 (S38):
+ * Redis Streams 내부 구조 (S7~S8):
  *   messageId 형식: "{unix-ms}-{sequence}" (예: 1714000000000-0)
  *   XADD: append-only log (삭제 없음, MAXLEN으로 크기 제한)
  *   XREADGROUP: Consumer Group에서 읽기 + 소유권(PEL) 부여

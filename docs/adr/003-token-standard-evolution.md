@@ -3,7 +3,7 @@
 **날짜**: 2026-04-21  
 **수정**: 2026-04-23 — Phase 1 표준 ERC-721 → ERC-1155 변경 반영  
 **상태**: 확정  
-**결정자**: CoinCraft (Sharon Kim)
+**결정자**: CoinCraft (EJ Kim)
 
 ## 맥락
 

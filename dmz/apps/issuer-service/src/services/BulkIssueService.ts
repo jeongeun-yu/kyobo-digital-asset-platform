@@ -1,14 +1,14 @@
 /**
  * BulkIssueService — 대량 NFT 발행 오케스트레이션
  *
- * M5 S31~S32 핵심 개념:
+ * M5 S33~S34 핵심 개념:
  *
- * 배치 분할 전략 (S31):
+ * 배치 분할 전략 (S33):
  *   - 전체 userIds를 500건 청크로 분할
  *   - 청크별 독립 requestId → 부분 실패 시 해당 청크만 재처리
  *   - 가스 한도: ~50K gas/건 × 500건 ≈ 25M gas (30M block limit 이내)
  *
- * 부분 실패 처리 정책 (S31):
+ * 부분 실패 처리 정책 (S33):
  *   - 실패 청크 → chunkErrors에 기록, 나머지 청크 계속 처리
  *   - 전체 실패가 아닌 이상 BulkJob 자체는 완료로 처리
  *   - 실패 청크 재실행: retryFailedChunks(jobId)
@@ -22,6 +22,10 @@
  *   이벤트 → EventConditionService.evaluate() → eligible == true
  *   → 단건:  TxStateMachineService.submitMintRequest()
  *   → 대량:  BulkIssueService.executeBulkIssue()
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 관련 모듈: M5 S33~S34 (배치 발행 설계 · 부분 실패 처리)
  */
 
 import { randomUUID } from 'crypto';
@@ -70,7 +74,7 @@ export interface MintSubmitter {
 /**
  * BulkIssueService
  *
- * M5 S32 핵심 실습:
+ * M5 S34 핵심 실습:
  *   executeBulkIssue() 구현 + 1000건 부분 실패 통합 테스트
  *   - 499번째 청크 실패 시나리오 → 나머지 청크 정상 처리 확인
  *   - retryFailedChunks() → 실패 청크만 재처리
@@ -86,7 +90,7 @@ export class BulkIssueService {
   /**
    * 대량 NFT 발행 실행
    *
-   * M5 S32 실습: executeBulkIssue 흐름
+   * M5 S34 실습: executeBulkIssue 흐름
    *   1. BulkJob 생성 (RUNNING)
    *   2. userIds를 CHUNK_SIZE로 분할
    *   3. 청크별 submitMintRequest 병렬 호출
@@ -120,22 +124,6 @@ export class BulkIssueService {
       updatedAt:   now,
     };
     await this.jobRepo.save(job);
-
-    // TODO (M5 S32 실습): 청크별 처리 루프 구현
-    //   for (let i = 0; i < chunks.length; i++) {
-    //     const chunk = chunks[i];
-    //     try {
-    //       const requestIds = await Promise.all(
-    //         chunk.map(userId => this.submitter.submitMintRequest({ userId, tokenId, amount }))
-    //       );
-    //       job.doneChunks++;
-    //       await this.jobRepo.update(jobId, { doneChunks: job.doneChunks });
-    //     } catch (err) {
-    //       job.chunkErrors.push({ chunkIndex: i, requestIds: [], status: 'failed', error: String(err) });
-    //       await this.jobRepo.update(jobId, { chunkErrors: job.chunkErrors });
-    //     }
-    //   }
-    //   → 부분 실패 시 PARTIAL_FAILURE, 전체 실패 시 FAILED
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!;
@@ -182,7 +170,7 @@ export class BulkIssueService {
   /**
    * 실패 청크 재처리
    *
-   * M5 S32 실습: PARTIAL_FAILURE 상태 Job에서 실패 청크만 재실행
+   * M5 S34 실습: PARTIAL_FAILURE 상태 Job에서 실패 청크만 재실행
    */
   async retryFailedChunks(jobId: string, userIds: string[]): Promise<void> {
     const job = await this._getOrThrow(jobId);

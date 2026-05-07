@@ -21,6 +21,12 @@
  *   ConsumerGroupWorker → LedgerService (원장 업데이트)
  *                       → AuditLogService (감사 로그)
  *                       → DLQHandler (실패 처리)
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 실습: course/exercises/M2/S09_atleastonce.ts   ← At-least-once 직접 구현
+ *       course/exercises/M2/S11_dlq.ts            ← DLQ 이동 로직 구현
+ *       course/exercises/M2/S12_e2e.ts            ← 전체 파이프라인 통합
  */
 
 import type { DLQHandler, DLQItem } from './DLQHandler';

@@ -1,7 +1,7 @@
 /**
  * IBlockchainAdapter — 블록체인 추상화 인터페이스
  *
- * M4 S16/S17 핵심 개념:
+ * M3 S14 핵심 개념:
  *   VASP와 블록체인 사이에 삽입되는 Strategy Pattern 레이어.
  *   발행·소각·잔액 조회·TX 검증·이벤트 구독을 체인 무관하게 추상화.
  *   비즈니스 로직(VASP, 원장)은 이 인터페이스만 의존 — 체인 교체 시 무변경.
@@ -16,7 +16,7 @@
  *                                      ← XRPLAdapter
  *                                      ← CircleAdapter
  *
- * 교체 시뮬레이션 (M4 S17):
+ * 교체 시뮬레이션 (M3 S14):
  *   EVMAdapter → XRPLAdapter 교체 시 IssuerService 코드 한 줄도 변경 없음
  */
 

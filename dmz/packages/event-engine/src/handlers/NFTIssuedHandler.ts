@@ -12,6 +12,10 @@ import { logger } from '../infra/logger';
  * Phase 2+:
  *   - StablecoinMintedHandler, STOTransferHandler 등 동일 패턴으로 추가
  *   - 이 핸들러는 변경 없음
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 실습: course/exercises/M2/S05_webhook.ts  ← 이벤트 처리 흐름 확인 후 실습
  */
 export class NFTIssuedHandler implements IEventHandler {
   readonly eventName   = 'Issued';

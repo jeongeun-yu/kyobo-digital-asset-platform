@@ -13,7 +13,7 @@
  *   MINED/PENDING ──REVERT──────→ FAILED
  *   MINED/PENDING ──TIMEOUT─────→ gas bump 재전송
  *
- * 3종 비정상 전이 (S21~S22):
+ * 3종 비정상 전이 (S18~S20):
  *   REVERT  : 즉시 FAILED + reason 저장. 복구 없음.
  *   TIMEOUT : mempool stuck → gas bump 재전송 → PENDING 유지
  *   REORG   : MINED TX 소실(FINALIZED 전) → REORGED → 5블록 대기 → VASP 재조회 → MINED or FAILED
@@ -25,12 +25,18 @@
  *   CONFIRMED = 원장 업데이트 완료 — 종단 상태
  *   → 원장 업데이트는 FINALIZED 이후만 (M7 ConsumerGroupWorker 연계)
  *
- * pollStaleRequests (S23):
+ * pollStaleRequests (S22):
  *   PENDING 30분 초과 건 → VASP API 직접 조회 → 결과별 전이
  *   배치 크론으로 실행 (5분 간격 권장)
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 실습: course/exercises/M3/S13_tx_statemachine.ts  ← 상태 전이 직접 구현
+ *       course/exercises/M4/S22_pollstale_lab.ts     ← pollStale + 복구 통합
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID }  from 'crypto';
+import { EventEmitter } from 'events';
 
 // ── 상태 정의 ──────────────────────────────────────────────────────────────
 
@@ -57,6 +63,15 @@ export interface MintRequest {
   failReason?: string;
   createdAt:   Date;
   updatedAt:   Date;
+}
+
+// ── Observer 이벤트 타입 ────────────────────────────────────────────────────
+
+export interface TxTransitionEvent {
+  requestId: string;
+  from:      TxStatus;
+  to:        TxStatus;
+  req:       MintRequest;
 }
 
 // ── 의존 인터페이스 ────────────────────────────────────────────────────────
@@ -104,23 +119,32 @@ export interface WalletResolver {
  *   2. Idempotency — requestId 기반, 같은 요청 중복 전송 시 1개만 발행
  *   3. TIMEOUT/REORG 복구 전략은 비즈니스에 따라 다름 — 자동 재전송 vs 수동 확인
  */
-export class TxStateMachineService {
-  private static readonly GAS_BUMP_PERCENT   = 20;   // TIMEOUT 시 gas 20% 인상
-  private static readonly STALE_MINUTES      = 30;   // pollStale 기준 (분)
-  private static readonly REORG_WAIT_BLOCKS  = 5;    // REORG 후 재확인 대기 블록
+/**
+ * Observer 사용 예:
+ *   txService.on('transition', (e: TxTransitionEvent) => {
+ *     if (e.to === 'CONFIRMED') ledger.recordHolding(e.req);
+ *     if (e.to === 'FAILED')    alertOps(e.req);
+ *   });
+ */
+export class TxStateMachineService extends EventEmitter {
+  private static readonly GAS_BUMP_PERCENT   = 20;
+  private static readonly STALE_MINUTES      = 30;
+  private static readonly REORG_WAIT_BLOCKS  = 5;
 
   constructor(
     private readonly repo:   TxRepository,
     private readonly vasp:   VaspTxClient,
     private readonly wallet: WalletResolver,
-  ) {}
+  ) {
+    super();
+  }
 
   // ── REQUESTED → SUBMITTED ───────────────────────────────────────────────
 
   /**
    * @notice NFT 발행 요청 생성 + VASP 전송
    *
-   * M4 S15 실습: submitMintRequest 흐름
+   * M3 S13 실습: submitMintRequest 흐름
    *   1. UUID requestId 생성 (Idempotency key)
    *   2. DB INSERT (REQUESTED)
    *   3. walletResolver.getWalletAddr(userId)
@@ -152,22 +176,14 @@ export class TxStateMachineService {
 
     await this.repo.save(req);
 
-    // TODO (M4 S15 실습): VASP 전송 + 상태 전이
-    //   const walletAddr = await this.wallet.getWalletAddr(userId);
-    //   const { txHash } = await this.vasp.submitMint({ to: walletAddr, tokenId, amount, requestId: id });
-    //   await this.repo.updateStatus(id, 'SUBMITTED', { txHash });
-    //   return id;
-
     try {
       const walletAddr  = await this.wallet.getWalletAddr(userId);
       const { txHash }  = await this.vasp.submitMint({
         to: walletAddr, tokenId, amount, requestId: id,
       });
-      await this.repo.updateStatus(id, 'SUBMITTED', { txHash });
+      await this._transition(req, 'SUBMITTED', { txHash });
     } catch (err) {
-      await this.repo.updateStatus(id, 'FAILED', {
-        failReason: `submit failed: ${String(err)}`,
-      });
+      await this._transition(req, 'FAILED', { failReason: `submit failed: ${String(err)}` });
       throw err;
     }
 
@@ -184,7 +200,7 @@ export class TxStateMachineService {
     const req = await this._getOrThrow(requestId);
     if (req.status !== 'PENDING' && req.status !== 'SUBMITTED') return;
 
-    await this.repo.updateStatus(requestId, 'MINED', { blockNumber });
+    await this._transition(req, 'MINED', { blockNumber });
   }
 
   /**
@@ -197,7 +213,7 @@ export class TxStateMachineService {
     const req = await this._getOrThrow(requestId);
     if (req.status !== 'MINED') return;
 
-    await this.repo.updateStatus(requestId, 'FINALIZED');
+    await this._transition(req, 'FINALIZED');
   }
 
   /**
@@ -210,7 +226,7 @@ export class TxStateMachineService {
     const req = await this._getOrThrow(requestId);
     if (req.status !== 'FINALIZED') return;
 
-    await this.repo.updateStatus(requestId, 'CONFIRMED');
+    await this._transition(req, 'CONFIRMED');
   }
 
   /**
@@ -218,7 +234,8 @@ export class TxStateMachineService {
    * 즉시 실패 처리, 자동 재시도 없음 (비즈니스 판단 필요)
    */
   async handleFailed(requestId: string, reason: string): Promise<void> {
-    await this.repo.updateStatus(requestId, 'FAILED', { failReason: reason });
+    const req = await this._getOrThrow(requestId);
+    await this._transition(req, 'FAILED', { failReason: reason });
   }
 
   // ── TIMEOUT 처리 (S22) ──────────────────────────────────────────────────
@@ -226,7 +243,7 @@ export class TxStateMachineService {
   /**
    * TX가 mempool에서 일정 시간 미채굴 → gas bump 재전송
    *
-   * M4 S22 실습: handleTimeout 흐름
+   * M3 S20 실습: handleTimeout 흐름
    *   1. PENDING 상태 확인
    *   2. vasp.resubmitWithGasBump(txHash, 20%) → 새 txHash
    *   3. DB UPDATE (PENDING, newTxHash, retryCount++)
@@ -237,31 +254,19 @@ export class TxStateMachineService {
     const req = await this._getOrThrow(requestId);
     if (req.status !== 'PENDING' || !req.txHash) return;
 
-    // TODO (M4 S22 실습): gas bump 재전송
-    //   const { txHash: newTxHash } = await this.vasp.resubmitWithGasBump(
-    //     req.txHash, TxStateMachineService.GAS_BUMP_PERCENT,
-    //   );
-    //   await this.repo.updateStatus(requestId, 'PENDING', {
-    //     txHash: newTxHash,
-    //     retryCount: req.retryCount + 1,
-    //   });
-
     const { txHash: newTxHash } = await this.vasp.resubmitWithGasBump(
       req.txHash,
       TxStateMachineService.GAS_BUMP_PERCENT,
     );
-    await this.repo.updateStatus(requestId, 'PENDING', {
-      txHash:     newTxHash,
-      retryCount: req.retryCount + 1,
-    });
+    await this._transition(req, 'PENDING', { txHash: newTxHash, retryCount: req.retryCount + 1 });
   }
 
-  // ── REORG 처리 (S22) ───────────────────────────────────────────────────
+  // ── REORG 처리 (S20) ───────────────────────────────────────────────────
 
   /**
    * MINED 상태 TX가 REORG로 소실 → REORGED 전이
    *
-   * M4 S22 실습: handleReorg 흐름
+   * M3 S20 실습: handleReorg 흐름
    *   1. MINED → REORGED 전이  ← FINALIZED 이전에만 REORG 가능
    *   2. REORG_WAIT_BLOCKS 블록 대기 (ChainEventListener에서 호출)
    *   3. vasp.getStatus() 재조회
@@ -274,18 +279,20 @@ export class TxStateMachineService {
     const req = await this._getOrThrow(requestId);
     if (req.status !== 'MINED' || !req.txHash) return;
 
-    await this.repo.updateStatus(requestId, 'REORGED');
+    await this._transition(req, 'REORGED');
 
-    // TODO (M4 S22 실습): 5블록 대기 + VASP 재조회
-    //   await this._waitBlocks(TxStateMachineService.REORG_WAIT_BLOCKS);
-    //   const result = await this.vasp.getStatus(req.txHash);
-    //   if (result.status === 'mined') {
-    //     await this.repo.updateStatus(requestId, 'MINED');
-    //   } else {
-    //     await this.repo.updateStatus(requestId, 'FAILED', { failReason: 'reorg: tx not found after wait' });
-    //   }
+    await this._waitBlocks(TxStateMachineService.REORG_WAIT_BLOCKS);
+    const result = await this.vasp.getStatus(req.txHash);
+    const reorgedReq = { ...req, status: 'REORGED' as TxStatus };
+    if (result.status === 'mined') {
+      await this._transition(reorgedReq, 'MINED');
+    } else {
+      await this._transition(reorgedReq, 'FAILED', { failReason: 'reorg: tx not found after wait' });
+    }
+  }
 
-    // 주석 처리 — 실습에서 구현
+  private async _waitBlocks(blocks: number): Promise<void> {
+    await new Promise(r => setTimeout(r, blocks * 12_000)); // PoS ~12s/block
   }
 
   // ── Stale 폴링 (S23) ───────────────────────────────────────────────────
@@ -312,13 +319,6 @@ export class TxStateMachineService {
       if (!req.txHash) continue;
       try {
         const result = await this.vasp.getStatus(req.txHash);
-
-        // TODO (M4 S23 실습): 결과별 상태 전이 로직 작성
-        //   switch (result.status) {
-        //     case 'confirmed': await this.handleFinalized(req.id); break;  // VASP confirmed = PoS finality
-        //     case 'failed':    await this.handleFailed(req.id, result.revertReason ?? 'failed'); break;
-        //     case 'not_found': await this.handleFailed(req.id, 'tx not found in mempool'); break;
-        //   }
 
         switch (result.status) {
           case 'confirmed':
@@ -352,6 +352,18 @@ export class TxStateMachineService {
     const req = await this.repo.findById(id);
     if (!req) throw new MintRequestNotFoundError(id);
     return req;
+  }
+
+  /** 상태 전이 + Observer 이벤트 방출 */
+  private async _transition(
+    req: MintRequest,
+    to: TxStatus,
+    extra?: Partial<MintRequest>,
+  ): Promise<void> {
+    const from = req.status;
+    await this.repo.updateStatus(req.id, to, extra);
+    const updated: MintRequest = { ...req, status: to, ...extra, updatedAt: new Date() };
+    this.emit('transition', { requestId: req.id, from, to, req: updated } satisfies TxTransitionEvent);
   }
 }
 
