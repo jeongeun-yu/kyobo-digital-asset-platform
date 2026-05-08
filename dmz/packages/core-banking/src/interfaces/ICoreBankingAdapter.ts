@@ -63,8 +63,7 @@ export interface ICoreBankingAdapter {
   // ── 내부망 영구 원장 위임 (Java blockchain-gateway가 실제 기록) ────────────
 
   /**
-   * Called when NFT Transfer event is confirmed on-chain
-   * Java gateway writes to user_nft_holdings table
+   * 온체인 NFT Transfer 이벤트 확인 후 호출 — Java gateway가 user_nft_holdings 테이블에 기록
    */
   recordNftHolding(params: {
     userId: string;
@@ -76,8 +75,7 @@ export interface ICoreBankingAdapter {
   }): Promise<void>;
 
   /**
-   * Called on every state change in DMZ
-   * Java gateway writes to audit_log table (append-only)
+   * DMZ 상태 변경마다 호출 — Java gateway가 audit_log 테이블에 append-only 기록
    */
   recordAuditLog(entry: {
     actor: string;

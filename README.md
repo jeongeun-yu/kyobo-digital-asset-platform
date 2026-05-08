@@ -4,7 +4,7 @@
 
 > **실습 환경**: Windows 10/11 · PowerShell · Node.js 20 · Docker 없음
 
-> **TypeScript 사전 준비**: 본 프로젝트에서 사용하는 최소한의 TypeScript 문법 정리 → [kyobo-ts-prep](https://github.com/coincraft12/kyobo-ts-prep)
+> **TypeScript 사전 준비**: 이 프로젝트에서 사용하는 최소한의 TypeScript 문법 정리 → [kyobo-ts-prep](https://github.com/coincraft12/kyobo-ts-prep)
 
 ---
 
