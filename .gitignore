@@ -21,3 +21,6 @@ keystore/
 # OS
 .DS_Store
 Thumbs.db
+
+# Meta
+STATUS.md

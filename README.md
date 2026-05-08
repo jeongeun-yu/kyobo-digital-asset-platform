@@ -75,7 +75,54 @@ git config --global user.email "hong@example.com"
 
 ---
 
-### 1-4. VS Code 설치 (선택 — 강의 중 사용)
+### 1-4. Sepolia 테스트넷 설정 (강의 전 필수)
+
+Sepolia는 이 커리큘럼의 온체인 배포 실습 환경입니다. 강의 시작 전 아래 3단계를 완료해두세요.
+
+#### ① Alchemy 가입 + RPC URL 발급
+
+1. [alchemy.com](https://www.alchemy.com) 접속 → 무료 가입
+2. **Create new app** → Chain: `Ethereum` / Network: `Ethereum Sepolia`
+3. 생성된 앱의 **API Key** 복사
+4. RPC URL 형식: `https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY`
+
+> Infura([infura.io](https://www.infura.io)) 사용도 가능. 무료 티어로 충분.
+
+#### ② MetaMask 설치 + Sepolia 네트워크 추가
+
+1. [metamask.io](https://metamask.io) → 브라우저 확장 설치
+2. 지갑 생성 후 니모닉 안전하게 보관 (분실 시 복구 불가)
+3. MetaMask 상단 네트워크 드롭다운 → **Sepolia 테스트 네트워크** 활성화
+   - 보이지 않으면: 설정 → 고급 → 테스트 네트워크 표시 ON
+
+> **⚠️ 실습 전용 지갑 권장**: 기존 메인넷 지갑과 분리된 새 지갑을 만드세요.
+
+#### ③ 테스트 ETH 받기 (최소 0.5 ETH)
+
+아래 faucet 중 하나 이상에서 수령:
+
+| Faucet | URL | 조건 |
+|---|---|---|
+| Alchemy Sepolia Faucet | [sepoliafaucet.com](https://sepoliafaucet.com) | Alchemy 로그인 필요 |
+| Google Cloud Faucet | [cloud.google.com/application/web3/faucet/ethereum/sepolia](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) | Google 계정 |
+| Chainlink Faucet | [faucets.chain.link/sepolia](https://faucets.chain.link/sepolia) | 지갑 연결 |
+
+수령 후 MetaMask에서 Sepolia ETH 잔액 확인 → 0 이상이면 준비 완료.
+
+#### ④ .env에 입력
+
+```powershell
+# blockchain/.env
+SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
+DEPLOYER_PRIVATE_KEY=0x실습전용지갑프라이빗키
+```
+
+> MetaMask 프라이빗 키 내보내기: 계정 상세 → 개인 키 내보내기
+> **실습 전용 지갑의 키만 사용. 메인넷 자산이 있는 지갑 키 절대 사용 금지.**
+
+---
+
+### 1-5. VS Code 설치 (선택 — 강의 중 사용)
 
 1. [https://code.visualstudio.com](https://code.visualstudio.com) 접속 → Download for Windows
 2. 설치 완료 후 권장 확장 일괄 설치:
