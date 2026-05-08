@@ -78,13 +78,11 @@ Sepolia는 이 커리큘럼의 온체인 배포 실습 환경입니다. 강의 �
 
 #### ③ 테스트 ETH 받기 (최소 0.5 ETH)
 
-아래 faucet 중 하나 이상에서 수령:
+아래 faucet에서 수령:
 
-| Faucet | URL | 조건 |
-|---|---|---|
-| Alchemy Sepolia Faucet | [sepoliafaucet.com](https://sepoliafaucet.com) | Alchemy 로그인 필요 |
-| Google Cloud Faucet | [cloud.google.com/application/web3/faucet/ethereum/sepolia](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) | Google 계정 |
-| Chainlink Faucet | [faucets.chain.link/sepolia](https://faucets.chain.link/sepolia) | 지갑 연결 |
+**[https://sepolia-faucet.pk910.de](https://sepolia-faucet.pk910.de)**
+
+지갑 주소 입력 → 채굴 시작 → 0.5 ETH 이상 쌓이면 중지 후 수령.
 
 수령 후 MetaMask에서 Sepolia ETH 잔액 확인 → 0 이상이면 준비 완료.
 
