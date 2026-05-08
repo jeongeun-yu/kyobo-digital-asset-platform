@@ -58,14 +58,13 @@ git config --global user.email "hong@example.com"
 
 Sepolia는 이 커리큘럼의 온체인 배포 실습 환경입니다. 강의 시작 전 아래 3단계를 완료해두세요.
 
-#### ① Alchemy 가입 + RPC URL 발급
+#### ① Sepolia RPC URL
 
-1. [alchemy.com](https://www.alchemy.com) 접속 → 무료 가입
-2. **Create new app** → Chain: `Ethereum` / Network: `Ethereum Sepolia`
-3. 생성된 앱의 **API Key** 복사
-4. RPC URL 형식: `https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY`
+별도 가입 없이 아래 공용 URL을 그대로 사용합니다:
 
-> Infura([infura.io](https://www.infura.io)) 사용도 가능. 무료 티어로 충분.
+```
+https://ethereum-sepolia-rpc.publicnode.com
+```
 
 #### ② MetaMask 설치 + Sepolia 네트워크 추가
 
@@ -90,7 +89,7 @@ Sepolia는 이 커리큘럼의 온체인 배포 실습 환경입니다. 강의 �
 
 ```powershell
 # blockchain/.env
-SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
+SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
 DEPLOYER_PRIVATE_KEY=0x실습전용지갑프라이빗키
 ```
 
