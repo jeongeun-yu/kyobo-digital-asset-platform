@@ -2,7 +2,8 @@
 
 교보생명 행동 보상 NFT · KRW 스테이블코인 · 증권형 토큰(STO) 발행 플랫폼 — 강의 실습 레포지토리.
 
-> **실습 환경**: Windows 10/11 · PowerShell · Node.js 20 · Docker 없음
+> **실습 환경 (이 브랜치)**: Docker · Node.js 20 (호스트) · docker-compose로 PostgreSQL + Redis + Hardhat 노드 자동 기동
+> Windows 환경은 `master` 브랜치 참조
 
 > **TypeScript 사전 준비**: 본 프로젝트에서 사용하는 최소한의 TypeScript 문법 정리 → [kyobo-ts-prep](https://github.com/coincraft12/kyobo-ts-prep)
 
@@ -24,47 +25,25 @@
 
 ## 1. 전제 조건
 
-### 1-1. 설치 확인
+### 1-1. 필수 설치 항목
 
-PowerShell에서 아래 명령 실행 — 세 줄 모두 버전 번호가 출력되면 [2. 클론 및 초기 설정](#2-클론-및-초기-설정)으로 이동.
+| 항목 | 버전 | 설치 링크 |
+|---|---|---|
+| Node.js | 20 LTS 이상 | [nodejs.org](https://nodejs.org) |
+| Git | 2.x 이상 | [git-scm.com](https://git-scm.com) |
+| Docker Desktop | 최신 | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) |
 
-```powershell
-node -v        # v20.x.x 이상
-npm -v         # 10.x.x 이상
-git --version  # git version 2.x.x
+### 1-2. 설치 확인
+
+```bash
+node -v           # v20.x.x 이상
+npm -v            # 10.x.x 이상
+git --version     # git version 2.x.x
+docker -v         # Docker version 26.x.x 이상
+docker compose version  # Docker Compose version v2.x.x 이상
 ```
 
----
-
-### 1-2. Node.js 설치
-
-1. [https://nodejs.org](https://nodejs.org) 접속
-2. **LTS** 버튼 클릭 → `.msi` 설치 파일 다운로드
-3. 설치 마법사 실행 — 모든 옵션 기본값으로 Next → Finish
-4. PowerShell **닫고 새로 열기** (환경변수 반영)
-5. 설치 확인:
-
-```powershell
-node -v   # v20.x.x
-npm -v    # 10.x.x
-```
-
-> npm은 Node.js 설치 시 함께 포함. 별도 설치 불필요.
-
----
-
-### 1-3. Git 설치
-
-1. [https://git-scm.com/download/win](https://git-scm.com/download/win) 접속 → 자동 다운로드 시작
-2. 설치 마법사 실행 — 아래 두 항목 확인, 나머지는 기본값 유지:
-   - **Adjusting your PATH environment** → `Git from the command line and also from 3rd-party software` 선택
-   - **Configuring the line ending conversions** → `Checkout Windows-style, commit Unix-style line endings` 선택
-3. PowerShell **닫고 새로 열기**
-4. 설치 확인:
-
-```powershell
-git --version   # git version 2.x.x.windows.x
-```
+> **Docker Desktop 주의**: 설치 후 반드시 실행(트레이 아이콘 확인)한 뒤 진행.
 
 **최초 1회 — 사용자 정보 등록**
 
@@ -100,23 +79,42 @@ node -v; npm -v; git --version
 
 ## 2. 클론 및 초기 설정
 
-```powershell
-# 레포지토리 클론
-git clone https://github.com/coincraft12/kyobo-digital-asset-platform.git
+```bash
+# 레포지토리 클론 (env/docker 브랜치)
+git clone -b env/docker https://github.com/coincraft12/kyobo-digital-asset-platform.git
 cd kyobo-digital-asset-platform
 
-# 환경 변수 파일 복사
-Copy-Item .env.example .env
+# Docker 전용 환경변수 파일 복사
+cp .env.docker.example .env
 ```
 
-`.env`는 강사 안내에 따라 필요한 항목만 입력.  
+`.env` 는 강사 안내에 따라 필요한 항목만 입력.  
 M2 실습은 Mock 환경 사용 — `.env` 없이도 동작.
+
+---
+
+## 2-1. Docker 인프라 기동
+
+```bash
+# PostgreSQL + Redis + Hardhat 노드 백그라운드 기동
+docker compose up -d
+
+# 기동 상태 확인 (세 컨테이너 모두 healthy 확인)
+docker compose ps
+```
+
+> 첫 실행 시 이미지 pull로 1~2분 소요.
+
+```bash
+# 로그 확인 (필요 시)
+docker compose logs -f
+```
 
 ---
 
 ## 3. 의존성 설치 및 전체 빌드
 
-```powershell
+```bash
 # 전체 npm 워크스페이스 의존성 설치 (루트에서 1회만)
 npm install
 

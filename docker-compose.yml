@@ -1,0 +1,74 @@
+version: '3.9'
+
+# ============================================================
+# KYOBO Digital Assets — 강의 실습 환경 (Docker)
+# env/docker 브랜치 전용 — Windows 실습 환경은 master 브랜치 참조
+# ============================================================
+#
+# 사용법:
+#   docker compose up -d          # 인프라만 먼저 기동
+#   npm install && npm run build  # 의존성 설치 + 빌드 (호스트에서)
+#   npm test                      # 전체 테스트 실행
+#
+# 종료:
+#   docker compose down -v        # 컨테이너 + 볼륨 삭제
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: kyobo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kyobo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kyobo_dev_pw}
+      POSTGRES_DB: kyobo_da
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kyobo -d kyobo_da"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: kyobo_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-kyobo_redis_pw}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-kyobo_redis_pw}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Hardhat Local Node (EVM) ─────────────────────────────────
+  hardhat-node:
+    image: node:20-alpine
+    container_name: kyobo_hardhat
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: sh -c "npm install --prefix blockchain && npx --prefix blockchain hardhat node --hostname 0.0.0.0"
+    ports:
+      - "8545:8545"
+    environment:
+      - NODE_ENV=development
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8545 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
