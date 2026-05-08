@@ -35,7 +35,7 @@
 
 ### 1-2. 설치 확인
 
-```bash
+```powershell
 node -v           # v20.x.x 이상
 npm -v            # 10.x.x 이상
 git --version     # git version 2.x.x
@@ -88,7 +88,7 @@ Sepolia는 이 커리큘럼의 온체인 배포 실습 환경입니다. 강의 �
 
 #### ④ .env에 입력
 
-```bash
+```powershell
 # blockchain/.env
 SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
 DEPLOYER_PRIVATE_KEY=0x실습전용지갑프라이빗키
@@ -124,13 +124,13 @@ node -v; npm -v; git --version
 
 ## 2. 클론 및 초기 설정
 
-```bash
+```powershell
 # 레포지토리 클론 (env/docker 브랜치)
 git clone -b env/docker https://github.com/coincraft12/kyobo-digital-asset-platform.git
 cd kyobo-digital-asset-platform
 
 # Docker 전용 환경변수 파일 복사
-cp .env.docker.example .env
+Copy-Item .env.docker.example .env
 ```
 
 `.env` 는 강사 안내에 따라 필요한 항목만 입력.  
@@ -140,7 +140,7 @@ M2 실습은 Mock 환경 사용 — `.env` 없이도 동작.
 
 ## 2-1. Docker 인프라 기동
 
-```bash
+```powershell
 # PostgreSQL + Redis + Hardhat 노드 백그라운드 기동
 docker compose up -d
 
@@ -150,7 +150,7 @@ docker compose ps
 
 > 첫 실행 시 이미지 pull로 1~2분 소요.
 
-```bash
+```powershell
 # 로그 확인 (필요 시)
 docker compose logs -f
 ```
@@ -159,7 +159,7 @@ docker compose logs -f
 
 ## 3. 의존성 설치 및 전체 빌드
 
-```bash
+```powershell
 # 전체 npm 워크스페이스 의존성 설치 (루트에서 1회만)
 npm install
 
