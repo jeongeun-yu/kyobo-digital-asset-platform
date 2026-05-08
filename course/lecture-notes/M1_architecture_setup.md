@@ -3219,7 +3219,7 @@ const issuer = new IssuerService(coreBanking, vasp, ledger);
 
 ---
 
-# S4 — Hardhat 개발 환경 + Mainnet Fork
+# S4 — Hardhat 개발 환경 셋업
 
 ## Hardhat 아키텍처
 
@@ -3237,9 +3237,11 @@ Hardhat Toolbox: ethers.js, chai, hardhat-network-helpers 번들
 
 ---
 
-## Mainnet Fork — Hardhat 설정
+## [맛보기] Mainnet Fork — 실무에서는 이렇게 쓴다
 
-> Mainnet fork의 동작 원리(lazy loading, 오버레이 레이어, Foundry 활용 패턴)는 S1 섹션 1 "Solidity 개발환경: Remix → Hardhat" 참조.
+> **이 커리큘럼 실습 환경과 무관하다.** 로컬 Hardhat 노드 + Sepolia로 모든 실습 진행 가능. `MAINNET_RPC_URL` 없어도 된다.
+>
+> Mainnet Fork는 **교보생명이 VASP(월렛원) 연동 테스트** 등 실제 메인넷 상태가 필요한 시점에 쓰는 기법이다. "이런 게 있구나" 수준으로 파악해두면 된다.
 
 Hardhat에서 mainnet fork를 활성화하는 설정:
 
@@ -3432,7 +3434,7 @@ describe('KyoboNFT', () => {
 | StubCoreBankingAdapter | Java 없이 DMZ 실습·테스트 가능한 인메모리 스텁 | `dmz/packages/core-banking/src/adapters/` |
 | 단방향 의존 | 순환 참조 방지, 변경 파급 최소화 | 모든 dmz/packages/ |
 | Strategy Pattern | 인터페이스 + 교체 가능한 구현체 | chain-adapters, vasp |
-| Hardhat mainnet fork | 로컬에서 메인넷 상태 재현, 결정론적 테스트 | `blockchain/hardhat.config.ts` |
+| Hardhat mainnet fork | [맛보기] 로컬에서 메인넷 상태 재현 — 실습 환경 아님, VASP 통합 테스트 시 참고 | `blockchain/hardhat.config.ts` |
 | viaIR + optimizer | 복잡한 상속 구조 컴파일, 가스 최적화 | `blockchain/hardhat.config.ts` |
 | .openzeppelin/ | Storage layout 기록, upgrade 충돌 검증 | `blockchain/.openzeppelin/` |
 | SHA-256 감사 체인 (DMZ) | TX 이벤트 로그 변조 감지 | `dmz/packages/core-banking/src/audit/` |
