@@ -1,4 +1,4 @@
-# KYOBO Digital Assets System
+# KYOBO Digital Assets Platform
 
 교보생명 행동 보상 NFT · KRW 스테이블코인 · 증권형 토큰(STO) 발행 플랫폼 — 강의 실습 레포지토리.
 
@@ -470,10 +470,12 @@ kyobo-digital-asset-platform/
 │   └── event-listener/          온체인 이벤트 리스너 (개발 도구)
 │
 ├── course/                      ── 강의 자료 ──
-│   ├── exercises/               실습 파일 (M2 · M3 · M5)
+│   ├── exercises/               실습 파일 (M1 · M2 · M3 · M5)
+│   │   ├── M1/                  S04 실습 + answer
 │   │   ├── M2/                  S05~S12 실습 + answer
 │   │   ├── M3/                  S13~S22 실습 + answer
 │   │   └── __tests__/           실습 채점 테스트 (Jest)
+│   ├── PDF/                     세션별 강의 슬라이드 PDF
 │   ├── lecture-notes/           모듈별 강의 노트 (Markdown)
 │   └── curriculum/              커리큘럼 문서 (day01~day13)
 │
@@ -485,7 +487,25 @@ kyobo-digital-asset-platform/
 
 ---
 
-## 8. 강의 노트
+## 8. 강의 자료
+
+### 슬라이드 PDF
+
+위치: `course/PDF/`
+
+세션 전날 해당 세션 PDF가 추가된다. 현재 제공 파일:
+
+| 파일 | 내용 |
+|---|---|
+| `M1_intro.pdf` | M1 오리엔테이션 |
+| `S1_prior_course_connection.pdf` | S1 선행 과정 연결 |
+| `S2_architecture_detail.pdf` | S2 아키텍처 상세 |
+| `S3_skeleton_dependency.pdf` | S3 스켈레톤 · 의존 방향 |
+| `S4_dev_env_fork.pdf` | S4 개발환경 · Mainnet Fork |
+
+---
+
+### 강의 노트 (Markdown)
 
 위치: `course/lecture-notes/`
 
