@@ -68,10 +68,19 @@ https://ethereum-sepolia-rpc.publicnode.com
 
 #### ② MetaMask 설치 + Sepolia 네트워크 추가
 
+**데스크탑 (Chrome 확장)**
+
 1. [metamask.io](https://metamask.io) → 브라우저 확장 설치
 2. 지갑 생성 후 니모닉 안전하게 보관 (분실 시 복구 불가)
-3. MetaMask 상단 네트워크 드롭다운 → **Sepolia 테스트 네트워크** 활성화
+3. 상단 네트워크 드롭다운 → **Sepolia 테스트 네트워크** 활성화
    - 보이지 않으면: 설정 → 고급 → 테스트 네트워크 표시 ON
+
+**모바일 (iOS / Android)**
+
+1. App Store 또는 Google Play에서 **MetaMask** 설치
+2. 지갑 생성 (또는 데스크탑 니모닉으로 가져오기)
+3. 좌측 상단 햄버거 메뉴 → 설정 → 고급 → 테스트 네트워크 표시 ON
+4. 상단 네트워크 → **Sepolia** 선택
 
 > **⚠️ 실습 전용 지갑 권장**: 기존 메인넷 지갑과 분리된 새 지갑을 만드세요.
 
