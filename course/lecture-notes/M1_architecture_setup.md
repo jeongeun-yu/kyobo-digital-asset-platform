@@ -3219,7 +3219,21 @@ const issuer = new IssuerService(coreBanking, vasp, ledger);
 
 ---
 
-# S4 — Hardhat 개발 환경 + Mainnet Fork
+# S4 — Hardhat 개발환경 셋업
+
+## Hardhat 3가지 실행 환경
+
+이 과정에서 Hardhat은 3가지 방식으로 사용된다. 환경마다 목적이 다르고, 블록 번호로 구분할 수 있다.
+
+| 환경 | 명령 | 블록 번호 | 용도 |
+|---|---|---|---|
+| 로컬 노드 (빈 체인) | `npx hardhat node` | `0x0` | 컨트랙트 개발·테스트 (M2~M4 전반) |
+| Sepolia 테스트넷 | 공개 RPC 직접 호출 | 수백만대 | 실제 배포·이벤트 검증 (M3 S15, M6) |
+| Mainnet Fork | `npx hardhat node` + MAINNET_RPC_URL | 수천만대 | 메인넷 상태 재현 테스트 |
+
+- **로컬 노드**: `MAINNET_RPC_URL` 미설정 시 기본. 가스·잔액이 모두 초기화된 빈 체인.
+- **Sepolia**: 실제 네트워크. 테스트 ETH 필요 (pk910 faucet). M3 S15부터 사용.
+- **Mainnet Fork**: `MAINNET_RPC_URL` 설정 시 `npx hardhat node`가 메인넷 상태를 복제해서 기동. 실제 컨트랙트·토큰·유동성 상태를 로컬에서 재현.
 
 ## Hardhat 아키텍처
 
@@ -3237,7 +3251,7 @@ Hardhat Toolbox: ethers.js, chai, hardhat-network-helpers 번들
 
 ---
 
-## Mainnet Fork — Hardhat 설정
+## [맛보기] Mainnet Fork — 실무에서는 이렇게 쓴다
 
 > Mainnet fork의 동작 원리(lazy loading, 오버레이 레이어, Foundry 활용 패턴)는 S1 섹션 1 "Solidity 개발환경: Remix → Hardhat" 참조.
 

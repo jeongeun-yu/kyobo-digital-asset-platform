@@ -1,7 +1,7 @@
 # Day 01 — M1: 전체 아키텍처 프리뷰 + 개발 환경 셋업 (S1~S4)
 
 **세션**: S1~S4 | **모듈**: M1 | **시간**: 4시간 (4세션 × 1시간)  
-**산출물**: 개발환경 완성, 5레이어 매핑, Hardhat fork 기동
+**산출물**: 개발환경 완성, 5레이어 매핑, 로컬노드·Sepolia·Mainnet Fork 3가지 환경 체험
 
 ---
 
@@ -176,37 +176,46 @@ npm run build
 
 ---
 
-## S4: 개발환경 구성과 로컬 블록체인 포크 원리 (강의 25분 + 실습 30분)
+## S4: 개발환경 구성 — 3가지 실행 환경 체험 (강의 25분 + 실습 30분)
 
 ### 강의
 
-**Hardhat mainnet fork 원리:**
-- 실제 메인넷 상태를 로컬에서 복제
-- 가스·컨트랙트 동일하게 작동
-- 왜 로컬 체인이 아닌 fork인가: 실제 운영 환경과 동일한 조건으로 테스트 가능
+**Hardhat 3가지 실행 환경:**
+
+| 환경 | 명령 | 블록 번호 | 용도 |
+|---|---|---|---|
+| 로컬 노드 (빈 체인) | `npx hardhat node` | `0x0` | 컨트랙트 테스트·개발 |
+| Sepolia 테스트넷 | 공개 RPC 직접 호출 | `0x7xxxxxx` (수백만) | 실제 테스트넷 배포·검증 |
+| Mainnet Fork | `npx hardhat node` + MAINNET_RPC_URL | `0x14xxxxx` (수천만) | 메인넷 상태 재현 테스트 |
 
 **환경변수 기반 RPC 설정:**
-- mainnet fork URL 분리 관리
-- 미설정 시 빌드 실패 경로 → `.env` 관리 필수
+- `MAINNET_RPC_URL` 설정 → `hardhat.forking.enabled: true` → mainnet fork 활성화
+- 미설정 → `enabled: false` → 빈 로컬 체인
+- `.env` 파일에서 분리 관리 (Git 커밋 금지)
 
 **Hardhat 프로젝트 설정 구조:**
 - 네트워크·컴파일러·solidity 버전 고정 이유
 
 ### 🔴 실습 (30분) — 수강생 직접 작성
 
-**Step 1**: Hardhat 설정 파일 구성
+**Step 1**: Hardhat 설정 파일 구성 — 3가지 네트워크 포함
 ```typescript
-// TODO: hardhat.config.ts에 아래 항목 채우기
+// TODO: blockchain/hardhat.config.ts에 아래 항목 채우기
 // - localhost 네트워크 설정
-// - mainnet fork URL을 환경변수에서 읽기
-// - solidity 버전 0.8.20 고정
+// - hardhat 네트워크에 mainnet fork 설정 (MAINNET_RPC_URL 환경변수 기반, 조건부 활성화)
+// - sepolia 네트워크 설정 (SEPOLIA_RPC_URL 환경변수)
+// - solidity 버전 0.8.24 고정
 
 import { HardhatUserConfig } from 'hardhat/config';
+import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
+import * as dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const config: HardhatUserConfig = {
   solidity: {
-    // TODO:
+    // TODO: version, optimizer
   },
   networks: {
     localhost: {
@@ -214,8 +223,11 @@ const config: HardhatUserConfig = {
     },
     hardhat: {
       forking: {
-        // TODO: process.env.MAINNET_RPC_URL 연결
+        // TODO: MAINNET_RPC_URL 연결 + enabled 조건부 처리
       },
+    },
+    sepolia: {
+      // TODO: SEPOLIA_RPC_URL + DEPLOYER_PRIVATE_KEY
     },
   },
 };
@@ -223,53 +235,113 @@ const config: HardhatUserConfig = {
 export default config;
 ```
 
-**Step 2**: mainnet fork 로컬 노드 기동 → 블록 번호 확인
-```bash
-# TODO: Hardhat 로컬 노드 기동
+---
+
+**Step 2**: [환경 1] 로컬 노드 — 빈 체인 기동
+
+터미널 1:
+```powershell
+cd blockchain
 npx hardhat node
-
-# TODO: 새 터미널에서 현재 블록 번호 확인
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+# Started HTTP and WebSocket JSON-RPC server at http://127.0.0.1:8545/
 ```
 
-**Step 3**: 스켈레톤 컴파일 통과
-```bash
-# TODO: 컴파일 실행
+터미널 2 (새 탭):
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8545" `
+  -Method POST -ContentType "application/json" `
+  -Body '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+# result: "0x0" → 빈 체인 확인
+```
+
+터미널 1에서 `Ctrl+C` (노드 종료)
+
+---
+
+**Step 3**: [환경 2] Sepolia 테스트넷 — 공개 RPC 직접 연결
+
+```powershell
+# 가입 불필요 — publicnode 공개 RPC 사용
+Invoke-RestMethod -Uri "https://ethereum-sepolia-rpc.publicnode.com" `
+  -Method POST -ContentType "application/json" `
+  -Body '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+# result: "0x7xxxxxx" → Sepolia 실제 블록 번호 (수백만대)
+```
+
+---
+
+**Step 4**: [환경 3] Mainnet Fork — 메인넷 상태 재현
+
+`.env` 파일에 추가 (publicnode 무료 공개 RPC):
+```
+MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com
+```
+
+터미널 1:
+```powershell
+npx hardhat node
+# Forking mainnet at block XXXXXXXX ... 메시지 확인
+```
+
+터미널 2:
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8545" `
+  -Method POST -ContentType "application/json" `
+  -Body '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+# result: "0x14xxxxx" → 메인넷 최신 블록 번호 → fork 성공
+```
+
+터미널 1에서 `Ctrl+C` 후 `.env`에서 `MAINNET_RPC_URL` 주석 처리
+```
+# MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com
+```
+> 이후 실습 (M2~M4)은 로컬 노드·mock 기반. fork 활성화 상태로 두면 `npx hardhat test`가 느려짐.
+
+---
+
+**Step 5**: 스켈레톤 컴파일 + 테스트
+
+```powershell
 npx hardhat compile
-```
+# Compiled N Solidity files successfully
 
-**Step 4**: 스켈레톤 테스트 전체 실행
-```bash
-# TODO: 테스트 실행 후 skip/pending 목록 파악
 npx hardhat test
+# N passing, M pending (pending = 아직 구현 안 된 것들)
 ```
 
 ### ✅ 답안
 
 ```typescript
-// hardhat.config.ts 완성 예시
+// blockchain/hardhat.config.ts 완성 예시
 import { HardhatUserConfig } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
 import * as dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: '0.8.20',
-    settings: { optimizer: { enabled: true, runs: 200 } },
+    version: '0.8.24',
+    settings: {
+      optimizer: { enabled: true, runs: 200 },
+      viaIR: true,
+      evmVersion: 'cancun',
+    },
   },
   networks: {
     localhost: {
-      url: 'http://localhost:8545',
+      url: 'http://127.0.0.1:8545',
     },
     hardhat: {
       forking: {
-        url: process.env.MAINNET_RPC_URL ?? '',
+        url:     process.env.MAINNET_RPC_URL ?? '',
         enabled: !!process.env.MAINNET_RPC_URL,
       },
+    },
+    sepolia: {
+      url:      process.env.SEPOLIA_RPC_URL ?? '',
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
     },
   },
 };
@@ -277,24 +349,16 @@ const config: HardhatUserConfig = {
 export default config;
 ```
 
-```bash
-# 블록 번호 확인 — mainnet fork면 최신 블록 번호가 나옴
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-# 응답 예: {"jsonrpc":"2.0","id":1,"result":"0x137a5e0"}
-# 이 값이 0x0이면 fork가 아닌 빈 로컬 체인
-
-# 컴파일
-npx hardhat compile
-# Compiled N Solidity files successfully
-
-# 테스트
-npx hardhat test
-# N passing, M pending (pending = 아직 구현 안 된 것들)
-```
+**환경별 블록 번호 비교 결과:**
+| 환경 | 예상 결과 |
+|---|---|
+| 로컬 빈 체인 | `"0x0"` |
+| Sepolia | `"0x7a4f3c2"` (수백만, 날마다 증가) |
+| Mainnet Fork | `"0x14a2f1e"` (수천만, 메인넷 최신) |
 
 ### ✅ M1 완료 기준
-- [ ] Hardhat mainnet fork 기동
+- [ ] 로컬 노드 기동 → 블록 번호 `0x0` 확인
+- [ ] Sepolia RPC 블록 번호 확인 (수백만대)
+- [ ] Mainnet Fork 기동 → 블록 번호 수천만대 확인
 - [ ] 컴파일 통과
 - [ ] 테스트 전체 실행 확인 (skip/pending 목록 파악)

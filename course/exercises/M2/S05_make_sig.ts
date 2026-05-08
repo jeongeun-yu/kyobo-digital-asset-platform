@@ -1,7 +1,7 @@
 /**
  * S05 실습 — HMAC 서명 생성 스크립트 (Step 3용)
  *
- * 실행: npx ts-node src/exercises/S05_make_sig.ts
+ * 실행 방법 (루트에서): npm run exercise:s05-sig
  *
  * 목표:
  *   crypto.createHmac을 사용해 HMAC-SHA256 서명을 계산하고 콘솔에 출력한다.

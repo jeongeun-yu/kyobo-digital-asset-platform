@@ -3,8 +3,7 @@
  *
  * 강의 노트: M2_S9_atleastonce_design.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S09_atleastonce.ts
+ * 실행 방법 (루트에서): npm run exercise:s09
  *
  * 목표:
  *   Part 1 — 멱등성 없는 Naive 처리자: 동일 메시지 2회 → holdings +2 버그 확인

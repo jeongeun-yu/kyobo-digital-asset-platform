@@ -3,8 +3,7 @@
  *
  * 강의 노트: M3_S22_pollstale_integration.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S22_pollstale_lab.ts
+ * 실행 방법 (루트에서): npm run exercise:s22
  *
  * 실제 동작 기준:
  *   pollStaleRequests() — PENDING 30분+ 건 배치 조회 후 결과별 분기

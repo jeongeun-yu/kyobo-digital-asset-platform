@@ -3,8 +3,7 @@
  *
  * 강의 노트: M2_S7_redis_streams_theory.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S07_redis_stream.ts
+ * 실행 방법 (루트에서): npm run exercise:s07
  *
  * 사전 조건: 없음 (Mock Redis 사용 — 실제 Docker 불필요)
  *

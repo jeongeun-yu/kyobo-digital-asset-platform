@@ -3,8 +3,7 @@
  *
  * 강의 노트: M3_S13_tx_statemachine.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S13_tx_statemachine.ts
+ * 실행 방법 (루트에서): npm run exercise:s13
  *
  * 목표:
  *   [1] VALID_TRANSITIONS 맵 — 8개 상태 전이 규칙 정의

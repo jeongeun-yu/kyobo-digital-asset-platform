@@ -3,8 +3,7 @@
  *
  * 강의 노트: M3_S16_idempotency.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S16_idempotency.ts
+ * 실행 방법 (루트에서): npm run exercise:s16
  *
  * 목표:
  *   [1] 정상 흐름: submitMintRequest → REQUESTED → SUBMITTED 전이

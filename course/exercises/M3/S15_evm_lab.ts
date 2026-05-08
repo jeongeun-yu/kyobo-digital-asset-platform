@@ -3,8 +3,7 @@
  *
  * 강의 노트: M3_S15_evm_implementation.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S15_evm_lab.ts
+ * 실행 방법 (루트에서): npm run exercise:s15
  *
  * 전제 조건:
  *   - 인터넷 연결 (Sepolia 공개 RPC 사용)

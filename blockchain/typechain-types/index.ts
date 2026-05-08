@@ -84,6 +84,8 @@ export type { IToken } from "./src/interfaces/IToken";
 export { IToken__factory } from "./factories/src/interfaces/IToken__factory";
 export type { MockERC1155 } from "./src/mocks/MockERC1155";
 export { MockERC1155__factory } from "./factories/src/mocks/MockERC1155__factory";
+export type { MockInvestorRegistry } from "./src/mocks/MockInvestorRegistry";
+export { MockInvestorRegistry__factory } from "./factories/src/mocks/MockInvestorRegistry__factory";
 export type { ActivityOracle } from "./src/rewards/ActivityOracle";
 export { ActivityOracle__factory } from "./factories/src/rewards/ActivityOracle__factory";
 export type { KyoboNFT } from "./src/rewards/KyoboNFT";

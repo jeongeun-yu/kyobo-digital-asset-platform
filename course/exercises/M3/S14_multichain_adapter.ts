@@ -1,7 +1,7 @@
 /**
  * S14 실습 — IBlockchainAdapter 설계 + 멀티체인 교체 시뮬레이션
  *
- * 실행: npx ts-node src/exercises/S14_multichain_adapter.ts
+ * 실행 방법 (루트에서): npm run exercise:s14
  *
  * [0] Sepolia 연결 확인       — 자동 실행 (구현 불필요)
  * [1] issuanceHealth 구현     — TODO 채우기

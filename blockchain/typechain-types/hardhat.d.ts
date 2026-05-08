@@ -170,6 +170,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MockERC1155__factory>;
     getContractFactory(
+      name: "MockInvestorRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockInvestorRegistry__factory>;
+    getContractFactory(
       name: "ActivityOracle",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ActivityOracle__factory>;
@@ -386,6 +390,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.MockERC1155>;
     getContractAt(
+      name: "MockInvestorRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockInvestorRegistry>;
+    getContractAt(
       name: "ActivityOracle",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -568,6 +577,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockERC1155>;
     deployContract(
+      name: "MockInvestorRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockInvestorRegistry>;
+    deployContract(
       name: "ActivityOracle",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ActivityOracle>;
@@ -783,6 +796,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockERC1155>;
+    deployContract(
+      name: "MockInvestorRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockInvestorRegistry>;
     deployContract(
       name: "ActivityOracle",
       args: any[],

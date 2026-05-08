@@ -6,6 +6,7 @@
     "compile": "npx hardhat compile",
     "test": "npx hardhat test",
     "node": "npx hardhat node --hostname 0.0.0.0",
+    "node:local": "npx hardhat node",
     "deploy:local": "npx hardhat run scripts/deploy/deploy-rewards.ts --network localhost",
     "deploy:sepolia": "npx hardhat run scripts/deploy/deploy-rewards.ts --network sepolia",
     "deploy:securities:local": "npx hardhat run scripts/deploy/deploy-securities.ts --network localhost"

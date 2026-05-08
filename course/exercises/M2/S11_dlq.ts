@@ -3,8 +3,7 @@
  *
  * 강의 노트: M2_S11_dlq_design.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S11_dlq.ts
+ * 실행 방법 (루트에서): npm run exercise:s11
  *
  * 목표:
  *   Part 1 — 3회 실패 → DLQ 이동 시나리오 관찰

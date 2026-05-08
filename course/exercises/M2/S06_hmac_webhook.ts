@@ -3,8 +3,7 @@
  *
  * 강의 노트: M2_S6_hmac_queue_service.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S06_hmac_webhook.ts
+ * 실행 방법 (루트에서): npm run exercise:s06
  *
  * 목표:
  *   1. verifySignature() 직접 구현 (HMAC + timingSafeEqual)

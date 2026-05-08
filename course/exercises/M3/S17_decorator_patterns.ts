@@ -3,8 +3,7 @@
  *
  * 강의 노트: M3_S17_retry_backoff.md
  *
- * 실행 방법:
- *   npx ts-node course/exercises/M3/S17_decorator_patterns.ts
+ * 실행 방법 (루트에서): npm run exercise:s17
  *
  * 목표:
  *   [1] LoggingAdapterDecorator — 메서드 경과 시간 측정 확인 (참조)

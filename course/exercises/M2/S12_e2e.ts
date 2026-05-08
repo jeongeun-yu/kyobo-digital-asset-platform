@@ -3,8 +3,7 @@
  *
  * 강의 노트: M2_S12_finalized_e2e.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S12_e2e.ts
+ * 실행 방법 (루트에서): npm run exercise:s12
  *
  * 목표:
  *   Mock Redis + Mock LedgerService로 전체 파이프라인을 로컬에서 완주한다.

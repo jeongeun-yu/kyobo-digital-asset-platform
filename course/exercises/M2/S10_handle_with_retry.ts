@@ -3,8 +3,7 @@
  *
  * 강의 노트: M2_S10_event_consumer_impl.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S10_handle_with_retry.ts
+ * 실행 방법 (루트에서): npm run exercise:s10
  *
  * 목표:
  *   ConsumerGroupWorker의 핵심 메서드 _handleWithRetry()를 직접 구현한다.

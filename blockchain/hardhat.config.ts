@@ -18,6 +18,13 @@ const config: HardhatUserConfig = {
     localhost: {
       url: 'http://127.0.0.1:8545',
     },
+    // Mainnet fork — MAINNET_RPC_URL 설정 시 활성화 (S4 실습 환경 3)
+    hardhat: {
+      forking: {
+        url:     process.env.MAINNET_RPC_URL ?? '',
+        enabled: !!process.env.MAINNET_RPC_URL,
+      },
+    },
     // 테스트넷 (교육 Day 07 배포 실습)
     sepolia: {
       url:      process.env.SEPOLIA_RPC_URL ?? '',
