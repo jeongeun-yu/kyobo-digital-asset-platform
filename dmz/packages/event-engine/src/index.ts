@@ -4,7 +4,7 @@ export { NFTIssuedProcessor } from './processors/NFTIssuedProcessor';
 export { ConsumerGroupWorker } from './dmz/ConsumerGroupWorker';
 export type { StreamMessage, EventProcessor, RedisConsumerClient, DeferredProcessingError } from './dmz/ConsumerGroupWorker';
 export { DLQHandler }          from './dmz/DLQHandler';
-export type { DLQItem }        from './dmz/DLQHandler';
+export type { DLQItem, DLQRedisClient } from './dmz/DLQHandler';
 export { RedisStreamPublisher, QueueService } from './dmz/RedisStreamPublisher';
 export type { StreamEvent, RedisStreamClient } from './dmz/RedisStreamPublisher';
 export { InMemoryLedgerService } from './processors/NFTIssuedProcessor';

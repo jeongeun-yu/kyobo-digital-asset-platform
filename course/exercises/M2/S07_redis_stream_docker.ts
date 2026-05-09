@@ -23,7 +23,7 @@
 import {
   RedisStreamPublisher, ConsumerGroupWorker, DLQHandler,
   type StreamEvent, type EventProcessor, type StreamMessage,
-  type RedisStreamClient, type RedisConsumerClient,
+  type RedisStreamClient, type RedisConsumerClient, type DLQRedisClient,
 } from '@kyobo/event-engine';
 
 // ────────────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ async function createIoRedis(host = '127.0.0.1', port = 6379) {
  * ioredis 명령 시그니처가 인터페이스와 다른 부분(XREADGROUP, XAUTOCLAIM)을
  * 여기서 정규화한다.  강의 핵심 개념이므로 주석을 꼼꼼히 읽을 것.
  */
-function wrapRedis(r: any): RedisStreamClient & RedisConsumerClient {
+function wrapRedis(r: any): RedisStreamClient & RedisConsumerClient & DLQRedisClient {
   return {
     // ── Publisher 인터페이스 ─────────────────────────────────────────
 
@@ -158,6 +158,25 @@ function wrapRedis(r: any): RedisStreamClient & RedisConsumerClient {
           return { id, fields };
         }),
       };
+    },
+
+    // ── DLQ 인터페이스 ───────────────────────────────────────────────
+
+    async xrange(key: string, start: string, end: string, count?: number): Promise<Array<{ id: string; fields: Record<string, string> }>> {
+      const args: any[] = [key, start, end];
+      if (count !== undefined) args.push('COUNT', count);
+      const raw = await r.xrange(...args) as Array<[string, string[]]>;
+      return raw.map(([id, fieldArr]) => {
+        const fields: Record<string, string> = {};
+        for (let i = 0; i < fieldArr.length; i += 2) {
+          fields[fieldArr[i]] = fieldArr[i + 1];
+        }
+        return { id, fields };
+      });
+    },
+
+    async xdel(key: string, ...ids: string[]): Promise<number> {
+      return r.xdel(key, ...ids) as Promise<number>;
     },
   };
 }
