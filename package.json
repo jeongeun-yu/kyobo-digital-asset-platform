@@ -29,6 +29,7 @@
     "exercise:s06:answer": "npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M2/S06_hmac_webhook.answer.ts",
     "exercise:s07":        "npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M2/S07_redis_stream.ts",
     "exercise:s07:answer": "npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M2/S07_redis_stream.answer.ts",
+    "exercise:s07:docker": "npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M2/S07_redis_stream_docker.ts",
     "exercise:s09":        "npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M2/S09_atleastonce.ts",
     "exercise:s09:answer": "npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M2/S09_atleastonce.answer.ts",
     "exercise:s10":        "npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M2/S10_handle_with_retry.ts",
@@ -52,6 +53,7 @@
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "ioredis": "^5.3.2"
   }
 }
