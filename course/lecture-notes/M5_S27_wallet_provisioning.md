@@ -1,5 +1,8 @@
 # M5 S27 — 사용자 레이어 진입점 설계 · VASP별 지갑 프로비저닝 분기
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
+> **Phase 1 맥락:** 지갑 생성은 `vaspAdapter.createWallet()`을 통해 월렛원에 위탁합니다. Phase 3에서 교보생명이 직접 VASP 인가를 취득한 이후에는 자체 HSM/MPC로 지갑을 생성하는 `KyoboVASPAdapter`로 교체됩니다.
+
 > 모듈 5 · 세션 27 · 1시간  
 > 스켈레톤: `dmz/apps/issuer-service/src/services/WalletProvisioningService.ts`
 

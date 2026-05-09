@@ -4,6 +4,8 @@
 > **연결 세션**: M3 S14 (IBlockchainAdapter) → 이 세션은 M3 S14 이후 삽입 권장  
 > **스켈레톤 참조**: `chain-adapters/src/interfaces/IBlockchainAdapter.ts` (`Eip1559FeeParams`, `FeePolicyId`, `RpcDegradeMode`), `vasp/src/nonce/NonceManager.ts`
 
+> **[Phase 3 — 미확정]** 교보생명 직접 VASP 인가 취득 후 구현. Phase 1에서는 해당 기능을 VASP가 대행합니다.
+
 ---
 
 ## 도입 — "gas * gasPrice"는 이미 낡은 방식

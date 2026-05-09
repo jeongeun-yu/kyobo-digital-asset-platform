@@ -1,5 +1,7 @@
 # M4 S26 — 금융 규제 대응 감사 로그 · SHA-256 체인과 불변성 보장
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 4 · 세션 26 · 1시간  
 > 스켈레톤: `dmz/packages/core-banking/src/audit/AuditLogService.ts`
 

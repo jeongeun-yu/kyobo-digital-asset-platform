@@ -1,5 +1,7 @@
 # M3 S16 — Idempotency 보장 — requestId 기반 중복 TX 방어
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S16 · 강의 55분  
 > 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
 

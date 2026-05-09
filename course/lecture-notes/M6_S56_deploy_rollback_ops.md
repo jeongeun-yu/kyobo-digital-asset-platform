@@ -1,5 +1,7 @@
 # M6 S56 — 배포·롤백 운영 · 파이프라인 설계와 무중단 배포 절차
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 6 · 세션 56 · 1시간 `운영`
 > 전제: M6 KyoboNFT.sol 배포 완료, Sepolia 운영 중
 > 스켈레톤: `dmz/packages/vasp/src/admin/DeployAdminService.ts`

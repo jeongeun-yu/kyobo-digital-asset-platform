@@ -3,6 +3,8 @@ import type {
   WalletInfo,
   TransferRequest,
   TransferResult,
+  VASPTransactionReceipt,
+  SubmitTransactionParams,
 } from '../interfaces/IVASPAdapter';
 
 /**
@@ -23,6 +25,25 @@ export class ExternalVASPAdapter implements IVASPAdapter {
   constructor(config: { baseUrl: string; apiKey: string }) {
     this.baseUrl = config.baseUrl;
     this.apiKey  = config.apiKey;
+  }
+
+  /**
+   * Phase 1 핵심 write 경로 — VASP에 TX 서명·브로드캐스트 위탁
+   * 월렛원(또는 다른 VASP) REST API POST /transactions 호출
+   * VASP는 TX 완료 후 NFT_ISSUED Webhook으로 DMZ에 통보한다.
+   */
+  async submitTransaction(params: SubmitTransactionParams): Promise<VASPTransactionReceipt> {
+    const res = await this._request('POST', '/transactions', {
+      contractAddr:   params.contractAddr,
+      method:         params.method,
+      args:           params.args,
+      idempotencyKey: params.idempotencyKey,
+    });
+    return {
+      txHash:    res['txHash']    as string,
+      status:    res['status']    as VASPTransactionReceipt['status'],
+      timestamp: (res['timestamp'] as number) ?? Date.now(),
+    };
   }
 
   async createWallet(userId: string): Promise<WalletInfo> {

@@ -1,5 +1,7 @@
 # M4 S55 — 감사 로그 보관 운영 · 규제 요건과 Hot/Warm/Cold 아키텍처
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 4 · 세션 55 · 1시간 `운영`
 > 전제: S26에서 AuditLogService(SHA-256 체인) 구현 완료
 > 스켈레톤: `dmz/packages/core-banking/src/admin/AuditLogAdminService.ts`

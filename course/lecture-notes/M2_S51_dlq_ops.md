@@ -1,5 +1,7 @@
 # M2 S51 — DLQ 운영 절차 · 재큐잉 판단 기준과 드랍 정책 설계
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 2 · 세션 51 · 1시간 `운영`  
 > 전제: S11에서 DLQHandler 구현 완료, `kyobo:events:dlq` 스트림 운영 중  
 > 스켈레톤: `dmz/packages/event-engine/src/admin/DLQAdminService.ts`

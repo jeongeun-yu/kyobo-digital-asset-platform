@@ -1,5 +1,7 @@
 # M8 S46 — 다중 서명 기반 키 거버넌스 · Gnosis Safe와 EIP-712
 
+> **[Phase 1·2·3 공통 — 거버넌스]** Gnosis Safe 멀티시그는 Phase 전반에 걸쳐 거버넌스 수단으로 사용됩니다. Phase 3에서는 당사가 주키를 직접 보관하는 구조로 전환 가능합니다.
+
 > 모듈 8 · 세션 46 · 1시간  
 > 스켈레톤: `dmz/packages/vasp/src/governance/KeyGovernanceService.ts`
 

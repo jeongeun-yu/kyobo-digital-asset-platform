@@ -3,6 +3,15 @@
 > 모듈 5 · 세션 32 · 1시간  
 > 스켈레톤: `dmz/apps/issuer-service/src/services/IssuerService.ts`
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
+> **Phase 1 단건 발행 흐름 핵심**  
+> `IssuerService`의 발행 요청은 `vaspAdapter.submitTransaction()`을 호출해 **월렛원 REST API**로 전달된다.  
+> 월렛원이 TX를 서명·브로드캐스트하고 온체인 확정 후 Webhook으로 콜백을 보낸다.  
+> Phase 3에서는 `chainAdapter.sendTransaction()`을 직접 호출하는 경로로 전환된다.  
+> // Phase 1: vaspAdapter.submitTransaction() 으로 대체  
+> // Phase 3 이후 활성화: 자체 Custody 인가 취득 후 chainAdapter.sendTransaction() 직접 호출
+
 ---
 
 ## 강의 파트 (15분)
@@ -268,6 +277,8 @@ async createNftRequest(userId: string, tokenId: bigint, amount: bigint): Promise
   const mintRequest = await this.ledgerService.createMintRequest(userId, 'policy-001');
 
   // 3. VASP 추상화 레이어에 전달
+  // Phase 1: 내부적으로 vaspAdapter.submitTransaction() → 월렛원 REST API 호출
+  // Phase 3 이후 활성화: chainAdapter.sendTransaction() 직접 호출 (자체 Custody 인가 취득 후)
   await this.txStateMachineService.submitMintRequest({
     requestId: mintRequest.id,
     walletAddr,

@@ -1,5 +1,7 @@
 # M4 S54 — Reconcile 운영 · 스케줄 설계와 불일치 대응 절차
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 4 · 세션 54 · 1시간 `운영`
 > 전제: S25에서 ReconcileService 구현 완료, S24 TxStateMachineService 운영 중
 > 스켈레톤: `dmz/packages/core-banking/src/admin/ReconcileAdminService.ts`

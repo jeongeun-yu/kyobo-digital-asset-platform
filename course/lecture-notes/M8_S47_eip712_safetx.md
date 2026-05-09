@@ -1,5 +1,7 @@
 # M8 S47 — 다중 서명 트랜잭션 생명주기 · 제안·서명 수집·실행 프로토콜 설계
 
+> **[Phase 1·2·3 공통 — 거버넌스]** Gnosis Safe 멀티시그는 Phase 전반에 걸쳐 거버넌스 수단으로 사용됩니다. Phase 3에서는 당사가 주키를 직접 보관하는 구조로 전환 가능합니다.
+
 > 모듈 8 · 세션 47 · 1시간  
 > 스켈레톤: `dmz/packages/vasp/src/governance/KeyGovernanceService.ts`
 

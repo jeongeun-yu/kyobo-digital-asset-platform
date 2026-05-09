@@ -1,5 +1,7 @@
 # M2 S6 — Webhook 보안 검증과 QueueService 구현
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 25분 + 실습 30분  
 > 대상: `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
 

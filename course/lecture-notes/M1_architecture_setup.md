@@ -3,6 +3,42 @@
 
 > S1~S4 · 4시간 · Day 01 (5/6)
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
+---
+
+## Phase 구현 범위 로드맵
+
+이 커리큘럼 전체에서 다루는 코드는 3단계 Phase 로드맵을 기준으로 설계되어 있다.  
+**현재 프로덕션 구현 범위는 Phase 1이다.** Phase 2·3은 향후 전환 시 활성화된다.
+
+| Phase | 시기 | 핵심 변경 | TX 실행 주체 |
+|---|---|---|---|
+| **Phase 1 (현재)** | 2026년 | NFT 인프라 구축. 온체인 작업(TX 서명·브로드캐스트·NFT 발행) 전체를 외부 VASP(월렛원)에 위탁 | **월렛원 REST API** |
+| **Phase 2 (검토 중)** | 중기 | Circle Arc + USDC/KRW1 결제 추가. ChainEventListener가 직접 이벤트 구독 시작 | 월렛원 + 직접 구독 |
+| **Phase 3 (미확정)** | ~2028년 | 교보생명 직접 VASP 인가 취득. 자체 Custody(HSM/MPC) 운영. `chainAdapter.sendTransaction()` 직접 호출, `KyoboVASPAdapter`로 교체, 스마트 컨트랙트 직접 배포·운영 | **교보 자체 서명** |
+
+### Phase 1 아키텍처 요약
+
+```
+Write Path:
+  내부망 → DMZ IssuerService
+         → vaspAdapter.submitTransaction()   ← ExternalVASPAdapter 구현체
+         → 월렛원 REST API
+         → 블록체인
+
+Read Path:
+  블록체인 → 월렛원 감지
+           → Webhook → DMZ WebhookReceiver (202)
+           → Redis Streams → Consumer
+           → 내부망 원장
+
+IBlockchainAdapter: Phase 1에서 read-only (FINALIZED 확인 전용)
+                    sendTransaction / mintNFT → Phase 3에서 활성화
+IVASPAdapter:       ExternalVASPAdapter 구현체 사용
+                    submitTransaction() 메서드가 Phase 1 write 핵심
+```
+
 ---
 
 # 과정 배경 — 왜 이 시스템을 만드는가

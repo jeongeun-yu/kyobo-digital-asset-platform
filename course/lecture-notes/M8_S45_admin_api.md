@@ -1,5 +1,7 @@
 # M8 S45 — 운영 관리 API 설계 · 컨트랙트 제어와 시스템 운영 인터페이스
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 8 · 세션 45 · 1시간  
 > 스켈레톤: `dmz/packages/vasp/src/governance/KeyGovernanceService.ts`
 

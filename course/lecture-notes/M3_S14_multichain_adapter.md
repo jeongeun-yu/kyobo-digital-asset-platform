@@ -194,14 +194,14 @@ export interface IBlockchainAdapter {
   getBlockNumber(): Promise<number>;
 
   // ── NFT 발행·소각·잔액 ──────────────────────────────────────────
-  mintNFT(params: MintParams):           Promise<TransactionReceipt>;
-  mintNFTBatch(params: MintBatchParams): Promise<TransactionReceipt>;
-  burnNFT(params: BurnParams):           Promise<TransactionReceipt>;
+  mintNFT(params: MintParams):           Promise<TransactionReceipt>; // Phase 3 이후 활성화: 자체 Custody 인가 취득 후 (Phase 1에서는 VASP가 서명·브로드캐스트)
+  mintNFTBatch(params: MintBatchParams): Promise<TransactionReceipt>; // Phase 3 이후 활성화
+  burnNFT(params: BurnParams):           Promise<TransactionReceipt>; // Phase 3 이후 활성화
   getBalance(contractAddr: string, owner: string, tokenId: bigint): Promise<bigint>;
 
   // ── 저수준 TX ────────────────────────────────────────────────────
   call(params: ContractCallParams):            Promise<unknown>;
-  sendTransaction(params: ContractCallParams): Promise<TransactionReceipt>;
+  sendTransaction(params: ContractCallParams): Promise<TransactionReceipt>; // Phase 3 이후 활성화: 자체 Custody 인가 취득 후 (Phase 1에서는 VASP가 서명·브로드캐스트)
   getReceipt(txHash: string):                  Promise<TransactionReceipt | null>;
 
   // ── 이벤트 ───────────────────────────────────────────────────────

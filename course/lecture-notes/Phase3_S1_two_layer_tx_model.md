@@ -4,6 +4,8 @@
 > **연결 세션**: M3 S13 (TX 상태머신) → 이 세션은 M3 S22 이후 삽입 권장  
 > **스켈레톤 참조**: `dmz/packages/vasp/src/tx/TxAttempt.ts`
 
+> **[Phase 3 — 미확정]** 교보생명 직접 VASP 인가 취득 후 구현. Phase 1에서는 해당 기능을 VASP가 대행합니다.
+
 ---
 
 ## 왜 이 세션이 필요한가

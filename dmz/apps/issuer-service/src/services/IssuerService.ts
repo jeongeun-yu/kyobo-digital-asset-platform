@@ -40,10 +40,13 @@ export class IssuerService {
     const aml = await this.deps.vaspAdapter.screenAddress(account.walletAddr);
     if (aml.flagged) throw new Error(`IssuerService: AML flagged: ${aml.reason}`);
 
-    const receipt = await this.deps.chainAdapter.sendTransaction({
-      contractAddr: this.deps.nftIssuerAddr,
-      abi:          NFT_ISSUER_ABI,
-      method:       'issueActivityNFT',
+    // ── Phase 1: VASP(월렛원)에 TX 위탁 ──────────────────────────────
+    // DMZ는 TX를 직접 서명하지 않는다. VASP가 서명·브로드캐스트 후
+    // NFT_ISSUED Webhook으로 결과를 통보한다 (비동기 완료).
+    const vaspReceipt = await this.deps.vaspAdapter.submitTransaction({
+      contractAddr:   this.deps.nftIssuerAddr,
+      abi:            NFT_ISSUER_ABI,
+      method:         'issueActivityNFT',
       args: [
         account.walletAddr,
         `0x${Buffer.from(activityId).toString('hex').padEnd(64, '0')}`,
@@ -54,21 +57,32 @@ export class IssuerService {
           signature: oracleData.signature,
         },
       ],
+      idempotencyKey: activityId,
     });
 
-    if (receipt.status === 'failed') {
-      throw new Error(`IssuerService: tx failed: ${receipt.txHash}`);
+    if (vaspReceipt.status === 'failed') {
+      throw new Error(`IssuerService: VASP TX failed: ${vaspReceipt.txHash}`);
     }
 
+    // Phase 3 전환 시 위 블록을 아래로 교체 (자체 Custody 인가 취득 후):
+    // const receipt = await this.deps.chainAdapter.sendTransaction({
+    //   contractAddr: this.deps.nftIssuerAddr,
+    //   abi:          NFT_ISSUER_ABI,
+    //   method:       'issueActivityNFT',
+    //   args:         [...],
+    // });
+    // ─────────────────────────────────────────────────────────────────
+
     // fire-and-forget: 알림 실패가 발행 결과에 영향 주지 않음
+    // 원장 최종 기록은 NFT_ISSUED Webhook 수신 후 Consumer가 처리한다
     this.deps.coreBanking.notifyReward({
       userId,
       rewardType: 'ACTIVITY_NFT',
       tokenId:    activityId,
-      txHash:     receipt.txHash,
-      issuedAt:   receipt.timestamp,
+      txHash:     vaspReceipt.txHash,
+      issuedAt:   vaspReceipt.timestamp,
     }).catch(err => console.error('[IssuerService] CoreBanking notify failed:', err));
 
-    return { txHash: receipt.txHash };
+    return { txHash: vaspReceipt.txHash };
   }
 }

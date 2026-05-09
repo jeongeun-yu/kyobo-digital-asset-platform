@@ -3,6 +3,18 @@
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 25분 + 실습 30분  
 > 대상: `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
+---
+
+> **Phase 1 Webhook 발신자 구분**  
+> Phase 1에서 WebhookReceiver가 수신하는 이벤트는 두 종류다.  
+> - `ACTIVITY_ACHIEVED` — **내부망(교보 앱 서버)** 발신: 사용자 활동 달성 알림  
+> - `NFT_ISSUED` — **월렛원(외부 VASP)** 발신: 온체인 TX 확정 후 발행 완료 콜백  
+>
+> Phase 3에서 직접 Custody를 운영하면 `NFT_ISSUED`는 VASP Webhook이 아니라  
+> `ChainEventListener`가 블록체인 이벤트를 직접 구독해 처리한다.
+
 ---
 
 # 이 세션이 답하는 질문

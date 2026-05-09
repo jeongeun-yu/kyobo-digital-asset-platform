@@ -3,6 +3,13 @@
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S13 · 1시간  
 > 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
+> **Phase 1 TX 상태머신 특이사항**  
+> - `handleMined()` 트리거: Phase 1에서는 직접 체인을 폴링하지 않는다. **월렛원 Webhook** 콜백(`NFT_ISSUED`)이 DMZ WebhookReceiver → Redis Streams → Consumer 경로를 거쳐 `handleMined()`를 호출한다.  
+> - `sendTransaction()` 직접 호출은 없다: TX 서명·브로드캐스트는 `vaspAdapter.submitTransaction()`으로 월렛원에 위탁한다. `chainAdapter.sendTransaction()`은 Phase 3에서 활성화된다.  
+> - Phase 3 전환 시: `KyoboVASPAdapter`로 교체하고 `chainAdapter.sendTransaction()` + 자체 HSM/MPC 서명 경로가 활성화된다.
+
 ---
 
 ## M2 → M3 연결
@@ -512,6 +519,8 @@ async submitMintRequest(params: {
 
   try {
     const walletAddr = await this.wallet.getWalletAddr(params.userId);
+    // Phase 1: vaspAdapter.submitTransaction() 으로 대체 — 월렛원 REST API 호출
+    // Phase 3 이후 활성화: chainAdapter.sendTransaction() 직접 호출 (자체 Custody 인가 취득 후)
     const { txHash } = await this.vasp.submitMint({
       to: walletAddr,
       tokenId: params.tokenId,
@@ -595,6 +604,8 @@ VASP Webhook이나 Redis Consumer는 **At-least-once** 방식이다. 같은 이�
 
 ```typescript
 // handleMined — PENDING/SUBMITTED → MINED
+// Phase 1: 월렛원 Webhook(NFT_ISSUED) → WebhookReceiver → Redis Streams → Consumer 경로로 트리거됨
+// Phase 3 이후 활성화: ChainEventListener가 블록체인 직접 구독 → handleMined() 직접 호출
 async handleMined(requestId: string, blockNumber: number): Promise<void> {
   const req = await this._getOrThrow(requestId);
   if (req.status !== 'PENDING' && req.status !== 'SUBMITTED') return; // ← 가드

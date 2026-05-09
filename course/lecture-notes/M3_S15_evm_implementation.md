@@ -214,8 +214,13 @@ const ERC1155_ABI = [
 
 ## 4. mintNFT / mintNFTBatch / burnNFT
 
+> Phase 1 실습 주의: `mintNFT` / `sendTransaction`은 **Phase 3 실습 대상**이다.  
+> Phase 1에서는 privateKey 없이 read-only 모드로 동작하므로 이 메서드를 호출하면 에러가 발생한다.  
+> Phase 1 실습에서는 `queryEvents` / `getReceipt` (read-only 경로)만 사용한다.
+
 ```typescript
 // EVMAdapter.ts:82
+// Phase 3 이후 활성화: 자체 Custody 인가 취득 후 (Phase 1에서는 VASP가 서명·브로드캐스트)
 async mintNFT(params: MintParams): Promise<TransactionReceipt> {
   return this.sendTransaction({
     contractAddr: params.contractAddr,
@@ -254,8 +259,14 @@ S13에서 설계한 `requestId`는 컨트랙트 calldata에 포함시키는 것�
 
 ## 5. sendTransaction — TX 전송의 핵심
 
+> Phase 1: privateKey가 없으면 이 메서드는 `'EVMAdapter: read-only mode, no private key'` 에러를 던진다.  
+> Phase 1에서는 `vaspAdapter.submitTransaction()` 으로 대체된다.  
+> Phase 3 이후 활성화: 자체 Custody 인가 취득 후 privateKey 주입으로 활성화됨.
+
 ```typescript
 // EVMAdapter.ts:140
+// Phase 1: vaspAdapter.submitTransaction() 으로 대체 (이 메서드는 미호출)
+// Phase 3 이후 활성화: 자체 Custody 인가 취득 후 privateKey 주입
 async sendTransaction(params: ContractCallParams): Promise<TransactionReceipt> {
   if (!this.wallet) throw new Error('EVMAdapter: read-only mode, no private key');
 

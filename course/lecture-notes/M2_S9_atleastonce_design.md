@@ -1,5 +1,7 @@
 # M2 S9 — 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > Block B — DMZ 이벤트 파이프라인 · M2 S9 · 강의 55분  
 > 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 

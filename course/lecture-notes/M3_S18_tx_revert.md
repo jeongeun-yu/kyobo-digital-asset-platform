@@ -1,5 +1,8 @@
 # M3 S18 — 트랜잭션 REVERT 원인과 안전한 복구 설계
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
+> **Phase 1 맥락:** REVERT/TIMEOUT 발생 시 VASP로부터 Webhook 수신이 지연되거나 누락될 수 있습니다. 이 경우 `pollStaleRequests()`가 발동하여 `IBlockchainAdapter.getReceipt()`로 on-chain 상태를 직접 조회합니다.
+
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S18 · 1시간  
 > 대상: `dmz/packages/vasp/src/recovery/VaspRecoveryService.ts`
 

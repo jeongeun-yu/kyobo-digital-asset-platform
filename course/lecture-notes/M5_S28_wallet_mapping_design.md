@@ -1,5 +1,8 @@
 # M5 S28 — 온체인 식별자와 내부 사용자 ID의 매핑 설계
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
+> **Phase 1 맥락:** 지갑 주소는 월렛원이 생성·관리합니다. 교보 시스템은 `userId ↔ walletAddr` 매핑만 내부 DB에 보관합니다. Phase 3에서는 자체 HSM이 주소를 파생합니다.
+
 > 모듈 5 · 세션 28 · 1시간  
 > 스켈레톤: `dmz/apps/issuer-service/src/services/WalletMappingService.ts`
 

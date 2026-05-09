@@ -3,6 +3,14 @@
 > 모듈 8 · 세션 49 · 1시간  
 > 스켈레톤: `dmz/packages/vasp/src/governance/KeyGovernanceService.ts`
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
+> **Phase 1 VASP 위탁 맥락에서의 Travel Rule**  
+> Phase 1에서 교보생명은 TX를 직접 브로드캐스트하지 않는다. 월렛원(인가 VASP)이 서명·브로드캐스트를 담당한다.  
+> Travel Rule 의무의 일차 이행 주체는 **TX를 실제 브로드캐스트하는 VASP(월렛원)**이다.  
+> 교보생명은 월렛원에 `TravelRuleData`(발신인·수신인 정보)를 포함해 발행 요청을 전달할 의무가 있다.  
+> Phase 3에서 교보가 직접 VASP 인가를 취득하면 Travel Rule 이행 책임이 교보로 직접 귀속된다.
+
 ---
 
 ## 강의 파트 (25분)

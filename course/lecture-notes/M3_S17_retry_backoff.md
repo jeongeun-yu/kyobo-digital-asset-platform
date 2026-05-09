@@ -1,5 +1,7 @@
 # M3 S17 — Retry + Backoff + Webhook 수준 Idempotency
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S17 · 강의 60분  
 > 대상: `dmz/packages/event-engine/src/webhook/RetryHandler.ts`  
 >       `dmz/packages/event-engine/src/webhook/IdempotencyGuard.ts`  

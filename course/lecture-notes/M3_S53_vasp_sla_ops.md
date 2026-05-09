@@ -4,6 +4,15 @@
 > 전제: S13 TxStateMachineService 구현 완료, S17 RetryHandler 운영 중  
 > 스켈레톤: `dmz/packages/vasp/src/admin/VASPMonitorService.ts`
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
+> **Phase 1 의존성 맥락**  
+> Phase 1에서 TX 실행(서명·브로드캐스트·온체인 확정)은 전적으로 월렛원(VASP)에 위탁된다.  
+> 따라서 VASP SLA 장애는 교보 시스템의 NFT 발행 파이프라인 전체에 직접 영향을 준다.  
+> - 월렛원 가용성 저하 → `submitTransaction()` 실패 → TX PENDING 체류 급증  
+> - 월렛원 Webhook 지연 → `handleMined()` 미호출 → SUBMITTED 상태 고착  
+> Phase 3에서 직접 Custody로 전환하면 SLA 의존 대상이 외부 VASP에서 자체 인프라(RPC 노드, HSM)로 바뀐다.
+
 > ⚠️ **운영 세션** — S13~S22에서 TX 상태머신·재시도·복구 코드를 구현했다. 이번 세션은 **그 코드가 실제로 동작 중일 때 운영자가 무엇을 보고, 언제 행동하는가**다. "월렛원이 느려졌다"는 알림을 받은 운영자가 L1~L4 중 어디서 멈출지 판단하는 것이 핵심이다.
 
 ---

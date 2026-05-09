@@ -1,5 +1,7 @@
 # M2 S52 — Consumer 장애 Runbook · 유형별 대응 절차와 모니터링 설계
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 2 · 세션 52 · 1시간 `운영`  
 > 전제: S10에서 ConsumerGroupWorker 구현 완료, S11에서 DLQHandler 운영 중  
 > 스켈레톤: `dmz/packages/event-engine/src/admin/ConsumerMonitorService.ts`

@@ -1,5 +1,7 @@
 # M4 S25 — 온체인 상태와 내부 원장의 정합성 유지 · ReconcileService
 
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
+
 > 모듈 4 · 세션 25 · 1시간  
 > 스켈레톤: `dmz/packages/core-banking/src/reconcile/ReconcileService.ts`
 
