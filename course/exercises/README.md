@@ -35,13 +35,31 @@ Copy-Item .env.example .env
 | `npm run exercise:s05` | `M2/S05_webhook.ts` | WebhookServer 기동 |
 | `npm run exercise:s05-sig` | `M2/S05_make_sig.ts` | HMAC-SHA256 서명 직접 생성 |
 | `npm run exercise:s06` | `M2/S06_hmac_webhook.ts` | HMAC 검증 로직 구현 |
-| `npm run exercise:s07` | `M2/S07_redis_stream.ts` | Redis Streams XADD / XREAD |
+| `npm run exercise:s07` | `M2/S07_redis_stream.ts` | Redis Streams XADD / XREAD (Mock) |
+| `npm run exercise:s07:docker` | `M2/S07_redis_stream_docker.ts` | Redis Streams — 실제 Redis 연동 (Docker 필요) |
 | `npm run exercise:s09` | `M2/S09_atleastonce.ts` | At-least-once 보장 (XREADGROUP + XACK) |
 | `npm run exercise:s10` | `M2/S10_handle_with_retry.ts` | 지수 백오프 재시도 핸들러 |
 | `npm run exercise:s11` | `M2/S11_dlq.ts` | Dead Letter Queue 이동 |
 | `npm run exercise:s12` | `M2/S12_e2e.ts` | 전체 파이프라인 E2E 통합 |
 
 > 참고 구현체: `dmz/packages/event-engine/src/`
+
+#### S07 Docker 버전 사용법
+
+```powershell
+# 1. Redis 기동
+docker compose -f docker-compose.redis.yml up -d
+
+# 2. 실습 실행
+npm run exercise:s07:docker
+
+# 3. 실시간 확인 (다른 터미널)
+docker exec kyobo-redis redis-cli XRANGE kyobo:events - +
+docker exec kyobo-redis redis-cli XPENDING kyobo:events issuer-consumers - + 10
+
+# 4. 정리
+docker compose -f docker-compose.redis.yml down
+```
 
 ---
 
