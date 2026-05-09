@@ -34,8 +34,8 @@ docker exec -it kyobo-redis redis-cli -a redis_local_pw
 
 **2단계: Redis Cloud DB 생성**
 
-1. https://cloud.redis.io 접속 → 무료 계정 생성
-2. **New database** → Free 플랜 선택 → DB 생성
+1. https://cloud.redis.io 접속 → 
+2. **New database** → Try 30 MB for free 선택 → DB 생성
 3. DB 화면에서 **Connect** 버튼 클릭 → **Redis CLI** 탭에서 접속 정보 확인
 
 **3단계: 접속**
