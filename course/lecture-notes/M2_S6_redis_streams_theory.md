@@ -224,7 +224,7 @@ async ping(): Promise<boolean> {
 ---
 
 ## 4. 핵심 개념 3가지
-
+  
 ### 개념 ①: 202 패턴
 - HTTP 202 Accepted = "요청은 받았지만 처리는 나중에"
 - 이 코드의 publish는 Redis에 적재만 하고 즉시 리턴 → 200ms 안에 끝남
