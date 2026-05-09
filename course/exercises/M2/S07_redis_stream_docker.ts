@@ -198,6 +198,21 @@ const nftIssuedProcessor: EventProcessor = {
 };
 
 // ────────────────────────────────────────────────────────────────────────
+// 유틸: Enter 대기
+// ────────────────────────────────────────────────────────────────────────
+import * as readline from 'readline';
+
+function pause(hint: string): Promise<void> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(`\n⏸  ${hint}\n   → 확인 후 Enter 를 누르면 계속됩니다... `, () => {
+      rl.close();
+      resolve();
+    });
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // 실행
 // ────────────────────────────────────────────────────────────────────────
 (async () => {
@@ -206,12 +221,20 @@ const nftIssuedProcessor: EventProcessor = {
   const redis    = wrapRedis(rawRedis);
   console.log('✅ Redis 연결 완료\n');
 
-  // ── Part 1: RedisStreamPublisher ──────────────────────────────────
-  console.log('=== Part 1: RedisStreamPublisher ===\n');
+  // ── Step 1: XGROUP CREATE ─────────────────────────────────────────
+  console.log('=== Step 1: XGROUP CREATE ===\n');
 
   const publisher = new RedisStreamPublisher(redis);
   await publisher.initialize();
   await publisher.initialize(); // 두 번째 호출 → BUSYGROUP 무시 확인
+
+  await pause(
+    'XGROUP 생성 완료. 다른 터미널에서 확인:\n' +
+    '   docker exec kyobo-redis redis-cli XINFO GROUPS kyobo:events'
+  );
+
+  // ── Step 2: XADD ─────────────────────────────────────────────────
+  console.log('\n=== Step 2: XADD (메시지 발행) ===\n');
 
   const event: StreamEvent = {
     streamKey:   'kyobo:events',
@@ -219,9 +242,8 @@ const nftIssuedProcessor: EventProcessor = {
     payload:     { tokenId: '42', owner: '0xKYOBO' },
     txHash:      '0xdeadbeef001',
     blockNumber: 18500001,
-    requestId:   `req-${Date.now()}`,   // 실제 Redis는 중복 requestId가 재실행 시 충돌하므로 동적 생성
+    requestId:   `req-${Date.now()}`,
   };
-
   const messageId = await publisher.publish(event);
   console.log('\n[result] messageId:', messageId);
   console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
@@ -237,17 +259,16 @@ const nftIssuedProcessor: EventProcessor = {
   const burnedId = await publisher.publish(burned);
   console.log('[result] NFT_BURNED messageId:', burnedId);
 
-  // redis-cli 확인 힌트
-  console.log('\n💡 다른 터미널에서 확인:');
-  console.log('   docker exec kyobo-redis redis-cli XLEN kyobo:events');
-  console.log('   docker exec kyobo-redis redis-cli XRANGE kyobo:events - +\n');
+  await pause(
+    '메시지 2건 발행 완료. 다른 터미널에서 확인:\n' +
+    '   docker exec kyobo-redis redis-cli XLEN kyobo:events\n' +
+    '   docker exec kyobo-redis redis-cli XRANGE kyobo:events - +'
+  );
 
-  // ── Part 2: ConsumerGroupWorker ───────────────────────────────────
-  console.log('=== Part 2: ConsumerGroupWorker ===\n');
+  // ── Step 3: XREADGROUP + XACK ────────────────────────────────────
+  console.log('\n=== Step 3: XREADGROUP + XACK (컨슈머 처리) ===\n');
 
-  // DLQ도 실제 Redis에 연결 (스트림 키: kyobo:events:dlq)
-  const dlqRedis = wrapRedis(rawRedis);
-  const dlq = new DLQHandler(dlqRedis, {
+  const dlq = new DLQHandler(wrapRedis(rawRedis), {
     async sendAlert(msg: string) { console.log('[DLQ ALERT]', msg); },
   });
 
@@ -265,18 +286,21 @@ const nftIssuedProcessor: EventProcessor = {
     },
   );
 
-  console.log('[worker] 시작 — 5초 후 자동 종료');
-  console.log('💡 처리 후 PEL 확인:');
-  console.log('   docker exec kyobo-redis redis-cli XPENDING kyobo:events issuer-consumers - + 10\n');
-
-  setTimeout(() => {
-    console.log('\n[worker] stop() 호출');
-    worker.stop();
-  }, 5000);
-
+  // 메시지를 1회 처리하고 멈추도록 2초 후 stop
+  console.log('[worker] 시작 — XREADGROUP 실행 중...\n');
+  setTimeout(() => worker.stop(), 2000);
   await worker.start();
-  console.log('[worker] 종료 완료');
+
+  await pause(
+    'XREADGROUP + XACK 완료. PEL 이 비어 있어야 정상:\n' +
+    '   docker exec kyobo-redis redis-cli XPENDING kyobo:events issuer-consumers - + 10\n' +
+    '   docker exec kyobo-redis redis-cli XLEN kyobo:events   (스트림은 남아 있음)'
+  );
+
+  // ── Step 4: 정리 ─────────────────────────────────────────────────
+  console.log('\n=== Step 4: 스트림 초기화 (선택) ===');
+  console.log('   docker exec kyobo-redis redis-cli DEL kyobo:events');
 
   await rawRedis.quit();
-  console.log('\n🔌 Redis 연결 종료');
+  console.log('\n🔌 Redis 연결 종료. 실습 완료!');
 })();
