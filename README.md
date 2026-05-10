@@ -386,8 +386,11 @@ M2·M3 실습 파일은 `dmz/packages/event-engine` 폴더에서 실행.
 ```powershell
 cd dmz\packages\event-engine
 
-# S06 HMAC 서명 검증 실습
-npx ts-node ..\..\..\..\course\exercises\M2\S06_hmac_webhook.ts
+# S06 Redis Streams 실습
+npx ts-node ..\..\..\..\course\exercises\M2\S06_redis_stream.ts
+
+# S08 HMAC 검증 실습
+npx ts-node ..\..\..\..\course\exercises\M2\S08_hmac_webhook.ts
 
 # S09 At-least-once 실습
 npx ts-node ..\..\..\..\course\exercises\M2\S09_atleastonce.ts
@@ -610,9 +613,9 @@ kyobo-digital-asset-platform/
 | `typescript-warmup-handout.md` | TypeScript 워밍업 핸드아웃 |
 | `M1_architecture_setup.md` | 전체 아키텍처 · 개발 환경 구성 |
 | `M2_S5_webhook_202_pattern.md` | WebhookServer · 202 비동기 패턴 |
-| `M2_S6_hmac_queue_service.md` | HMAC-SHA256 서명 검증 |
-| `M2_S7_redis_streams_theory.md` | Redis Streams 이론 · XADD/XREAD |
-| `M2_S8_redis_streams_cli.md` | Redis CLI 직접 조작 |
+| `M2_S6_redis_streams_theory.md` | Redis Streams 이론 · XADD/XREAD |
+| `M2_S7_redis_streams_cli.md` | Redis Streams CLI 직접 조작 |
+| `M2_S8_hmac_queue_service.md` | HMAC-SHA256 서명 검증 |
 | `M2_S9_atleastonce_design.md` | At-least-once · 멱등성 설계 |
 | `M2_S10_event_consumer_impl.md` | ConsumerGroupWorker 구현 |
 | `M2_S11_dlq_design.md` | Dead Letter Queue 설계 |
