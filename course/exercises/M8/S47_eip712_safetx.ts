@@ -47,7 +47,7 @@ export const KYOBO_NFT     = '0xKyoboNFTContractAddress0000000000000000';
  *   - ethers.keccak256(encodedData)
  */
 export function calcDomainSeparator(chainId: number, safeAddress: string): string {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 export interface SafeTxFields {
@@ -76,7 +76,7 @@ export interface SafeTxFields {
  *             gasToken=ethers.ZeroAddress, refundReceiver=ethers.ZeroAddress, nonce=0n
  */
 export function calcStructHash(tx: SafeTxFields): string {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 /**
@@ -88,7 +88,7 @@ export function calcStructHash(tx: SafeTxFields): string {
  *   - ethers.keccak256(concatenated)
  */
 export function calcSafeTxHash(domainSeparator: string, structHash: string): string {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ─── 서명 유틸리티 ────────────────────────────────────────────────────────────
@@ -101,8 +101,8 @@ export function calcSafeTxHash(domainSeparator: string, structHash: string): str
  *   - const sig = wallet.signingKey.sign(hash)
  *   - ethers.Signature.from(sig).serialized 반환
  */
-export function signEip712Hash(wallet: ethers.Wallet, hash: string): string {
-  throw new Error('TODO: 구현하세요');
+export function signEip712Hash(wallet: ethers.HDNodeWallet | ethers.Wallet, hash: string): string {
+  return undefined as never;
 }
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────────────

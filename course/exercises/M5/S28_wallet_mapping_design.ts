@@ -144,12 +144,12 @@ export class WalletMappingService {
    * 미검증 → WalletNotVerifiedError (서명 검증 후에만 발행 가능)
    */
   async getWalletAddr(userId: string): Promise<string> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /** provision() 완료 후 1회 호출 — DB에 매핑 저장 */
   async saveMapping(userId: string, walletAddr: string, vaspType: VaspType): Promise<void> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /** 서명 검증 완료 후 verified=true 업데이트 (S29 verifyOwnership() 에서 호출) */
@@ -159,7 +159,7 @@ export class WalletMappingService {
 
   /** 역방향 조회: 지갑 주소 → userId (감사·모니터링 용도) */
   async getUserIdByAddr(walletAddr: string): Promise<string | null> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 

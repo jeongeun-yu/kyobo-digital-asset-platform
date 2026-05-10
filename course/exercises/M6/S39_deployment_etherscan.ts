@@ -65,8 +65,7 @@ export interface DeploymentResult {
  * 힌트: 각 step의 description에 위 키워드가 포함되어야 테스트가 통과한다.
  */
 export function simulateUUPSDeployment(adminAddress: string): DeploymentResult {
-  throw new Error('TODO: 구현하세요 — UUPS 배포 3단계 시뮬레이션 반환');
-  void adminAddress;
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -108,8 +107,7 @@ export interface ProxyAddressJson {
  *   }
  */
 export function buildProxyAddressJson(result: DeploymentResult): ProxyAddressJson {
-  throw new Error('TODO: 구현하세요 — result에서 proxy, impl, deployedAt 추출');
-  void result;
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -133,8 +131,7 @@ export function buildProxyAddressJson(result: DeploymentResult): ProxyAddressJso
  * 힌트: 빈 문자열('')로 섹션 구분하면 줄 수를 맞추기 쉽다.
  */
 export function generatePostDeployChecklist(proxyAddress: string, adminAddress: string, rpcUrl: string): string[] {
-  throw new Error('TODO: 구현하세요 — 12개 이상의 cast call/verify/etherscan 명령어 반환');
-  void proxyAddress; void adminAddress; void rpcUrl;
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────

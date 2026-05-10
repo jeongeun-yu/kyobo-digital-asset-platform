@@ -34,7 +34,7 @@ export const DOMAIN_TYPEHASH = ethers.keccak256(
 // 테스트 파라미터
 export const SAFE_ADDRESS  = '0x1234567890123456789012345678901234567890';
 export const CHAIN_ID      = 31337; // hardhat local
-export const KYOBO_NFT     = '0xKyoboNFTContractAddress0000000000000000';
+export const KYOBO_NFT     = '0x0000000000000000000000000000000000000001'; // 테스트용 플레이스홀더
 
 // ─── EIP-712 계산 함수 ────────────────────────────────────────────────────────
 
@@ -108,7 +108,7 @@ export function calcSafeTxHash(domainSeparator: string, structHash: string): str
  * 개인키로 EIP-712 해시에 서명
  * (eth_signTypedData 대신 직접 ECDSA 서명 — 동일한 결과)
  */
-export function signEip712Hash(wallet: ethers.Wallet, hash: string): string {
+export function signEip712Hash(wallet: ethers.HDNodeWallet | ethers.Wallet, hash: string): string {
   const sig = wallet.signingKey.sign(hash);
   return ethers.Signature.from(sig).serialized;
 }

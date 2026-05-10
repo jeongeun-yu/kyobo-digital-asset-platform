@@ -110,7 +110,7 @@ export class LedgerService {
   // ────────────────────────────────────────────────────────────────────────
 
   async createMintRequest(userId: string, policyId: string): Promise<MintRequest> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   async getMintRequest(requestId: string): Promise<MintRequest | null> {
@@ -141,7 +141,7 @@ export class LedgerService {
       errorMsg?: string;
     },
   ): Promise<void> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ── processed_events — ON CONFLICT DO NOTHING 시뮬레이션 ──────────────
@@ -165,7 +165,7 @@ export class LedgerService {
     blockNumber: bigint,
     payload: unknown,
   ): Promise<ProcessedEventResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ── user_nft_holdings — UNIQUE (userId, tokenId) 중복 방어 ─────────────
@@ -182,7 +182,7 @@ export class LedgerService {
   // ────────────────────────────────────────────────────────────────────────
 
   async addHolding(userId: string, tokenId: bigint, policyId: string): Promise<void> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   async getHoldings(userId: string): Promise<UserNftHolding[]> {
@@ -211,7 +211,7 @@ export class LedgerService {
     beforeState: unknown | null;
     afterState: unknown;
   }): Promise<void> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   getAuditLog(): AuditLogEntry[] {

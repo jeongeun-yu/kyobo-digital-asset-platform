@@ -125,7 +125,7 @@ export function simulateVulnerableBurn(
   callCount: { value: number },
   maxReentrancy: number,
 ): BurnResult {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ export function simulateSafeBurn(
   callCount: { value: number },
   maxReentrancy: number,
 ): { success: boolean; burnedCount: number } {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ export function checkWithTxOrigin(
   _msgSender: string, // 현재 함수를 직접 호출한 주소 (컨트랙트일 수 있음)
   owner: string,
 ): boolean {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ export function checkWithMsgSender(
   msgSender: string,  // 직접 호출한 주소 — 컨트랙트이면 권한 없음
   owner: string,
 ): boolean {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ export function checkWithMsgSender(
 // ────────────────────────────────────────────────────────────────────────
 
 export function classifyFindings(findings: SlitherFinding[]): Record<SlitherSeverity, SlitherFinding[]> {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────

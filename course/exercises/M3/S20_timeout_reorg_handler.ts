@@ -79,7 +79,7 @@ export function calcBumpedGasPrice(originalGwei: number): number {
   const GAS_BUMP_PERCENT = 30;
   // TODO: 구현하세요
   // 힌트: Math.ceil(originalGwei * (1 + GAS_BUMP_PERCENT / 100))
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // TODO [1-2]: canBothBeMined 함수를 완성하라
@@ -88,7 +88,7 @@ export function calcBumpedGasPrice(originalGwei: number): number {
 export function canBothBeMined(tx1: { nonce: number }, tx2: { nonce: number }): boolean {
   // TODO: 구현하세요
   // 힌트: tx1.nonce !== tx2.nonce
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // TODO [1-3]: isRetryable 함수를 완성하라
@@ -97,7 +97,7 @@ export function canBothBeMined(tx1: { nonce: number }, tx2: { nonce: number }): 
 //   - REORG   → true  (재제출 가능)
 export function isRetryable(type: 'REVERT' | 'TIMEOUT' | 'REORG'): boolean {
   // TODO: 구현하세요
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ async function section2() {
   //   - req?.retryCount === 1            (retryCount 증가)
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section2 정상 케이스 구현하세요');
+    return undefined as never;
   }
 
   // TODO [2-2]: retryCount가 한도를 초과한 경우 FAILED 전이 or 예외 확인
@@ -142,7 +142,7 @@ async function section2() {
   //   이 경우 TxStateMachineService가 FAILED로 전이하거나 예외를 그대로 전파한다
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section2 maxRetry 케이스 구현하세요');
+    return undefined as never;
   }
 
   // TODO [2-3]: PENDING이 아닌 상태(SUBMITTED)에서 handleTimeout → no-op 확인
@@ -154,7 +154,7 @@ async function section2() {
   //   check('SUBMITTED 상태에서 handleTimeout → 상태 변경 없음', req?.status === 'SUBMITTED');
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section2 가드 케이스 구현하세요');
+    return undefined as never;
   }
 }
 
@@ -172,7 +172,7 @@ async function section2() {
 export function reorgEligible(status: MintRequest['status']): boolean {
   // TODO: 구현하세요
   // 힌트: status === 'MINED'
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ async function section4() {
   //   check('REORG 후 TX 재포함 → status: MINED 복귀', req?.status === 'MINED');
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section4 MINED 복귀 케이스 구현하세요');
+    return undefined as never;
   }
 
   // TODO [4-2]: 재편 후 TX가 영구 소실 → FAILED 전이 확인
@@ -215,13 +215,13 @@ async function section4() {
   //   check('failReason에 reorg 포함', req?.failReason?.includes('reorg') ?? false);
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section4 FAILED 전이 케이스 구현하세요');
+    return undefined as never;
   }
 
   // TODO [4-3]: MINED가 아닌 상태(CONFIRMED)에서 handleReorg → no-op 확인
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section4 가드 케이스 구현하세요');
+    return undefined as never;
   }
 }
 
@@ -259,7 +259,7 @@ async function section5() {
   //   확인: result.action === 'RESUBMITTED', req?.status === 'SUBMITTED', req?.txHash === '0xNEW_TX'
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section5 재제출 성공 케이스 구현하세요');
+    return undefined as never;
   }
 
   // TODO [5-2]: resubmit 전패 → action: FAILED, status: FAILED, REORG_RECOVERY_FAILED 알림 확인
@@ -270,13 +270,13 @@ async function section5() {
   //         notifier.sentEvents에 type: 'REORG_RECOVERY_FAILED' 이벤트 존재
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section5 재제출 실패 케이스 구현하세요');
+    return undefined as never;
   }
 
   // TODO [5-3]: FAILED 상태에서 VaspRecovery.handleReorg → 예외 발생 확인
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section5 잘못된 상태 케이스 구현하세요');
+    return undefined as never;
   }
 }
 
@@ -303,7 +303,7 @@ export function makeIdempotencyGuard() {
     //   if (processedIds.has(requestId)) return 'SKIP';
     //   processedIds.add(requestId);
     //   return 'PROCESSED';
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   };
 }
 

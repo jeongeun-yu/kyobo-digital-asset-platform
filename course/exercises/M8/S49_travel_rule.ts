@@ -91,7 +91,7 @@ export const TRAVEL_RULE_THRESHOLD = BigInt(1_000_000);
  *   - 특금법 §8의4: "이상(>=)" — "초과(>)" 아님! 경계값 주의
  */
 export function checkTravelRule(amount: bigint, travelRuleData?: TravelRuleData | null): void {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ─── proposeTx 통합 시뮬레이션 ────────────────────────────────────────────────

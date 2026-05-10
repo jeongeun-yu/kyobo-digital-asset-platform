@@ -139,7 +139,7 @@ export class WalletMappingService {
     signature:  string;
     nonce:      string;
   }): Promise<boolean> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
     // 힌트:
     // const { userId, walletAddr, signature, nonce } = params;
     // ① storedNonce = await this.nonceRepo.find(userId)

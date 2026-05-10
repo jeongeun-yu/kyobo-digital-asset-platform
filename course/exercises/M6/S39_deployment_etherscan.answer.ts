@@ -243,7 +243,7 @@ function check(label: string, pass: boolean) {
   );
   check(
     'Implementation 슬롯이 일반 slot 0과 다름 — 상태 변수와 충돌 없음',
-    ERC1967_SLOTS.IMPLEMENTATION !== '0x0000000000000000000000000000000000000000000000000000000000000000',
+    (ERC1967_SLOTS.IMPLEMENTATION as string) !== '0x0000000000000000000000000000000000000000000000000000000000000000',
   );
 
   console.log('\n  Hardhat에서 Implementation 주소 읽기:');

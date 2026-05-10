@@ -181,7 +181,7 @@ export class SimulatedGnosisSafe {
 // ─── 단일 HOT 키 vs 2-of-3 비교 ─────────────────────────────────────────────
 
 export interface SingleKeySystem {
-  hotKey: ethers.Wallet;
+  hotKey: ethers.HDNodeWallet | ethers.Wallet;
   execute(action: string): string;
 }
 
@@ -203,12 +203,12 @@ function check(label: string, pass: boolean) {
   if (!pass) process.exitCode = 1;
 }
 
-export function makeSigner(): { wallet: ethers.Wallet; address: string } {
+export function makeSigner(): { wallet: ethers.HDNodeWallet | ethers.Wallet; address: string } {
   const wallet = ethers.Wallet.createRandom();
   return { wallet, address: wallet.address };
 }
 
-export function signHash(wallet: ethers.Wallet, hash: string): string {
+export function signHash(wallet: ethers.HDNodeWallet | ethers.Wallet, hash: string): string {
   const sig = wallet.signingKey.sign(hash);
   return ethers.Signature.from(sig).serialized;
 }
@@ -250,7 +250,7 @@ export function signHash(wallet: ethers.Wallet, hash: string): string {
 
   // 2-of-3: 서명자 A 키 탈취 → 단독으로 execTransaction 불가
   const txParams: SafeTxParams = {
-    to: '0xKyoboNFTProxy00000000000000000000000000',
+    to: '0x0000000000000000000000000000000000000002', // 테스트용 플레이스홀더
     value: 0n,
     data: '0x8456cb59', // pause() selector
     operation: 0,

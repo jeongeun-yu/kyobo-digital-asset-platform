@@ -116,7 +116,7 @@ export class KyoboNFTLifecycle {
    * from === '' → mint, to === '' → burn, 나머지 → transfer
    */
   private _update(_from: string, _to: string): void {
-    throw new Error('TODO: 구현하세요 — 정책 A/B에 따라 PAUSED 상태에서 예외 던지기');
+    return undefined as never;
   }
 
   // ── 발행 ────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ export class KyoboNFTLifecycle {
    *   6. balance.amount === amount이면 항목 제거 (splice), 아니면 amount 차감
    */
   burn(_caller: string, _from: string, _tokenId: bigint, _amount: bigint): void {
-    throw new Error('TODO: 구현하세요 — MINTER_ROLE 검증, _update(from, ""), 잔액 차감');
+    return undefined as never;
   }
 
   // ── 전송 ────────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ export class KyoboNFTLifecycle {
    *   2. this.state = 'UPGRADED'
    */
   authorizeUpgrade(_caller: string, _newImpl: string): void {
-    throw new Error('TODO: 구현하세요 — UPGRADER_ROLE 검증, this.state = "UPGRADED"');
+    return undefined as never;
   }
 
   // ── 조회 ────────────────────────────────────────────────────────────

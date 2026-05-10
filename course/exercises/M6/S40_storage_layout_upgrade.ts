@@ -78,7 +78,7 @@ export class EVMStorage {
 // ────────────────────────────────────────────────────────────────────────
 
 export function buildV1Layout(): EVMStorage {
-  throw new Error('TODO: 구현하세요 — slot 0~5에 KyoboNFT v1 변수 정의');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ export function buildV1Layout(): EVMStorage {
 // ────────────────────────────────────────────────────────────────────────
 
 export function buildV2SafeLayout(): EVMStorage {
-  throw new Error('TODO: 구현하세요 — buildV1Layout() 후 slot 6, 7에 새 변수 추가');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -172,17 +172,17 @@ export class InitializationVersionTracker {
 
   /** initializer = reinitializer(1) */
   initialize(_admin: string): void {
-    throw new Error('TODO: 구현하세요 — _initialized >= 1이면 예외, 아니면 _initialized = 1');
+    return undefined as never;
   }
 
   /** reinitializer(2) */
   initializeV2(_baseUri: string, _maxSupply: number): void {
-    throw new Error('TODO: 구현하세요 — _initialized >= 2이면 예외, 아니면 _initialized = 2');
+    return undefined as never;
   }
 
   /** reinitializer(3) */
   initializeV3(_newFeature: string): void {
-    throw new Error('TODO: 구현하세요 — _initialized >= 3이면 예외, 아니면 _initialized = 3');
+    return undefined as never;
   }
 
   getVersion(): number { return this._initialized; }
@@ -218,8 +218,7 @@ export function checkStorageLayoutCompatibility(
   v1Slots: number[],
   v2Slots: Array<{ slot: number; variable: string }>,
 ): StorageLayoutCheckResult {
-  throw new Error('TODO: 구현하세요 — v1MaxSlot 계산 후 충돌 슬롯 감지');
-  void v1Slots; void v2Slots;
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────

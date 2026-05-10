@@ -79,15 +79,15 @@ export class ImplementationV1 {
   constructor(private readonly storage: Storage) {}
 
   initialize(_admin: string): void {
-    throw new Error('TODO: 구현하세요 — storage[0]에 admin 저장, storage[1]에 false 저장');
+    return undefined as never;
   }
 
   getAdmin(): string | undefined {
-    throw new Error('TODO: 구현하세요 — storage[0] 반환');
+    return undefined as never;
   }
 
   isPaused(): boolean {
-    throw new Error('TODO: 구현하세요 — storage[1] 반환');
+    return undefined as never;
   }
 }
 
@@ -111,20 +111,20 @@ export class ImplementationV2 {
 
   // 기존 슬롯 레이아웃 완전 유지
   getAdmin(): string | undefined {
-    throw new Error('TODO: 구현하세요 — storage[0] 반환 (v1과 동일)');
+    return undefined as never;
   }
 
   isPaused(): boolean {
-    throw new Error('TODO: 구현하세요 — storage[1] 반환 (v1과 동일)');
+    return undefined as never;
   }
 
   // v2 신규 기능: slot 2에 새 변수 (끝에 추가)
   initializeV2(_baseUri: string): void {
-    throw new Error('TODO: 구현하세요 — storage[2]에 baseUri 저장, 중복 초기화 방지');
+    return undefined as never;
   }
 
   getBaseUri(): string | undefined {
-    throw new Error('TODO: 구현하세요 — storage[2] 반환');
+    return undefined as never;
   }
 }
 
@@ -160,7 +160,7 @@ export class VulnerableImpl {
 
   /** initializer modifier 없음 — 재호출 가능! */
   initialize(_admin: string): void {
-    throw new Error('TODO: 구현하세요 — this.admin = admin (보호 없음)');
+    return undefined as never;
   }
 
   getAdmin(): string | null { return this.admin; }
@@ -172,7 +172,7 @@ export class SafeImpl {
 
   /** initializer modifier 있음 — 한 번만 실행 보장 */
   initialize(_admin: string): void {
-    throw new Error('TODO: 구현하세요 — 이미 initialized이면 예외, 아니면 this.admin = admin');
+    return undefined as never;
   }
 
   getAdmin(): string | null { return this.admin; }

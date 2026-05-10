@@ -87,7 +87,7 @@ export class ActivityConditionStrategy implements IConditionStrategy {
   private static readonly GOAL_STEPS          = 10_000;
 
   async evaluate(event: ActivityEvent): Promise<ConditionResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 
@@ -111,7 +111,7 @@ export class CouponConditionStrategy implements IConditionStrategy {
   constructor(private readonly eligibilityChecker: { isEligible(userId: string, eventType: string): Promise<boolean> }) {}
 
   async evaluate(event: ActivityEvent): Promise<ConditionResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 
@@ -135,7 +135,7 @@ export class PremiumConditionStrategy implements IConditionStrategy {
   constructor(private readonly threshold: bigint) {}
 
   async evaluate(event: ActivityEvent): Promise<ConditionResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 

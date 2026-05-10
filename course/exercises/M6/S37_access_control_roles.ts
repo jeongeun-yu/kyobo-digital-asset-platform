@@ -86,18 +86,15 @@ export class KyoboNFTSimulator {
   private readonly tokens: NFTToken[] = [];
 
   constructor(adminAddress: string) {
-    throw new Error('TODO: 구현하세요 — DEFAULT_ADMIN_ROLE, MINTER_ROLE, PAUSER_ROLE, UPGRADER_ROLE 모두 adminAddress에 부여');
-    void adminAddress;
+    return undefined as never;
   }
 
   grantRole(caller: string, role: Role, account: string): void {
-    throw new Error('TODO: 구현하세요 — _requireRole DEFAULT_ADMIN_ROLE 후 _grantRole');
-    void caller; void role; void account;
+    return undefined as never;
   }
 
   revokeRole(caller: string, role: Role, account: string): void {
-    throw new Error('TODO: 구현하세요 — _requireRole DEFAULT_ADMIN_ROLE 후 _revokeRole');
-    void caller; void role; void account;
+    return undefined as never;
   }
 
   hasRole(role: Role, account: string): boolean {
@@ -114,32 +111,27 @@ export class KyoboNFTSimulator {
   }
 
   private _requireRole(role: Role, caller: string): void {
-    throw new Error('TODO: 구현하세요 — hasRole 확인 후 false이면 AccessControlUnauthorizedAccount 던지기');
-    void role; void caller;
+    return undefined as never;
   }
 
   private _requireNotPaused(): void {
-    throw new Error('TODO: 구현하세요 — this.paused이면 EnforcedPause 던지기');
+    return undefined as never;
   }
 
   mint(caller: string, to: string, tokenId: bigint, amount: bigint): void {
-    throw new Error('TODO: 구현하세요 — _requireRole, _requireNotPaused, amount 검증, tokens에 추가');
-    void caller; void to; void tokenId; void amount;
+    return undefined as never;
   }
 
   mintBatch(caller: string, to: string[], tokenIds: bigint[], amounts: bigint[]): void {
-    throw new Error('TODO: 구현하세요 — _requireRole, _requireNotPaused, 배열 길이 검증, tokens에 추가');
-    void caller; void to; void tokenIds; void amounts;
+    return undefined as never;
   }
 
   pause(caller: string): void {
-    throw new Error('TODO: 구현하세요 — _requireRole PAUSER_ROLE, 이미 paused이면 예외, this.paused = true');
-    void caller;
+    return undefined as never;
   }
 
   unpause(caller: string): void {
-    throw new Error('TODO: 구현하세요 — _requireRole PAUSER_ROLE, paused 아니면 예외, this.paused = false');
-    void caller;
+    return undefined as never;
   }
 
   isPaused(): boolean { return this.paused; }

@@ -139,7 +139,7 @@ export class IssuerService {
     activityId: string;
     oracleData: OracleData;
   }): Promise<{ txHash: string }> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 

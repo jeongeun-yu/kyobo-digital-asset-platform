@@ -152,7 +152,7 @@ export async function withExponentialBackoff<T>(
   fn: () => Promise<T>,
   opts: RetryOptions,
 ): Promise<T> {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ─── IssuerService (지수 백오프 + DLQ) ────────────────────────────────────────
@@ -184,7 +184,7 @@ export class MockIssuerService {
   async issueSingleWithRetry(params: {
     to: string; tokenId: bigint; amount: bigint; requestId: string; maxRetries: number;
   }): Promise<{ success: boolean; txId?: string }> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 

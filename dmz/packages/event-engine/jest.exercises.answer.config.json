@@ -1,0 +1,22 @@
+{
+  "preset": "ts-jest",
+  "testEnvironment": "node",
+  "forceExit": true,
+  "roots": ["<rootDir>/../../../course/exercises/__tests__"],
+  "testMatch": ["**/*.test.ts"],
+  "moduleNameMapper": {
+    "^@kyobo/event-engine$": "<rootDir>/src/index.ts",
+    "^(\\.\\./M\\d+/S\\d+_[^/]+)$": "$1.answer"
+  },
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", {
+      "diagnostics": { "warnOnly": true },
+      "tsconfig": {
+        "module": "CommonJS",
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "strict": false
+      }
+    }]
+  }
+}

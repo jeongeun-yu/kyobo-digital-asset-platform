@@ -144,7 +144,7 @@ export class LedgerService {
       errorMsg?: string;
     },
   ): Promise<MintRequest> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ export class LedgerService {
     blockNumber: bigint,
     payload: unknown,
   ): Promise<ProcessedEventResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ── addHolding (완성 제공) ───────────────────────────────────────────
@@ -196,7 +196,7 @@ export async function handleNFTIssued(
   ledger: LedgerService,
   event: { txHash: string; logIndex: number; blockNumber: bigint; tokenId: bigint; userId: string; policyId: string; requestId: string },
 ): Promise<{ processed: boolean }> {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────

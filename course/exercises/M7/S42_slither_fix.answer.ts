@@ -51,18 +51,18 @@ export function analyzeAccessPatterns(codeLines: string[]): AccessPattern[] {
         checkType: 'tx.origin',
         isSafe: false,
         recommendation: 'tx.origin을 msg.sender로 교체하거나 onlyRole modifier로 전환',
-      };
+      } as AccessPattern;
     }
 
     if (code.includes('msg.sender ==') || code.includes('msg.sender !=')) {
-      return { line, code, checkType: 'msg.sender', isSafe: true };
+      return { line, code, checkType: 'msg.sender', isSafe: true } as AccessPattern;
     }
 
     if (code.includes('onlyRole(') || code.includes('onlyOwner')) {
-      return { line, code, checkType: 'onlyRole', isSafe: true };
+      return { line, code, checkType: 'onlyRole', isSafe: true } as AccessPattern;
     }
 
-    return { line, code, checkType: 'msg.sender', isSafe: true };
+    return { line, code, checkType: 'msg.sender', isSafe: true } as AccessPattern;
   }).filter(p => p.checkType === 'tx.origin' || !p.isSafe);
 }
 

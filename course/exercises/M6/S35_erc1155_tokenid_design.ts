@@ -38,7 +38,7 @@ export const PRODUCT_CODE_SHIFT = BigInt(64);
  *   힌트: (productCode << PRODUCT_CODE_SHIFT) | eventCode
  */
 export function encodeTokenId(productCode: bigint, eventCode: bigint): bigint {
-  throw new Error('TODO: 구현하세요 — (productCode << PRODUCT_CODE_SHIFT) | eventCode');
+  return undefined as never;
 }
 
 /**
@@ -54,7 +54,7 @@ export function encodeTokenId(productCode: bigint, eventCode: bigint): bigint {
  *     eventCode   = tokenId & BigInt('0xFFFFFFFFFFFFFFFF')  // 하위 64비트 마스킹
  */
 export function decodeTokenId(tokenId: bigint): { productCode: bigint; eventCode: bigint } {
-  throw new Error('TODO: 구현하세요 — productCode = tokenId >> PRODUCT_CODE_SHIFT, eventCode = tokenId & 0xFFFFFFFFFFFFFFFF');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────

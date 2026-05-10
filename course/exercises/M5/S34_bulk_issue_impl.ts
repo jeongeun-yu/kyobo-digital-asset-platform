@@ -167,7 +167,7 @@ export class BulkIssueService {
    * 배열을 size 단위로 청크 분할
    */
   _chunk<T>(arr: T[], size: number): T[][] {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /** 배치 발행 실행 — jobId 즉시 반환, 청크 처리 후 상태 업데이트 */
@@ -176,7 +176,7 @@ export class BulkIssueService {
     tokenId: bigint;
     amount?: bigint;
   }): Promise<string> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /**
@@ -184,7 +184,7 @@ export class BulkIssueService {
    * PARTIAL_FAILURE → 모든 청크 성공 시 COMPLETED 전환
    */
   async retryFailedChunks(jobId: string, userIds: string[]): Promise<void> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /** 진행률 조회 — 운영자 폴링 엔드포인트 (완성 코드 — 수정 불필요) */

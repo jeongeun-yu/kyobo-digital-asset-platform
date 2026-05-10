@@ -73,7 +73,7 @@ function check(label: string, pass: boolean) {
 export function isRetryable(errorType: 'REVERT' | 'TIMEOUT' | 'REORG'): boolean {
   // TODO: 구현하세요
   // 힌트: REVERT만 재시도 불가, 나머지는 재시도 가능
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -112,21 +112,21 @@ async function section2() {
   //   - notifier.sentEvents에 type: 'TX_FAILED', requestId: 'req-paused' 이벤트 존재
   {
     // TODO: 위 힌트를 참고하여 구현하세요
-    throw new Error('TODO: section2 시나리오 A 구현하세요');
+    return undefined as never;
   }
 
   // TODO [2-2]: "Caller is not minter" revert 시나리오
   //   - errorMsg에 'not minter' 포함 여부 확인
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section2 시나리오 B 구현하세요');
+    return undefined as never;
   }
 
   // TODO [2-3]: "Insufficient balance" revert 시나리오
   //   - notifier TX_FAILED 발송 확인
   {
     // TODO: 구현하세요
-    throw new Error('TODO: section2 시나리오 C 구현하세요');
+    return undefined as never;
   }
 }
 
@@ -158,7 +158,7 @@ export function classifyRevertReason(reason: string): {
 } {
   // TODO: 구현하세요
   // 힌트: reason.includes('...') 로 각 케이스를 분기한다
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -192,13 +192,13 @@ async function section4() {
     //
     //   try { await recovery.handleTxRevert(id, '0x999', 'Contract is paused'); }
     //   catch (e) { /* e instanceof InvalidStateTransitionError 확인 */ }
-    throw new Error(`TODO: ${status} 상태 케이스 구현하세요`);
+    return undefined as never;
   }
 
   // TODO [4-2]: 존재하지 않는 requestId → MintRequestNotFoundError 확인
   {
     // TODO: 구현하세요
-    throw new Error('TODO: 존재하지 않는 requestId 케이스 구현하세요');
+    return undefined as never;
   }
 }
 
@@ -233,7 +233,7 @@ async function section5() {
   //   // → status === 'FAILED' 확인
   //   await svc.handleFailed('req-dup-fail', 'second call');
   //   // → 예외 없음 + status === 'FAILED' 확인
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────

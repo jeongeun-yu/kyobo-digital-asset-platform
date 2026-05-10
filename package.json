@@ -14,6 +14,7 @@
     "build:all": "npm run build --workspaces --if-present && cd blockchain && npx hardhat compile",
     "test": "npm run test --workspaces --if-present",
     "test:exercises": "npm run test:exercises --workspace=dmz/packages/event-engine",
+    "test:exercises:answer": "npm run test:exercises:answer --workspace=dmz/packages/event-engine",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "node:local": "npm run node --workspace=@kyobo/blockchain",
     "deploy:local": "npm run deploy:local --workspace=@kyobo/blockchain",

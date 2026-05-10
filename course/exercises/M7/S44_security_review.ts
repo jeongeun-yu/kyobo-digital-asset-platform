@@ -77,7 +77,7 @@ export interface RegressionTestResult {
 // ────────────────────────────────────────────────────────────────────────
 
 export function buildStorageV1(): StorageLayout {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ export function buildStorageV2Bad(v1Storage: StorageLayout): {
   hasCollision: boolean;
   corruptedVars: string[];
 } {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -129,7 +129,7 @@ export function buildStorageV2Good(v1Storage: StorageLayout): {
   hasCollision: boolean;
   corruptedVars: string[];
 } {
-  throw new Error('TODO: 구현하세요');
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -162,19 +162,19 @@ export class InitializerGuard {
   private _initialized = 0;
 
   constructor() {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   static createViaProxy(): InitializerGuard {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   initialize(adminAddress: string): { success: boolean; error?: string } {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   initializeV2(baseURI: string, maxSupply: number): { success: boolean; error?: string } {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   getInitializedVersion(): number { return this._initialized; }
@@ -210,11 +210,11 @@ export class GnosisSafeSimulator {
   public upgradeHistory: Array<{ txId: string; newImpl: string; executedAt: Date }> = [];
 
   proposeTx(txId: string, newImplementation: string, description: string): PendingTransaction {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   sign(txId: string, signer: SignerType): { signed: boolean; currentCount: number } {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   getPendingTx(txId: string): PendingTransaction | undefined {

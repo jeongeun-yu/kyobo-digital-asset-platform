@@ -216,7 +216,7 @@ export class KeyGovernanceService {
    *   9. pendingTx 반환
    */
   async proposeTx(proposer: string, params: SafeTxParams): Promise<PendingTx> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /**
@@ -235,7 +235,7 @@ export class KeyGovernanceService {
    *   9. { collected, required, ready } 반환
    */
   async addSignature(txId: string, signer: string, signature: string): Promise<SignatureStatus> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /**
@@ -250,7 +250,7 @@ export class KeyGovernanceService {
    *   6. { onChainTxHash } 반환
    */
   async executeTx(txId: string, executor: string): Promise<{ onChainTxHash: string }> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /**
@@ -276,7 +276,7 @@ export class KeyGovernanceService {
    *   4. this.auditLog.log: actor=cancelledBy, action='TX_CANCELLED'
    */
   async cancelTx(txId: string, cancelledBy: string, reason: string): Promise<void> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 

@@ -108,7 +108,7 @@ export class AuditLogService {
   }
 
   private async _doInsert(params: LogParams): Promise<number> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   async verifyIntegrity(id: number): Promise<VerifyResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   async verifyChainIntegrity(): Promise<ChainVerifyResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   queryByResource(resourceId: string, options: QueryOptions = {}): AuditLogRow[] {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   queryByActor(actor: string, options: QueryOptions = {}): AuditLogRow[] {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ── 테스트 전용: 내부 rows 직접 조작 (변조 시뮬레이션) — 완성 제공 ──

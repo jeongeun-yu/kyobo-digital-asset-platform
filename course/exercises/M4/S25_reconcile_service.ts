@@ -86,7 +86,7 @@ export class ReconcileService {
   // ────────────────────────────────────────────────────────────────────────
 
   async reconcile(): Promise<ReconcileResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ export class ReconcileService {
   // ────────────────────────────────────────────────────────────────────────
 
   getLastResult(): ReconcileResult | null {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export class ReconcileService {
   // ────────────────────────────────────────────────────────────────────────
 
   async reconcileNftHoldings(userId: string): Promise<NftReconcileResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // ────────────────────────────────────────────────────────────────────────

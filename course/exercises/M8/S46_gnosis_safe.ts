@@ -92,7 +92,7 @@ export class SimulatedGnosisSafe {
    *   - ethers.keccak256(encodedData)
    */
   domainSeparator(): string {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /**
@@ -109,7 +109,7 @@ export class SimulatedGnosisSafe {
    *   - EIP-712 최종: keccak256(concat(['0x1901', domainSeparator, structHash]))
    */
   getTransactionHash(params: SafeTxParams): string {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /**
@@ -118,7 +118,7 @@ export class SimulatedGnosisSafe {
    * 힌트: ethers.recoverAddress(txHash, signature)
    */
   verifySignature(txHash: string, signature: string): string {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   /**
@@ -137,7 +137,7 @@ export class SimulatedGnosisSafe {
     params: SafeTxParams,
     signatures: Array<{ signer: string; signature: string }>,
   ): { txHash: string; success: boolean } {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 
   // swapOwner TX 데이터 생성 (제공됨 — 수정 불필요)
@@ -160,7 +160,7 @@ export class SimulatedGnosisSafe {
 // ─── 단일 HOT 키 vs 2-of-3 비교 ─────────────────────────────────────────────
 
 export interface SingleKeySystem {
-  hotKey: ethers.Wallet;
+  hotKey: ethers.HDNodeWallet | ethers.Wallet;
   execute(action: string): string;
 }
 
@@ -182,12 +182,12 @@ function check(label: string, pass: boolean) {
   if (!pass) process.exitCode = 1;
 }
 
-export function makeSigner(): { wallet: ethers.Wallet; address: string } {
+export function makeSigner(): { wallet: ethers.HDNodeWallet | ethers.Wallet; address: string } {
   const wallet = ethers.Wallet.createRandom();
   return { wallet, address: wallet.address };
 }
 
-export function signHash(wallet: ethers.Wallet, hash: string): string {
+export function signHash(wallet: ethers.HDNodeWallet | ethers.Wallet, hash: string): string {
   const sig = wallet.signingKey.sign(hash);
   return ethers.Signature.from(sig).serialized;
 }

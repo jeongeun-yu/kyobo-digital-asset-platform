@@ -79,7 +79,7 @@ export class WalletProvisioningService {
   ) {}
 
   async provision(userId: string, vaspType: VaspType | string): Promise<ProvisionResult> {
-    throw new Error('TODO: 구현하세요');
+    return undefined as never;
   }
 }
 
