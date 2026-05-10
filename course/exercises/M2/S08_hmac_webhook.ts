@@ -20,19 +20,8 @@ import crypto from 'crypto';
 //   4. 두 버퍼 길이가 다르면 false 반환 (timingSafeEqual은 길이가 다르면 throw)
 //   5. crypto.timingSafeEqual(sigBuf, expBuf) 결과 반환
 export function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
-  if (!signature) return false;
-
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
-
-  const sigBuf = Buffer.from(signature, 'hex');
-  const expBuf = Buffer.from(expected,  'hex');
-
-  if (sigBuf.length !== expBuf.length) return false;
-
-  return crypto.timingSafeEqual(sigBuf, expBuf);
+  void rawBody; void signature; void secret;
+  return undefined as never;
 }
 
 // ── Timing Attack 시연용: === 비교 ────────────────────────────────────────────

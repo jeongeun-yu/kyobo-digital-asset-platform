@@ -38,38 +38,8 @@ export async function _handleWithRetry(
   redis:      Pick<RedisConsumerClient, 'xack'>,
   dlq:        DLQHandler,
 ): Promise<void> {
-  const eventType  = msg.fields['eventType'] ?? '';
-  const retryCount = parseInt(msg.fields['_retryCount'] ?? '0', 10);
-
-  // 규칙 1: retryCount >= MAX_RETRIES → DLQ 이동 + XACK + return
-  if (retryCount >= MAX_RETRIES) {
-    await dlq.move({
-      messageId: msg.id,
-      streamKey: STREAM_KEY,
-      groupName: GROUP_NAME,
-      event:     msg.fields,
-      reason:    `max retries (${MAX_RETRIES}) exceeded`,
-      failedAt:  new Date(),
-    });
-    await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
-    return;
-  }
-
-  // 규칙 2: 처리 가능한 processor 없음 → XACK + return
-  const matched = processors.filter(p => p.eventTypes.includes(eventType));
-  if (matched.length === 0) {
-    await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
-    return;
-  }
-
-  // 규칙 3 + 4: 처리 시도 → 성공이면 XACK, 실패면 retryCount + 1
-  try {
-    await Promise.all(matched.map(p => p.process(msg)));
-    await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
-  } catch (err) {
-    msg.fields['_retryCount'] = String(retryCount + 1);
-    console.error(`    [retry] message ${msg.id} failed (attempt ${retryCount + 1}):`, (err as Error).message);
-  }
+  void msg; void processors; void redis; void dlq;
+  return undefined as never;
 }
 
 // ────────────────────────────────────────────────────────────────────────

@@ -6,6 +6,10 @@
 
 import crypto from 'crypto';
 
+export function computeHmac(payload: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(Buffer.from(payload)).digest('hex');
+}
+
 const payload = JSON.stringify({
   eventType: 'NFT_ISSUED',
   data:      { tokenId: '42', owner: '0xABCD' },

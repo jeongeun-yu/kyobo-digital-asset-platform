@@ -14,6 +14,15 @@
 
 import crypto from 'crypto';
 
+/**
+ * TODO: HMAC-SHA256 서명 계산
+ * 힌트: crypto.createHmac('sha256', secret).update(Buffer.from(payload)).digest('hex')
+ */
+export function computeHmac(payload: string, secret: string): string {
+  void payload; void secret;
+  return undefined as never;
+}
+
 const payload = JSON.stringify({
   eventType: 'NFT_ISSUED',
   data:      { tokenId: '42', owner: '0xABCD' },

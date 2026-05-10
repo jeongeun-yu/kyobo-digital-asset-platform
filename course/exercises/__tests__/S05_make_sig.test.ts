@@ -1,7 +1,6 @@
 /**
  * S05 채점 — computeHmac (HMAC-SHA256 서명 생성)
  *
- * S05_make_sig.ts는 export가 없으므로 동일한 로직을 인라인으로 재구성하여 채점한다.
  * 채점 기준:
  *   · crypto.createHmac('sha256', secret).update(Buffer.from(data)).digest('hex') 패턴을 이해했는가
  *   · 같은 입력 → 같은 출력 (결정론적)
@@ -10,14 +9,7 @@
  */
 
 import crypto from 'crypto';
-
-/** S05에서 학생이 구현하는 로직과 동일한 헬퍼 */
-function computeHmac(payload: string, secret: string): string {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(Buffer.from(payload))
-    .digest('hex');
-}
+import { computeHmac } from '../M2/S05_make_sig';
 
 describe('S05 채점 — HMAC-SHA256 서명 생성', () => {
   const SECRET  = 'dev-secret-kyobo';

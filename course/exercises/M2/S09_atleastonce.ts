@@ -52,16 +52,8 @@ export const idempotentProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
 
   async process(msg: StreamMessage): Promise<void> {
-    const requestId = msg.fields['requestId'] ?? '';
-
-    if (processedIds.has(requestId)) {
-      console.log(`    [멱등성] 중복 요청 무시: ${requestId}`);
-      return;
-    }
-
-    const { tokenId, owner } = JSON.parse(msg.fields['payload'] ?? '{}');
-    credit(tokenId, owner);
-    processedIds.add(requestId);
+    void msg;
+    return undefined as never;
   },
 };
 

@@ -149,11 +149,159 @@ describe('EVMAdapter', () => {
     });
   });
 
+  describe('mintNFTBatch() — privateKey 있음', () => {
+    it('배치 발행 성공 → TransactionReceipt 반환', async () => {
+      const adapter = new EVMAdapter(CONFIG_WITH_KEY);
+      const BATCH_PARAMS: MintBatchParams = {
+        contractAddr: '0xcontract',
+        to:           ['0xrecipient1', '0xrecipient2'],
+        tokenIds:     [1n, 2n],
+        amounts:      [1n, 1n],
+        requestId:    'req-batch-001',
+      };
+      const result = await adapter.mintNFTBatch(BATCH_PARAMS);
+      expect(result.txHash).toBe('0xmockhash');
+      expect(result.status).toBe('success');
+      expect(result.gasUsed).toBe(21000n);
+    });
+
+    it('privateKey 없으면 mintNFTBatch throw', async () => {
+      const adapter = new EVMAdapter(CONFIG_READONLY);
+      const BATCH_PARAMS: MintBatchParams = {
+        contractAddr: '0xcontract',
+        to: ['0xrecipient'], tokenIds: [1n], amounts: [1n], requestId: 'r',
+      };
+      await expect(adapter.mintNFTBatch(BATCH_PARAMS)).rejects.toThrow('read-only mode');
+    });
+  });
+
+  describe('burnNFT() — privateKey 있음', () => {
+    it('소각 성공 → TransactionReceipt 반환', async () => {
+      const adapter = new EVMAdapter(CONFIG_WITH_KEY);
+      const result = await adapter.burnNFT(BURN_PARAMS);
+      expect(result.txHash).toBe('0xmockhash');
+      expect(result.status).toBe('success');
+    });
+  });
+
+  describe('getBalance()', () => {
+    it('balanceOf 결과를 bigint로 반환', async () => {
+      const { Contract } = jest.requireMock('ethers');
+      Contract.mockImplementationOnce(() =>
+        new Proxy({}, {
+          get: (_t, method) => {
+            if (method === 'balanceOf') return jest.fn().mockResolvedValue('42');
+            return jest.fn();
+          },
+        }),
+      );
+      const adapter = new EVMAdapter(CONFIG_READONLY);
+      const balance = await adapter.getBalance('0xcontract', '0xowner', 1n);
+      expect(balance).toBe(42n);
+    });
+  });
+
+  describe('getReceipt()', () => {
+    it('receipt 존재하면 TransactionReceipt 반환', async () => {
+      const { JsonRpcProvider } = jest.requireMock('ethers');
+      JsonRpcProvider.mockImplementationOnce(() => ({
+        getBlockNumber: jest.fn().mockResolvedValue(18_500_000),
+        getTransactionReceipt: jest.fn().mockResolvedValue({
+          hash:        '0xknownhash',
+          blockNumber: 18_500_010,
+          blockHash:   '0xblockhash2',
+          status:      1,
+          gasUsed:     50000n,
+        }),
+      }));
+      const adapter = new EVMAdapter(CONFIG_READONLY);
+      const receipt = await adapter.getReceipt('0xknownhash');
+      expect(receipt).not.toBeNull();
+      expect(receipt!.txHash).toBe('0xknownhash');
+      expect(receipt!.status).toBe('success');
+      expect(receipt!.gasUsed).toBe(50000n);
+    });
+
+    it('receipt.status === 0 → status "failed"', async () => {
+      const { JsonRpcProvider } = jest.requireMock('ethers');
+      JsonRpcProvider.mockImplementationOnce(() => ({
+        getBlockNumber: jest.fn().mockResolvedValue(18_500_000),
+        getTransactionReceipt: jest.fn().mockResolvedValue({
+          hash: '0xfailedhash', blockNumber: 1, blockHash: '0xbh', status: 0, gasUsed: 21000n,
+        }),
+      }));
+      const adapter = new EVMAdapter(CONFIG_READONLY);
+      const receipt = await adapter.getReceipt('0xfailedhash');
+      expect(receipt!.status).toBe('failed');
+    });
+  });
+
+  describe('subscribeEvents()', () => {
+    it('리스너 등록 후 unsubscribe 함수 반환', async () => {
+      const adapter = new EVMAdapter(CONFIG_READONLY);
+      const handler = jest.fn();
+      const unsubscribe = await adapter.subscribeEvents(
+        '0xcontract', [], ['Transfer', 'Mint'], 100, handler,
+      );
+      expect(typeof unsubscribe).toBe('function');
+      expect(() => unsubscribe()).not.toThrow();
+    });
+  });
+
   describe('queryEvents()', () => {
     it('이벤트 없으면 빈 배열 반환', async () => {
       const adapter = new EVMAdapter(CONFIG_READONLY);
       const events = await adapter.queryEvents('0xcontract', [], 'Transfer', 100, 200);
       expect(events).toEqual([]);
+    });
+
+    it('이벤트 반환 시 ChainEvent 배열로 변환 (fragment 있음)', async () => {
+      const mockLog = {
+        transactionHash: '0xeventhash',
+        blockNumber:     18_500_005,
+        index:           0,
+        fragment:        { inputs: [{ name: 'to' }, { name: 'tokenId' }] },
+        args:            ['0xrecipient', 42n],
+      };
+      const { Contract } = jest.requireMock('ethers');
+      Contract.mockImplementationOnce(() =>
+        new Proxy({}, {
+          get: (_t, method) => {
+            if (method === 'queryFilter') return jest.fn().mockResolvedValue([mockLog]);
+            if (method === 'getEvent')    return jest.fn().mockReturnValue('Transfer');
+            return jest.fn();
+          },
+        }),
+      );
+      const adapter = new EVMAdapter(CONFIG_READONLY);
+      const events = await adapter.queryEvents('0xcontract', [], 'Transfer', 100, 200);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.txHash).toBe('0xeventhash');
+      expect(events[0]!.blockNumber).toBe(18_500_005);
+      expect(events[0]!.args).toEqual({ to: '0xrecipient', tokenId: 42n });
+    });
+
+    it('fragment 없는 log → args.raw 로 변환', async () => {
+      const mockLog = {
+        transactionHash: '0xrawhash',
+        blockNumber:     18_500_006,
+        index:           1,
+        fragment:        null,
+        args:            [],
+      };
+      const { Contract } = jest.requireMock('ethers');
+      Contract.mockImplementationOnce(() =>
+        new Proxy({}, {
+          get: (_t, method) => {
+            if (method === 'queryFilter') return jest.fn().mockResolvedValue([mockLog]);
+            if (method === 'getEvent')    return jest.fn().mockReturnValue('Transfer');
+            return jest.fn();
+          },
+        }),
+      );
+      const adapter = new EVMAdapter(CONFIG_READONLY);
+      const events = await adapter.queryEvents('0xcontract', [], 'Transfer', 100, 200);
+      expect(events[0]!.args).toEqual({ raw: [] });
     });
   });
 });
