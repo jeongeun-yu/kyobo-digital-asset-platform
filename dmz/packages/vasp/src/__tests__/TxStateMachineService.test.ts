@@ -251,3 +251,101 @@ describe('TxStateMachineService — Observer 이벤트', () => {
     expect(confirmed?.requestId).toBe(id);
   });
 });
+
+describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () => {
+  it('VASP failed → FAILED 전이 + revertReason 저장', async () => {
+    const repo = makeRepo();
+    const vasp = makeVasp({ statusResponse: { status: 'failed', revertReason: 'out of gas' } });
+    const svc  = new TxStateMachineService(repo, vasp, makeWallet());
+    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+
+    const req = repo.store.get(id)!;
+    req.createdAt = new Date(Date.now() - 31 * 60_000);
+    req.status    = 'PENDING';
+    req.txHash    = '0xstale';
+    repo.store.set(id, req);
+
+    const { processed } = await svc.pollStaleRequests();
+    expect(processed).toBe(1);
+    expect((await repo.findById(id))?.status).toBe('FAILED');
+    expect((await repo.findById(id))?.failReason).toContain('out of gas');
+  });
+
+  it('getStatus() throw → catch 처리 후 processed 카운트 안 함', async () => {
+    const repo = makeRepo();
+    const vasp: VaspTxClient = {
+      async submitMint() { return { txHash: '0xtx' }; },
+      async getStatus()  { throw new Error('VASP timeout'); },
+      async resubmitWithGasBump() { return { txHash: '0xbumped' }; },
+    };
+    const svc = new TxStateMachineService(repo, vasp, makeWallet());
+    const id  = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+
+    const req = repo.store.get(id)!;
+    req.createdAt = new Date(Date.now() - 31 * 60_000);
+    req.status    = 'PENDING';
+    req.txHash    = '0xtx';
+    repo.store.set(id, req);
+
+    const { processed } = await svc.pollStaleRequests();
+    expect(processed).toBe(0);
+  });
+
+  it('txHash 없는 stale 건 → 스킵 (processed 카운트 안 함)', async () => {
+    const repo = makeRepo();
+    const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
+    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+
+    const req = repo.store.get(id)!;
+    req.createdAt = new Date(Date.now() - 31 * 60_000);
+    req.status    = 'PENDING';
+    req.txHash    = undefined;
+    repo.store.set(id, req);
+
+    const { processed } = await svc.pollStaleRequests();
+    expect(processed).toBe(0);
+  });
+});
+
+describe('TxStateMachineService.handleReorg()', () => {
+  async function setupMined(repo: ReturnType<typeof makeRepo>, svc: TxStateMachineService) {
+    const id = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    await svc.handleMined(id, 100);
+    return id;
+  }
+
+  it('MINED → REORGED → MINED 복귀 (vasp mined)', async () => {
+    const repo = makeRepo();
+    const vasp = makeVasp({ statusResponse: { status: 'mined' } });
+    const svc  = new TxStateMachineService(repo, vasp, makeWallet());
+    jest.spyOn(svc as any, '_waitBlocks').mockResolvedValue(undefined);
+
+    const id = await setupMined(repo, svc);
+    await svc.handleReorg(id);
+
+    expect((await repo.findById(id))?.status).toBe('MINED');
+  });
+
+  it('MINED → REORGED → FAILED (vasp not_found)', async () => {
+    const repo = makeRepo();
+    const vasp = makeVasp({ statusResponse: { status: 'not_found' } });
+    const svc  = new TxStateMachineService(repo, vasp, makeWallet());
+    jest.spyOn(svc as any, '_waitBlocks').mockResolvedValue(undefined);
+
+    const id = await setupMined(repo, svc);
+    await svc.handleReorg(id);
+
+    const req = await repo.findById(id);
+    expect(req?.status).toBe('FAILED');
+    expect(req?.failReason).toContain('reorg');
+  });
+
+  it('MINED가 아닌 상태 → 즉시 리턴 (전이 없음)', async () => {
+    const repo = makeRepo();
+    const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
+    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+
+    await svc.handleReorg(id); // SUBMITTED 상태 → 스킵
+    expect((await repo.findById(id))?.status).toBe('SUBMITTED');
+  });
+});
