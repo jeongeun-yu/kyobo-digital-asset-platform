@@ -1,16 +1,27 @@
 // =============================================================================
-// 향후 확장 STUB — XRP Ledger 어댑터
+// Phase 2 STUB — XRP Ledger 어댑터
 // =============================================================================
-// 구현 시점: 교보생명 내부 결정에 따라 XRPL 연동이 필요한 시점
+// 구현 시점: Phase 2 — 원화 스테이블코인(KRW1) 결제 레이어 도입 시
 //
-// XRPL 특성 고려 사항 (구현 전 반드시 검토):
-//   - UTXO 모델이 아닌 계정 기반 원장 (EVM과 유사하나 스마트컨트랙트 없음)
-//   - Hooks (XRPL 사이드체인) 또는 EVM Sidechain 사용 여부 결정 필요
-//   - 토큰 발행: IOU (Issued Currency) 방식 — ERC-20과 개념적으로 유사
-//   - Travel Rule: XRPL 자체 Memo 필드 활용 가능
-//   - 결제 채널: KRW 스테이블코인의 빠른 정산에 유리
+// Phase 2에서 XRPL을 선택하는 이유:
+//   - KRW1 스테이블코인: XRPL IOU(Issued Currency) 방식으로 발행
+//     → 교보생명이 발행자(Issuer) 계정을 보유, 보험금·환급금을 KRW1로 지급
+//   - 결제 채널(Payment Channel): 마이크로 결제 최종 정산에 유리
+//   - 수수료: EVM 대비 극히 낮음 (건당 $0.0002 수준)
+//   - 기관 사례: SBI, 리플 파트너사 다수 (국내 신한은행 파일럿)
 //
-// IBlockchainAdapter 인터페이스를 구현하므로 event-engine, issuer-service 수정 없음.
+// XRPL 구현 시 고려 사항:
+//   - 계정 기반 원장 (EVM과 유사, 스마트컨트랙트 없음)
+//   - Hooks(XRPL 온체인 로직) 또는 EVM Sidechain 사용 여부 결정 필요
+//   - Trust Line 설정 필수 — 수신자가 KRW1 IOU 수신 허용해야 함
+//   - Travel Rule: XRPL Memo 필드 활용 가능
+//
+// Phase 1과의 차이:
+//   Phase 1: EVMAdapter만 사용 (Ethereum — NFT 발행)
+//   Phase 2: EVMAdapter(NFT) + XRPLAdapter(KRW1 결제) 병행
+//
+// IBlockchainAdapter 인터페이스를 구현하므로 issuer-service 수정 없음.
+// ChainAdapterFactory에서 chainType='XRPL' 로 자동 라우팅.
 // =============================================================================
 
 import type { IBlockchainAdapter, ChainEvent, ContractCallParams, TransactionReceipt, MintParams, MintBatchParams, BurnParams } from '../interfaces/IBlockchainAdapter';

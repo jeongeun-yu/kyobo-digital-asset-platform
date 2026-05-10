@@ -3,15 +3,17 @@
 ## 현재 상태
 | 항목 | 내용 |
 |---|---|
-| 단계 | 강의 준비 완료 — 레포 전체 정비 완료 |
-| 교육 시작 | 4/27 (웅진씽크빅) — 교보생명 58시간 확정 |
+| 단계 | 교보생명 강의 진행 중 — 5/11 첫날 M1 |
+| 교육 시작 | 5/11 (교보생명) — 58시간 |
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
-## 마지막 작업 (2026-05-10)
-- 레포 전체 정비: 커버리지 개선, Jest 경고 제거, S06/S07/S08 세션 번호 정렬
-- typechain-types 158개 git 언트랙, tools/ 폴더 exercises/M2/event-listener로 이전
-- README 전면 업데이트: 소스 340 TC / 실습 778 TC / M4~M8 테이블 / typecheck 섹션
-- npm test 340 TC 전부 통과, 워커 경고 없음
+## 마지막 작업 (2026-05-11)
+- S04 PowerShell 가이드 Sepolia 심화 실습 6종 추가 (체인ID·잔액·블록상세·가스·Etherscan)
+- Phase 2/3 stub 주석 전면 정비: XRPLAdapter·CircleAdapter·KyoboVASPAdapter·VaspRecoveryService
+- CircleAdapter Phase 3 → Phase 2 오기 수정
+- KRW1StablecoinAdapter Phase 2 stub 신규 생성 (XRPL IOU / EVM ERC-20 / CBDC 3옵션)
+- issuer-service/index.ts Phase 1/2/3 교체 포인트 주석 완비
+- 전체 빌드·테스트 379 TC 전부 통과
 
 ## 다음 작업
 - [ ] 강의 현장 긴급 대응 (에러·질문·버그 실시간 처리)

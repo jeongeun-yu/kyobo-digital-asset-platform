@@ -18,7 +18,9 @@ import { WebhookServer }           from '@kyobo/event-engine/webhook';
 import { IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/webhook';
 import { RetryHandler, DeadLetterQueue } from '@kyobo/event-engine/webhook';
 import { NFTIssuedHandler }        from '@kyobo/event-engine/handlers';
-import { ExternalVASPAdapter }     from '@kyobo/vasp';
+import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
+// Phase 3 전환 시: ExternalVASPAdapter → KyoboVASPAdapter 로 교체
+// KyoboVASPAdapter는 @kyobo/vasp 패키지에 stub 구현 완료 (IVASPAdapter 동일 인터페이스)
 import { KyoboCoreBankingAdapter, InternalGatewayClient } from '@kyobo/core-banking';
 import { ISMSChecklist }           from '@kyobo/compliance';
 
@@ -39,14 +41,22 @@ async function bootstrap() {
     if (!process.env[key]) throw new Error(`Missing env: ${key}`);
   }
 
-  // ── 체인 어댑터 (Phase 2+: XRPLAdapter로 교체 가능) ─────────────────────────
+  // ── 체인 어댑터 ──────────────────────────────────────────────────────────────
+  // Phase 1: EVMAdapter (read-only — FINALIZED 확인 전용, TX 실행은 VASP 위탁)
+  // Phase 2: EVMAdapter 유지 + ChainEventListener 직접 이벤트 구독 활성화
+  // Phase 3: EVMAdapter.sendTransaction() 활성화 (KyoboVASPAdapter 전환 시 직접 호출)
   const chainAdapter = new EVMAdapter({
     rpcUrl:     process.env.RPC_URL!,
     chainId:    process.env.CHAIN_ID!,
     privateKey: process.env.OPERATOR_PRIVATE_KEY!,
   });
 
-  // ── VASP 어댑터 (Phase 4: KyoboVASPAdapter로 교체) ──────────────────────────
+  // ── VASP 어댑터 ──────────────────────────────────────────────────────────────
+  // Phase 1: ExternalVASPAdapter (월렛원 외부 API 위탁 — TX 서명·브로드캐스트 전위임)
+  // Phase 2: ExternalVASPAdapter 유지 + Circle Arc USDC/KRW1 결제 레이어 추가
+  //          ChainEventListener 직접 이벤트 구독 시작 (월렛원 Webhook 의존도 감소)
+  // Phase 3: KyoboVASPAdapter   (교보 VASP 인가 취득 후 HSM/MPC 직접 서명·브로드캐스트)
+  //          → new KyoboVASPAdapter() 로 교체, 상위 레이어 수정 없음
   const vaspAdapter = new ExternalVASPAdapter({
     baseUrl: process.env.VASP_API_URL!,
     apiKey:  process.env.VASP_API_KEY!,

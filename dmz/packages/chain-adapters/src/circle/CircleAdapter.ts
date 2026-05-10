@@ -1,17 +1,29 @@
 // =============================================================================
-// 향후 확장 STUB — Circle ARC (Asset Routing Chain) 어댑터
+// Phase 2 STUB — Circle ARC (Asset Routing Chain) + CCTP 어댑터
 // =============================================================================
-// 구현 시점: Phase 3 글로벌 확장 — 외국인 보험계약자 대상 USDC 정산 도입 시
+// 구현 시점: Phase 2 — USDC 기반 글로벌 결제 레이어 도입 시
+//            (외국인 보험계약자 대상 보험금 USDC 정산, 크로스체인 이동)
 //
-// Circle ARC / CCTP 특성 고려 사항 (구현 전 반드시 검토):
+// Phase 2에서 Circle ARC를 선택하는 이유:
+//   - USDC: 전 세계 150개 이상 거래소 지원, 규제 명확 (미 SEC 등록)
+//   - CCTP(Cross-Chain Transfer Protocol): USDC를 체인 간 네이티브 소각·발행
+//     → Ethereum ↔ Arbitrum ↔ Solana 등 브릿지 없이 직접 이동
+//   - 교보 활용: 해외 송금·외화 보험금 정산을 USDC로 처리
+//
+// Phase 1과의 차이:
+//   Phase 1: EVMAdapter만 사용 (NFT 발행, 원화 결제)
+//   Phase 2: EVMAdapter(NFT) + CircleAdapter(USDC 글로벌 정산) 병행
+//            XRPLAdapter(KRW1 국내 결제)와 함께 결제 레이어 이중화
+//
+// Circle ARC / CCTP 구현 시 고려 사항:
 //   - BFT 계열 합의 — 가스 모델 없음 (gasUsed: undefined)
 //   - "블록" 개념 없음 — attestation round 기반 (getBlockNumber: 0 반환)
-//   - NFT 발행: Circle은 스테이블코인(USDC) 특화 — NFT 발행 API 미지원
-//     → mintNFT/burnNFT는 별도 EVM 컨트랙트 + CCTP 연계 구조 필요
-//   - Cross-Chain Transfer Protocol (CCTP): USDC를 체인 간 네이티브 소각/발행
+//   - NFT 발행: Circle은 스테이블코인 특화 — NFT 직접 발행 미지원
+//     → mintNFT는 별도 EVM 컨트랙트 + CCTP 연계 구조 필요
 //   - Travel Rule: Circle Compliance API 별도 연동 필요
 //
-// IBlockchainAdapter 인터페이스를 구현하므로 event-engine, issuer-service 수정 없음.
+// IBlockchainAdapter 인터페이스를 구현하므로 issuer-service 수정 없음.
+// ChainAdapterFactory에서 chainType='BFT' 로 자동 라우팅.
 //
 // S14 실습 참조: src/exercises/S14_multichain_adapter.ts
 // =============================================================================

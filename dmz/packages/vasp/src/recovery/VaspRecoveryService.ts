@@ -1,3 +1,24 @@
+/**
+ * VaspRecoveryService — TX 실패·Reorg 복구 서비스
+ *
+ * ─ Phase 1 현황 ─
+ *   ExternalVASPAdapter(월렛원)가 TX 실행을 위탁.
+ *   REVERT·TIMEOUT 발생 시 이 서비스가 상태 전이 + 알림 담당.
+ *   Nonce 관리는 VASP에 위임 (handleNonceConflict → vaspClient.resyncNonce).
+ *
+ * ─ Phase 3 변화 ─
+ *   교보 직접 Custody 전환 시 NonceManager·Broadcaster·ConfirmationTracker가
+ *   TX 생명주기를 직접 관리. 이 서비스의 역할:
+ *     REVERT      → 즉시 FAILED (재시도 없음) ← Phase 1/3 동일
+ *     TIMEOUT     → NonceManager.bumpGas() 직접 호출 (Phase 3)
+ *     NONCE_TOO_LOW → NonceManager.release() + 재할당 (Phase 3)
+ *     REORG       → ConfirmationTracker가 감지 → 이 서비스가 재제출 (Phase 3)
+ *
+ * ─ 교체 포인트 ─
+ *   Phase 3 전환 시: vaspClient.resyncNonce() → NonceManager.release()
+ *                    vaspClient.resubmit()    → Broadcaster.broadcast()
+ */
+
 import type { LedgerService, MintStatus } from '@kyobo/core-banking';
 
 export type FailureReason = 'REVERT' | 'OUT_OF_GAS' | 'NONCE_TOO_LOW' | 'TIMEOUT' | 'NETWORK_ERROR';
