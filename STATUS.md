@@ -8,14 +8,10 @@
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
 ## 마지막 작업 (2026-05-10)
-- M2 실습 스텁 완성: S05 `computeHmac` export 추가 + 테스트 import 수정, S08/S09/S10 export 스텁화
-- Jest worker crash 패턴 전수 수정: `throw new Error('TODO')` → `return undefined as never`
-- 테스트 커버리지 전수 개선: chain-adapters 57→71%, vasp 87→93%, event-engine 91→94%, core-banking 98→100%
-- EVMAdapter 미커버 메서드 테스트 추가: mintNFTBatch/burnNFT/getBalance/getReceipt/subscribeEvents/queryEvents
-- IdempotencyGuard 신규 테스트 파일 생성 (InMemory/Redis store 포함)
-- TxStateMachineService handleReorg/pollStale failed/catch 브랜치 테스트 추가
-- core-banking 100% 달성: CircuitBreaker default param, AuditLogService queryByActor, LedgerService tokenId 브랜치
-- .env / .env.example 삭제 (미사용)
+- README.md 전면 업데이트: 소스 단위 테스트 308→340 TC, 실습 테스트 43개/778 TC
+- 실습 모듈 M4~M8 테이블 추가 (Section 4-2, Section 5)
+- `test:exercises:answer` 명령 추가, 프로젝트 구조 tools/ 제거 반영
+- 이전 작업: 커버리지 전수 개선 (core-banking 100%), tools/→exercises/M2/event-listener 이동
 
 ## 다음 작업
 - [ ] 이종건 계약서 일정 확인

@@ -170,13 +170,10 @@ node -v; npm -v; git --version
 # 레포지토리 클론
 git clone https://github.com/coincraft12/kyobo-digital-asset-platform.git
 cd kyobo-digital-asset-platform
-
-# 환경 변수 파일 복사
-Copy-Item .env.example .env
 ```
 
-`.env`는 강사 안내에 따라 필요한 항목만 입력.  
-M2 실습은 Mock 환경 사용 — `.env` 없이도 동작.
+온체인 실습(M6 배포 등)에 필요한 환경 변수는 강사 안내에 따라 별도 입력.  
+M2~M5 실습은 Mock 환경 사용 — `.env` 없이도 동작.
 
 ---
 
@@ -239,13 +236,13 @@ npm test --workspace=dmz/packages/event-engine
 
 | 패키지 | 테스트 파일 | TC 수 | 주요 커버리지 |
 |---|---|---|---|
-| `chain-adapters` | 4개 | 46 | EVMAdapter · RetryDecorator · LoggingDecorator · ChainAdapterFactory |
+| `chain-adapters` | 4개 | 55 | EVMAdapter · RetryDecorator · LoggingDecorator · ChainAdapterFactory |
 | `compliance` | 4개 | 54 | LockupPolicy · InvestorRegistry · PermissiveCompliance · ISMSChecklist |
-| `core-banking` | 4개 | 49 | LedgerService · CircuitBreaker · ReconcileService · AuditLogService |
+| `core-banking` | 4개 | 54 | LedgerService · CircuitBreaker · ReconcileService · AuditLogService |
 | `shared` | 2개 | 24 | AppError · 도메인 타입 |
-| `vasp` | 5개 | 86 | TxStateMachine · KeyGovernance · VaspRecovery · TxAttempt · Whitelist |
-| `event-engine` | 5개 | 49 | WebhookServer · RedisStream · ConsumerGroup · DLQ · E2E |
-| **합계** | **24개** | **308** | |
+| `vasp` | 5개 | 92 | TxStateMachine · KeyGovernance · VaspRecovery · TxAttempt · Whitelist |
+| `event-engine` | 6개 | 61 | WebhookServer · RedisStream · ConsumerGroup · DLQ · E2E · IdempotencyGuard |
+| **합계** | **25개** | **340** | |
 
 #### 특정 테스트 파일만 실행
 
@@ -273,35 +270,36 @@ npm test --workspace=dmz/packages/core-banking -- --testPathPattern CircuitBreak
 npm run test:exercises
 ```
 
+#### 정답 파일로 전체 채점 (강사용)
+
+```powershell
+npm run test:exercises:answer
+```
+
 #### 특정 세션만 채점
 
 ```powershell
 npm run test:exercises -- S05
-npm run test:exercises -- S07
-npm run test:exercises -- S11
 npm run test:exercises -- S13
-npm run test:exercises -- S14
-npm run test:exercises -- S15
-npm run test:exercises -- S16
-npm run test:exercises -- S17
-npm run test:exercises -- S22
+npm run test:exercises -- S23
+npm run test:exercises -- S34
+npm run test:exercises -- S44
+npm run test:exercises -- S50
 ```
 
 #### 실습 채점 테스트 현황
 
-| 세션 | 테스트 파일 | TC 수 | 검증 항목 |
+| 모듈 | 테스트 파일 | TC 수 | 주요 세션 |
 |---|---|---|---|
-| S05 | `S05_make_sig.test.ts` | 6 | HMAC-SHA256 서명 생성 |
-| S07 | `S07_redis_stream.test.ts` | 5 | Redis Streams 발행·소비 |
-| S11 | `S11_dlq.test.ts` | 5 | Dead Letter Queue 이동 |
-| S12 | `S12_e2e.test.ts` | 5 | 이벤트 파이프라인 E2E |
-| S13 | `S13_tx_statemachine.test.ts` | 28 | TX 상태 전이 전체 흐름 |
-| S14 | `S14_multichain_adapter.test.ts` | 21 | IBlockchainAdapter Strategy 패턴 |
-| S15 | `S15_evm_lab.test.ts` | 14 | EVMAdapter mintNFT() 구현 |
-| S16 | `S16_idempotency.test.ts` | 11 | requestId 멱등성 처리 |
-| S17 | `S17_decorator_patterns.test.ts` | 21 | Retry · Logging 데코레이터 패턴 |
-| S22 | `S22_pollstale_lab.test.ts` | 13 | Stale TX 폴링 복구 |
-| **합계** | **10개** | **129** | |
+| M1 | 1개 | 12 | S04 네트워크 확인 |
+| M2 | 7개 | 38 | S05~S12 웹훅 · Redis Streams · DLQ |
+| M3 | 8개 | 160 | S13~S22 TX 상태머신 · 멀티체인 · 타임아웃 |
+| M4 | 4개 | 78 | S23~S26 원장 · 감사 로그 |
+| M5 | 7개 | 139 | S27~S34 지갑 · 발행 흐름 |
+| M6 | 6개 | 110 | S35~S40 스마트컨트랙트 패턴 |
+| M7 | 4개 | 101 | S41~S44 보안 감사 · 업그레이드 |
+| M8 | 6개 | 140 | S45~S50 멀티시그 · 규정 준수 |
+| **합계** | **43개** | **778** | |
 
 #### 채점 결과 예시
 
@@ -333,10 +331,16 @@ npm test && npm run test:exercises
 
 ```
 course/exercises/
-├── M1/          네트워크 연결 실습 (S04)
-├── M2/          웹훅 · Redis Streams · 멱등성 · DLQ (S05~S12)
-├── M3/          TX 상태머신 · 멀티체인 · EVM (S13~S22)
-└── __tests__/   실습 채점 테스트
+├── M1/                  네트워크 연결 실습 (S04)
+├── M2/                  웹훅 · Redis Streams · 멱등성 · DLQ (S05~S12)
+│   └── event-listener/  온체인 이벤트 리스너 구동 실습 (S05)
+├── M3/                  TX 상태머신 · 멀티체인 · EVM (S13~S22)
+├── M4/                  원장 · 감사 로그 (S23~S26)
+├── M5/                  지갑 · 발행 흐름 (S27~S34)
+├── M6/                  스마트컨트랙트 패턴 (S35~S40)
+├── M7/                  보안 감사 · 업그레이드 (S41~S44)
+├── M8/                  멀티시그 · 규정 준수 (S45~S50)
+└── __tests__/           실습 채점 테스트 (Jest)
 ```
 
 ### 파일 명명 규칙
@@ -417,9 +421,64 @@ npm run test:exercises
 | S14 | `M3/S14_multichain_adapter.ts` | IBlockchainAdapter Strategy 패턴 |
 | S15 | `M3/S15_evm_lab.ts` | EVMAdapter mintNFT() 구현 |
 | S16 | `M3/S16_idempotency.ts` | requestId 기반 Idempotency |
+| S17 | `M3/S17_decorator_patterns.ts` | Retry · Logging 데코레이터 패턴 |
+| S18 | `M3/S18_tx_revert.ts` | TX 리버트 처리 |
+| S20 | `M3/S20_timeout_reorg_handler.ts` | 타임아웃 · 체인 재편성 핸들러 |
 | S22 | `M3/S22_pollstale_lab.ts` | Stale TX 복구 |
 
 참고 구현체: `dmz/packages/event-engine/src/` · `dmz/packages/vasp/src/`
+
+#### M4 — 원장 · 감사 로그
+
+| 세션 | 파일 | 주제 |
+|---|---|---|
+| S23 | `M4/S23_ledger_data_model.ts` | 원장 데이터 모델 설계 |
+| S24 | `M4/S24_state_transition_guard.ts` | 상태 전이 가드 구현 |
+| S25 | `M4/S25_reconcile_service.ts` | 정산 서비스 구현 |
+| S26 | `M4/S26_audit_log_sha256.ts` | 감사 로그 SHA-256 해시 체인 |
+
+#### M5 — 지갑 · 발행 흐름
+
+| 세션 | 파일 | 주제 |
+|---|---|---|
+| S27 | `M5/S27_wallet_provisioning.ts` | 지갑 프로비저닝 |
+| S28 | `M5/S28_wallet_mapping_design.ts` | 지갑 매핑 설계 |
+| S29 | `M5/S29_eip191_signature.ts` | EIP-191 서명 |
+| S30 | `M5/S30_event_condition_strategy.ts` | 이벤트 조건 전략 |
+| S31 | `M5/S31_condition_test_strategy.ts` | 조건 테스트 전략 |
+| S32 | `M5/S32_single_issue_flow.ts` | 단건 발행 흐름 |
+| S34 | `M5/S34_bulk_issue_impl.ts` | 대량 발행 구현 |
+
+#### M6 — 스마트컨트랙트 패턴
+
+| 세션 | 파일 | 주제 |
+|---|---|---|
+| S35 | `M6/S35_erc1155_tokenid_design.ts` | ERC-1155 토큰 ID 설계 |
+| S36 | `M6/S36_uups_proxy_pattern.ts` | UUPS 프록시 패턴 |
+| S37 | `M6/S37_access_control_roles.ts` | 접근 제어 역할 설계 |
+| S38 | `M6/S38_lifecycle_burn_pause_upgrade.ts` | 라이프사이클 · Burn · Pause · 업그레이드 |
+| S39 | `M6/S39_deployment_etherscan.ts` | 배포 · Etherscan 검증 |
+| S40 | `M6/S40_storage_layout_upgrade.ts` | 스토리지 레이아웃 업그레이드 |
+
+#### M7 — 보안 감사
+
+| 세션 | 파일 | 주제 |
+|---|---|---|
+| S41 | `M7/S41_reentrancy_slither.ts` | 재진입 공격 · Slither 정적 분석 |
+| S42 | `M7/S42_slither_fix.ts` | Slither 지적 사항 수정 |
+| S43 | `M7/S43_upgrade_operation.ts` | 업그레이드 운영 실습 |
+| S44 | `M7/S44_security_review.ts` | 보안 리뷰 체크리스트 |
+
+#### M8 — 멀티시그 · 규정 준수
+
+| 세션 | 파일 | 주제 |
+|---|---|---|
+| S45 | `M8/S45_admin_api.ts` | 관리자 API 설계 |
+| S46 | `M8/S46_gnosis_safe.ts` | Gnosis Safe 멀티시그 |
+| S47 | `M8/S47_eip712_safetx.ts` | EIP-712 SafeTx 서명 |
+| S48 | `M8/S48_multisig_impl.ts` | 멀티시그 구현 |
+| S49 | `M8/S49_travel_rule.ts` | 트래블 룰 준수 |
+| S50 | `M8/S50_fault_injection.ts` | 장애 주입 테스트 |
 
 ---
 
@@ -484,14 +543,17 @@ kyobo-digital-asset-platform/
 │   ├── dmz/nginx/               DMZ Nginx 설정
 │   └── monitoring/prometheus/   모니터링
 │
-├── tools/
-│   └── event-listener/          온체인 이벤트 리스너 (개발 도구)
-│
 ├── course/                      ── 강의 자료 ──
-│   ├── exercises/               실습 파일 (M1 · M2 · M3 · M5)
+│   ├── exercises/               실습 파일 (M1 ~ M8)
 │   │   ├── M1/                  S04 실습 + answer
 │   │   ├── M2/                  S05~S12 실습 + answer
+│   │   │   └── event-listener/  온체인 이벤트 리스너 기동 실습
 │   │   ├── M3/                  S13~S22 실습 + answer
+│   │   ├── M4/                  S23~S26 실습 + answer
+│   │   ├── M5/                  S27~S34 실습 + answer
+│   │   ├── M6/                  S35~S40 실습 + answer
+│   │   ├── M7/                  S41~S44 실습 + answer
+│   │   ├── M8/                  S45~S50 실습 + answer
 │   │   └── __tests__/           실습 채점 테스트 (Jest)
 │   ├── PDF/                     세션별 강의 슬라이드 PDF
 │   ├── lecture-notes/           모듈별 강의 노트 (Markdown)
