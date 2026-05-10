@@ -8,6 +8,7 @@ flowchart TB
         BC["Ethereum Mainnet"]
         NODE["블록체인 노드\n(RPC Endpoint)"]
         EVENTS["온체인 이벤트\n(Logs / Webhooks)"]
+        SC["Smart Contract\n(KyoboNFT · NFTIssuer)"]
     end
 
     subgraph DMZ["🔒 DMZ 존 — 게이트웨이 레이어"]

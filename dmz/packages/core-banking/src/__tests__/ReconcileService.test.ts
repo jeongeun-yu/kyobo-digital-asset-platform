@@ -13,7 +13,7 @@ function makeCoreBanking(): ICoreBankingAdapter & { recordCalls: unknown[] } {
   const recordCalls: unknown[] = [];
   return {
     recordCalls,
-    async recordTransaction(tx) { recordCalls.push(tx); },
+    async recordTransaction(tx: unknown) { recordCalls.push(tx); },
     async getNftHolding()  { return null as any; },
     async recordNftHolding() {},
     async healthCheck() { return true; },

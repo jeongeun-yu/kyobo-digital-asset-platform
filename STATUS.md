@@ -8,21 +8,12 @@
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
 ## 마지막 작업 (2026-05-10)
-- M2 강의 노트 세션 순서 재조정: S6↔S8 교체 (S6=redis_streams_theory, S7=redis_streams_cli, S8=hmac_queue_service)
-- M2 실습 파일 순서 동일하게 재조정: S06_redis_stream, S07_redis_streams_cli.md, S08_hmac_webhook
-- S07_redis_stream_docker.ts 삭제 (S07 실습은 CLI md 파일로 대체)
-- S07_redis_streams_cli.md 신규: PPT make_S7_ppt.py 기준 명령어/순서 일치, Redis Cloud 접속 가이드 포함
-- S11_dlq_design.pptx / S12_finalized_e2e.pptx 생성 (z_Temp)
-- `.env` 루트 통합 완료: Sepolia 단일 테스트넷, MOCK_CONTRACT_ADDR + EVM_SIGNER_KEY 실값 채움
-- 디자인 패턴 4종 적용: Factory(ChainAdapterFactory), Decorator(Logging+Retry), CircuitBreaker, Observer(TxStateMachine EventEmitter)
-- 스텁 실구현: ISMSChecklist 5개 항목, DeadLetterQueue DLQStore 주입, KyoboCoreBankingAdapter.syncBalance()
-- 교육생 가시성: course/exercises/README.md 신규, 서비스 파일 11개 교육생 안내 헤더 추가
-- 강의 노트 + 실습 파일 정비: 세션 번호 오기 수정(S28→S30, S31→S33 등), Observer(S13)/Factory(S14) 실습 섹션 추가, S17_decorator_patterns.ts 신규, M3_S13/S14/S17 강의 노트 패턴 섹션 추가
-- M1_architecture_setup.md 싱크: POLYGON_RPC_URL→MAINNET_RPC_URL, TxStateMachine M4→M3, scripts/→tools/event-listener/src/
-- 강의 노트 경로 전수 점검: M6/M7 9개 파일 phase1/→rewards/, S54/S55 ledger→core-banking 패키지명 수정
-- 실습 파일 점검: S22 M4/→M3/ 이동, S17 answer 파일 신규 생성, M4 빈 폴더 삭제
-- 전 패키지 typecheck 통과 (EXIT 0): exactOptionalPropertyTypes 제거, rootDir 교차참조 수정, issuer-service package.json 신규
-- 실습 파일 실행 검증: M3 S13~S22 answer 파일 전체 ✅ 통과, Sepolia RPC rpc.sepolia.org→publicnode.com 교체
+- 스켈레톤 TODO 정리: dmz/packages/ + blockchain/src/ 전체 `TODO (Phase X):` → `Phase X:` 변환
+- M2~M8 누락 실습 파일 신규 생성: S18/S20/S23~S40/S41~S50 TypeScript 실습 + S51~S58 Ops md 파일
+- 실습 파일 문제/답안 분리: `.ts` (학생 스텁, TODO throw) + `.answer.ts` (완성 구현) 패턴 M3~M8 전체 적용
+- 채점 테스트 신규 생성: `__tests__/S18~S50.test.ts` 총 27개 파일, 스텁 import → 학생 미구현 시 FAIL
+- package.json exercise 스크립트 전체 추가: M1~M8 85개 (student/answer 양쪽)
+- docs 전수 점검 및 수정: 런북 경로 7건(internal→dmz), ADR-002 월렛원 확정, overview.md M6 오류 수정, tech-stack-decision ERC-1155 확정, Mermaid SC 노드 미정의 수정
 
 ## 다음 작업
 - [ ] 이종건 계약서 일정 확인

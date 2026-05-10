@@ -333,6 +333,7 @@ npm test && npm run test:exercises
 
 ```
 course/exercises/
+├── M1/          네트워크 연결 실습 (S04)
 ├── M2/          웹훅 · Redis Streams · 멱등성 · DLQ (S05~S12)
 ├── M3/          TX 상태머신 · 멀티체인 · EVM (S13~S22)
 └── __tests__/   실습 채점 테스트
@@ -347,7 +348,24 @@ course/exercises/
 
 ### 실습 실행
 
-실습 파일은 `dmz/packages/event-engine` 폴더에서 실행.  
+#### M1 실습 (루트에서 실행)
+
+S04는 루트에서 단축 명령으로 실행한다.
+
+```powershell
+# S04 PowerShell 선행 체험 가이드
+# → course/exercises/M1/S04_powershell_guide.md 참고
+
+# S04 TypeScript 실습 (로컬 Hardhat 노드 기동 후)
+npm run exercise:s04
+
+# S04 정답 확인
+npm run exercise:s04:answer
+```
+
+#### M2 · M3 실습 (event-engine 폴더에서 실행)
+
+M2·M3 실습 파일은 `dmz/packages/event-engine` 폴더에서 실행.  
 `import`가 `@kyobo/event-engine` 패키지를 참조하므로 **해당 폴더 외에서는 동작하지 않음.**
 
 ```powershell
@@ -502,6 +520,9 @@ kyobo-digital-asset-platform/
 | `S2_architecture_detail.pdf` | S2 아키텍처 상세 |
 | `S3_skeleton_dependency.pdf` | S3 스켈레톤 · 의존 방향 |
 | `S4_dev_env_fork.pdf` | S4 개발환경 · Mainnet Fork |
+| `S5_webhook_async_new.pdf` | S5 웹훅 · 202 비동기 패턴 |
+| `S6_redis_streams.pdf` | S6 Redis Streams 이론 |
+| `S7_streams_cli.pdf` | S7 Redis Streams CLI 실습 |
 
 ---
 

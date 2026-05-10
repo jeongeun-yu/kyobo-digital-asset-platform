@@ -36,7 +36,7 @@ export interface RpcProvider {
 // ── Broadcaster ───────────────────────────────────────────────────────────────
 
 /**
- * TODO (Phase 3): TX 서명 → RPC 전송 → mempool 확인 전담
+ * Phase 3: TX 서명 → RPC 전송 → mempool 확인 전담
  *
  * 핵심 동작:
  *   1. A1_SIGNED 상태 Attempt 조회
@@ -53,13 +53,13 @@ export class Broadcaster {
     private readonly rpc: RpcProvider,
   ) {}
 
-  // TODO (Phase 3): 구현
+  // Phase 3: 구현
   async broadcastPending(): Promise<{ sent: number; failed: number }> {
-    throw new Error('TODO: Phase 3 — Broadcaster.broadcastPending 구현 필요');
+    throw new Error('Phase 3 — Broadcaster.broadcastPending 구현 필요');
   }
 
-  // TODO (Phase 3): 단건 전송 + 즉각 재시도
+  // Phase 3: 단건 전송 + 즉각 재시도
   async broadcast(attempt: TxAttempt): Promise<void> {
-    throw new Error('TODO: Phase 3 — Broadcaster.broadcast 구현 필요');
+    throw new Error('Phase 3 — Broadcaster.broadcast 구현 필요');
   }
 }

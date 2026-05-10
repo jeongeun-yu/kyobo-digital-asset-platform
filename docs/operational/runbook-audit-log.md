@@ -2,7 +2,7 @@
 
 **대상**: 컴플라이언스 담당자, 운영팀  
 **관련 세션**: S55  
-**관련 코드**: `internal/packages/ledger/AuditLogService.ts`
+**관련 코드**: `dmz/packages/core-banking/src/audit/AuditLogService.ts`
 
 ---
 

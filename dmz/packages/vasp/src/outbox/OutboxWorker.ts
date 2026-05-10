@@ -60,7 +60,7 @@ export interface OutboxEvent {
 // ── OutboxWorker ──────────────────────────────────────────────────────────────
 
 /**
- * TODO (Phase 3): PENDING 이벤트 처리 워커
+ * Phase 3: PENDING 이벤트 처리 워커
  *
  * DB 스키마 (Phase 3):
  *   CREATE TABLE outbox_events (
@@ -84,13 +84,13 @@ export class OutboxWorker {
   ) {}
 
   /**
-   * TODO (Phase 3): PENDING 이벤트 일괄 처리
+   * Phase 3: PENDING 이벤트 일괄 처리
    *   1. SELECT FOR UPDATE SKIP LOCKED — 동시 워커 간 중복 처리 방지
    *   2. 이벤트 유형별 핸들러 호출
    *   3. 성공: status=PROCESSED
    *   4. 실패: attemptCount++, nextRetryAt = now + 2^attempt초, status=DEAD if 5회 초과
    */
   async processPending(): Promise<{ processed: number; failed: number }> {
-    throw new Error('TODO: Phase 3 — OutboxWorker.processPending 구현 필요');
+    throw new Error('Phase 3 — OutboxWorker.processPending 구현 필요');
   }
 }

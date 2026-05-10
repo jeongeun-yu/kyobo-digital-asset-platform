@@ -24,13 +24,11 @@
 2. DI 컨테이너 바인딩 변경: `ExternalVASPAdapter` → `KyoboVASPAdapter`
 3. 상위 레이어(issuer-service 등) **코드 변경 없음**
 
-## 유력 VASP 파트너 (2026-04-24 현재)
+## VASP 파트너 확정 (2026-04-25)
 
 | 업체 | 상태 | 비고 |
 |---|---|---|
-| **월렛원 (WalletOne)** | 유력 후보 (미확정) | 교보생명 측 유선 언급 — 계약 확정 전 |
-
-> 확정 시 이 ADR 업데이트 및 `ExternalVASPAdapter` 주석에 반영할 것.
+| **월렛원 (WalletOne)** | ✅ **내부 확정** | 2026-04-25 내부 결정 완료 — Ethereum Mainnet 지원, REST API (JS/TS 중심), Travel Rule 지원 |
 
 ## VASP 파트너 선정 기준 (Phase 1)
 

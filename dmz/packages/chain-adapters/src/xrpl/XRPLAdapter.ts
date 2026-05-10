@@ -19,7 +19,7 @@ export class XRPLAdapter implements IBlockchainAdapter {
   readonly chainId  = 'xrpl-mainnet';
   readonly chainType = 'XRPL' as const;
 
-  // TODO 향후: xrpl.js Client 초기화
+  // 향후: xrpl.js Client 초기화
   constructor(_config?: { wsUrl?: string; seed?: string }) {}
 
   async isConnected(): Promise<boolean> { throw new Error('XRPLAdapter: not implemented'); }

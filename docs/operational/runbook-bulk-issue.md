@@ -2,7 +2,7 @@
 
 **대상**: 운영팀, 이벤트 담당자  
 **관련 세션**: S33–S34  
-**관련 코드**: `internal/packages/issuer/BulkIssueService.ts`
+**관련 코드**: `dmz/apps/issuer-service/src/services/BulkIssueService.ts`
 
 ---
 

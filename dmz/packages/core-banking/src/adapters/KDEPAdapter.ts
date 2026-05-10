@@ -63,7 +63,7 @@ export class KDEPAdapter {
    * 토큰증권 발행 통보 — 예탁결제원 등록 의무 (토큰증권 규율체계 §12)
    */
   async notifyIssuance(payload: KDEPIssuancePayload): Promise<void> {
-    // TODO Phase 3: KDEP REST API POST /v1/securities/issuance
+    // Phase 3: KDEP REST API POST /v1/securities/issuance
     console.log('[KDEP] notifyIssuance stub:', {
       addr: payload.securityTokenAddr,
       holder: payload.holder,
@@ -76,7 +76,7 @@ export class KDEPAdapter {
    * 배당 지급 통보
    */
   async notifyDividendDistribution(payload: KDEPDividendPayload): Promise<void> {
-    // TODO Phase 3: KDEP REST API POST /v1/securities/dividends
+    // Phase 3: KDEP REST API POST /v1/securities/dividends
     console.log('[KDEP] notifyDividendDistribution stub:', payload.distributionId);
   }
 
@@ -85,7 +85,7 @@ export class KDEPAdapter {
    * setDocument() 후 반드시 호출 — 문서 해시 불일치 시 KDEP에서 경보
    */
   async notifyDocumentUpdate(payload: KDEPDocumentPayload): Promise<void> {
-    // TODO Phase 3: KDEP REST API PUT /v1/securities/documents
+    // Phase 3: KDEP REST API PUT /v1/securities/documents
     console.log('[KDEP] notifyDocumentUpdate stub:', payload.documentName);
   }
 
@@ -93,7 +93,7 @@ export class KDEPAdapter {
    * 상환·소각 통보 — 만기 상환 또는 투자자 요청 상환
    */
   async notifyRedemption(payload: KDEPRedemptionPayload): Promise<void> {
-    // TODO Phase 3: KDEP REST API POST /v1/securities/redemptions
+    // Phase 3: KDEP REST API POST /v1/securities/redemptions
     console.log('[KDEP] notifyRedemption stub:', {
       holder: payload.holder,
       amount: payload.amount,

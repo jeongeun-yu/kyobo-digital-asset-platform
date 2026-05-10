@@ -29,7 +29,7 @@ export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
     if (!resp) return null;
     return {
       userId:     resp.userId,
-      accountId:  resp.userId,         // TODO: 교보DTS API 스펙 확정 후 별도 accountId 필드로 교체
+      accountId:  resp.userId,         // 교보DTS API 스펙 확정 후 별도 accountId 필드로 교체
       walletAddr: resp.walletAddress ?? '',
       status:     resp.isActive ? 'active' : 'suspended',
     };

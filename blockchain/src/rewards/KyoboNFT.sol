@@ -78,7 +78,7 @@ contract KyoboNFT is
         uint64 productCode,
         uint64 eventCode
     ) public pure returns (uint256) {
-        // TODO (S5 실습): 비트 시프트로 두 코드를 하나의 uint256에 결합
+        // M2 S5 실습: 비트 시프트로 두 코드를 하나의 uint256에 결합
         //   return (uint256(productCode) << PRODUCT_CODE_SHIFT) | uint256(eventCode);
         return (uint256(productCode) << PRODUCT_CODE_SHIFT) | uint256(eventCode);
     }
@@ -90,7 +90,7 @@ contract KyoboNFT is
     function decodeTokenId(
         uint256 tokenId
     ) public pure returns (uint64 productCode, uint64 eventCode) {
-        // TODO (S5 실습): 역방향 비트 마스킹
+        // M2 S5 실습: 역방향 비트 마스킹
         productCode = uint64(tokenId >> PRODUCT_CODE_SHIFT);
         eventCode   = uint64(tokenId);
     }
@@ -109,7 +109,7 @@ contract KyoboNFT is
         uint256 tokenId,
         uint256 amount
     ) external onlyRole(MINTER_ROLE) whenNotPaused {
-        // TODO (S7 실습): 조건 체크 + _mint 호출
+        // M3 S7 실습: 조건 체크 + _mint 호출
         //   require(amount > 0, "KyoboNFT: zero amount");
         //   _mint(to, tokenId, amount, "");
         require(amount > 0, "KyoboNFT: zero amount");
@@ -132,7 +132,7 @@ contract KyoboNFT is
         uint256[] calldata tokenIds,
         uint256[] calldata amounts
     ) external onlyRole(MINTER_ROLE) whenNotPaused {
-        // TODO (S7 실습): 배열 길이 검증 + 루프 _mint
+        // M3 S7 실습: 배열 길이 검증 + 루프 _mint
         require(
             to.length == tokenIds.length && tokenIds.length == amounts.length,
             "KyoboNFT: length mismatch"

@@ -78,7 +78,7 @@ export interface ISignerService {
   getPublicKey(signerAddress: string): Promise<string>;
 
   /**
-   * TODO (Phase 3): 서명 키 상태 확인 (HSM 연결, MPC 쿼럼 여부)
+   * Phase 3: 서명 키 상태 확인 (HSM 연결, MPC 쿼럼 여부)
    */
   healthCheck(): Promise<{ healthy: boolean; mode: 'HSM' | 'MPC' | 'STUB' }>;
 }
@@ -98,7 +98,7 @@ export class StubSignerService implements ISignerService {
   }
 
   async getPublicKey(_signerAddress: string): Promise<string> {
-    throw new Error('TODO: Phase 3 — HSM/MPC 서명자 공개키 조회 구현 필요');
+    throw new Error('Phase 3 — HSM/MPC 서명자 공개키 조회 구현 필요');
   }
 
   async healthCheck(): Promise<{ healthy: boolean; mode: 'HSM' | 'MPC' | 'STUB' }> {

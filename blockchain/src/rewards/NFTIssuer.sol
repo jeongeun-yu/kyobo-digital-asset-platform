@@ -73,7 +73,7 @@ contract NFTIssuer is AccessControl, ReentrancyGuard {
 
         issued[requestId] = true;
 
-        // TODO (M4 S15 실습): TX 상태머신 연동
+        // M4 S15 실습: TX 상태머신 연동
         //   submitMintRequest() 호출 → SUBMITTED 상태 전이 → 여기서 CONFIRMED 전이
         nft.mint(to, tokenId, amount);
 
@@ -138,7 +138,7 @@ contract NFTIssuer is AccessControl, ReentrancyGuard {
 
         issued[requestId] = true;
 
-        // TODO (M5 실습): mintBatch 가스 측정 + 500건 한도 이유 분석
+        // M5 실습: mintBatch 가스 측정 + 500건 한도 이유 분석
         nft.mintBatch(to, tokenIds, amounts);
     }
 

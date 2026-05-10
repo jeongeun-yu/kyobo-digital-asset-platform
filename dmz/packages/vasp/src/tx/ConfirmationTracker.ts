@@ -50,7 +50,7 @@ export interface BlockchainRpc {
 // ── ConfirmationTracker ───────────────────────────────────────────────────────
 
 /**
- * TODO (Phase 3): 블록 포함 확인 → REORG 감지 → Finality 확인 전담
+ * Phase 3: 블록 포함 확인 → REORG 감지 → Finality 확인 전담
  *
  * 핵심 동작:
  *   1. A2_SENT_TO_RPC / A3_SEEN_IN_MEMPOOL 상태 Attempt 조회
@@ -71,13 +71,13 @@ export class ConfirmationTracker {
     private readonly rpc: BlockchainRpc,
   ) {}
 
-  // TODO (Phase 3): 구현
+  // Phase 3: 구현
   async trackPending(): Promise<{ updated: number }> {
-    throw new Error('TODO: Phase 3 — ConfirmationTracker.trackPending 구현 필요');
+    throw new Error('Phase 3 — ConfirmationTracker.trackPending 구현 필요');
   }
 
-  // TODO (Phase 3): REORG 감지 로직
+  // Phase 3: REORG 감지 로직
   private async _detectReorg(_attempt: TxAttempt): Promise<boolean> {
-    throw new Error('TODO: Phase 3 — REORG 감지 구현 필요');
+    throw new Error('Phase 3 — REORG 감지 구현 필요');
   }
 }

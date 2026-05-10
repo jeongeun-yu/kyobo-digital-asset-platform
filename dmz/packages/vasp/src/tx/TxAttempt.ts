@@ -99,9 +99,9 @@ export interface TxAttemptRepository {
   ): Promise<void>;
 }
 
-// ── Phase 3 TODO ──────────────────────────────────────────────────────────────
+// ── Phase 3 구현 예정 ──────────────────────────────────────────────────────────
 //
-// TODO (Phase 3 — 직접 Custody 전환 시 구현):
+// Phase 3 — 직접 Custody 전환 시 구현:
 //   1. TxAttemptService: Attempt 생성, 서명, 전송, 상태 추적
 //   2. MintRequest 1:N TxAttempt 관계 — gas bump 시 신규 Attempt 생성
 //   3. Nonce 관리: NonceManager와 연동 (TxAttempt.nonce 할당)

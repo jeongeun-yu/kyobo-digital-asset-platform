@@ -2,7 +2,7 @@
 
 **대상**: DMZ 운영자, VASP 담당자  
 **관련 세션**: S53  
-**관련 코드**: `internal/packages/vasp/ExternalVASPAdapter.ts`
+**관련 코드**: `dmz/packages/vasp/src/external/ExternalVASPAdapter.ts`
 
 ---
 

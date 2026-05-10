@@ -2,7 +2,7 @@
 
 **대상**: 운영팀, 온콜 담당자  
 **관련 세션**: S19–S20  
-**관련 코드**: `internal/packages/vasp/VaspClient.ts`, `internal/apps/issuer-service/`
+**관련 코드**: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`, `dmz/apps/issuer-service/`
 
 ---
 

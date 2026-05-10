@@ -2,7 +2,7 @@
 
 **대상**: 컨트랙트 담당 개발자, Safe 서명자 3인  
 **관련 세션**: S57  
-**관련 코드**: `blockchain/`, `internal/packages/vasp/MultisigService.ts`
+**관련 코드**: `blockchain/`, `dmz/packages/vasp/src/` (MultisigService — M8 구현 예정)
 
 ---
 

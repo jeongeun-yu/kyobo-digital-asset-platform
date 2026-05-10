@@ -39,10 +39,10 @@ contract InvestorCompliance is ICompliance, AccessControl {
 
     /**
      * @notice 파티션 컨텍스트 설정 — SecurityToken.transferByPartition() 내부에서 호출
-     *         TODO Phase 3: SecurityToken 구현 시 실제 연동
+     *         Phase 3: SecurityToken 구현 시 실제 연동
      */
     function setActivePartition(bytes32 partition) external {
-        // TODO: onlyRole(TOKEN_CONTRACT_ROLE) 추가 필요
+        // Phase 3: onlyRole(TOKEN_CONTRACT_ROLE) 추가 필요
         _activePartition = partition;
     }
 
@@ -58,7 +58,7 @@ contract InvestorCompliance is ICompliance, AccessControl {
         address /* to */,
         uint256 /* amount */
     ) external pure override returns (bool) {
-        // TODO Phase 3: 아래 로직 구현
+        // Phase 3: 아래 로직 구현
 
         // 1. 투자자 등록 여부
         // if (!investorRegistry.isRegistered(to)) return false;
@@ -88,7 +88,7 @@ contract InvestorCompliance is ICompliance, AccessControl {
         address to,
         uint256 amount
     ) external override {
-        // TODO Phase 3:
+        // Phase 3:
         // if (from != address(0)) {
         //     investorRegistry.updateHolding(from, _activePartition, amount, false);
         // }
@@ -99,7 +99,7 @@ contract InvestorCompliance is ICompliance, AccessControl {
      * @notice KYC 등록 여부 — InvestorRegistry 조회
      */
     function isVerified(address /* account */) external pure override returns (bool) {
-        // TODO Phase 3: return investorRegistry.isRegistered(account);
+        // Phase 3: return investorRegistry.isRegistered(account);
         return true;
     }
 

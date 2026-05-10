@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { verifySignature } from '../M2/S06_hmac_webhook';
+import { verifySignature } from '../M2/S08_hmac_webhook';
 
 function computeHmac(data: Buffer, secret: string): string {
   return crypto.createHmac('sha256', secret).update(data).digest('hex');

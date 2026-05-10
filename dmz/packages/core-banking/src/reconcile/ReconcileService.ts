@@ -82,7 +82,6 @@ export class ReconcileService {
       status:    'confirmed',
       timestamp: Math.floor(Date.now() / 1000),
     });
-    // TODO Phase 2: 증분 조정 후 불일치 시 알림
   }
 
   async onBurn(amount: bigint, txHash: string): Promise<void> {
@@ -94,6 +93,5 @@ export class ReconcileService {
       status:    'confirmed',
       timestamp: Math.floor(Date.now() / 1000),
     });
-    // TODO Phase 2: 증분 조정 후 불일치 시 알림
   }
 }

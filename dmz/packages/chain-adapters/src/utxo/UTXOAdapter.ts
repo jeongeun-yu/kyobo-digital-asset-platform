@@ -28,7 +28,7 @@ export class UTXOAdapter implements IBlockchainAdapter {
   readonly chainId   = 'bitcoin-mainnet';
   readonly chainType = 'UTXO' as const;
 
-  // TODO 향후: bitcoinjs-lib + Electrum / BitcoinCore RPC 초기화
+  // 향후: bitcoinjs-lib + Electrum / BitcoinCore RPC 초기화
   constructor(_config?: { rpcUrl?: string; network?: 'mainnet' | 'testnet' }) {}
 
   async isConnected(): Promise<boolean>      { throw new Error('UTXOAdapter: not implemented'); }

@@ -70,7 +70,7 @@ export const WHITELIST_VALID_TRANSITIONS: Record<WhitelistStatus, WhitelistStatu
 
 export class WhitelistAddressService {
   /**
-   * TODO (Phase 3): 출금 주소 등록 요청
+   * Phase 3: 출금 주소 등록 요청
    */
   async register(
     _userId: string,
@@ -78,30 +78,30 @@ export class WhitelistAddressService {
     _chainId: string,
     _label: string,
   ): Promise<WhitelistEntry> {
-    throw new Error('TODO: Phase 3 — WhitelistAddressService.register 구현 필요');
+    throw new Error('Phase 3 — WhitelistAddressService.register 구현 필요');
   }
 
   /**
-   * TODO (Phase 3): 주소 활성 여부 확인
+   * Phase 3: 주소 활성 여부 확인
    *   ACTIVE 상태 + holdingUntil < now 확인
    */
   async isActive(_address: string, _chainId: string): Promise<boolean> {
-    throw new Error('TODO: Phase 3 — WhitelistAddressService.isActive 구현 필요');
+    throw new Error('Phase 3 — WhitelistAddressService.isActive 구현 필요');
   }
 
   /**
-   * TODO (Phase 3): HOLDING → ACTIVE 전이 배치
+   * Phase 3: HOLDING → ACTIVE 전이 배치
    *   holdingUntil < now인 HOLDING 상태 일괄 ACTIVE 전이
    *   크론: 1시간 간격
    */
   async activateMatured(): Promise<{ activated: number }> {
-    throw new Error('TODO: Phase 3 — WhitelistAddressService.activateMatured 구현 필요');
+    throw new Error('Phase 3 — WhitelistAddressService.activateMatured 구현 필요');
   }
 
   /**
-   * TODO (Phase 3): ACTIVE → REVOKED 즉시 취소
+   * Phase 3: ACTIVE → REVOKED 즉시 취소
    */
   async revoke(_entryId: string, _reason: string): Promise<void> {
-    throw new Error('TODO: Phase 3 — WhitelistAddressService.revoke 구현 필요');
+    throw new Error('Phase 3 — WhitelistAddressService.revoke 구현 필요');
   }
 }

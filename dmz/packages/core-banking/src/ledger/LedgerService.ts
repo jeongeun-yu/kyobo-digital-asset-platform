@@ -40,7 +40,7 @@ export interface InternalLedgerBalance {
   updatedAt: Date;
 }
 
-// TODO (Phase 3): LedgerService에 잔액 관리 메서드 추가
+// Phase 3: LedgerService에 잔액 관리 메서드 추가
 //   reserve(userId, tokenId, amount): Available → Reserved (출금 승인 시)
 //   settle(userId, tokenId, amount):  Reserved+Pending → Settled (FINALIZED 시)
 //   release(userId, tokenId, amount): Reserved → Available (출금 취소 시)

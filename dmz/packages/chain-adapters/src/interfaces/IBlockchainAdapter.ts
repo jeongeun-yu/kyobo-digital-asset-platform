@@ -212,14 +212,14 @@ export interface IBlockchainAdapter {
 
 export interface IBlockchainAdapterV3 extends IBlockchainAdapter {
   /**
-   * TODO (Phase 3): 현재 네트워크 수수료 조회
+   * Phase 3: 현재 네트워크 수수료 조회
    *   feePolicyId에 따라 maxFeePerGas / maxPriorityFeePerGas 계산
    *   EVM: eth_feeHistory 기반 / XRPL: fee_base 조회
    */
   getFeeParams(policyId: FeePolicyId): Promise<Eip1559FeeParams>;
 
   /**
-   * TODO (Phase 3): 현재 RPC 저하 모드 조회
+   * Phase 3: 현재 RPC 저하 모드 조회
    *   다중 RPC quorum 상태를 기반으로 저하 모드 반환
    *   STOP_THE_LINE이면 TX 전송 차단
    */

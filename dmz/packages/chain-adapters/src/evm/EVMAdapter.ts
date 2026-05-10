@@ -43,7 +43,7 @@ const ERC1155_ABI = [
  * 역할: 참고용 구현체 (M3 S15 실습 포인트 2개 있음)
  * 실습: course/exercises/M3/S15_evm_lab.ts    ← EVMAdapter mintNFT 직접 구현
  *       course/exercises/M3/S14_multichain_adapter.ts ← Strategy 패턴 체인 교체
- * 실습 포인트: mintNFT() (line 88), mintNFTBatch() (line 103) — TODO 주석 참고
+ * 실습 포인트: mintNFT() (line 88), mintNFTBatch() (line 103) — M4 S17 실습 참고
  */
 export class EVMAdapter implements IBlockchainAdapter {
   readonly chainId:   string;
@@ -86,7 +86,7 @@ export class EVMAdapter implements IBlockchainAdapter {
    * @dev NFTIssuer.issueNFT() 컨트랙트 호출 래퍼
    */
   async mintNFT(params: MintParams): Promise<TransactionReceipt> {
-    // TODO (M4 S17 실습): sendTransaction으로 컨트랙트 mint 호출
+    // M4 S17 실습: sendTransaction으로 컨트랙트 mint 호출
     //   TX 상태머신: SUBMITTED → (여기서) → CONFIRMED / FAILED
     return this.sendTransaction({
       contractAddr: params.contractAddr,
@@ -101,7 +101,7 @@ export class EVMAdapter implements IBlockchainAdapter {
    * @dev 500건 초과 시 BulkIssuerService.ts에서 청크 분할 후 호출
    */
   async mintNFTBatch(params: MintBatchParams): Promise<TransactionReceipt> {
-    // TODO (M4 S17 실습): mintBatch 호출 + 가스 소비량 측정 (S7 연계)
+    // M4 S17 실습: mintBatch 호출 + 가스 소비량 측정
     return this.sendTransaction({
       contractAddr: params.contractAddr,
       abi:          ERC1155_ABI,

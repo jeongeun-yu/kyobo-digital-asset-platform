@@ -77,7 +77,7 @@ contract KRWStablecoin is ERC20, BaseToken {
      * @param amount        발행량 (원 단위)
      * @param depositTxRef  Core Banking 입금 트랜잭션 참조 (감사 추적)
      *
-     * TODO Phase 2:
+     * Phase 2:
      *   - depositTxRef 중복 발행 방지 (idempotency)
      *   - ReconcileService와 연동해 실계좌 잔액 검증
      */
@@ -97,7 +97,7 @@ contract KRWStablecoin is ERC20, BaseToken {
      * @param amount        소각량 (원 단위)
      * @param withdrawTxRef Core Banking 출금 트랜잭션 참조
      *
-     * TODO Phase 2:
+     * Phase 2:
      *   - Core Banking 출금 처리 완료 후 소각 (순서 보장 필요)
      *   - 출금 실패 시 rollback 로직
      */

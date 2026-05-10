@@ -101,7 +101,7 @@
 | M3 (VASP 추상화) | packages/vasp, chain-adapters | `TxStateMachineService`, `IBlockchainAdapter` |
 | M4 (원장·감사) | packages/core-banking | `LedgerService`, `AuditLogService` |
 | M5 (비즈니스 로직) | apps/issuer-service | `EventConditionService`, `WalletMappingService`, `BulkIssueService` |
-| M6 (ERC-1155) | blockchain/src/rewards | `ActivityOracle.sol` — UUPS + tokenId 인코딩 (ERC-1155) |
+| M6 (ERC-1155) | blockchain/src/rewards | `KyoboNFT.sol` (ERC-1155 + UUPS Proxy), `ActivityOracle.sol` (IOracle 구현 — 활동 데이터 기록) |
 | M7 (보안 감사) | blockchain/src/rewards | Storage layout 검증 실습 — UUPS 업그레이드 패턴 |
 | M8 (키 거버넌스) | packages/vasp | `KeyGovernanceService` — EIP-712 SafeTx, Travel Rule |
 

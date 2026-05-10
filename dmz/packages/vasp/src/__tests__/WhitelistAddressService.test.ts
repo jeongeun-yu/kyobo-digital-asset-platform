@@ -1,8 +1,8 @@
 /**
  * WhitelistAddressService 단위 테스트
  *
- * Phase 3 TODO 스텁이므로 상태 전이 테이블(WHITELIST_VALID_TRANSITIONS) 검증 +
- * 각 메서드의 TODO stub 동작(throw) 확인
+ * Phase 3 스텁이므로 상태 전이 테이블(WHITELIST_VALID_TRANSITIONS) 검증 +
+ * 각 메서드의 Phase 3 stub 동작(throw) 확인
  */
 
 import {
@@ -66,32 +66,32 @@ describe('WHITELIST_VALID_TRANSITIONS', () => {
   });
 });
 
-// ── WhitelistAddressService TODO 스텁 동작 검증 ─────────────────────────────
+// ── WhitelistAddressService Phase 3 스텁 동작 검증 ───────────────────────────
 
-describe('WhitelistAddressService (Phase 3 TODO stubs)', () => {
+describe('WhitelistAddressService (Phase 3 stubs)', () => {
   let svc: WhitelistAddressService;
 
   beforeEach(() => {
     svc = new WhitelistAddressService();
   });
 
-  it('register() → TODO Error throw', async () => {
+  it('register() → Phase 3 Error throw', async () => {
     await expect(svc.register('u-001', '0xaddr', '31337', 'cold wallet'))
-      .rejects.toThrow('TODO');
+      .rejects.toThrow('Phase 3');
   });
 
-  it('isActive() → TODO Error throw', async () => {
+  it('isActive() → Phase 3 Error throw', async () => {
     await expect(svc.isActive('0xaddr', '31337'))
-      .rejects.toThrow('TODO');
+      .rejects.toThrow('Phase 3');
   });
 
-  it('activateMatured() → TODO Error throw', async () => {
+  it('activateMatured() → Phase 3 Error throw', async () => {
     await expect(svc.activateMatured())
-      .rejects.toThrow('TODO');
+      .rejects.toThrow('Phase 3');
   });
 
-  it('revoke() → TODO Error throw', async () => {
+  it('revoke() → Phase 3 Error throw', async () => {
     await expect(svc.revoke('entry-001', 'security breach'))
-      .rejects.toThrow('TODO');
+      .rejects.toThrow('Phase 3');
   });
 });

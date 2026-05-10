@@ -112,7 +112,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
         uint256 value,
         bytes calldata /* data */
     ) external view override returns (bytes1 statusCode, bytes32 reasonCode, bytes32 partition_) {
-        // TODO Phase 3: InvestorRegistry 실제 조회
+        // Phase 3: InvestorRegistry 실제 조회
         // (bool allowed, bytes32 reason) = investorRegistry.canAcceptTransfer(to, partition, value);
         // if (!allowed) return (0x57, reason, partition);
 
@@ -128,7 +128,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
     /**
      * @notice 파티션 지정 STO 발행
      *
-     * TODO Phase 3 구현 시:
+     * Phase 3 구현 시:
      *   1. compliance.canTransfer(address(0), holder, value) 검증
      *   2. 잔액 추가 + 홀더 파티션 목록 업데이트
      *   3. investorRegistry.setLockup(holder, partition, lockupUntil) 락업 설정
@@ -143,7 +143,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
         require(_partitionExists[partition], "SecurityToken: unknown partition");
         _checkCompliance(address(0), holder, value);
 
-        // TODO Phase 3: 실제 잔액 업데이트
+        // Phase 3: 실제 잔액 업데이트
         // _partitionBalances[partition][holder] += value;
         // _addPartitionToHolder(holder, partition);
 
@@ -154,7 +154,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
     /**
      * @notice 파티션 지정 소각 (만기 상환·회수)
      *
-     * TODO Phase 3:
+     * Phase 3:
      *   1. 잔액 차감
      *   2. KDEPAdapter.notifyRedemption()
      */
@@ -165,7 +165,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
     ) external override whenNotPaused nonReentrant {
         require(_partitionBalances[partition][msg.sender] >= value, "SecurityToken: insufficient balance");
 
-        // TODO Phase 3: 실제 잔액 차감
+        // Phase 3: 실제 잔액 차감
         // _partitionBalances[partition][msg.sender] -= value;
 
         emit RedeemedByPartition(partition, msg.sender, value, data);
@@ -177,7 +177,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
     /**
      * @notice 파티션 지정 전송
      *
-     * TODO Phase 3:
+     * Phase 3:
      *   1. InvestorCompliance.setActivePartition(partition) 컨텍스트 설정
      *   2. compliance.canTransfer 검증
      *   3. 잔액 이동
@@ -192,7 +192,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
         require(_partitionBalances[partition][msg.sender] >= value, "SecurityToken: insufficient balance");
         _checkCompliance(msg.sender, to, value);
 
-        // TODO Phase 3: 실제 잔액 이동
+        // Phase 3: 실제 잔액 이동
         // _partitionBalances[partition][msg.sender] -= value;
         // _partitionBalances[partition][to] += value;
         // compliance.transferred(msg.sender, to, value);
@@ -216,7 +216,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
         require(_partitionBalances[partition][from] >= value, "SecurityToken: insufficient balance");
         _checkCompliance(from, to, value);
 
-        // TODO Phase 3: 실제 잔액 이동
+        // Phase 3: 실제 잔액 이동
 
         emit TransferByPartition(partition, msg.sender, from, to, value, data, operatorData);
         return partition;
@@ -235,7 +235,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
         bytes calldata data,
         bytes calldata operatorData
     ) external override onlyRole(CONTROLLER_ROLE) nonReentrant {
-        // TODO Phase 3: 파티션 지정 강제 이전
+        // Phase 3: 파티션 지정 강제 이전
 
         emit ControllerTransfer(msg.sender, from, to, value, data, operatorData);
     }
@@ -246,7 +246,7 @@ contract SecurityToken is BaseToken, ISecurityToken, ReentrancyGuard {
         bytes calldata data,
         bytes calldata operatorData
     ) external override onlyRole(CONTROLLER_ROLE) nonReentrant {
-        // TODO Phase 3: 강제 소각
+        // Phase 3: 강제 소각
 
         emit Revoked(holder, value, keccak256(abi.encodePacked(data, operatorData)));
     }

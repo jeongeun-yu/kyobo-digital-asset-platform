@@ -30,7 +30,7 @@ export class CircleAdapter implements IBlockchainAdapter {
   readonly chainId   = 'circle-arc-mainnet';
   readonly chainType = 'BFT' as const;
 
-  // TODO 향후: Circle Developer API 키 + CCTP 컨트랙트 주소 초기화
+  // 향후: Circle Developer API 키 + CCTP 컨트랙트 주소 초기화
   constructor(_config?: { apiKey?: string; baseUrl?: string }) {}
 
   async isConnected(): Promise<boolean>      { throw new Error('CircleAdapter: not implemented'); }

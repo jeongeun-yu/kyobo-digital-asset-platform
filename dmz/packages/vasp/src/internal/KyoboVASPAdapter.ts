@@ -24,9 +24,10 @@
 // 교체는 DI(의존성 주입) 컨테이너의 바인딩 변경만으로 완료.
 // =============================================================================
 
-import type { IVASPAdapter, WalletInfo, TransferRequest, TransferResult } from '../interfaces/IVASPAdapter';
+import type { IVASPAdapter, WalletInfo, TransferRequest, TransferResult, SubmitTransactionParams, VASPTransactionReceipt } from '../interfaces/IVASPAdapter';
 
 export class KyoboVASPAdapter implements IVASPAdapter {
+  async submitTransaction(_params: SubmitTransactionParams): Promise<VASPTransactionReceipt> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
   async createWallet(_userId: string): Promise<WalletInfo> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
   async getWallet(_userId: string): Promise<WalletInfo | null> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
   async transfer(_req: TransferRequest): Promise<TransferResult> { throw new Error('KyoboVASPAdapter: not implemented — 향후 내재화 시 구현'); }
