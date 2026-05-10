@@ -292,7 +292,7 @@ npm run test:exercises -- S50
 | 모듈 | 테스트 파일 | TC 수 | 주요 세션 |
 |---|---|---|---|
 | M1 | 1개 | 12 | S04 네트워크 확인 |
-| M2 | 7개 | 38 | S05~S12 웹훅 · Redis Streams · DLQ |
+| M2 | 7개 | 38 | S05~S12 웹훅 · HMAC · Redis Streams · DLQ |
 | M3 | 8개 | 160 | S13~S22 TX 상태머신 · 멀티체인 · 타임아웃 |
 | M4 | 4개 | 78 | S23~S26 원장 · 감사 로그 |
 | M5 | 7개 | 139 | S27~S34 지갑 · 발행 흐름 |
@@ -416,9 +416,10 @@ npm run test:exercises
 | 세션 | 파일 | 주제 | 채점 테스트 |
 |---|---|---|---|
 | S05 | `M2/S05_webhook.ts` | WebhookServer 기동 | — |
-| S05 | `M2/S05_make_sig.ts` | HMAC 서명 생성 | — |
-| S06 | `M2/S06_hmac_webhook.ts` | HMAC 검증 구현 | `S06_hmac_webhook.test.ts` |
-| S07 | `M2/S07_redis_stream.ts` | Redis Streams 전체 흐름 | — |
+| S05 | `M2/S05_make_sig.ts` | HMAC 서명 생성 | `S05_make_sig.test.ts` |
+| S06 | `M2/S06_redis_stream.ts` | Redis Streams 전체 흐름 | `S06_redis_stream.test.ts` |
+| S07 | — (CLI 실습) | Redis Streams CLI 직접 조작 | — |
+| S08 | `M2/S08_hmac_webhook.ts` | HMAC 검증 구현 | `S08_hmac_webhook.test.ts` |
 | S09 | `M2/S09_atleastonce.ts` | At-least-once + 멱등성 | `atleastonce.test.ts` |
 | S10 | `M2/S10_handle_with_retry.ts` | 재시도 핸들러 구현 | `handle_with_retry.test.ts` |
 | S11 | `M2/S11_dlq.ts` | DLQ 이동 + 운영 절차 | — |
