@@ -134,3 +134,12 @@ describe('CircuitOpenError', () => {
     expect(new CircuitOpenError(1000)).toBeInstanceOf(Error);
   });
 });
+
+describe('CircuitBreaker — 기본값 (인자 없이 생성)', () => {
+  it('opts 없이 생성해도 정상 동작', async () => {
+    const cb = new CircuitBreaker();
+    const result = await cb.execute(async () => 'default-opts');
+    expect(result).toBe('default-opts');
+    expect(cb.getState()).toBe('CLOSED');
+  });
+});

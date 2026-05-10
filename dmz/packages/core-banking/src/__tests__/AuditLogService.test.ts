@@ -147,6 +147,15 @@ describe('AuditLogService.verifyIntegrity()', () => {
 });
 
 describe('AuditLogService.queryByResource()', () => {
+  it('beforeState 포함 로그 조회 시 역직렬화 반환', async () => {
+    const db  = makeDb();
+    const svc = new AuditLogService(db);
+    await svc.log({ ...BASE_PARAMS, beforeState: { status: 'SUBMITTED' } });
+
+    const results = await svc.queryByResource('MintRequest', 'req-001');
+    expect(results[0]!.beforeState).toEqual({ status: 'SUBMITTED' });
+  });
+
   it('해당 resource의 로그만 반환', async () => {
     const db  = makeDb();
     const svc = new AuditLogService(db);
@@ -156,5 +165,31 @@ describe('AuditLogService.queryByResource()', () => {
     const results = await svc.queryByResource('MintRequest', 'req-001');
     expect(results).toHaveLength(1);
     expect(results[0]!.resourceId).toBe('req-001');
+  });
+});
+
+describe('AuditLogService.queryByActor()', () => {
+  it('actor + 시간 범위에 해당하는 로그 반환', async () => {
+    const db  = makeDb();
+    const svc = new AuditLogService(db);
+    await svc.log({ ...BASE_PARAMS, actor: 'admin-01' });
+    await svc.log({ ...BASE_PARAMS, actor: 'admin-02' });
+
+    const from = new Date(Date.now() - 60_000);
+    const to   = new Date(Date.now() + 60_000);
+    const results = await svc.queryByActor('admin-01', from, to);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.actor).toBe('admin-01');
+  });
+
+  it('해당 actor 로그 없으면 빈 배열', async () => {
+    const db  = makeDb();
+    const svc = new AuditLogService(db);
+
+    const from = new Date(Date.now() - 60_000);
+    const to   = new Date(Date.now() + 60_000);
+    const results = await svc.queryByActor('no-such-actor', from, to);
+    expect(results).toHaveLength(0);
   });
 });

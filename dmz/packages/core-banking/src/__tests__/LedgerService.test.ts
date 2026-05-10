@@ -195,6 +195,24 @@ describe('LedgerService.recordProcessedEvent() — 이벤트 Idempotency', () =>
   });
 });
 
+describe('LedgerService.updateMintRequest() — tokenId 브랜치', () => {
+  it('tokenId 포함 업데이트 → BigInt 변환 후 반환', async () => {
+    const db  = makeDb();
+    const svc = new LedgerService(db, makeAuditLog());
+    const req = await svc.createMintRequest('u-001', 'policy-A');
+
+    await svc.updateMintRequest(req.id, { status: 'SUBMITTED', txHash: '0xtx' });
+    await svc.updateMintRequest(req.id, { status: 'MINED' });
+    await svc.updateMintRequest(req.id, { status: 'FINALIZED' });
+    const updated = await svc.updateMintRequest(req.id, { status: 'CONFIRMED', tokenId: 42n });
+
+    expect(updated.tokenId).toBe(42n);
+    // DB에도 정상 저장 확인
+    const found = await svc.getMintRequest(req.id);
+    expect(found?.tokenId).toBe(42n);
+  });
+});
+
 describe('에러 클래스', () => {
   it('MintRequestNotFoundError.name', () => {
     expect(new MintRequestNotFoundError('x').name).toBe('MintRequestNotFoundError');
