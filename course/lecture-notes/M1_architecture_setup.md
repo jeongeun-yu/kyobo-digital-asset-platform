@@ -3040,7 +3040,7 @@ infrastructure/         → 인프라 설정
 └── monitoring/
     └── prometheus/                 ← 모니터링 설정
 
-tools/event-listener/src/   → 이벤트 리스너 유틸 (개발·디버깅용)
+course/exercises/M2/event-listener/src/   → 이벤트 리스너 유틸 (개발·디버깅용)
 ├── listen-events.ts         ← 온체인 이벤트 실시간 구독
 ├── recover-events.ts        ← 과거 이벤트 복구 조회
 ├── run-listener.ts          ← 리스너 실행 진입점

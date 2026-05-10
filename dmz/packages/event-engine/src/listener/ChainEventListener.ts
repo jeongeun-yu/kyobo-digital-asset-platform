@@ -22,8 +22,8 @@ import type { IEventHandler } from '../interfaces/IEventHandler';
  *
  * ── 교육생 안내 ──────────────────────────────────────────────────────────────
  * 역할: 참고용 구현체 — 수정하지 말 것
- * 실습: tools/event-listener/src/run-listener.ts  ← 리스너 직접 기동 (M2 S05)
- *       tools/event-listener/src/recover-events.ts ← missed event 복구 (M2 S05)
+ * 실습: course/exercises/M2/event-listener/src/run-listener.ts  ← 리스너 직접 기동 (M2 S05)
+ *       course/exercises/M2/event-listener/src/recover-events.ts ← missed event 복구 (M2 S05)
  */
 export class ChainEventListener {
   private unsubscribers: Array<() => void> = [];

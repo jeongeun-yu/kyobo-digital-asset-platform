@@ -7,7 +7,7 @@
     "blockchain",
     "dmz/apps/*",
     "dmz/packages/*",
-    "tools/event-listener"
+    "course/exercises/M2/event-listener"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
