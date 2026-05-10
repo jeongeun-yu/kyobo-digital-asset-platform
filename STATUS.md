@@ -8,15 +8,16 @@
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
 ## 마지막 작업 (2026-05-10)
-- 스켈레톤 TODO 정리: dmz/packages/ + blockchain/src/ 전체 `TODO (Phase X):` → `Phase X:` 변환
-- M2~M8 누락 실습 파일 신규 생성: S18/S20/S23~S40/S41~S50 TypeScript 실습 + S51~S58 Ops md 파일
-- 실습 파일 문제/답안 분리: `.ts` (학생 스텁, TODO throw) + `.answer.ts` (완성 구현) 패턴 M3~M8 전체 적용
-- 채점 테스트 신규 생성: `__tests__/S18~S50.test.ts` 총 27개 파일, 스텁 import → 학생 미구현 시 FAIL
-- package.json exercise 스크립트 전체 추가: M1~M8 85개 (student/answer 양쪽)
-- docs 전수 점검 및 수정: 런북 경로 7건(internal→dmz), ADR-002 월렛원 확정, overview.md M6 오류 수정, tech-stack-decision ERC-1155 확정, Mermaid SC 노드 미정의 수정
+- M2 실습 스텁 완성: S05 `computeHmac` export 추가 + 테스트 import 수정, S08/S09/S10 export 스텁화
+- Jest worker crash 패턴 전수 수정: `throw new Error('TODO')` → `return undefined as never`
+- 테스트 커버리지 전수 개선: chain-adapters 57→71%, vasp 87→93%, event-engine 91→94%, core-banking 98→100%
+- EVMAdapter 미커버 메서드 테스트 추가: mintNFTBatch/burnNFT/getBalance/getReceipt/subscribeEvents/queryEvents
+- IdempotencyGuard 신규 테스트 파일 생성 (InMemory/Redis store 포함)
+- TxStateMachineService handleReorg/pollStale failed/catch 브랜치 테스트 추가
+- core-banking 100% 달성: CircuitBreaker default param, AuditLogService queryByActor, LedgerService tokenId 브랜치
+- .env / .env.example 삭제 (미사용)
 
 ## 다음 작업
 - [ ] 이종건 계약서 일정 확인
 - [ ] 교보DTS Core Banking API 스펙 협의
 - [ ] 이종건 과장 메일 (blockchain-gateway 구현 주체 + Node.js 보안점검 확인)
-- [ ] S17_decorator_patterns.ts 실행 테스트 (ts-node 환경 확인)
