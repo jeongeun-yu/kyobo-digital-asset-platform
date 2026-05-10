@@ -5,7 +5,7 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "jest --config jest.config.json",
+    "test": "jest --config jest.config.json --runInBand",
     "test:exercises": "jest --config jest.exercises.config.json",
     "test:exercises:answer": "jest --config jest.exercises.answer.config.json",
     "test:all": "jest --config jest.config.json && jest --config jest.exercises.config.json",
