@@ -272,6 +272,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
   });
 
   it('getStatus() throw → catch 처리 후 processed 카운트 안 함', async () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const repo = makeRepo();
     const vasp: VaspTxClient = {
       async submitMint() { return { txHash: '0xtx' }; },
@@ -289,6 +290,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
 
     const { processed } = await svc.pollStaleRequests();
     expect(processed).toBe(0);
+    consoleSpy.mockRestore();
   });
 
   it('txHash 없는 stale 건 → 스킵 (processed 카운트 안 함)', async () => {
