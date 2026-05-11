@@ -9,8 +9,18 @@ TypeScript 실습(`S04_check_networks.ts`) 전에 PowerShell로 네트워크 연
 
 루트에서 의존성 설치:
 ```powershell
-cd F:\Workplace\kyobo-digital-asset-platform
+cd C:\Users\eskim\Workspace\kyobo-digital-asset-platform
 npm install
+```
+
+`.env` 파일에 지갑 주소 입력 (MetaMask에서 복사):
+```
+EVM_SIGNER_ADDRESS=0x본인지갑주소   # 0x로 시작하는 42자리
+```
+
+환경변수 로드 확인:
+```powershell
+cat .env | Select-String "EVM_SIGNER_ADDRESS"
 ```
 
 ---
@@ -19,7 +29,7 @@ npm install
 
 **터미널 1** (열어두기):
 ```powershell
-cd F:\Workplace\kyobo-digital-asset-platform\blockchain
+cd C:\Users\eskim\Workspace\kyobo-digital-asset-platform\blockchain
 npx hardhat node
 ```
 
@@ -83,10 +93,16 @@ jsonrpc  id  result
 
 ### 2-3. 내 지갑 잔액 조회
 
-`내주소자리`를 MetaMask에서 복사한 주소로 교체 후 실행:
+`.env`의 `EVM_SIGNER_ADDRESS`를 환경변수로 로드 후 실행:
 
 ```powershell
-Invoke-RestMethod -Uri "https://ethereum-sepolia-rpc.publicnode.com" -Method POST -ContentType "application/json" -Body '{"jsonrpc":"2.0","method":"eth_getBalance","params":["내주소자리","latest"],"id":1}'
+# .env에서 주소 로드
+$address = (Get-Content .env | Select-String "EVM_SIGNER_ADDRESS").ToString().Split("=")[1].Trim()
+
+# 잔액 조회
+Invoke-RestMethod -Uri "https://ethereum-sepolia-rpc.publicnode.com" `
+  -Method POST -ContentType "application/json" `
+  -Body "{`"jsonrpc`":`"2.0`",`"method`":`"eth_getBalance`",`"params`":[`"$address`",`"latest`"],`"id`":1}"
 ```
 
 예상 결과:
@@ -138,17 +154,19 @@ jsonrpc  id  result
 ### 2-6. Etherscan Sepolia에서 직접 확인
 
 브라우저에서 내 주소 조회:
-```
-https://sepolia.etherscan.io/address/내주소자리
+```powershell
+# 주소 로드 후 URL 출력
+$address = (Get-Content .env | Select-String "EVM_SIGNER_ADDRESS").ToString().Split("=")[1].Trim()
+Write-Host "https://sepolia.etherscan.io/address/$address"
 ```
 
-트랜잭션 탭에서 Sepolia에서 보낸 TX 이력 전체 확인 가능.
+출력된 URL을 브라우저에서 열면 TX 이력 전체 확인 가능.
 
 ---
 
 ## 환경 3 — Mainnet Fork
 
-**Step 1**: `.env` 파일 열기 (`F:\Workplace\kyobo-digital-asset-platform\.env`)
+**Step 1**: `.env` 파일 열기 (`C:\Users\eskim\Workspace\kyobo-digital-asset-platform\.env`)
 
 아래 줄 추가:
 ```
@@ -157,7 +175,7 @@ MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com
 
 **Step 2**: 터미널 1에서 노드 재기동:
 ```powershell
-cd F:\Workplace\kyobo-digital-asset-platform\blockchain
+cd C:\Users\eskim\Workspace\kyobo-digital-asset-platform\blockchain
 npx hardhat node
 ```
 
