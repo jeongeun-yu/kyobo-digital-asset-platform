@@ -695,11 +695,39 @@ npx ts-node ..\..\..\..\course\exercises\M2\S09_atleastonce.ts
 
 `blockchain/hardhat.config.ts`에 `evmVersion: 'cancun'` 설정 필요. 이미 포함되어 있으므로 Node.js 버전 확인 — Node.js 20 LTS 사용 권장.
 
-### PowerShell 스크립트 실행 정책 오류
+### PowerShell 스크립트 실행 정책 오류 — `npm` · `npx` 명령어가 실행되지 않음
+
+**증상**
+
+```
+npm : 이 시스템에서 스크립트를 실행할 수 없으므로 C:\Program Files\nodejs\npm.ps1 파일을
+로드할 수 없습니다.
+    + CategoryInfo : 보안 오류: (:) [], PSSecurityException
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+**원인**
+
+Windows PowerShell은 기본 실행 정책(`Restricted`)으로 `.ps1` 스크립트 실행을 막는다.
+npm · npx는 내부적으로 `.ps1` 스크립트를 사용하기 때문에 이 정책에 걸린다.
+
+**해결**
+
+PowerShell을 **관리자 권한**으로 열고 아래 명령어 실행:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
+
+`Y` 입력 후 확인. 이후 `npm -v` 정상 출력되면 해결.
+
+**정책 설명**
+
+| 정책 | 의미 |
+|---|---|
+| `Restricted` (Windows 기본값) | 모든 스크립트 실행 차단 |
+| `RemoteSigned` (권장) | 로컬 스크립트 허용, 다운로드 스크립트는 서명 필요 |
+| `Unrestricted` | 모두 허용 (권장 안 함) |
 
 ### `jest` 명령을 찾을 수 없음
 
