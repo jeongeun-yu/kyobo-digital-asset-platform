@@ -96,24 +96,23 @@ jsonrpc  id  result
 `.env`의 `EVM_SIGNER_ADDRESS`를 환경변수로 로드 후 실행:
 
 ```powershell
-# .env에서 주소 로드
-$address = (Get-Content .env | Select-String "EVM_SIGNER_ADDRESS").ToString().Split("=")[1].Trim()
+# .env에서 주소 로드 (주석 줄 제외)
+$address = (Select-String -Path .env -Pattern "^EVM_SIGNER_ADDRESS").Line.Split("=")[1].Trim()
 
-# 잔액 조회
-Invoke-RestMethod -Uri "https://ethereum-sepolia-rpc.publicnode.com" `
+# 잔액 조회 + ETH 변환
+$result = Invoke-RestMethod -Uri "https://ethereum-sepolia-rpc.publicnode.com" `
   -Method POST -ContentType "application/json" `
   -Body "{`"jsonrpc`":`"2.0`",`"method`":`"eth_getBalance`",`"params`":[`"$address`",`"latest`"],`"id`":1}"
+
+[math]::Round([convert]::ToInt64($result.result.Substring(2), 16) / 1e18, 6)
 ```
 
 예상 결과:
 ```
-jsonrpc  id  result
--------  --  ------
-2.0       1  0x27F7D0BDB92000   ← wei 단위 16진수
+2.862268
 ```
 
-> wei → ETH 변환: `0x27F7D0BDB92000` = 11,111,000,000,000,000 wei = **0.01111 ETH**  
-> PowerShell 변환: `[math]::Round([convert]::ToInt64("27F7D0BDB92000",16) / 1e18, 6)`
+> `result`의 16진수 wei 값에서 `0x` 제거 후 10진수 변환 → 1e18(wei/ETH)로 나누면 ETH 단위.
 
 ---
 
