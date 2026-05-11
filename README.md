@@ -175,9 +175,8 @@ cd kyobo-digital-asset-platform
 ### 환경 변수 설정
 
 ```powershell
-# .env.example → .env 복사 (루트 + dmz 각각)
+# .env.example → .env 복사
 copy .env.example .env
-copy dmz\.env.example dmz\.env
 ```
 
 `dmz\.env`를 열어 아래 항목만 입력 — 나머지는 기본값으로 동작:
