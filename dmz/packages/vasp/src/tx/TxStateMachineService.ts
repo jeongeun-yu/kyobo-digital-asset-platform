@@ -29,6 +29,30 @@
  *   PENDING 30분 초과 건 → VASP API 직접 조회 → 결과별 전이
  *   배치 크론으로 실행 (5분 간격 권장)
  *
+ * ── Phase별 VASP 지원 범위와 TxStateMachineService 변화 ──────────────────────
+ *
+ * Phase 1 (현재):
+ *   VaspTxClient = 월렛원 REST API 래퍼
+ *   submitMint()          → 월렛원 API 호출 → TX hash 반환
+ *   getStatus(txHash)     → 월렛원 API 폴링 → 30분 타임아웃 시 재조회
+ *   resubmitWithGasBump() → 월렛원 API gas bump 재전송
+ *   한계: VASP가 TX 상태를 추상화해서 반환 → REORG·세부 실패 이유 파악 어려움
+ *
+ * Phase 2 (ChainEventListener 직접 구독):
+ *   VaspTxClient 유지 (월렛원 계속 사용)
+ *   단, ChainEventListener가 블록체인 이벤트를 직접 구독
+ *   → getStatus() 폴링 빈도 줄어듦 (이벤트 기반 전이로 부분 대체)
+ *   → MINED·FINALIZED 전이가 더 빠르고 정확해짐
+ *
+ * Phase 3 (직접 Custody 전환):
+ *   VaspTxClient 완전 교체 → 아래 3개 컴포넌트로 분리
+ *   submitMint()          → NonceManager.allocate() + ISignerService.sign() + Broadcaster.broadcast()
+ *   getStatus(txHash)     → ConfirmationTracker.trackPending() (블록 직접 조회)
+ *   resubmitWithGasBump() → NonceManager.bumpGas() + Broadcaster.broadcast()
+ *   pollStaleRequests()   → ConfirmationTracker가 대체 (루프 분리)
+ *   교체 방식: VaspTxClient 인터페이스 유지 → Phase3VaspTxClient 구현체 주입
+ *              TxStateMachineService 코드 수정 없음
+ *
  * ── 교육생 안내 ──────────────────────────────────────────────────────────────
  * 역할: 참고용 구현체 — 수정하지 말 것
  * 실습: course/exercises/M3/S13_tx_statemachine.ts  ← 상태 전이 직접 구현
@@ -87,6 +111,23 @@ export interface TxRepository {
   findPendingOlderThan(minutes: number): Promise<MintRequest[]>;
 }
 
+/**
+ * VaspTxClient — TX 실행 위임 인터페이스
+ *
+ * Phase 1 구현체: ExternalVaspTxClient (월렛원 REST API 래퍼)
+ *   submitMint()          → POST /v1/nft/mint
+ *   getStatus()           → GET  /v1/tx/{txHash}/status (폴링)
+ *   resubmitWithGasBump() → POST /v1/tx/{txHash}/resubmit
+ *
+ * Phase 2 구현체: ExternalVaspTxClient 유지
+ *   getStatus() 보조 수단으로 ChainEventListener 직접 구독 병행
+ *
+ * Phase 3 구현체: Phase3VaspTxClient (내부 구현 — Broadcaster + ConfirmationTracker 위임)
+ *   submitMint()          → NonceManager + ISignerService + Broadcaster
+ *   getStatus()           → ConfirmationTracker 직접 RPC 조회
+ *   resubmitWithGasBump() → NonceManager.bumpGas() + Broadcaster
+ *   → TxStateMachineService 코드 수정 없이 구현체만 교체
+ */
 export interface VaspTxClient {
   submitMint(params: {
     to:       string;

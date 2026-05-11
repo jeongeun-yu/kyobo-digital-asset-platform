@@ -14,6 +14,7 @@
 - KRW1StablecoinAdapter Phase 2 stub 신규 생성 (XRPL IOU / EVM ERC-20 / CBDC 3옵션)
 - issuer-service/index.ts Phase 1/2/3 교체 포인트 주석 완비
 - 전체 빌드·테스트 379 TC 전부 통과
+- TxStateMachineService Phase 1/2/3별 VaspTxClient 변화 주석 추가
 
 ## 다음 작업
 - [ ] 강의 현장 긴급 대응 (에러·질문·버그 실시간 처리)
