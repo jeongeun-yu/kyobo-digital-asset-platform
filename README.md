@@ -172,8 +172,24 @@ git clone https://github.com/coincraft12/kyobo-digital-asset-platform.git
 cd kyobo-digital-asset-platform
 ```
 
-온체인 실습(M6 배포 등)에 필요한 환경 변수는 강사 안내에 따라 별도 입력.  
-M2~M5 실습은 Mock 환경 사용 — `.env` 없이도 동작.
+### 환경 변수 설정
+
+```powershell
+# .env.example → .env 복사 (루트 + dmz 각각)
+copy .env.example .env
+copy dmz\.env.example dmz\.env
+```
+
+`dmz\.env`를 열어 아래 항목만 입력 — 나머지는 기본값으로 동작:
+
+```
+EVM_SIGNER_KEY=0x...   # 테스트넷 전용 계정 개인키 (MetaMask → 계정 내보내기)
+```
+
+> ⚠ 실제 자산이 있는 계정 개인키 절대 입력 금지. 테스트넷 전용 계정만 사용.
+
+온체인 실습(M6 배포 등) 추가 환경 변수는 강사 안내에 따라 입력.  
+M2~M5 실습은 Mock 환경 사용 — `EVM_SIGNER_KEY` 없이도 동작.
 
 ---
 
