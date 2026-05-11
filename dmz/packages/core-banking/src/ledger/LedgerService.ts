@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'crypto';
 
-export type MintStatus = 'PENDING' | 'SUBMITTED' | 'MINED' | 'FINALIZED' | 'CONFIRMED' | 'FAILED' | 'REORGED';
+export type MintStatus = 'PENDING' | 'SUBMITTED' | 'MINED' | 'CONFIRMED' | 'FINALIZED' | 'FAILED' | 'REORGED';
 
 // ── 내부 원장 4단계 잔액 모델 (Phase 3: 직접 Custody 전환 시 활성화) ─────────
 //
@@ -77,9 +77,9 @@ export class LedgerService {
   private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
     PENDING:   ['SUBMITTED', 'FAILED'],
     SUBMITTED: ['MINED',     'FAILED'],
-    MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
-    FINALIZED: ['CONFIRMED'],
-    CONFIRMED: [],                        // 종단 — 원장 업데이트 완료
+    MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
+    CONFIRMED: ['FINALIZED'],
+    FINALIZED: [],                        // 종단 — 원장 업데이트 완료
     FAILED:    [],                        // 종단
     REORGED:   ['MINED',     'FAILED'],
   };

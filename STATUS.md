@@ -8,15 +8,20 @@
 | 계약 | 공식 확인 대기 중 (웅진씽크빅/교보DTS) |
 
 ## 마지막 작업 (2026-05-11)
-- S04 PowerShell 가이드 Sepolia 심화 실습 6종 추가 (체인ID·잔액·블록상세·가스·Etherscan)
-- Phase 2/3 stub 주석 전면 정비: XRPLAdapter·CircleAdapter·KyoboVASPAdapter·VaspRecoveryService
-- CircleAdapter Phase 3 → Phase 2 오기 수정
-- KRW1StablecoinAdapter Phase 2 stub 신규 생성 (XRPL IOU / EVM ERC-20 / CBDC 3옵션)
-- issuer-service/index.ts Phase 1/2/3 교체 포인트 주석 완비
-- 전체 빌드·테스트 379 TC 전부 통과
-- TxStateMachineService Phase 1/2/3별 VaspTxClient 변화 주석 추가
+- ADR 008 작성: 이벤트 파이프라인 내부망 배치 (DMZ = Nginx 리버스 프록시만)
+- CONFIRMED ↔ FINALIZED 순서 전체 교체: MINED → CONFIRMED → FINALIZED (FINALIZED 종단)
+  - LedgerService.ts / LedgerService.test.ts
+  - TxStateMachineService.ts / TxStateMachineService.test.ts
+  - S13, S22, S23 실습·답안·채점 테스트 전부
+  - day04.md / day05.md 커리큘럼 문서
+- 전체 테스트 340 TC 전부 통과
+
+## 아키텍처 결정사항
+| 날짜 | 결정 | 결정자 |
+|---|---|---|
+| 2026-05-11 | 이벤트 파이프라인(Redis Stream + EventEngine)을 내부망에 배치 | 교보 내부 담당자 |
 
 ## 다음 작업
-- [ ] 강의 현장 긴급 대응 (에러·질문·버그 실시간 처리)
+- [ ] 이벤트 파이프라인 internal/ 이관 반영 (아키텍처 다이어그램 업데이트)
 - [ ] 이종건 계약서 일정 확인
 - [ ] 교보DTS Core Banking API 스펙 협의

@@ -194,13 +194,13 @@ describe('TxStateMachineService.handleTimeout()', () => {
 });
 
 describe('TxStateMachineService.pollStaleRequests()', () => {
-  it('MINED + 31분 초과 + VASP confirmed → FINALIZED 전이', async () => {
+  it('MINED + 31분 초과 + VASP confirmed → CONFIRMED 전이', async () => {
     const repo = makeRepo();
     const vasp = makeVasp({ statusResponse: { status: 'confirmed' } });
     const svc  = new TxStateMachineService(repo, vasp, makeWallet());
     const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
-    // 31분 전 MINED 상태로 조작 (handleFinalized는 MINED에서만 전이)
+    // 31분 전 MINED 상태로 조작 (handleConfirmed는 MINED에서만 전이)
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
     req.status    = 'MINED';
@@ -209,7 +209,7 @@ describe('TxStateMachineService.pollStaleRequests()', () => {
 
     const { processed } = await svc.pollStaleRequests();
     expect(processed).toBe(1);
-    expect((await repo.findById(id))?.status).toBe('FINALIZED');
+    expect((await repo.findById(id))?.status).toBe('CONFIRMED');
   });
 
   it('PENDING + 31분 초과 + VASP not_found → FAILED 전이', async () => {

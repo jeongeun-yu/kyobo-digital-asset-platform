@@ -7,8 +7,8 @@
  *   REQUESTED ──submitMintRequest()──→ SUBMITTED
  *   SUBMITTED ──VASP 컨트랙트 호출──→ PENDING
  *   PENDING   ──블록 채굴──────────→ MINED
- *   MINED     ──PoS 2/3+ 동의─────→ FINALIZED   ← NEW (S13 업데이트)
- *   FINALIZED ──원장 업데이트────→ CONFIRMED
+ *   MINED     ──확인 임계치 도달──→ CONFIRMED
+ *   CONFIRMED ──PoS 2/3+ 동의─────→ FINALIZED   ← 종단
  *   MINED     ──REORG 감지────────→ REORGED → MINED or FAILED
  *   MINED/PENDING ──REVERT──────→ FAILED
  *   MINED/PENDING ──TIMEOUT─────→ gas bump 재전송
@@ -19,11 +19,10 @@
  *   REORG   : MINED TX 소실(FINALIZED 전) → REORGED → 5블록 대기 → VASP 재조회 → MINED or FAILED
  *             FINALIZED 이후 REORG 불가 (PoS 절대 불변)
  *
- * MINED / FINALIZED / CONFIRMED 구분 (S13 핵심):
+ * MINED / CONFIRMED / FINALIZED 구분 (S13 핵심):
  *   MINED     = 블록 포함됨, REORG 가능 구간
- *   FINALIZED = 2/3+ validator 동의 → 절대 불변 (Ethereum PoS 기준 약 12분)
- *   CONFIRMED = 원장 업데이트 완료 — 종단 상태
- *   → 원장 업데이트는 FINALIZED 이후만 (M7 ConsumerGroupWorker 연계)
+ *   CONFIRMED = 충분한 블록 확인 → 원장 업데이트 (M7 ConsumerGroupWorker 연계)
+ *   FINALIZED = 2/3+ validator 동의 → 절대 불변 — 종단 상태 (Ethereum PoS 기준 약 12분)
  *
  * pollStaleRequests (S22):
  *   PENDING 30분 초과 건 → VASP API 직접 조회 → 결과별 전이
@@ -69,8 +68,8 @@ export type TxStatus =
   | 'SUBMITTED'   // VASP에 전송됨, TX hash 미획득
   | 'PENDING'     // TX 전송됨, 블록 미채굴
   | 'MINED'       // 블록에 포함됨, REORG 가능 구간
-  | 'FINALIZED'   // PoS 2/3+ validator 동의 → 절대 불변 (약 12분)
-  | 'CONFIRMED'   // 원장 업데이트 완료 — 종단 상태
+  | 'CONFIRMED'   // 충분한 블록 확인 → 원장 업데이트
+  | 'FINALIZED'   // PoS 2/3+ validator 동의 → 절대 불변 — 종단 상태 (약 12분)
   | 'FAILED'      // REVERT 또는 최종 실패 — 종단 상태
   | 'REORGED';    // MINED 구간 REORG → TX 소실, 재처리 대기
 
@@ -245,29 +244,30 @@ export class TxStateMachineService extends EventEmitter {
   }
 
   /**
-   * PoS Finality 확인 → FINALIZED 전이
-   * ChainEventListener가 2/3+ validator 동의 확인 후 호출
-   *
-   * MINED 상태에서만 전이. FINALIZED 이후 REORG 불가.
-   */
-  async handleFinalized(requestId: string): Promise<void> {
-    const req = await this._getOrThrow(requestId);
-    if (req.status !== 'MINED') return;
-
-    await this._transition(req, 'FINALIZED');
-  }
-
-  /**
-   * FINALIZED 확인 후 원장 업데이트 → CONFIRMED 전이 (종단)
+   * 충분한 블록 확인 → CONFIRMED 전이
    * ConsumerGroupWorker에서 이 메서드 호출 후 원장 업데이트
    *
+   * MINED 상태에서만 전이.
    * M7 연계: CONFIRMED 전이 후 LedgerService.recordHolding(+1)
    */
   async handleConfirmed(requestId: string): Promise<void> {
     const req = await this._getOrThrow(requestId);
-    if (req.status !== 'FINALIZED') return;
+    if (req.status !== 'MINED') return;
 
     await this._transition(req, 'CONFIRMED');
+  }
+
+  /**
+   * PoS Finality 확인 → FINALIZED 전이 (종단)
+   * ChainEventListener가 2/3+ validator 동의 확인 후 호출
+   *
+   * CONFIRMED 상태에서만 전이. FINALIZED 이후 REORG 불가.
+   */
+  async handleFinalized(requestId: string): Promise<void> {
+    const req = await this._getOrThrow(requestId);
+    if (req.status !== 'CONFIRMED') return;
+
+    await this._transition(req, 'FINALIZED');
   }
 
   /**
@@ -345,7 +345,7 @@ export class TxStateMachineService extends EventEmitter {
    *   1. DB에서 PENDING + createdAt < now - 30분 목록 조회
    *   2. 건별 vasp.getStatus(txHash) 조회
    *   3. 결과별 전이:
-   *      confirmed  → handleFinalized()  (VASP confirmed = PoS finality 확보)
+   *      confirmed  → handleConfirmed()  (VASP confirmed = 충분한 블록 확인)
    *      failed     → handleFailed()
    *      not_found  → handleFailed('tx not found in mempool')
    *      pending    → 계속 대기 (업데이트 없음)
@@ -363,7 +363,7 @@ export class TxStateMachineService extends EventEmitter {
 
         switch (result.status) {
           case 'confirmed':
-            await this.handleFinalized(req.id);
+            await this.handleConfirmed(req.id);
             break;
           case 'failed':
             await this.handleFailed(req.id, result.revertReason ?? 'failed');

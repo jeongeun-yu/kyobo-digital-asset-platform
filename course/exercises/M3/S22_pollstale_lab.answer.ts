@@ -184,16 +184,16 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   check(`failReason에 'not found' 포함`, r2?.failReason?.includes('not found') ?? false);
 
   // ══════════════════════════════════════════════════════════════════════
-  // [검증 3] CONFIRMED — MINED → FINALIZED → CONFIRMED (2단계 전이)
+  // [검증 3] FINALIZED — MINED → CONFIRMED → FINALIZED (2단계 전이)
   //
   // 핵심 포인트:
   //   pollStaleRequests는 PENDING 건만 조회한다.
-  //   handleFinalized()는 req.status === 'MINED' 인 경우에만 FINALIZED로 전이한다.
-  //   handleConfirmed()는 req.status === 'FINALIZED' 인 경우에만 CONFIRMED로 전이한다.
-  //   → MINED → FINALIZED → CONFIRMED 순서를 반드시 지켜야 한다.
+  //   handleConfirmed()는 req.status === 'MINED' 인 경우에만 CONFIRMED로 전이한다.
+  //   handleFinalized()는 req.status === 'CONFIRMED' 인 경우에만 FINALIZED로 전이한다.
+  //   → MINED → CONFIRMED → FINALIZED 순서를 반드시 지켜야 한다.
   // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[검증 3] CONFIRMED 시나리오: MINED → handleFinalized → FINALIZED → handleConfirmed → CONFIRMED');
-  console.log('  (pollStaleRequests는 PENDING 조회 전용 — FINALIZED/CONFIRMED는 별도 경로)');
+  console.log('\n[검증 3] FINALIZED 시나리오: MINED → handleConfirmed → CONFIRMED → handleFinalized → FINALIZED');
+  console.log('  (pollStaleRequests는 PENDING 조회 전용 — CONFIRMED/FINALIZED는 별도 경로)');
 
   const repo3 = new InMemoryTxRepository();
   const svc3  = new TxStateMachineService(repo3, new MockVaspTxClient(), wallet);
@@ -201,18 +201,18 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   const reqMined = makeRequest('req-mined', '0xhash-mined', 'MINED');
   await repo3.save(reqMined);
 
-  await svc3.handleFinalized('req-mined');  // MINED → FINALIZED
-  await svc3.handleConfirmed('req-mined');  // FINALIZED → CONFIRMED
+  await svc3.handleConfirmed('req-mined');  // MINED → CONFIRMED
+  await svc3.handleFinalized('req-mined');  // CONFIRMED → FINALIZED
 
   const r3 = await repo3.findById('req-mined');
-  check(`상태: ${r3?.status} (기대: CONFIRMED)`, r3?.status === 'CONFIRMED');
+  check(`상태: ${r3?.status} (기대: FINALIZED)`, r3?.status === 'FINALIZED');
 
   // PENDING에서 handleConfirmed 호출 시 무시됨을 확인 (방어 로직)
   const repo3b = new InMemoryTxRepository();
   const svc3b  = new TxStateMachineService(repo3b, new MockVaspTxClient(), wallet);
   const reqPending = makeRequest('req-pending-skip', '0xhash-skip', 'PENDING');
   await repo3b.save(reqPending);
-  await svc3b.handleConfirmed('req-pending-skip'); // PENDING은 FINALIZED 아님 → 조용히 무시
+  await svc3b.handleConfirmed('req-pending-skip'); // PENDING은 MINED 아님 → 조용히 무시
   const r3b = await repo3b.findById('req-pending-skip');
   check(`PENDING에서 handleConfirmed 호출 → 상태 유지: ${r3b?.status}`, r3b?.status === 'PENDING');
 
@@ -288,7 +288,7 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
   console.log('\n핵심 정리:');
   console.log('  1. pollStaleRequests: PENDING 30분+ 배치 조회 → failed/not_found → FAILED 전이');
-  console.log('  2. handleFinalized: MINED → FINALIZED / handleConfirmed: FINALIZED → CONFIRMED (반드시 순서 준수)');
+  console.log('  2. handleConfirmed: MINED → CONFIRMED / handleFinalized: CONFIRMED → FINALIZED (반드시 순서 준수)');
   console.log('  3. handleTimeout: pollStaleRequests와 독립 — mempool 크론이 별도 호출');
   console.log('  4. Bulkhead: try-catch per item → 한 건 실패가 전체 배치 중단 방지');
 })();

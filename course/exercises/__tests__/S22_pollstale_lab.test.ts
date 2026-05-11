@@ -6,7 +6,7 @@
  *
  * 채점 기준:
  *   · handleTimeout(requestId) 후 PENDING 유지 + retryCount 증가
- *   · handleFinalized + handleConfirmed 순서 호출 → CONFIRMED 전이
+ *   · handleConfirmed + handleFinalized 순서 호출 → FINALIZED 전이
  *   · pollStaleRequests: VASP 'failed' → FAILED 전이
  *   · pollStaleRequests: VASP 'not_found' → FAILED 전이
  *   · Bulkhead: 한 건 에러가 전체 배치를 멈추지 않음
@@ -118,33 +118,33 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
     });
   });
 
-  describe('[2] handleFinalized + handleConfirmed 순서 → CONFIRMED', () => {
-    it('MINED → handleFinalized → FINALIZED', async () => {
+  describe('[2] handleConfirmed + handleFinalized 순서 → FINALIZED', () => {
+    it('MINED → handleConfirmed → CONFIRMED', async () => {
       const repo = new InMemoryTxRepository();
       const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
       await repo.save(makeRequest('req-mined-1', '0xhash-mined-1', 'MINED'));
-      await svc.handleFinalized('req-mined-1');
+      await svc.handleConfirmed('req-mined-1');
       const r = await repo.findById('req-mined-1');
+      expect(r?.status).toBe('CONFIRMED');
+    });
+
+    it('CONFIRMED → handleFinalized → FINALIZED', async () => {
+      const repo = new InMemoryTxRepository();
+      const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
+      await repo.save(makeRequest('req-confirmed-1', '0xhash-confirmed-1', 'CONFIRMED'));
+      await svc.handleFinalized('req-confirmed-1');
+      const r = await repo.findById('req-confirmed-1');
       expect(r?.status).toBe('FINALIZED');
     });
 
-    it('FINALIZED → handleConfirmed → CONFIRMED', async () => {
-      const repo = new InMemoryTxRepository();
-      const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
-      await repo.save(makeRequest('req-finalized-1', '0xhash-finalized-1', 'FINALIZED'));
-      await svc.handleConfirmed('req-finalized-1');
-      const r = await repo.findById('req-finalized-1');
-      expect(r?.status).toBe('CONFIRMED');
-    });
-
-    it('handleFinalized + handleConfirmed 순서 → CONFIRMED (전체 경로)', async () => {
+    it('handleConfirmed + handleFinalized 순서 → FINALIZED (전체 경로)', async () => {
       const repo = new InMemoryTxRepository();
       const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
       await repo.save(makeRequest('req-mined-full', '0xhash-mined-full', 'MINED'));
-      await svc.handleFinalized('req-mined-full');
       await svc.handleConfirmed('req-mined-full');
+      await svc.handleFinalized('req-mined-full');
       const r = await repo.findById('req-mined-full');
-      expect(r?.status).toBe('CONFIRMED');
+      expect(r?.status).toBe('FINALIZED');
     });
 
     it('PENDING 에서 handleConfirmed 호출 → 상태 변화 없음 (방어 로직)', async () => {

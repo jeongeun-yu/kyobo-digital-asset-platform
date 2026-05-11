@@ -142,11 +142,11 @@ describe('LedgerService.updateMintRequest() — 상태 전이', () => {
     const svc = new LedgerService(db, makeAuditLog());
     const req = await svc.createMintRequest('u-001', 'policy-A');
 
-    // PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED
+    // PENDING → SUBMITTED → MINED → CONFIRMED → FINALIZED
     await svc.updateMintRequest(req.id, { status: 'SUBMITTED', txHash: '0xtx' });
     await svc.updateMintRequest(req.id, { status: 'MINED' });
-    await svc.updateMintRequest(req.id, { status: 'FINALIZED' });
     await svc.updateMintRequest(req.id, { status: 'CONFIRMED' });
+    await svc.updateMintRequest(req.id, { status: 'FINALIZED' });
 
     await expect(svc.updateMintRequest(req.id, { status: 'FAILED' }))
       .rejects.toThrow(InvalidStateTransitionError);
@@ -203,8 +203,8 @@ describe('LedgerService.updateMintRequest() — tokenId 브랜치', () => {
 
     await svc.updateMintRequest(req.id, { status: 'SUBMITTED', txHash: '0xtx' });
     await svc.updateMintRequest(req.id, { status: 'MINED' });
-    await svc.updateMintRequest(req.id, { status: 'FINALIZED' });
-    const updated = await svc.updateMintRequest(req.id, { status: 'CONFIRMED', tokenId: 42n });
+    await svc.updateMintRequest(req.id, { status: 'CONFIRMED' });
+    const updated = await svc.updateMintRequest(req.id, { status: 'FINALIZED', tokenId: 42n });
 
     expect(updated.tokenId).toBe(42n);
     // DB에도 정상 저장 확인
