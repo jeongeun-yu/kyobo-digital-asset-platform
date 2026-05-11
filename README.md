@@ -103,6 +103,18 @@ https://ethereum-sepolia-rpc.publicnode.com
 3. 좌측 상단 햄버거 메뉴 → 설정 → 고급 → 테스트 네트워크 표시 ON
 4. 상단 네트워크 → **Sepolia** 선택
 
+**Sepolia가 목록에 없을 때 — 수동 추가**
+
+네트워크 드롭다운 → **네트워크 추가** → 아래 값 입력:
+
+| 항목 | 값 |
+|---|---|
+| 네트워크 이름 | Sepolia |
+| RPC URL | `https://ethereum-sepolia-rpc.publicnode.com` |
+| 체인 ID | `11155111` |
+| 통화 기호 | `ETH` |
+| 블록 탐색기 URL | `https://sepolia.etherscan.io` |
+
 > **⚠️ 실습 전용 지갑 권장**: 기존 메인넷 지갑과 분리된 새 지갑을 만드세요.
 
 #### ③ 테스트 ETH 받기 (최소 0.5 ETH)
