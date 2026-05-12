@@ -1,9 +1,9 @@
-/**
+﻿/**
  * S22 실습 — pollStaleRequests 구현 + 3종 복구 통합 테스트
  *
  * 강의 노트: M3_S22_pollstale_integration.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
+ * 실행 방법 (internal/packages/event-engine 폴더에서):
  *   npx ts-node src/exercises/S22_pollstale_lab.ts
  *
  * 실제 동작 기준:

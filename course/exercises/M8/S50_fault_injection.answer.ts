@@ -382,7 +382,7 @@ async function expectError(
   check('Reorg 전 상태: CONFIRMED', beforeReorg?.status === 'CONFIRMED');
 
   // [Reorg 발생] FINALIZED 이전이면 REORGED 가능 — 여기서는 MINED 단계로 롤백 시뮬레이션
-  // (실제: DMZ Consumer가 REORG 이벤트 수신 후 상태 전이)
+  // (실제: 이벤트 Consumer가 REORG 이벤트 수신 후 상태 전이)
   await ledger4.updateStatus(req4.id, 'REORGED');
 
   const reorged = await ledger4.get(req4.id);

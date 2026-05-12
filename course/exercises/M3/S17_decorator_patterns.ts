@@ -13,9 +13,9 @@
  *   [5] CircuitBreaker          — TODO: CLOSED → OPEN → HALF_OPEN 흐름 직접 구성
  *
  * 참조 구현:
- *   dmz/packages/chain-adapters/src/decorators/LoggingAdapterDecorator.ts
- *   dmz/packages/chain-adapters/src/decorators/RetryAdapterDecorator.ts
- *   dmz/packages/core-banking/src/adapters/CircuitBreaker.ts
+ *   internal/packages/chain-adapters/src/decorators/LoggingAdapterDecorator.ts
+ *   internal/packages/chain-adapters/src/decorators/RetryAdapterDecorator.ts
+ *   internal/packages/core-banking/src/adapters/CircuitBreaker.ts
  */
 
 import type {

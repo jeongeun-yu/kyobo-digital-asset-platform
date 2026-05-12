@@ -1,9 +1,9 @@
-/**
+﻿/**
  * S13 실습 — TX 상태머신: VALID_TRANSITIONS + transitionStatus 구현
  *
  * 강의 노트: M3_S13_tx_statemachine.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
+ * 실행 방법 (internal/packages/event-engine 폴더에서):
  *   npx ts-node src/exercises/S13_tx_statemachine.ts
  *
  * 목표:

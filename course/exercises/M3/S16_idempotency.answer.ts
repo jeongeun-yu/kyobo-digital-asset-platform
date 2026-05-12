@@ -1,9 +1,9 @@
-/**
+﻿/**
  * S16 실습 — Idempotency 보장: requestId 기반 중복 TX 방어
  *
  * 강의 노트: M3_S16_idempotency.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
+ * 실행 방법 (internal/packages/event-engine 폴더에서):
  *   npx ts-node src/exercises/S16_idempotency.ts
  *
  * 목표:

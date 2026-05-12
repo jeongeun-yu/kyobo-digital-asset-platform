@@ -1,9 +1,9 @@
-/**
+﻿/**
  * S11 실습 — Dead Letter Queue 운영 패턴
  *
  * 강의 노트: M2_S11_dlq_design.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
+ * 실행 방법 (internal/packages/event-engine 폴더에서):
  *   npx ts-node src/exercises/S11_dlq.ts
  *
  * 목표:
