@@ -21,7 +21,7 @@ import {
 // Part 1 — RedisStreamPublisher
 // ────────────────────────────────────────────────────────────────────────
 
-// ── Mock Redis (Publisher용) ───────────────────────────────────────────────
+// ── Mock Redis (Publisher용) — 수정하지 않아도 됨 ────────────────────────
 const publisherRedis = {
   async xadd(key: string, fields: Record<string, string>): Promise<string> {
     const messageId = `${Date.now()}-0`;
@@ -41,7 +41,7 @@ const publisherRedis = {
 // Part 2 — ConsumerGroupWorker
 // ────────────────────────────────────────────────────────────────────────
 
-// ── Mock DLQ ──────────────────────────────────────────────────────────────
+// ── Mock DLQ — 수정하지 않아도 됨 ─────────────────────────────────────
 const mockDLQ = new DLQHandler(
   {
     async xadd(key, fields) {
@@ -54,7 +54,7 @@ const mockDLQ = new DLQHandler(
   { async sendAlert(msg) { console.log('[DLQ ALERT]', msg); } },
 );
 
-// ── Mock Redis (Consumer용) ───────────────────────────────────────────────
+// ── Mock Redis (Consumer용) — 수정하지 않아도 됨 ──────────────────────
 // 첫 번째 호출에서 메시지 1개 반환, 이후 빈 배열
 let consumerCallCount = 0;
 const consumerRedis = {
@@ -97,43 +97,26 @@ const consumerRedis = {
   },
 };
 
-// ── 실습 1: NFTIssuedProcessor를 구현하라 ────────────────────────────────
+// ── 실습 1: SimpleNFTProcessor 클래스를 구현하라 ─────────────────────────
 // EventProcessor 인터페이스:
 //   eventTypes: string[]        — 처리할 이벤트 타입 목록
-//   process(msg): Promise<void> — 실제 처리 로직 (멱등성 보장 필수)
+//   process(msg): Promise<void> — 실제 처리 로직
 //
 // 구현 요구사항:
 //   - eventTypes: ['NFT_ISSUED']
-//   - process: msg.fields['payload']를 JSON.parse → tokenId, owner 출력
-//              msg.fields['requestId'] 출력
-//              '[processor] NFT_ISSUED 처리 완료' 로그 출력
-//
-// 힌트: const nftIssuedProcessor: EventProcessor = { eventTypes: [...], async process(msg) { ... } }
-const nftIssuedProcessor: EventProcessor = {
-  eventTypes: ['NFT_ISSUED'],
+//   - process: message.fields['payload']를 JSON.parse 후 tokenId, owner 출력
+//              '[SimpleNFTProcessor] NFT 처리 완료: tokenId=..., owner=...' 로그
+class SimpleNFTProcessor implements EventProcessor {
+  // TODO 1: readonly eventTypes = ['NFT_ISSUED'];
+  readonly eventTypes: string[] = [];
 
-  async process(msg: StreamMessage): Promise<void> {
-    const payload   = JSON.parse(msg.fields['payload'] ?? '{}');
-    const requestId = msg.fields['requestId'];
-    console.log(`[processor] NFT_ISSUED — tokenId: ${payload.tokenId}, owner: ${payload.owner}`);
-    console.log(`[processor] requestId: ${requestId}`);
-    console.log('[processor] NFT_ISSUED 처리 완료');
-  },
-};
-
-const worker = new ConsumerGroupWorker(
-  consumerRedis,
-  [nftIssuedProcessor],
-  mockDLQ,
-  {
-    streamKey:  'kyobo:events',
-    groupName:  'issuer-consumers',
-    consumerId: 'consumer-1',
-    batchSize:  10,
-    blockMs:    500,
-    minIdleMs:  30_000,
-  },
-);
+  async process(message: StreamMessage): Promise<void> {
+    // TODO 2: const payload = JSON.parse(message.fields['payload'] ?? '{}');
+    // TODO 3: console.log(`[SimpleNFTProcessor] NFT 처리 완료: tokenId=${payload.tokenId}, owner=${payload.owner}`);
+    void message;
+    return undefined as never;
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // 실행
@@ -146,8 +129,6 @@ const worker = new ConsumerGroupWorker(
   await publisher.initialize();
   await publisher.initialize(); // 두 번째 호출 → BUSYGROUP 무시 확인
 
-  // ── 실습 5: 아래 이벤트를 publish()로 발행하라 ───────────────────────
-  // publisher.publish(event) 의 반환값(messageId)을 받아 출력한다.
   const event: StreamEvent = {
     streamKey:   'kyobo:events',
     eventType:   'NFT_ISSUED',
@@ -157,7 +138,8 @@ const worker = new ConsumerGroupWorker(
     requestId:   'req-001',
   };
 
-  const messageId = await publisher.publish(event);
+  // TODO 실습 4: const messageId = await publisher.publish(event);
+  const messageId: string = undefined as never;
   console.log('[result] messageId:', messageId);
   console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
 
@@ -175,7 +157,14 @@ const worker = new ConsumerGroupWorker(
   console.log('\n=== Part 2: ConsumerGroupWorker ===\n');
   console.log('[worker] 시작 — 3초 후 자동 종료');
 
-  // 실습 1~2 완성 후 아래 블록이 동작합니다.
+  // TODO 실습 5:
+  // const worker = new ConsumerGroupWorker(
+  //   consumerRedis, [new SimpleNFTProcessor()], mockDLQ,
+  //   { streamKey: 'kyobo:events', groupName: 'issuer-consumers',
+  //     consumerId: 'consumer-1', batchSize: 10, blockMs: 500, minIdleMs: 30_000 },
+  // );
+  const worker: ConsumerGroupWorker = undefined as never;
+
   setTimeout(() => {
     console.log('[worker] stop() 호출');
     worker.stop();

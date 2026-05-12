@@ -38,8 +38,28 @@ export async function _handleWithRetry(
   redis:      Pick<RedisConsumerClient, 'xack'>,
   dlq:        DLQHandler,
 ): Promise<void> {
-  void msg; void processors; void redis; void dlq;
-  return undefined as never;
+  const eventType  = msg.fields['eventType'] ?? '';
+  const retryCount = parseInt(msg.fields['_retryCount'] ?? '0', 10);
+
+  // TODO 1:
+  // if (retryCount >= MAX_RETRIES) {
+  //   await dlq.move({ messageId: msg.id, streamKey: STREAM_KEY, groupName: GROUP_NAME,
+  //                    event: msg.fields, reason: `max retries (${MAX_RETRIES}) exceeded`, failedAt: new Date() });
+  //   await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
+  //   return;
+  // }
+
+  const matched = processors.filter(p => p.eventTypes.includes(eventType));
+  // TODO 2: if (matched.length === 0) { await redis.xack(STREAM_KEY, GROUP_NAME, msg.id); return; }
+
+  // TODO 3 + 4:
+  // try {
+  //   await Promise.all(matched.map(p => p.process(msg)));
+  //   await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
+  // } catch (err) {
+  //   msg.fields['_retryCount'] = String(retryCount + 1);
+  //   console.error(`    [retry] message ${msg.id} failed (attempt ${retryCount + 1}):`, (err as Error).message);
+  // }
 }
 
 // ────────────────────────────────────────────────────────────────────────

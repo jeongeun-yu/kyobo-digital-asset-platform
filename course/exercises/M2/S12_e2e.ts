@@ -133,18 +133,24 @@ function check(label: string, pass: boolean) {
   );
 
   // ── 실습 1: WebhookPublishHandler를 생성하고 server에 등록하라 ──────────
-  const server  = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
-  const handler = new WebhookPublishHandler(publisher, idempotencyWebhook);
-  server.on('NFT_ISSUED', handler.createHandler());
+  const server = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
+  // TODO 실습 1:
+  // const handler = new WebhookPublishHandler(publisher, idempotencyWebhook);
+  // server.on('NFT_ISSUED', handler.createHandler());
+  const handler: WebhookPublishHandler = undefined as never;
 
   // ── 실습 2: NFTIssuedProcessor 인스턴스를 생성하라 ───────────────────
-  const processor = new NFTIssuedProcessor(idempotencyConsumer, ledger);
+  // TODO 실습 2: const processor = new NFTIssuedProcessor(idempotencyConsumer, ledger);
+  const processor: NFTIssuedProcessor = undefined as never;
 
   // ── 실습 3: ConsumerGroupWorker 인스턴스를 생성하라 ──────────────────
-  const worker = new ConsumerGroupWorker(
-    mockRedis, [processor], mockDLQ,
-    { streamKey: 'kyobo:events', groupName: 'issuer-consumers', consumerId: 'worker-s12', batchSize: 10, blockMs: 30, minIdleMs: 30_000 },
-  );
+  // TODO 실습 3:
+  // const worker = new ConsumerGroupWorker(
+  //   mockRedis, [processor], mockDLQ,
+  //   { streamKey: 'kyobo:events', groupName: 'issuer-consumers',
+  //     consumerId: 'worker-s12', batchSize: 10, blockMs: 30, minIdleMs: 30_000 },
+  // );
+  const worker: ConsumerGroupWorker = undefined as never;
 
   // ── 서버 + Worker 시작 ────────────────────────────────────────────────
   await server.listen();
@@ -178,8 +184,8 @@ function check(label: string, pass: boolean) {
   // ── [4] 동일 requestId 재전송 → 멱등성 ───────────────────────────────
   console.log('\n[검증 4] 동일 requestId 재전송 → 원장 변화 없음');
 
-  // ── 실습 4: 동일 BODY(동일 requestId)를 한 번 더 전송하라 ────────────
-  const status2 = await sendWebhook(BODY, sign(BODY));
+  // TODO 실습 4: const status2 = await sendWebhook(BODY, sign(BODY));
+  const status2: number = undefined as never;
   check(`HTTP 상태: ${status2} (기대: 202)`, status2 === 202);
 
   await new Promise(r => setTimeout(r, 150));
@@ -190,8 +196,8 @@ function check(label: string, pass: boolean) {
   // ── [5] 잘못된 서명 → 401 ────────────────────────────────────────────
   console.log('\n[검증 5] 잘못된 서명 → 401');
 
-  // ── 실습 5: 잘못된 서명으로 요청을 전송하고 상태 코드를 확인하라 ────────
-  const status3 = await sendWebhook(BODY, 'wrong-signature');
+  // TODO 실습 5: const status3 = await sendWebhook(BODY, 'wrong-signature');
+  const status3: number = undefined as never;
   check(`HTTP 상태: ${status3} (기대: 401)`, status3 === 401);
 
   // ── 정리 ─────────────────────────────────────────────────────────────
