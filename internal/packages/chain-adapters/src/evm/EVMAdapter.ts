@@ -31,7 +31,7 @@ const ERC1155_ABI = [
  *   상위 레이어(IssuerService, ChainEventListener) 코드 변경 없음.
  *
  * 보안 원칙:
- *   - DMZ 내부 private RPC 노드만 연결 (public RPC 절대 금지)
+ *   - 내부망 private RPC 노드만 연결 (public RPC 절대 금지)
  *   - RPC URL / private key 환경 변수 주입 (코드 하드코딩 금지)
  *   - privateKey 없으면 read-only 모드 (이벤트 구독 전용)
  *
@@ -53,7 +53,7 @@ export class EVMAdapter implements IBlockchainAdapter {
   private wallet:   Wallet | null;
 
   constructor(config: {
-    rpcUrl:      string;   // DMZ 내부 노드 URL (env: EVM_RPC_URL)
+    rpcUrl:      string;   // 내부망 노드 URL (env: EVM_RPC_URL)
     chainId:     string;
     privateKey?: string;   // 없으면 read-only 모드 (env: EVM_SIGNER_KEY)
   }) {

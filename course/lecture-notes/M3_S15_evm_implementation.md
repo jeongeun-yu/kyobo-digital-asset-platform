@@ -1,4 +1,4 @@
-﻿# M3 S15 — EVMAdapter 구현 분석 + XRPL Mock 교체 시뮬레이션
+# M3 S15 — EVMAdapter 구현 분석 + XRPL Mock 교체 시뮬레이션
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S15 · 강의 55분  
 > 대상: `internal/packages/chain-adapters/src/evm/EVMAdapter.ts`
@@ -82,7 +82,7 @@ constructor(config: {
 
 | 원칙 | 이유 |
 |---|---|
-| DMZ 내부 RPC 노드만 사용 | public RPC(infura.io 등)는 TX 내용 외부 노출 위험 |
+| 내부망 RPC 노드만 사용 | public RPC(infura.io 등)는 TX 내용 외부 노출 위험 |
 | privateKey 환경변수 주입 | 코드 하드코딩 → git 이력에 키 유출 |
 | privateKey 없으면 read-only | 이벤트 구독·잔액 조회 전용 인스턴스 분리 가능 |
 
@@ -98,7 +98,7 @@ constructor(config: {
 공개 RPC(Infura 무료 등) 한도 예시:
   100,000 req/day → 초당 약 1.1 req
 
-Phase 1 DMZ 실제 요청 패턴:
+Phase 1 내부망 실제 요청 패턴:
   subscribeEvents     → 블록마다 이벤트 수신
   queryEvents         → Finalized 범위 배치 조회
   getReceipt          → PENDING TX마다 주기적 폴링

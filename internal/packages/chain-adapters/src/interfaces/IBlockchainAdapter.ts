@@ -130,7 +130,7 @@ export interface IBlockchainAdapter {
 
   // ── 연결 ────────────────────────────────────────────────────────────
 
-  /** 노드 연결 상태 확인 (DMZ health check) */
+  /** 노드 연결 상태 확인 (내부망 헬스체크) */
   isConnected(): Promise<boolean>;
 
   /** 현재 블록 높이 — missed event 복구 기준점 */
@@ -174,7 +174,7 @@ export interface IBlockchainAdapter {
 
   /**
    * 실시간 이벤트 구독
-   * ChainEventListener → DMZPublisher 파이프라인의 입력
+   * ChainEventListener → 이벤트 파이프라인의 입력
    * @returns unsubscribe 함수
    */
   subscribeEvents(
@@ -187,7 +187,7 @@ export interface IBlockchainAdapter {
 
   /**
    * 과거 이벤트 조회 — 재시작 시 missed event 복구
-   * M7 DMZ 파이프라인: Finalized 블록 범위만 처리
+   * M7 이벤트 파이프라인: Finalized 블록 범위만 처리
    */
   queryEvents(
     contractAddr: string,

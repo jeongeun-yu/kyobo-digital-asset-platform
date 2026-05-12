@@ -64,7 +64,7 @@ export interface ProcessedEventResult {
 }
 
 /**
- * LedgerService — DMZ 운영 원장 단일 진입점
+ * LedgerService — 운영 원장 단일 진입점
  *
  * 설계 원칙:
  *   - 온체인이 단일 진실. 이 서비스의 데이터는 항상 온체인에서 파생된다.

@@ -1,6 +1,6 @@
-﻿# M2 S5 — 온체인 이벤트 수신 설계: 즉시 처리의 위험과 비동기 분리
+# M2 S5 — 온체인 이벤트 수신 설계: 즉시 처리의 위험과 비동기 분리
 
-> Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 25분 + 실습 30분  
+> Block A — 이벤트 파이프라인 · Day 02 · 강의 25분 + 실습 30분  
 > 대상: `internal/packages/event-engine/src/webhook/WebhookServer.ts`
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
@@ -64,7 +64,7 @@ Q3. Queue가 없으면 어떤 일이 생기는가?
 [ChainEventListener]                     ← 블록체인 이벤트는 이쪽이 수신
           │
           ▼
-[Core Banking 아웃바운드 알림]            ← DMZ → Core Banking (반대 방향)
+[Core Banking 아웃바운드 알림]            ← 내부망 → Core Banking (반대 방향)
 ```
 
 ## 이 세션의 구간
@@ -75,7 +75,7 @@ Q3. Queue가 없으면 어떤 일이 생기는가?
  활동 달성 이벤트 발신           이 세션 핵심                   다음 세션
 
 ※ 블록체인 이벤트 (NFT 발행 확인)는 WebhookServer가 아닌 ChainEventListener가 수신한다.
-   Core Banking은 DMZ가 아웃바운드로 알림을 보내는 대상 — WebhookServer를 호출하지 않는다.
+   Core Banking은 내부망 issuer-service가 아웃바운드로 알림을 보내는 대상 — WebhookServer를 호출하지 않는다.
 ```
 
 ---

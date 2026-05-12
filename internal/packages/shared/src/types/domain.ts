@@ -1,4 +1,4 @@
-// Shared domain types for DMZ services
+// Shared domain types for internal network services
 export type ChainId = 1 | 137 | 31337; // mainnet, polygon, hardhat
 
 // ChainEvent / TransactionReceipt 는 @kyobo/chain-adapters 가 단일 정의 원천

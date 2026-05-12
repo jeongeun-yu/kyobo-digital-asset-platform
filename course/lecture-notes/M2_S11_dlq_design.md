@@ -1,9 +1,9 @@
-﻿# M2 S11 — 처리 실패 격리 전략 Dead Letter Queue 설계와 운영
+# M2 S11 — 처리 실패 격리 전략 Dead Letter Queue 설계와 운영
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
-> Block B — DMZ 이벤트 파이프라인 · M2 S11 · 강의 55분  
-> 대상: `internal/packages/event-engine/src/dmz/DLQHandler.ts`
+> Block B — 이벤트 파이프라인 · M2 S11 · 강의 55분  
+> 대상: `internal/packages/event-engine/src/stream/DLQHandler.ts`
 
 ---
 
@@ -154,7 +154,7 @@ DLQ 없이 계속 재시도하면:
 
 ```
 F:\Workplace\kyobo-digital-asset-platform\
-└── internal/packages/event-engine/src/dmz/DLQHandler.ts
+└── internal/packages/event-engine/src/stream/DLQHandler.ts
 ```
 
 **DLQ 스트림 키:** `kyobo:events:dlq` (`${sourceStreamKey}:dlq`)

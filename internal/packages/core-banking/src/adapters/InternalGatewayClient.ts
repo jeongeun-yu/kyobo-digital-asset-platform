@@ -1,5 +1,5 @@
 /**
- * InternalGatewayClient — DMZ → internal/blockchain-gateway (Java) HTTP 클라이언트
+ * InternalGatewayClient — issuer-service → internal/blockchain-gateway (Java) HTTP 클라이언트
  *
  * 이 클라이언트가 호출하는 엔드포인트:
  *   GET  /api/internal/users/{userId}              — 사용자 계정·지갑·KYC 조회
@@ -149,7 +149,7 @@ export class InternalGatewayClient {
 
   /**
    * 감사 로그 append-only 기록
-   * → DMZ issuer-service의 모든 상태 변경 시 호출 (ISMS-P 요건)
+   * → issuer-service의 모든 상태 변경 시 호출 (ISMS-P 요건)
    * Java 쪽에서 SHA-256 체인으로 변조 감지
    */
   async recordAuditLog(req: GatewayAuditLogRequest): Promise<void> {

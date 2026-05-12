@@ -157,7 +157,7 @@ async createNftRequest(userId: string, tokenId: bigint, amount: number, price: n
   → NftIssuanceService (요청 생성)
   → VaspService (VASP 전달)
   → 블록체인 (온체인 발행)
-  → DMZ WebhookReceiver (이벤트 수신)
+  → 내부망 WebhookReceiver (이벤트 수신)
   → Redis Streams Queue (내구성 보장)
   → EventConsumer (멱등 처리)
   → LedgerService (원장 업데이트)

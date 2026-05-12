@@ -36,7 +36,7 @@
 - Travel Rule (특금법 §8의4) 시스템 구비
 - HSM/MPC 기반 수탁 지갑 관리
 - API SLA: 가용성 99.9% 이상
-- REST API 제공 (Node.js DMZ 서비스에서 직접 호출)
+- REST API 제공 (Node.js issuer-service에서 직접 호출)
 
 ## 내재화 전환 조건 (교보생명 내부 결정 사항)
 

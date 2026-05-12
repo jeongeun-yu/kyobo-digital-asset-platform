@@ -77,7 +77,7 @@ Murphy's Law: "잘못될 수 있는 것은 잘못된다." 금융 시스템에서
 영향: 원장에는 CONFIRMED, 실제 온체인은 잔액 없음
 
 복구:
-  DMZ Consumer가 REORG 이벤트 감지 → MINED → REORGED 상태 전이
+  이벤트 Consumer가 REORG 이벤트 감지 → MINED → REORGED 상태 전이
   ReconcileService가 불일치 감지 → 운영팀 알림
   새 블록에 TX 재채굴 → 다시 CONFIRMED
 
@@ -171,7 +171,7 @@ M6 KyoboNFT.sol (온체인):
   mint(to, tokenId, amount) → NFT 잔액 증가
   Transfer 이벤트 emit
 
-M2~M3 DMZ 파이프라인:
+M2~M3 이벤트 파이프라인:
   Webhook → Redis Streams → Consumer
   PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED
 
@@ -235,7 +235,7 @@ describe('Phase 1 E2E — 앱 이벤트 → NFT 발행 → 원장', () => {
       vaspTxId: vasp.txId,
     });
 
-    // [7] DMZ Consumer: 온체인 이벤트 수신 → FINALIZED 전이 → 원장 업데이트 → CONFIRMED (M2/M3)
+    // [7] 이벤트 Consumer: 온체인 이벤트 수신 → FINALIZED 전이 → 원장 업데이트 → CONFIRMED (M2/M3)
     await simulateOnchainConfirmation(mintRequest.id, '0xTxHash123');
     const confirmed = await ledgerService.updateMintRequest(
       mintRequest.id, 'CONFIRMED', { onChainTxHash: '0xTxHash123' },
@@ -338,7 +338,7 @@ describe('장애 주입 2 — 블록 Reorg', () => {
     expect(onChainBalance).toBe(1n);
 
     // [Reorg 시뮬레이션]
-    // DMZ Consumer가 REORGED 이벤트 수신
+    // 이벤트 Consumer가 REORGED 이벤트 수신
     await simulateReorgEvent(mintRequest.id);
 
     // 원장 롤백 — MINED → REORGED (FINALIZED 이전에만 REORG 가능)

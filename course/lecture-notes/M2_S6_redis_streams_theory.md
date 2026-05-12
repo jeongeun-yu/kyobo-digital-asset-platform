@@ -1,9 +1,9 @@
-﻿# M2 S7 — Redis Streams 내부 구조
+# M2 S7 — Redis Streams 내부 구조
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
-> Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 55분 (이론 전용)  
-> 대상: `internal/packages/event-engine/src/dmz/RedisStreamPublisher.ts`
+> Block A — 이벤트 파이프라인 · Day 02 · 강의 55분 (이론 전용)  
+> 대상: `internal/packages/event-engine/src/stream/RedisStreamPublisher.ts`
 
 ---
 
@@ -1033,7 +1033,7 @@ npx ts-node src/exercises/S07_redis_stream.ts
 ```typescript
 // S07_redis_stream.ts — Part 1 스켈레톤
 
-import { RedisStreamPublisher } from '../dmz/RedisStreamPublisher';
+import { RedisStreamPublisher } from '../stream/RedisStreamPublisher';
 import { createRedisClient }    from '../test-utils/MockRedisStream';
 
 async function part1() {
@@ -1105,7 +1105,7 @@ async function part1() {
 ```typescript
 // S07_redis_stream.ts — Part 2 스켈레톤
 
-import type { EventProcessor, StreamMessage } from '../dmz/ConsumerGroupWorker';
+import type { EventProcessor, StreamMessage } from '../stream/ConsumerGroupWorker';
 
 // TODO 4: SimpleNFTProcessor 클래스를 구현하라
 //   - EventProcessor 인터페이스 구현
@@ -1134,8 +1134,8 @@ async function part2() {
 **Part 2 답안:**
 
 ```typescript
-import { ConsumerGroupWorker } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler }          from '../dmz/DLQHandler';
+import { ConsumerGroupWorker } from '../stream/ConsumerGroupWorker';
+import { DLQHandler }          from '../stream/DLQHandler';
 
 class SimpleNFTProcessor implements EventProcessor {
   // TODO 4 답안

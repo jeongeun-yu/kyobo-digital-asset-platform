@@ -1,4 +1,4 @@
-﻿# M3 S21 — VASP 이중 채널 동기화 아키텍처 설계
+# M3 S21 — VASP 이중 채널 동기화 아키텍처 설계
 
 > **[Phase 1·2 — 아키텍처 설계]** 이중 채널(Push + Pull) 설계 원리를 다룹니다.  
 > **Phase 1 맥락:** Push 채널(월렛원 Webhook)만으로 운영합니다. Pull 채널(`pollStaleRequests()`)은 Webhook 누락 시 보완 복구 용도로만 사용합니다.  
@@ -140,7 +140,7 @@ Pull 채널 (폴링):
 ### 1. 단일 콜백 방식의 취약점
 
 ```
-흐름: VASP TX 완료 → VASP가 Webhook 콜백 → DMZ WebhookReceiver
+흐름: VASP TX 완료 → VASP가 Webhook 콜백 → 내부망 WebhookReceiver
                                                     ↓
                                               ConsumerGroupWorker
                                                     ↓
@@ -148,7 +148,7 @@ Pull 채널 (폴링):
 
 문제 1: 콜백 1회 유실
   VASP Webhook 전송 → 네트워크 순단
-  → 콜백 DMZ에 도달 안 됨
+  → 콜백 내부망에 도달 안 됨
   → 재전송 정책이 없는 VASP → 영구 PENDING
 
 문제 2: WebhookReceiver 처리 실패
@@ -193,7 +193,7 @@ VASP SLA: 정상 처리 시간 평균 2~10분
 
 ```
 경로 1: 네트워크 유실
-  VASP → [인터넷] → DMZ
+  VASP → [인터넷] → DMZ Nginx → 내부망
   유실 지점: 방화벽, NAT, 일시적 네트워크 오류
 
 경로 2: VASP 재전송 정책 없음

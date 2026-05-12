@@ -2,7 +2,7 @@ import type { IBlockchainAdapter, ChainEvent } from '@kyobo/chain-adapters';
 import type { IEventHandler } from '../interfaces/IEventHandler';
 
 /**
- * ChainEventListener — 온체인 이벤트 구독 → DMZ 파이프라인 입구
+ * ChainEventListener — 온체인 이벤트 구독 → 이벤트 파이프라인 입구
  *
  * 동작 방식:
  *   1. 시작 시 DB의 마지막 처리 블록 조회
@@ -13,7 +13,7 @@ import type { IEventHandler } from '../interfaces/IEventHandler';
  *
  * IBlockchainAdapter 의존 — 체인 교체 시 이 클래스 변경 없음 (M3 S14 핵심).
  *
- * M7 DMZ 파이프라인 연동:
+ * M7 이벤트 파이프라인 연동:
  *   ChainEventListener → RedisStreamPublisher → Redis Streams
  *                                             ↓
  *                                    ConsumerGroupWorker → LedgerService

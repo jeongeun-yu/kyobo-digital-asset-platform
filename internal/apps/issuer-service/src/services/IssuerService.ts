@@ -41,7 +41,7 @@ export class IssuerService {
     if (aml.flagged) throw new Error(`IssuerService: AML flagged: ${aml.reason}`);
 
     // ── Phase 1: VASP(월렛원)에 TX 위탁 ──────────────────────────────
-    // DMZ는 TX를 직접 서명하지 않는다. VASP가 서명·브로드캐스트 후
+    // issuer-service(내부망)는 TX를 직접 서명하지 않는다. VASP가 서명·브로드캐스트 후
     // NFT_ISSUED Webhook으로 결과를 통보한다 (비동기 완료).
     const vaspReceipt = await this.deps.vaspAdapter.submitTransaction({
       contractAddr:   this.deps.nftIssuerAddr,

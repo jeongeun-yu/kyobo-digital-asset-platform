@@ -58,8 +58,8 @@ export interface IVASPAdapter {
   /**
    * NFT 발행·소각·전송 트랜잭션 위탁 — Phase 1 핵심 write 경로
    *
-   * 내부망 → DMZ(IssuerService) → VASP REST API → VASP가 TX 서명·브로드캐스트
-   * VASP는 완료 후 Webhook(NFT_ISSUED)으로 결과를 DMZ에 통보한다.
+   * 내부망 IssuerService → VASP REST API → VASP가 TX 서명·브로드캐스트
+   * VASP는 완료 후 Webhook(NFT_ISSUED)으로 결과를 issuer-service에 통보한다.
    *
    * Phase 3 전환 시 이 메서드를 chainAdapter.sendTransaction()으로 교체.
    * 교체 범위: ExternalVASPAdapter → KyoboVASPAdapter (or EVMAdapter + 자체 HSM)

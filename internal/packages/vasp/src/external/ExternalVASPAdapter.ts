@@ -15,7 +15,7 @@ import type {
  *
  * 보안 요구사항:
  *   - API 키는 반드시 환경 변수 또는 KMS에서 주입 (코드 하드코딩 금지)
- *   - 모든 호출은 DMZ 내부망 → 외부 VASP API 방화벽 경유
+ *   - 모든 호출은 내부망 → 외부 VASP API 방화벽 경유
  *   - Travel Rule: 10만원 이상 이체 시 travelRuleData 필수 (특금법 §8의4)
  */
 export class ExternalVASPAdapter implements IVASPAdapter {
@@ -30,7 +30,7 @@ export class ExternalVASPAdapter implements IVASPAdapter {
   /**
    * Phase 1 핵심 write 경로 — VASP에 TX 서명·브로드캐스트 위탁
    * 월렛원(또는 다른 VASP) REST API POST /transactions 호출
-   * VASP는 TX 완료 후 NFT_ISSUED Webhook으로 DMZ에 통보한다.
+   * VASP는 TX 완료 후 NFT_ISSUED Webhook으로 issuer-service에 통보한다.
    */
   async submitTransaction(params: SubmitTransactionParams): Promise<VASPTransactionReceipt> {
     const res = await this._request('POST', '/transactions', {

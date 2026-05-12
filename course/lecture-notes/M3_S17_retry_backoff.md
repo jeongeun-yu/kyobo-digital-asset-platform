@@ -1,4 +1,4 @@
-﻿# M3 S17 — Retry + Backoff + Webhook 수준 Idempotency
+# M3 S17 — Retry + Backoff + Webhook 수준 Idempotency
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
@@ -152,7 +152,7 @@ private _isNonRetryable(status: number): boolean {
 ```
 
 **HMAC 서명 이유:**
-Core Banking이 수신한 Webhook이 진짜 교보 DMZ에서 온 것인지 검증한다. secret을 공유하지 않은 제3자는 유효한 `X-Kyobo-Signature`를 만들 수 없다.
+Core Banking이 수신한 Webhook이 진짜 교보 내부망에서 온 것인지 검증한다. secret을 공유하지 않은 제3자는 유효한 `X-Kyobo-Signature`를 만들 수 없다.
 
 **HTTP 에러 분류:**
 

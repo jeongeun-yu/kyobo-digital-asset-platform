@@ -2958,7 +2958,7 @@ internal/ (Node.js 서비스) → Node.js 마이크로서비스 (내부망, DMZ 
 │   │
 │   ├── event-engine/    → Redis Streams 이벤트 처리 (@kyobo/event-engine)
 │   │   └── src/
-│   │       ├── dmz/
+│   │       ├── stream/
 │   │       │   ├── ConsumerGroupWorker.ts   ← M2 S9~S12 핵심 (At-least-once)
 │   │       │   ├── DLQHandler.ts            ← M2 S11 DLQ
 │   │       │   └── RedisStreamPublisher.ts

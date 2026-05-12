@@ -8,7 +8,7 @@ import type {
 /**
  * StubCoreBankingAdapter — 테스트·로컬 개발용 인메모리 구현체
  *
- * internal/blockchain-gateway (Java) 없이 DMZ 로직을 독립적으로 실습할 때 사용.
+ * internal/blockchain-gateway (Java) 없이 issuer-service 로직을 독립적으로 실습할 때 사용.
  * 단위 테스트에서 InternalGatewayClient를 교체하는 용도.
  *
  * 사용:

@@ -1,7 +1,7 @@
 /**
  * 실습 환경 설정 로더
  *
- * 모노레포 루트(dmz/)의 .env 파일을 로드한다.
+ * 모노레포 루트의 .env 파일을 로드한다.
  * 모든 패키지 실습에서 import { config } from '@kyobo/shared' 로 사용.
  *
  * 우선순위: 실제 환경변수 > .env 파일 > 기본값
@@ -12,7 +12,7 @@ import fs   from 'fs';
 import dotenv from 'dotenv';
 
 // 어느 패키지에서 import하든 레포 루트 .env를 찾아 로드
-// shared/src → packages → dmz → root
+// shared/src → shared → packages → internal → root
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const ENV_PATH  = path.join(REPO_ROOT, '.env');
 

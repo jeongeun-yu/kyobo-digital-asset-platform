@@ -11,7 +11,7 @@
     ↕ 앱 API
 [내부망 — 교보 직접 운영]
     ↕ 트랜잭션 요청 / 이벤트
-[DMZ — 교보 운영]
+[내부망 Node.js 서비스 — 교보 운영]
     ↕ 서명 요청          ↕ 이벤트 수신
 [VASP — 위탁]      [EVM 블록체인]
     ↕ TX 브로드캐스트
@@ -59,7 +59,7 @@
 
 ---
 
-### 3. DMZ — 교보 운영
+### 3. 내부망 Node.js 서비스 — 교보 운영
 
 | 컴포넌트 | 역할 |
 |---|---|
@@ -129,11 +129,11 @@
 사용자 앱 (걷기 달성)
     → 이벤트 조건 판단 서버 (내부망)
     → NFT 발행 요청 생성
-    → Relayer Service (DMZ)
-    → VASP API Gateway (DMZ)
+    → Relayer Service (내부망)
+    → VASP API Gateway (내부망)
     → VASP TX 서명
     → EVM 메인넷 브로드캐스트
-    → Webhook Receiver (DMZ)
+    → Webhook Receiver (내부망)
     → Redis Streams
     → 내부 원장 업데이트
     → 사용자 앱 알림

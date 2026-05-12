@@ -10,10 +10,10 @@ import { InternalGatewayClient } from './InternalGatewayClient';
  * KyoboCoreBankingAdapter — ICoreBankingAdapter 구현체
  *
  * 모든 호출은 internal/blockchain-gateway (Java Spring Boot)를 경유한다.
- * DMZ는 Core Banking 레거시 시스템에 직접 접속하지 않는다.
+ * issuer-service(내부망)는 Core Banking 레거시 시스템에 직접 접속하지 않는다.
  *
  * 호출 흐름:
- *   DMZ issuer-service
+ *   issuer-service(내부망)
  *     → KyoboCoreBankingAdapter
  *       → InternalGatewayClient (HTTP)
  *         → internal/blockchain-gateway (:8080)

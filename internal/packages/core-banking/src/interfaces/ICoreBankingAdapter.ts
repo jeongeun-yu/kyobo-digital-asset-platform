@@ -75,7 +75,7 @@ export interface ICoreBankingAdapter {
   }): Promise<void>;
 
   /**
-   * DMZ 상태 변경마다 호출 — Java gateway가 audit_log 테이블에 append-only 기록
+   * issuer-service 상태 변경마다 호출 — Java gateway가 audit_log 테이블에 append-only 기록
    */
   recordAuditLog(entry: {
     actor: string;

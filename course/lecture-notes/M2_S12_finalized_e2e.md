@@ -1,10 +1,10 @@
-﻿# M2 S12 — Finalized 블록 기준 처리와 파이프라인 장애 복원력 검증
+# M2 S12 — Finalized 블록 기준 처리와 파이프라인 장애 복원력 검증
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
-> **Phase 1 맥락:** FINALIZED 확인은 `IBlockchainAdapter.queryEvents()` / `getReceipt()` 를 통한 read-only 조회로 수행합니다. `ChainEventListener`의 직접 이벤트 구독은 Phase 2+에서 활성화됩니다. Phase 1에서 주 이벤트 수신 경로는 월렛원 Webhook → DMZ WebhookReceiver입니다.
+> **Phase 1 맥락:** FINALIZED 확인은 `IBlockchainAdapter.queryEvents()` / `getReceipt()` 를 통한 read-only 조회로 수행합니다. `ChainEventListener`의 직접 이벤트 구독은 Phase 2+에서 활성화됩니다. Phase 1에서 주 이벤트 수신 경로는 월렛원 Webhook → 내부망 WebhookReceiver입니다.
 
-> Block B — DMZ 이벤트 파이프라인 · M2 S12 · 강의 55분  
-> 대상: `internal/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`, `internal/packages/event-engine/src/dmz/DLQHandler.ts`, `internal/packages/event-engine/src/processors/NFTIssuedProcessor.ts`
+> Block B — 이벤트 파이프라인 · M2 S12 · 강의 55분  
+> 대상: `internal/packages/event-engine/src/stream/ConsumerGroupWorker.ts`, `internal/packages/event-engine/src/stream/DLQHandler.ts`, `internal/packages/event-engine/src/processors/NFTIssuedProcessor.ts`
 
 ---
 
@@ -410,7 +410,7 @@ redis-cli XPENDING kyobo:events issuer-consumers - + 10
 ## 5. M2 전체 E2E 흐름 검증
 
 ```
-VASP (외부) → WebhookServer(DMZ)
+VASP (외부) → WebhookServer(내부망)
 → WebhookPublishHandler (IdempotencyGuard → RedisStreamPublisher)
 → kyobo:events Stream (MockRedisStream)
 → ConsumerGroupWorker → NFTIssuedProcessor
@@ -466,8 +466,8 @@ TODO 5: 잘못된 서명으로 전송 → 401 확인
 import { WebhookServer }         from '../webhook/WebhookServer';
 import { WebhookPublishHandler } from '../webhook/WebhookPublishHandler';
 import { IdempotencyGuard, InMemoryIdempotencyStore } from '../webhook/IdempotencyGuard';
-import { ConsumerGroupWorker }   from '../dmz/ConsumerGroupWorker';
-import { DLQHandler }            from '../dmz/DLQHandler';
+import { ConsumerGroupWorker }   from '../stream/ConsumerGroupWorker';
+import { DLQHandler }            from '../stream/DLQHandler';
 import { NFTIssuedProcessor, InMemoryLedgerService } from '../processors/NFTIssuedProcessor';
 import { MockRedisStream }       from '../test-utils/MockRedisStream';
 import crypto from 'crypto';
@@ -683,7 +683,7 @@ runE2E() 실행 흐름:
 ## 핵심 정리
 
 ```
-M2 DMZ 이벤트 파이프라인의 신뢰성 3원칙:
+M2 이벤트 파이프라인의 신뢰성 3원칙:
 
 1. At-least-once + 멱등성
    "최소 1회 처리 보장 + 중복 발행 차단"

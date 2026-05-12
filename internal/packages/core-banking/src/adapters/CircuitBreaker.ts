@@ -1,7 +1,7 @@
 /**
  * CircuitBreaker — 외부 서비스 장애 차단 패턴
  *
- * M8 ISMS-P 연계: DMZ → internal/blockchain-gateway 연결 장애 시
+ * M8 ISMS-P 연계: issuer-service → internal/blockchain-gateway 연결 장애 시
  * 무한 재시도 대신 빠른 실패(fail-fast)로 전환.
  *
  * 상태 전이:

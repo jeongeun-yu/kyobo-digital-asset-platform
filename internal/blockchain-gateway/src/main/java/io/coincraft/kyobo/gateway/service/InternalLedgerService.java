@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 내부망 영구 원장 서비스
  *
- * DMZ Node.js issuer-service의 호출을 받아 영구 금융 원장에 기록한다.
+ * 내부망 Node.js issuer-service의 호출을 받아 영구 금융 원장에 기록한다.
  * 모든 쓰기 작업은 AuditLogService를 통해 감사 추적된다.
  *
  * DB: 교보 내부망 Oracle (운영) / PostgreSQL (개발)
@@ -26,7 +26,7 @@ public class InternalLedgerService {
 
     /**
      * NFT 취득 기록
-     * on-chain Transfer(from=0x0) 이벤트 확정 후 DMZ에서 호출
+     * on-chain Transfer(from=0x0) 이벤트 확정 후 내부망 issuer-service에서 호출
      */
     @Transactional
     public void recordNftHolding(String userId, NftHoldingRequest request) {
@@ -59,7 +59,7 @@ public class InternalLedgerService {
 
     /**
      * NFT 소각/이전 기록
-     * on-chain Transfer(to=0x0 or to=other) 이벤트 확정 후 DMZ에서 호출
+     * on-chain Transfer(to=0x0 or to=other) 이벤트 확정 후 내부망 issuer-service에서 호출
      */
     @Transactional
     public void releaseNftHolding(Long tokenId, String contractAddr, Integer chainId) {

@@ -34,5 +34,5 @@ CREATE TABLE IF NOT EXISTS processed_events (
 
 CREATE INDEX IF NOT EXISTS idx_processed_events_block ON processed_events(block_number);
 
-COMMENT ON TABLE mint_requests IS 'DMZ 운영 원장: NFT 발행 요청 상태 추적. 30일 후 자동 만료.';
-COMMENT ON TABLE processed_events IS 'DMZ 운영 원장: 온체인 이벤트 중복 방지. 90일 보존.';
+COMMENT ON TABLE mint_requests IS '운영 원장 (issuer-service 소유): NFT 발행 요청 상태 추적. 30일 후 자동 만료.';
+COMMENT ON TABLE processed_events IS '운영 원장 (issuer-service 소유): 온체인 이벤트 중복 방지. 90일 보존.';

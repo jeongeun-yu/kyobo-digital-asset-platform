@@ -73,7 +73,7 @@ export class ISMSChecklist {
       {
         id:          'ISMS-NETWORK-001',
         category:    'NETWORK',
-        description: 'DMZ 구간 방화벽 규칙 — 블록체인 노드 포트 최소 개방',
+        description: '내부망 방화벽 규칙 — 블록체인 노드 포트 최소 개방',
         check:       async () => this._checkNetwork(),
       },
       {
@@ -162,7 +162,7 @@ export class ISMSChecklist {
 
   /**
    * NETWORK: RPC URL이 퍼블릭 노드를 가리키면 실패.
-   * DMZ 원칙: 블록체인 노드는 내부망 사설 IP만 허용.
+   * 보안 원칙: 블록체인 노드는 내부망 사설 IP만 허용.
    */
   private _checkNetwork(): { passed: boolean; detail?: string } {
     const url = this.deps.rpcUrl.toLowerCase();
