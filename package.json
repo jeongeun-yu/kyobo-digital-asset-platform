@@ -10,7 +10,7 @@
     "course/exercises/M2/event-listener"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspaces --if-present",
     "build:all": "npm run build --workspaces --if-present && cd blockchain && npx hardhat compile",
     "test": "npm run test --workspaces --if-present",
     "test:exercises": "npm run test:exercises --workspace=internal/packages/event-engine",
