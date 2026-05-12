@@ -1,10 +1,10 @@
-# M2 S52 — Consumer 장애 Runbook · 유형별 대응 절차와 모니터링 설계
+﻿# M2 S52 — Consumer 장애 Runbook · 유형별 대응 절차와 모니터링 설계
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 2 · 세션 52 · 1시간 `운영`  
 > 전제: S10에서 ConsumerGroupWorker 구현 완료, S11에서 DLQHandler 운영 중  
-> 스켈레톤: `dmz/packages/event-engine/src/admin/ConsumerMonitorService.ts`
+> 스켈레톤: `internal/packages/event-engine/src/admin/ConsumerMonitorService.ts`
 
 > ⚠️ **운영 세션** — Consumer가 **정상 동작하는 방법**은 S10에서 배웠다. 이번 세션은 **Consumer가 비정상일 때 운영자가 어떻게 대응하는가**다. 장애 유형별로 증상·원인·조치가 다르다. Runbook은 야간 장애에서 생각할 시간 없을 때 쓰는 문서다.
 
@@ -29,13 +29,13 @@ Consumer 장애는 증상이 비슷해 보여도 원인과 조치가 완전히 �
   - 외부 종료 시그널
 
 즉각 조치:
-  pm2 restart dmz-consumer
+  pm2 restart issuer-consumer
   → PM2 자동 재시작이 작동했는지 확인
   → PEL 재수신: 이전에 처리 중이던 메시지 자동 재수신
 
 확인 포인트:
-  pm2 logs dmz-consumer --lines 100  ← 크래시 직전 로그
-  pm2 show dmz-consumer               ← 재시작 횟수 확인
+  pm2 logs issuer-consumer --lines 100  ← 크래시 직전 로그
+  pm2 show issuer-consumer               ← 재시작 횟수 확인
 ```
 
 **PEL 재수신이 왜 자동인가:**
@@ -175,7 +175,7 @@ Redis Streams에서 Consumer Group의 대기 메시지 수:
 ### 실습 1 — Consumer Lag 모니터링 엔드포인트 (15분)
 
 ```typescript
-// dmz/packages/event-engine/src/admin/ConsumerMonitorService.ts
+// internal/packages/event-engine/src/admin/ConsumerMonitorService.ts
 
 export interface ConsumerStats {
   streamLength: number;        // 전체 스트림 메시지 수
@@ -294,7 +294,7 @@ Consumer를 강제로 중단하면:
 
 \`\`\`bash
 # 1. Consumer 프로세스 상태
-pm2 status dmz-consumer
+pm2 status issuer-consumer
 
 # 2. Consumer 지표 전체 조회
 curl http://localhost:3000/admin/queue/stats
@@ -309,8 +309,8 @@ curl http://localhost:3000/admin/dlq/pending
 
 \`\`\`bash
 # 조치
-pm2 restart dmz-consumer
-pm2 logs dmz-consumer --lines 100  # 크래시 원인 확인
+pm2 restart issuer-consumer
+pm2 logs issuer-consumer --lines 100  # 크래시 원인 확인
 
 # 확인
 curl http://localhost:3000/admin/queue/stats
@@ -335,7 +335,7 @@ psql -c "SELECT pid, duration, query FROM pg_stat_activity
          WHERE state='active' ORDER BY duration DESC LIMIT 10;"
 
 # 3. Lag가 계속 증가하면 Consumer 인스턴스 추가
-pm2 start dmz-consumer --name dmz-consumer-2
+pm2 start issuer-consumer --name issuer-consumer-2
 \`\`\`
 
 ---
@@ -372,7 +372,7 @@ redis-cli ping
 redis-cli info memory | grep used_memory_human
 
 # 3. Redis 정상 → Consumer만 재시작
-pm2 restart dmz-consumer
+pm2 restart issuer-consumer
 
 # 4. Redis 다운 → 인프라팀 에스컬레이션 (연락처: infra@kyobo.com)
 \`\`\`
@@ -472,7 +472,7 @@ Consumer 장애 대응 시트
   실행자: ____________________
 
   실행 내용 (해당 항목에 V + 시각 기록):
-  ( ) pm2 restart dmz-consumer          __:__
+  ( ) pm2 restart issuer-consumer          __:__
   ( ) Consumer 인스턴스 추가             __:__
   ( ) DLQ requeue                        __:__
   ( ) DLQ drop                           __:__
@@ -505,7 +505,7 @@ Consumer 장애 대응 시트
 │                                                           │
 │  □ pm2 status → stopped/errored 확인                     │
 │  □ pm2 logs --lines 100 → 크래시 원인 확인               │
-│  □ pm2 restart dmz-consumer                              │
+│  □ pm2 restart issuer-consumer                              │
 │  □ 재시작 후 pm2 status → online 확인                    │
 │  □ /admin/queue/stats → consumerCount >= 1 확인          │
 │  □ PEL 메시지 자동 재수신 확인 (5분 대기)                │
@@ -520,7 +520,7 @@ Consumer 장애 대응 시트
 │  □ DB 슬로우 쿼리 확인 (pg_stat_activity)                │
 │    └─ duration 긴 쿼리 있으면 → DBA 에스컬레이션         │
 │  □ Lag 500+ & 원인 불명 → Consumer 인스턴스 추가         │
-│       pm2 start dmz-consumer --name dmz-consumer-2       │
+│       pm2 start issuer-consumer --name issuer-consumer-2       │
 │  □ Lag 감소 추세 확인 (5분 모니터링)                     │
 │  ※ Lag에 pm2 restart는 효과 없음. 오히려 PEL 재처리     │
 │    부하 추가됨                                            │
@@ -581,7 +581,7 @@ Consumer 장애 대응 시트
   drop       : ____ 건
 
 [pm2 재시작 횟수]
-  pm2 show dmz-consumer → restart count: ____
+  pm2 show issuer-consumer → restart count: ____
   (주간 10회 이상이면 코드 안정성 검토 필요)
 
 [이번 주 주요 이슈]
@@ -607,7 +607,7 @@ Consumer 장애 대응 시트
 ### NotifierAdapter 인터페이스
 
 ```typescript
-// dmz/packages/event-engine/src/admin/NotifierAdapter.ts
+// internal/packages/event-engine/src/admin/NotifierAdapter.ts
 
 export interface AlertPayload {
   title: string;
@@ -636,7 +636,7 @@ export interface NotifierAdapter {
 ### Slack 구현체 (예시)
 
 ```typescript
-// dmz/packages/event-engine/src/admin/notifiers/SlackNotifierAdapter.ts
+// internal/packages/event-engine/src/admin/notifiers/SlackNotifierAdapter.ts
 
 export class SlackNotifierAdapter implements NotifierAdapter {
   constructor(private readonly webhookUrl: string) {}
@@ -756,7 +756,7 @@ export class EmailNotifierAdapter implements NotifierAdapter {
 ### 의존성 주입 — 채널 교체 지점
 
 ```typescript
-// dmz/packages/event-engine/src/admin/index.ts
+// internal/packages/event-engine/src/admin/index.ts
 
 function buildNotifier(): NotifierAdapter {
   switch (process.env.NOTIFIER_TYPE) {
@@ -779,7 +779,7 @@ const weeklyReport    = new WeeklyReportService(db, notifier);
 ### WeeklyReportService — 주간 리포트 자동 집계
 
 ```typescript
-// dmz/packages/event-engine/src/admin/WeeklyReportService.ts
+// internal/packages/event-engine/src/admin/WeeklyReportService.ts
 
 export interface WeeklyReport {
   weekLabel: string;

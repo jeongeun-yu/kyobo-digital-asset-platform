@@ -1,10 +1,10 @@
-# M2 S51 — DLQ 운영 절차 · 재큐잉 판단 기준과 드랍 정책 설계
+﻿# M2 S51 — DLQ 운영 절차 · 재큐잉 판단 기준과 드랍 정책 설계
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 2 · 세션 51 · 1시간 `운영`  
 > 전제: S11에서 DLQHandler 구현 완료, `kyobo:events:dlq` 스트림 운영 중  
-> 스켈레톤: `dmz/packages/event-engine/src/admin/DLQAdminService.ts`
+> 스켈레톤: `internal/packages/event-engine/src/admin/DLQAdminService.ts`
 
 > ⚠️ **운영 세션** — 코드 구현이 아닌 운영 판단 기준과 절차를 다룬다. S11에서 DLQ가 왜 필요한지, 어떻게 작동하는지는 이미 배웠다. 이번 세션은 **운영자가 실제로 DLQ 앞에 섰을 때 무엇을 어떻게 결정하는가**다.
 
@@ -119,7 +119,7 @@ DLQ ID     : 1714320000000-0
 `DLQAdminService.listPending()`은 S11의 `DLQHandler.listPending()`을 그대로 사용한다. 이번 실습은 **운영자가 실제로 쓸 수 있는 출력 형식**을 만드는 것이다.
 
 ```typescript
-// dmz/packages/event-engine/src/admin/DLQAdminService.ts
+// internal/packages/event-engine/src/admin/DLQAdminService.ts
 
 export class DLQAdminService {
   constructor(
@@ -483,7 +483,7 @@ processed_events 중복 여부          drop 이유
 ### 인터페이스 설계
 
 ```typescript
-// dmz/packages/event-engine/src/admin/IncidentService.ts
+// internal/packages/event-engine/src/admin/IncidentService.ts
 
 export type IncidentType = 'DLQ' | 'CONSUMER_CRASH' | 'LAG' | 'REDIS_DOWN' | 'IDEMPOTENCY';
 export type IncidentStatus = 'OPEN' | 'INVESTIGATING' | 'RESOLVED';
@@ -530,7 +530,7 @@ export interface Incident {
 ### IncidentService 구현
 
 ```typescript
-// dmz/packages/event-engine/src/admin/IncidentService.ts
+// internal/packages/event-engine/src/admin/IncidentService.ts
 
 export class IncidentService {
   constructor(

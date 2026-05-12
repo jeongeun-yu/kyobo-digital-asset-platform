@@ -1,10 +1,10 @@
-# M4 S24 — 원장 일관성 보장 · 상태 전이 가드와 멱등 이벤트 처리
+﻿# M4 S24 — 원장 일관성 보장 · 상태 전이 가드와 멱등 이벤트 처리
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
 > **Phase 1 맥락:** TX 상태머신의 상태 전이는 월렛원 Webhook(NFT_ISSUED 등)이 트리거합니다. Webhook → DMZ WebhookReceiver → Redis → Consumer → `LedgerService.transition()` 순서로 상태가 변경됩니다.
 
 > 모듈 4 · 세션 24 · 1시간  
-> 스켈레톤: `dmz/packages/core-banking/src/ledger/LedgerService.ts`
+> 스켈레톤: `internal/packages/core-banking/src/ledger/LedgerService.ts`
 
 ---
 

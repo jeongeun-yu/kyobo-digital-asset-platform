@@ -1,8 +1,8 @@
-# Runbook: 컨트랙트 업그레이드 거버넌스 — Safe 제안·승인·실행 실전 절차
+﻿# Runbook: 컨트랙트 업그레이드 거버넌스 — Safe 제안·승인·실행 실전 절차
 
 **대상**: 컨트랙트 담당 개발자, Safe 서명자 3인  
 **관련 세션**: S57  
-**관련 코드**: `blockchain/`, `dmz/packages/vasp/src/` (MultisigService — M8 구현 예정)
+**관련 코드**: `blockchain/`, `internal/packages/vasp/src/` (MultisigService — M8 구현 예정)
 
 ---
 

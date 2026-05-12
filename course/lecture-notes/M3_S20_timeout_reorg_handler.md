@@ -1,10 +1,10 @@
-# M3 S20 — TIMEOUT·REORG 복구 핸들러 구현
+﻿# M3 S20 — TIMEOUT·REORG 복구 핸들러 구현
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
 > **Phase 1 맥락:** VASP Webhook 수신 지연 시 `pollStaleRequests()`가 발동합니다. `IBlockchainAdapter.getReceipt()`는 read-only 조회(Phase 1 허용 범위)를 통해 on-chain 상태를 확인합니다.
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S20 · 1시간  
-> 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`, `dmz/packages/vasp/src/recovery/VaspRecoveryService.ts`
+> 대상: `internal/packages/vasp/src/tx/TxStateMachineService.ts`, `internal/packages/vasp/src/recovery/VaspRecoveryService.ts`
 
 ---
 

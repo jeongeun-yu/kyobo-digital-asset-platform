@@ -1,8 +1,8 @@
-# Runbook: 감사 로그 규제 대응 — 5년 보관 운영과 감독원 조회 절차
+﻿# Runbook: 감사 로그 규제 대응 — 5년 보관 운영과 감독원 조회 절차
 
 **대상**: 컴플라이언스 담당자, 운영팀  
 **관련 세션**: S55  
-**관련 코드**: `dmz/packages/core-banking/src/audit/AuditLogService.ts`
+**관련 코드**: `internal/packages/core-banking/src/audit/AuditLogService.ts`
 
 ---
 

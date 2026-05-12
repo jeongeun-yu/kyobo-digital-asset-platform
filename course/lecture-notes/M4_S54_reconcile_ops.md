@@ -1,10 +1,10 @@
-# M4 S54 — Reconcile 운영 · 스케줄 설계와 불일치 대응 절차
+﻿# M4 S54 — Reconcile 운영 · 스케줄 설계와 불일치 대응 절차
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 4 · 세션 54 · 1시간 `운영`
 > 전제: S25에서 ReconcileService 구현 완료, S24 TxStateMachineService 운영 중
-> 스켈레톤: `dmz/packages/core-banking/src/admin/ReconcileAdminService.ts`
+> 스켈레톤: `internal/packages/core-banking/src/admin/ReconcileAdminService.ts`
 
 > ⚠️ **운영 세션** — S25에서 ReconcileService가 왜 필요한지, `reconcile()` 로직이 어떻게 동작하는지는 이미 배웠다. 이번 세션은 **그 reconcile을 언제, 얼마나 자주 실행하는가**와 **불일치를 발견했을 때 운영자가 무엇을 어떻게 결정하는가**다. 역방향 수정 절대 금지 원칙은 이 세션에서 다시 한번 운영 관점에서 재확인한다.
 
@@ -213,7 +213,7 @@ curl -X POST http://localhost:3000/admin/reconcile/run \
 ### 실습 1 — ReconcileAdminService 구현 (10분)
 
 ```typescript
-// dmz/packages/core-banking/src/admin/ReconcileAdminService.ts
+// internal/packages/core-banking/src/admin/ReconcileAdminService.ts
 
 export interface ReconcileRunResult {
   runAt: Date;
@@ -456,7 +456,7 @@ curl -X POST http://localhost:3000/admin/reconcile/run \
 ### 실습 3 — 불일치 알림 트리거 + cron 등록 (10분)
 
 ```typescript
-// dmz/packages/core-banking/src/admin/index.ts
+// internal/packages/core-banking/src/admin/index.ts
 
 import cron from 'node-cron';
 
@@ -699,7 +699,7 @@ REORG 이력 확인 (원인 B 여부)      외부 에스컬레이션 판단
 ### TypeScript 서비스 클래스 구현
 
 ```typescript
-// dmz/packages/core-banking/src/admin/ReconcileIncidentService.ts
+// internal/packages/core-banking/src/admin/ReconcileIncidentService.ts
 
 export type MismatchCause = 'CONSUMER_LAG' | 'REORG' | 'MANUAL_DB' | 'CODE_BUG' | 'UNKNOWN';
 

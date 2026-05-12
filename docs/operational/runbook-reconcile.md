@@ -1,8 +1,8 @@
-# Runbook: Reconcile 운영 — 스케줄링·불일치 알림·에스컬레이션 절차
+﻿# Runbook: Reconcile 운영 — 스케줄링·불일치 알림·에스컬레이션 절차
 
 **대상**: 내부망 운영자  
 **관련 세션**: S54  
-**관련 코드**: `dmz/packages/core-banking/src/reconcile/ReconcileService.ts`
+**관련 코드**: `internal/packages/core-banking/src/reconcile/ReconcileService.ts`
 
 ---
 
@@ -79,7 +79,7 @@ WHERE user_id = 'user-001'
 ORDER BY created_at DESC LIMIT 20;
 
 # 온체인 잔액 직접 확인
-# dmz/packages/core-banking/src/reconcile/ReconcileService.ts → reconcile(userId) 참조
+# internal/packages/core-banking/src/reconcile/ReconcileService.ts → reconcile(userId) 참조
 ```
 
 보정 후:

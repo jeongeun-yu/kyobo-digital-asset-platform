@@ -1,9 +1,9 @@
-# M2 S7 — Redis Streams 내부 구조
+﻿# M2 S7 — Redis Streams 내부 구조
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 55분 (이론 전용)  
-> 대상: `dmz/packages/event-engine/src/dmz/RedisStreamPublisher.ts`
+> 대상: `internal/packages/event-engine/src/dmz/RedisStreamPublisher.ts`
 
 ---
 
@@ -1018,7 +1018,7 @@ S7 실습은 두 파트로 구성된다. `exercises/` 폴더에서 실행한다.
 | `S07_redis_stream.ts` | Part 1: `RedisStreamPublisher` initialize → publish / Part 2: `EventProcessor` 구현 → `ConsumerGroupWorker` XREADGROUP → XACK |
 
 ```bash
-# dmz/packages/event-engine 폴더에서
+# internal/packages/event-engine 폴더에서
 npx ts-node src/exercises/S07_redis_stream.ts
 ```
 

@@ -1,9 +1,9 @@
-# M2 S10 — EventConsumer 구현과 멱등 처리 통합 검증
+﻿# M2 S10 — EventConsumer 구현과 멱등 처리 통합 검증
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > Block B — DMZ 이벤트 파이프라인 · M2 S10 · 강의 55분  
-> 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
+> 대상: `internal/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 
 ---
 
@@ -122,7 +122,7 @@ Consumer 인스턴스 추가 (코드 변경 없음)
 
 ```
 F:\Workplace\kyobo-digital-asset-platform\
-└── dmz/packages/event-engine/src/dmz/
+└── internal/packages/event-engine/src/dmz/
     ├── ConsumerGroupWorker.ts   ← 이번 주요 대상
     ├── DLQHandler.ts
     └── RedisStreamPublisher.ts
@@ -575,7 +575,7 @@ async process(message: StreamMessage): Promise<void> {
 실습 파일: `exercises/S10_handle_with_retry.ts` / 답안: `S10_handle_with_retry.answer.ts`
 
 ```bash
-# dmz/packages/event-engine 폴더에서
+# internal/packages/event-engine 폴더에서
 npx ts-node src/exercises/S10_handle_with_retry.ts
 ```
 

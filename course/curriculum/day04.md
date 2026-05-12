@@ -1,4 +1,4 @@
-# Day 04 — M3: VASP 추상화 + TX 상태머신 전반부 (S13~S16)
+﻿# Day 04 — M3: VASP 추상화 + TX 상태머신 전반부 (S13~S16)
 
 **세션**: S13~S16 | **모듈**: M3 | **시간**: 4시간 (4세션 × 1시간)  
 **산출물**: TX 상태머신 + IBlockchainAdapter 이론 + EVM 어댑터 구현 + Idempotency
@@ -177,7 +177,7 @@ IBlockchainAdapter 인터페이스 재확인 / EVM·XRPL·ARC 어댑터 구조 �
 
 **Step 1**: IBlockchainAdapter 인터페이스 정의
 ```typescript
-// dmz/packages/chain-adapters/src/interfaces/IBlockchainAdapter.ts
+// internal/packages/chain-adapters/src/interfaces/IBlockchainAdapter.ts
 // TODO: 체인 공통 작업 추상화
 
 export interface IBlockchainAdapter {
@@ -191,7 +191,7 @@ export interface IBlockchainAdapter {
 
 **Step 2**: EVM 어댑터 구현
 ```typescript
-// dmz/packages/chain-adapters/src/evm/EVMBlockchainAdapter.ts
+// internal/packages/chain-adapters/src/evm/EVMBlockchainAdapter.ts
 // TODO: IBlockchainAdapter 구현
 // - ethers.js Contract 사용
 // - 기존 VASP 연동 코드를 어댑터 인터페이스로 이관

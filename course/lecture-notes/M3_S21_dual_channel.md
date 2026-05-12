@@ -1,11 +1,11 @@
-# M3 S21 — VASP 이중 채널 동기화 아키텍처 설계
+﻿# M3 S21 — VASP 이중 채널 동기화 아키텍처 설계
 
 > **[Phase 1·2 — 아키텍처 설계]** 이중 채널(Push + Pull) 설계 원리를 다룹니다.  
 > **Phase 1 맥락:** Push 채널(월렛원 Webhook)만으로 운영합니다. Pull 채널(`pollStaleRequests()`)은 Webhook 누락 시 보완 복구 용도로만 사용합니다.  
 > **Phase 2+ 맥락:** `ChainEventListener`를 통한 직접 이벤트 구독이 활성화되면 이중 채널이 본격적으로 필요해집니다. Push(직접 구독) + Pull(폴링)의 상호 보완이 Phase 2의 핵심 이유입니다.
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S21 · 강의 55분  
-> 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
+> 대상: `internal/packages/vasp/src/tx/TxStateMachineService.ts`
 
 ---
 

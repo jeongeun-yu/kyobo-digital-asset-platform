@@ -1,8 +1,8 @@
-# M8 S58 — 운영 대시보드 · Phase 1 전체 지표 통합과 온콜 운영 체계
+﻿# M8 S58 — 운영 대시보드 · Phase 1 전체 지표 통합과 온콜 운영 체계
 
 > 모듈 8 · 세션 58 · 1시간 `운영`
 > 전제: S51~S57 운영 세션 전체 완료. 각 모듈의 /admin/* 엔드포인트 구현 완료
-> 스켈레톤: `dmz/packages/vasp/src/admin/DashboardService.ts`
+> 스켈레톤: `internal/packages/vasp/src/admin/DashboardService.ts`
 > 이 세션은 Phase 1 운영 체계의 최종 통합이다.
 
 > ⚠️ **운영 세션** — S51(DLQ), S52(Consumer), S53(VASP SLA), S54(Reconcile), S55(감사 로그), S56(배포), S57(거버넌스)에서 각 모듈별 운영 엔드포인트를 구현했다. 이번 세션은 **그 모든 것을 하나의 화면으로 통합**하는 것이다. 야간 온콜 담당자가 새벽 3시에 알림을 받았을 때 **단 하나의 API 호출로 시스템 전체 상태를 파악**할 수 있어야 한다.
@@ -148,7 +148,7 @@ P3 — 일간 리뷰 (다음 업무 시간에 처리)
 ### 실습 1 — 통합 대시보드 API 구현 (15분)
 
 ```typescript
-// dmz/packages/vasp/src/admin/DashboardService.ts
+// internal/packages/vasp/src/admin/DashboardService.ts
 
 export type ComponentStatus = 'OK' | 'WARNING' | 'CRITICAL';
 
@@ -404,7 +404,7 @@ export class DashboardService {
 ### 실습 2 — 알림 중복 억제 구현 (10분)
 
 ```typescript
-// dmz/packages/vasp/src/admin/AlertDeduplicator.ts
+// internal/packages/vasp/src/admin/AlertDeduplicator.ts
 
 export class AlertDeduplicator {
   constructor(
@@ -546,9 +546,9 @@ curl http://localhost:3000/admin/dashboard
 
 ```bash
 # Consumer 크래시 확인
-pm2 status dmz-consumer
-pm2 logs dmz-consumer --lines 100
-pm2 restart dmz-consumer
+pm2 status issuer-consumer
+pm2 logs issuer-consumer --lines 100
+pm2 restart issuer-consumer
 
 # Redis 연결 끊김
 redis-cli ping
@@ -819,7 +819,7 @@ VASP 장애 시 → 전체 CRITICAL:
 │   CRITICAL → activeAlerts 보고 섹션 Runbook 이동         │
 │                                                          │
 │  [1분] 섹션별 조치                                        │
-│   Consumer크래시 → pm2 restart dmz-consumer              │
+│   Consumer크래시 → pm2 restart issuer-consumer              │
 │   Redis다운      → redis-cli ping → 인프라팀             │
 │   VASP장애       → /admin/vasp/health → L2 에스컬         │
 │   DLQ적재        → /admin/dlq/pending → 원인분류         │
@@ -893,7 +893,7 @@ VASP 장애 시 → 전체 CRITICAL:
 ### 운영 교대 자동 브리핑 — 교대 시각에 대시보드 스냅샷 자동 발송
 
 ```typescript
-// dmz/packages/vasp/src/admin/DashboardService.ts 추가
+// internal/packages/vasp/src/admin/DashboardService.ts 추가
 
 // 교대 시각: 8시, 16시, 24시 (3교대 가정)
 cron.schedule('0 8,16,0 * * *', async () => {

@@ -1,9 +1,9 @@
-# M2 S9 — 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리
+﻿# M2 S9 — 이벤트 소비자 처리 순서 불변 규칙과 At-least-once 설계 원리
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > Block B — DMZ 이벤트 파이프라인 · M2 S9 · 강의 55분  
-> 대상: `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
+> 대상: `internal/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 
 ---
 
@@ -287,7 +287,7 @@ Redis가 메시지 분배 (XREADGROUP: 먼저 호출한 쪽이 소유)
 실습 파일: `exercises/S09_atleastonce.ts` / 답안: `S09_atleastonce.answer.ts`
 
 ```bash
-# dmz/packages/event-engine 폴더에서
+# internal/packages/event-engine 폴더에서
 npx ts-node src/exercises/S09_atleastonce.ts
 ```
 

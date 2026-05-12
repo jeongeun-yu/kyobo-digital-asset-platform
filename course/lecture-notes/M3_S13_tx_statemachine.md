@@ -1,7 +1,7 @@
-# M3 S13 — 비동기 트랜잭션 상태 관리와 전이 규칙 설계
+﻿# M3 S13 — 비동기 트랜잭션 상태 관리와 전이 규칙 설계
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S13 · 1시간  
-> 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
+> 대상: `internal/packages/vasp/src/tx/TxStateMachineService.ts`
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
@@ -642,7 +642,7 @@ M2 S9에서 정의한 At-least-once 가드 원칙 그대로다 — 이미 처리
 S13의 핵심 개념인 전이 규칙을 직접 구현해 본다.
 
 ```typescript
-// 실습 파일: dmz/packages/vasp/src/tx/TxStateMachineService.ts 상단 추가
+// 실습 파일: internal/packages/vasp/src/tx/TxStateMachineService.ts 상단 추가
 
 // TODO 1: VALID_TRANSITIONS 정의 (전이도 기반)
 export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {

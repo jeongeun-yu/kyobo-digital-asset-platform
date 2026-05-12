@@ -1,7 +1,7 @@
-# M3 S14 — 멀티체인 추상화 레이어 IBlockchainAdapter 설계
+﻿# M3 S14 — 멀티체인 추상화 레이어 IBlockchainAdapter 설계
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S14 · 강의 55분  
-> 대상: `dmz/packages/chain-adapters/src/interfaces/IBlockchainAdapter.ts`
+> 대상: `internal/packages/chain-adapters/src/interfaces/IBlockchainAdapter.ts`
 
 > ⚠️ **Phase 구분** — **read-only 메서드** (`queryEvents`, `getReceipt`, `subscribeEvents`) → **Phase 1 직접 사용**. **write 메서드** (`mintNFT`, `sendTransaction`, `burnNFT`) → 인터페이스에 존재하지만 **Phase 1 미호출** (월렛원 API가 대신 실행). Phase 3 직접 Custody 전환 시 활성화됨. 스켈레톤은 최종 Phase 기준으로 설계되어 있다.
 
@@ -479,7 +479,7 @@ S14의 핵심 명제: "어댑터만 바꿔도 비즈니스 코드는 변하지 �
 ### 실습 A — XRPLStubAdapter 작성 (30분)
 
 ```typescript
-// 실습 파일: dmz/packages/chain-adapters/src/xrpl/XRPLStubAdapter.ts
+// 실습 파일: internal/packages/chain-adapters/src/xrpl/XRPLStubAdapter.ts
 
 // TODO 1: IBlockchainAdapter를 implements 선언 (컴파일 타임 인터페이스 충족 강제)
 export class XRPLStubAdapter /* TODO: implements ... */ {

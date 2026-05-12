@@ -1,9 +1,9 @@
-# M2 S8 — Redis Streams CLI 실습
+﻿# M2 S8 — Redis Streams CLI 실습
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > Block A — DMZ 이벤트 파이프라인 · Day 02 · 개요 10분 + 실습 50분  
-> 대상: Redis CLI, Docker, `dmz/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
+> 대상: Redis CLI, Docker, `internal/packages/event-engine/src/dmz/ConsumerGroupWorker.ts`
 
 ---
 

@@ -1,8 +1,8 @@
-# M8 S57 — 업그레이드 거버넌스 운영 · Safe 제안·서명·실행 절차 관리
+﻿# M8 S57 — 업그레이드 거버넌스 운영 · Safe 제안·서명·실행 절차 관리
 
 > 모듈 8 · 세션 57 · 1시간 `운영`
 > 전제: S46 Gnosis Safe 배포 완료, S48 KeyGovernanceService 구현 완료
-> 스켈레톤: `dmz/packages/vasp/src/admin/UpgradeGovernanceAdminService.ts`
+> 스켈레톤: `internal/packages/vasp/src/admin/UpgradeGovernanceAdminService.ts`
 > ⚠️ Phase 구분 — Phase 1: 보조키로 서명 참여. Phase 3: 주키까지 직접 보관
 
 > ⚠️ **운영 세션** — S46에서 Gnosis Safe가 왜 필요한지, S47에서 EIP-712 SafeTx 서명 방식을, S48에서 KeyGovernanceService 전체 구현을 배웠다. 이번 세션은 **그 코드가 실제 운영 환경에서 어떻게 돌아가는가**다. 제안부터 실행까지 사람이 개입해야 하는 지점, 서명자가 부재일 때 어떻게 하는가, 업그레이드 후 무엇을 반드시 확인해야 하는가를 다룬다.
@@ -209,7 +209,7 @@ upgradeToAndCall(newImpl, initData) 실행 직전 최종 확인:
 ### 실습 1 — Safe 제안 생성 스크립트 구현 (10분)
 
 ```typescript
-// dmz/packages/vasp/src/admin/UpgradeGovernanceAdminService.ts
+// internal/packages/vasp/src/admin/UpgradeGovernanceAdminService.ts
 
 export class UpgradeGovernanceAdminService {
   constructor(
