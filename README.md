@@ -554,18 +554,16 @@ kyobo-digital-asset-platform/
 │       ├── interfaces/          IToken · ICompliance · ISecurityToken 등
 │       └── mocks/               테스트용 Mock 컨트랙트
 │
-├── internal/ (Node.js 서비스)   Node.js 마이크로서비스 (내부망)
+├── internal/                    내부망 서비스 전체
 │   ├── apps/
-│   │   └── issuer-service/      NFT 발행 서비스 진입점
-│   └── packages/
-│       ├── @kyobo/chain-adapters   IBlockchainAdapter (EVM / Circle / XRPL / UTXO)
-│       ├── @kyobo/vasp             TX 상태머신 · NonceManager · 키 거버넌스
-│       ├── @kyobo/core-banking     코어뱅킹 연동 · 원장 · 감사 로그
-│       ├── @kyobo/event-engine     Redis Streams · 웹훅 · DLQ · 이벤트 처리
-│       ├── @kyobo/compliance       KYC · AML · ISMS-P
-│       └── @kyobo/shared           공통 도메인 타입 · AppError · 설정
-│
-├── internal/
+│   │   └── issuer-service/      NFT 발행 서비스 진입점 (Node.js)
+│   ├── packages/
+│   │   ├── @kyobo/chain-adapters   IBlockchainAdapter (EVM / Circle / XRPL / UTXO)
+│   │   ├── @kyobo/vasp             TX 상태머신 · NonceManager · 키 거버넌스
+│   │   ├── @kyobo/core-banking     코어뱅킹 연동 · 원장 · 감사 로그
+│   │   ├── @kyobo/event-engine     Redis Streams · 웹훅 · DLQ · 이벤트 처리
+│   │   ├── @kyobo/compliance       KYC · AML · ISMS-P
+│   │   └── @kyobo/shared           공통 도메인 타입 · AppError · 설정
 │   └── blockchain-gateway/      Java Spring Boot — 영구 원장 · CoreBanking 브릿지
 │
 ├── infrastructure/
