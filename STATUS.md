@@ -16,17 +16,33 @@
   - day04.md / day05.md 커리큘럼 문서
 - 전체 테스트 340 TC 전부 통과
 
-## 마지막 작업 (2026-05-13)
+## 작업 (2026-05-13)
+
+### 리네이밍 및 Java 통합 빌드
 - `blockchain-gateway` → `internal-ledger` 전체 리네이밍
   - 디렉토리, pom.xml, docker-compose.yml, TypeScript 클라이언트, 슬라이드, SQL 주석
-- Java (Maven) 통합 빌드/테스트 npm scripts 추가
-  - `build:java`, `build:all`, `test:java`, `test:all`
+- Java (Maven) 통합 빌드/테스트 npm scripts 추가: `build:java`, `build:all`, `test:java`, `test:all`
 - `mvnw.cmd` Maven Wrapper 신규 작성 (Maven 3.9.6 자동 다운로드)
-- Java 컴파일 버그 수정: `BlockchainGatewayController.java` — `request.rewardType()` → `request.policyId()`
+
+### 버그 수정
+- Java 컴파일 버그: `BlockchainGatewayController.java` — `request.rewardType()` → `request.policyId()`
 - `application.yml` 인코딩 깨진 주석 수정 (SnakeYAML 파싱 오류 해결)
-- `src/test/resources/application.yml` 신규 추가 (H2 in-memory DB 테스트 환경)
-- `pom.xml`에 H2 test 의존성 추가
-- README.md 전체 재작성 (인코딩 수정 + Java 빌드/테스트 섹션 추가)
+- Java 테스트 경고 3종 제거: H2Dialect 명시 제거, `open-in-view: false`, Surefire JVM 인수 추가
+
+### 테스트 환경 정비
+- `src/test/resources/application.yml` 신규 추가 (H2 in-memory DB, 경고 없는 설정)
+- `pom.xml`: H2 test 의존성 추가, maven-surefire-plugin JVM 인수 설정
+
+### 문서
+- README.md 전체 재작성 (인코딩 깨진 파일 UTF-8 복구 + Java 17 설치·빌드·테스트 섹션 추가)
+- STATUS.md 작업 내역 추가
+
+### 실습 파일 정비
+- M2 S5 슬라이드 PPTX 변환 (38장, 5레이어 아키텍처 다이어그램 반영)
+- `S06_redis_stream.ts`: 헤더 S07→S06 오기재 수정, 파이프라인 다이어그램·배경 설명·TODO 힌트 전면 보강
+- `S06_redis_stream.test.ts`: describe 이름 S07→S06 수정
+- `S09_atleastonce.ts` / `answer.ts`: `idempotentProcessor` 인스턴스 export 누락 추가 (5 TC 실패 버그)
+- **전체 테스트 1,162 TC (Solidity 39 + Node.js 340 + 채점 782 + Java 1) 전부 통과**
 
 ## 아키텍처 결정사항
 | 날짜 | 결정 | 결정자 |
