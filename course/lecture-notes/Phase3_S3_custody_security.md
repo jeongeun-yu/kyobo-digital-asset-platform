@@ -2,7 +2,7 @@
 
 > **분류**: Phase 3 이론 미리보기 (강의 35분)  
 > **연결 세션**: M8 S46 (Gnosis Safe) → 이 세션은 M8 S46 이후 삽입 권장  
-> **스켈레톤 참조**: `dmz/packages/vasp/src/signer/ISignerService.ts`, `governance/WhitelistAddressService.ts`, `core-banking/src/ledger/LedgerService.ts` (`InternalLedgerBalance`)
+> **스켈레톤 참조**: `internal/packages/vasp/src/signer/ISignerService.ts`, `governance/WhitelistAddressService.ts`, `core-banking/src/ledger/LedgerService.ts` (`InternalLedgerBalance`)
 
 > **[Phase 3 — 미확정]** 교보생명 직접 VASP 인가 취득 후 구현. Phase 1에서는 해당 기능을 VASP가 대행합니다.
 
@@ -140,7 +140,7 @@ deadline이 있으면:
 
 ### 상태 전이
 
-스켈레톤: `dmz/packages/vasp/src/governance/WhitelistAddressService.ts`
+스켈레톤: `internal/packages/vasp/src/governance/WhitelistAddressService.ts`
 
 ```
 REGISTERED

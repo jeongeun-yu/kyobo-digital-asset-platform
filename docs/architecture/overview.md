@@ -29,7 +29,7 @@
   Java Spring / WAS 기반 레거시
   Core Banking, 내부 DB, 감사 로그
         ↕ REST API (WAS 경유)
-[DMZ — 이 스켈레톤의 범위]
+[내부망 — 이 스켈레톤의 범위]
   Node.js / TypeScript 마이크로서비스
   블록체인 인터페이스, VASP 연동, 이벤트 파이프라인
         ↕
@@ -38,7 +38,7 @@
 ```
 
 - 교보DTS 레거시가 Java 기반이므로 내부망은 Java Spring 유지
-- DMZ 블록체인 서비스만 Node.js — REST API로 내부 Java와 연결
+- 블록체인 서비스(Node.js, 내부망)를 REST API로 내부 Java와 연결
 - 내부망 → 외부 통신이 WAS 경유로 제한될 가능성 있음 → 네트워크 정책 추가 확인 필요
 
 ---
@@ -58,7 +58,7 @@
 │  │chain-adapters│  │   event-engine    │  │   vasp    │ │
 │  │IBlockchain   │  │IEventHandler      │  │IVASPAdapt │ │
 │  │Adapter       │  │ChainEventListener │  │ExternalVAS│ │
-│  │EVMAdapter    │  │dmz/               │  │KyoboVASP* │ │
+│  │EVMAdapter    │  │internal/          │  │KyoboVASP* │ │
 │  │XRPLAdapter*  │  │  RedisStreamPub   │  │tx/        │ │
 │  │CircleAdapter*│  │  ConsumerGroupWkr │  │TxStateMach│ │
 │  └──────────────┘  │  DLQHandler       │  └───────────┘ │
@@ -97,7 +97,7 @@
 
 | 모듈 | 레이어 | 핵심 파일 |
 |---|---|---|
-| M2 (DMZ 파이프라인) | packages/event-engine/dmz | `RedisStreamPublisher`, `ConsumerGroupWorker`, `DLQHandler` |
+| M2 (이벤트 파이프라인) | packages/event-engine/internal | `RedisStreamPublisher`, `ConsumerGroupWorker`, `DLQHandler` |
 | M3 (VASP 추상화) | packages/vasp, chain-adapters | `TxStateMachineService`, `IBlockchainAdapter` |
 | M4 (원장·감사) | packages/core-banking | `LedgerService`, `AuditLogService` |
 | M5 (비즈니스 로직) | apps/issuer-service | `EventConditionService`, `WalletMappingService`, `BulkIssueService` |
@@ -129,6 +129,6 @@
 1. **인터페이스 우선**: 모든 레이어 간 통신은 인터페이스를 통한다
 2. **Phase stub 선배포**: Phase 2/3 파일이 Phase 1 스켈레톤 안에 존재한다
 3. **교체 가능성**: 체인(IBlockchainAdapter)·VASP(IVASPAdapter)·Compliance(ICompliance) 구현체는 DI로 교체 가능
-4. **보안 우선**: Private key는 코드에 없음, DMZ 경유, HMAC 서명 필수
+4. **보안 우선**: Private key는 코드에 없음, DMZ Nginx 경유, HMAC 서명 필수
 5. **감사 추적**: 모든 발행·전송 이벤트는 온체인 + DB 이중 기록
 6. **업그레이드 가능**: KyoboNFT는 UUPS Proxy — 규제 변경 시 재배포 없이 로직 교체

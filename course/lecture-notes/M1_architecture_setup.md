@@ -22,14 +22,14 @@
 
 ```
 Write Path:
-  내부망 → DMZ IssuerService
+  내부망 → 내부망 IssuerService
          → vaspAdapter.submitTransaction()   ← ExternalVASPAdapter 구현체
          → 월렛원 REST API
          → 블록체인
 
 Read Path:
   블록체인 → 월렛원 감지
-           → Webhook → DMZ WebhookReceiver (202)
+           → Webhook → DMZ Nginx → 내부망 WebhookReceiver (202)
            → Redis Streams → Consumer
            → 내부망 원장
 
@@ -87,7 +87,7 @@ Phase 1의 핵심 서비스는 **행동 보상 NFT**다. 교보생명 앱 사용
   │ (Phase 1: Ethereum Mainnet — WalletOne 확정, 교육용 실습은 Ethereum Sepolia 테스트넷)
   ▼
 [내부 원장 + 감사 로그]         ← M6 구현 영역
-[DMZ 이벤트 파이프라인]         ← M7 구현 영역
+[이벤트 파이프라인]             ← M7 구현 영역
 [키 거버넌스 (Gnosis Safe)]     ← M8 구현 영역
 ```
 
@@ -186,7 +186,7 @@ Phase 1 목표 수치: 월간 활성 사용자 수십만 명, 쿠폰 종류 수�
 | 모듈 | 주제 | 세션 | 핵심 산출물 |
 |---|---|---|---|
 | M1 | 전체 아키텍처 프리뷰 + 환경 셋업 | S1~S4 | 개발 환경 완성 · 컨트랙트 인터페이스 프리뷰 |
-| M2 | DMZ 이벤트 파이프라인 | S5~S12 | 202 패턴 · Consumer Group · DLQ |
+| M2 | 이벤트 파이프라인 | S5~S12 | 202 패턴 · Consumer Group · DLQ |
 | M3 | VASP 추상화 + TX 상태머신 | S13~S22 | VASP 연동 · TX 상태머신 · 복구 로직 |
 | M4 | 내부 원장 + 감사 로그 | S23~S26 | 원장 · SHA-256 감사 체인 |
 | M5 | 비즈니스 로직 레이어 | S27~S34 | 지갑 매핑 · 조건 판단 · 벌크 오케스트레이션 |
@@ -198,7 +198,7 @@ Phase 1 목표 수치: 월간 활성 사용자 수십만 명, 쿠폰 종류 수�
 
 커리큘럼의 유일하게 의미 있는 구분은 **오프체인(M2~M5)과 온체인(M6~M7)** 이다.
 
-*M2~M5 — 오프체인 서비스*: Phase 1 운영의 핵심. DMZ 이벤트 파이프라인, VASP 연동, 원장, 비즈니스 로직. 이 네 모듈이 교보 시스템이 실제로 돌아가게 하는 전부다. M1에서 컨트랙트 인터페이스(메서드·이벤트 목록)를 미리 보여주기 때문에 컨트랙트 구현 없이도 흐름이 끊기지 않는다.
+*M2~M5 — 오프체인 서비스*: Phase 1 운영의 핵심. 이벤트 파이프라인, VASP 연동, 원장, 비즈니스 로직. 이 네 모듈이 교보 시스템이 실제로 돌아가게 하는 전부다. M1에서 컨트랙트 인터페이스(메서드·이벤트 목록)를 미리 보여주기 때문에 컨트랙트 구현 없이도 흐름이 끊기지 않는다.
 
 *M6~M7 — 온체인*: 블록체인 위에 올라가는 컨트랙트 구현과 보안 감사. 이 시점에는 서비스 레이어가 컨트랙트에서 무엇을 필요로 하는지 이미 알고 있기 때문에, "왜 이렇게 설계해야 하는가"가 명확한 상태에서 구현하게 된다.
 
@@ -217,7 +217,7 @@ M1은 이 전체 구조를 먼저 보여주는 시간이다. M8은 모든 것을
 ```
 Day 1  클론한 스켈레톤:     TODO 수십 개 / 테스트 전부 skip
   ↓
-M2 완료:                   DMZ 파이프라인 동작 · 이벤트 수신·재처리
+M2 완료:                   이벤트 파이프라인 동작 · 이벤트 수신·재처리
   ↓
 M3 완료:                   TX 상태머신 · VASP 연동 동작
   ↓
@@ -235,7 +235,7 @@ M8 완료:                   E2E 파이프라인 동작 · 장애 주입 통과
 
 각 모듈에서 배우는 기술이 해당 모듈의 구현에 즉시 쓰인다. 순서가 뒤집히지 않는다.
 
-- Redis Streams 구조를 배우는 이유 → 그 날 바로 DMZ 파이프라인에 연결
+- Redis Streams 구조를 배우는 이유 → 그 날 바로 이벤트 파이프라인에 연결
 - TX 상태머신 이론을 배우는 이유 → 그 날 바로 `TxStateMachineService.ts`에 구현
 - ERC-1155 구조를 배우는 이유 → 그 날 바로 `KyoboNFT.sol`에 적용
 
@@ -247,7 +247,7 @@ Phase 1 시스템 오픈 후, 각 컴포넌트는 담당자가 생긴다. 누가
 
 그 말은 이렇다: 지금 이 자리에서 "나는 스마트컨트랙트 개발자가 아니니 M2는 건성으로 들어도 된다"는 판단은 틀렸다. M6 원장 담당이 된 사람이 M4 VASP 연동 구조를 모르면, 원장과 VASP 상태 불일치 문제가 생겼을 때 디버깅이 불가능하다. 시스템은 레이어가 연결되어 있다. 한 레이어를 깊이 이해하려면 인접 레이어도 알아야 한다.
 
-실무 현실: 초기 개발이 끝난 후 시스템에 문제가 생기면, 그 문제는 레이어 경계에서 나온다. 컨트랙트 이벤트가 원장에 반영되지 않는 문제는 M2(컨트랙트) + M7(DMZ) + M6(원장) 세 모듈이 교차하는 지점에 있다. 그 자리에 있는 사람이 세 모듈을 모두 이해하고 있어야 한다.
+실무 현실: 초기 개발이 끝난 후 시스템에 문제가 생기면, 그 문제는 레이어 경계에서 나온다. 컨트랙트 이벤트가 원장에 반영되지 않는 문제는 M2(컨트랙트) + M7(이벤트 파이프라인) + M6(원장) 세 모듈이 교차하는 지점에 있다. 그 자리에 있는 사람이 세 모듈을 모두 이해하고 있어야 한다.
 
 **매 모듈이 최선이어야 하는 이유**
 
@@ -2211,7 +2211,7 @@ VASP는 키 관리와 TX 서명을 담당한다. 블록체인 어댑터는 체�
 
 ---
 
-### 6. 이벤트 리스너 기초 → DMZ 파이프라인 (202 패턴·Redis Streams·DLQ)
+### 6. 이벤트 리스너 기초 → 이벤트 파이프라인 (202 패턴·Redis Streams·DLQ)
 
 **선행 과정에서 배운 것**
 
@@ -2233,17 +2233,17 @@ contract.on('Transfer', (from, to, tokenId) => {
 4. **REORG 미처리**: 체인 재조직으로 이벤트가 무효화될 수 있음.
 5. **동기 처리**: 이벤트 핸들러가 느리면 리스너 전체가 블로킹.
 
-외부 블록체인 이벤트를 내부 시스템이 직접 수신하는 것은 금융 시스템에서 허용되지 않는다. DMZ(비무장지대) 역할을 하는 레이어가 중간에 있어야 한다.
+외부 블록체인 이벤트를 내부 시스템이 직접 수신하는 것은 금융 시스템에서 허용되지 않는다. DMZ Nginx 게이트웨이가 중간에서 외부 트래픽을 수신하고 내부망 서비스로 전달하는 구조가 필요하다.
 
 **이 과정에서의 확장**
 
-DMZ 파이프라인의 전체 구조:
+이벤트 파이프라인의 전체 구조:
 
 ```
 블록체인 노드
     │ Webhook (HTTP POST)
     ▼
-DMZ 게이트웨이 (외부 노출)
+DMZ Nginx 게이트웨이 (외부 노출) → 내부망 WebhookServer로 포워딩
     │ 즉시 202 Accepted 반환
     │
     ▼ Redis Streams 발행
@@ -2258,12 +2258,12 @@ Redis Stream: "blockchain-events"
 
 **202 패턴** — 왜 즉시 응답하는가
 
-블록체인 노드가 webhook을 보냈는데 응답이 오래 걸리면 타임아웃 후 재전송한다. DMZ는 수신 즉시 `202 Accepted`를 반환하고, 실제 처리는 비동기로 한다.
+블록체인 노드가 webhook을 보냈는데 응답이 오래 걸리면 타임아웃 후 재전송한다. 내부망 WebhookServer는 수신 즉시 `202 Accepted`를 반환하고, 실제 처리는 비동기로 한다.
 
 ```
-블록체인 노드 → DMZ: POST /webhook/tx-confirmed
-DMZ → 블록체인 노드: 202 Accepted  ← 즉시 (처리 전)
-DMZ → Redis Streams: XADD blockchain-events * txHash 0x... ← 비동기 발행
+블록체인 노드 → DMZ Nginx → 내부망 WebhookServer: POST /webhook/tx-confirmed
+내부망 WebhookServer → 블록체인 노드: 202 Accepted  ← 즉시 (처리 전)
+내부망 WebhookServer → Redis Streams: XADD blockchain-events * txHash 0x... ← 비동기 발행
 ```
 
 **Redis Streams + Consumer Group**
@@ -2467,7 +2467,7 @@ B-Harvest 과정에서 블록체인 데이터 구조를 배웠다:
 **온체인 Reconcile**
 
 내부 원장과 온체인 실제 상태가 일치해야 한다. 일치하지 않는 상황:
-- 이벤트 유실 (DMZ 파이프라인 재시작 중 발생한 이벤트)
+- 이벤트 유실 (이벤트 파이프라인 재시작 중 발생한 이벤트)
 - REORG로 무효화된 TX가 내부 원장에 CONFIRMED로 기록된 경우
 - DB 장애로 일부 이벤트 미처리
 
@@ -2529,14 +2529,14 @@ SHA-256의 출력은 항상 256비트(32바이트)다. 입력 크기와 무관�
 
 이 과정에서 구현하는 전부가 이 범위다. 코드 구조상 두 구간으로 나뉜다:
 
-- **DMZ (Node.js, `dmz/`)**: 비즈니스 로직·이벤트 조건 판단·VASP 연동·DMZ 원장 추적 — ISMS-P DMZ 구간. 외부(VASP·블록체인)와 내부망 사이 완충. 게이트웨이 인프라(Webhook·Redis Streams·DLQ)는 레이어 2 참조.
+- **Node.js 서비스 (내부망, `internal/packages/` 및 `internal/apps/`)**: 비즈니스 로직·이벤트 조건 판단·VASP 연동·원장 추적 — ISMS-P 내부망 구간. 외부 트래픽은 DMZ Nginx를 통해서만 수신. 게이트웨이 인프라(Webhook·Redis Streams·DLQ)는 레이어 2 참조.
 - **내부망 (Java Spring Boot, `internal/`)**: 영구 원장·금융 감사 로그 — 교보생명 내부망 직접 운영, 외부 직접 접근 불가
 
-아래 서브시스템 설명에서 파일 경로는 각 구간(`dmz/` vs `internal/`)을 명시한다.
+아래 서브시스템 설명에서 파일 경로는 각 구간(`internal/packages/` vs `internal/blockchain-gateway/`)을 명시한다.
 
-### 비즈니스 로직 서브시스템 — DMZ (Node.js)
+### 비즈니스 로직 서브시스템 — Node.js (내부망)
 
-**이벤트 조건 판단** (`dmz/apps/issuer-service/src/services/EventConditionService.ts`)
+**이벤트 조건 판단** (`internal/apps/issuer-service/src/services/EventConditionService.ts`)
 
 외부 시스템(앱, IoT, 건강 데이터)에서 이벤트가 들어오면 NFT 발행 조건을 평가한다.
 
@@ -2555,7 +2555,7 @@ if (event.activityType === 'WALKING' && event.value >= 10000) {
 }
 ```
 
-**벌크 발행 관리** (`dmz/apps/issuer-service/src/services/BulkIssueService.ts`)
+**벌크 발행 관리** (`internal/apps/issuer-service/src/services/BulkIssueService.ts`)
 
 수만 명에게 동시에 NFT를 발행하는 경우 (예: 이벤트 종료 시 전체 참여자 배포).
 
@@ -2574,14 +2574,14 @@ if (event.activityType === 'WALKING' && event.value >= 10000) {
 
 ### 데이터 관리 서브시스템
 
-**DMZ 발행 원장** (`dmz/packages/core-banking/src/ledger/LedgerService.ts` — mint_requests 상태머신, TX 추적)
+**발행 원장 (내부망)** (`internal/packages/core-banking/src/ledger/LedgerService.ts` — mint_requests 상태머신, TX 추적)
 **영구 보유 원장** (`internal/blockchain-gateway` — `InternalLedgerService.java`, NFT 보유 현황 최종 기록)
 
 사용자별 NFT 보유 현황을 내부 DB에 유지한다. 온체인 데이터를 매번 조회하면 느리고 비용이 든다. 내부 원장이 캐시 역할을 하면서 동시에 Reconcile의 기준점이 된다.
 
 상태머신 기반 TX 추적: 각 발행 요청의 상태를 내부 원장에서 추적한다. TX가 REORGED 되어 사라져도 원장에서 이전 상태로 되돌릴 수 있다.
 
-**감사 로그 (DMZ)** (`dmz/packages/core-banking/src/audit/AuditLogService.ts` — TX 이벤트 감사, SHA-256 체인)
+**감사 로그 (내부망)** (`internal/packages/core-banking/src/audit/AuditLogService.ts` — TX 이벤트 감사, SHA-256 체인)
 **금융 감사 로그 (내부망)** (`internal/blockchain-gateway` — `AuditLogService.java`, append-only, 5년 보관, Row Level Security)
 
 모든 원장 변경에 대해 append-only 로그를 남긴다. 위에서 설명한 SHA-256 체인 구조로 변조를 감지한다.
@@ -2609,11 +2609,11 @@ if (event.activityType === 'WALKING' && event.value >= 10000) {
 
 ---
 
-## 레이어 2 — DMZ 게이트웨이 인프라
+## 레이어 2 — 게이트웨이 인프라 (DMZ Nginx + 내부망 서비스)
 
-DMZ는 외부(블록체인, VASP)와 내부망 사이의 완충 지대다. ISMS-P 인증에서 요구하는 망 분리 원칙을 충족한다.
+DMZ Nginx는 외부(블록체인, VASP)와 내부망 사이의 유일한 진입점이다. ISMS-P 인증에서 요구하는 망 분리 원칙을 충족한다. 애플리케이션(Webhook 수신, 메시징, 이벤트 파이프라인)은 모두 내부망에서 실행된다.
 
-> 이 섹션은 DMZ의 **게이트웨이 인프라 레이어**(Webhook 수신, 메시징, 이벤트 파이프라인)를 다룬다. DMZ에서 실행되는 비즈니스 서비스(issuer-service 등)는 레이어 1 참조.
+> 이 섹션은 **게이트웨이 인프라 레이어**(Webhook 수신, 메시징, 이벤트 파이프라인)를 다룬다. 비즈니스 서비스(issuer-service 등)는 레이어 1 참조.
 
 ### Webhook Receiver + 202 패턴
 
@@ -2729,7 +2729,7 @@ interface IBlockchainAdapter {
   // TX 조회 (REVERT/TIMEOUT/REORG 감지)
   getReceipt(txHash: string): Promise<TransactionReceipt | null>;
   
-  // 이벤트 구독 (DMZ ChainEventListener 입력)
+  // 이벤트 구독 (내부망 ChainEventListener 입력)
   subscribeEvents(...): Promise<() => void>;
   queryEvents(...): Promise<ChainEvent[]>;  // missed event 복구
 }
@@ -2800,14 +2800,14 @@ KyoboNFT
 
 ```solidity
 // ERC-1155 표준 이벤트 (TransferSingle, TransferBatch)
-// 이 이벤트들이 Webhook → DMZ → 내부망으로 전달됨
+// 이 이벤트들이 Webhook → DMZ Nginx → 내부망 WebhookServer로 전달됨
 ```
 
 이벤트 구독 흐름:
 ```
 온체인 이벤트 발생
     ↓
-VASP Webhook → DMZ Webhook Receiver → 202 응답
+VASP Webhook → DMZ Nginx → 내부망 WebhookServer → 202 응답
     ↓ (비동기)
 Redis Stream 적재
     ↓
@@ -2843,13 +2843,13 @@ Consumer Group Worker → NFTIssuedHandler
 `package.json` 최상위:
 ```json
 {
-  "workspaces": ["dmz/apps/*", "dmz/packages/*", "blockchain"]
+  "workspaces": ["internal/apps/*", "internal/packages/*", "blockchain"]
 }
 ```
 
-> **모노레포 구조 (2차 재설계)**: DMZ(Node.js) + 내부망(Java Spring Boot) + 블록체인(Solidity)으로 분리.
-> - `dmz/` — Node.js 서비스 (ISMS-P DMZ 구간)
-> - `internal/` — Java Spring Boot 내부망 서비스 (교보생명 레거시 내부망)
+> **모노레포 구조 (2차 재설계)**: 내부망(Node.js) + 내부망(Java Spring Boot) + 블록체인(Solidity)으로 분리.
+> - `internal/packages/`, `internal/apps/` — Node.js 마이크로서비스 (내부망, DMZ Nginx를 통해 외부 수신)
+> - `internal/blockchain-gateway/` — Java Spring Boot 내부망 서비스 (교보생명 레거시 내부망)
 > - `blockchain/` — Solidity 컨트랙트 (Hardhat)
 
 **모노레포를 쓰는 이유:**
@@ -2869,11 +2869,11 @@ npm workspaces 모노레포는:
 각 패키지의 `package.json`에 이름이 `@kyobo/[패키지명]`으로 되어있다. 워크스페이스 설정에 의해 다른 패키지에서 이 이름으로 import할 수 있다.
 
 ```typescript
-// dmz/apps/issuer-service/src/services/IssuerService.ts
+// internal/apps/issuer-service/src/services/IssuerService.ts
 import { IBlockchainAdapter } from '@kyobo/chain-adapters';
 import { ICoreBankingAdapter } from '@kyobo/core-banking';
 import { IVASPAdapter } from '@kyobo/vasp';
-// 실제 경로: dmz/packages/chain-adapters/, dmz/packages/core-banking/, dmz/packages/vasp/
+// 실제 경로: internal/packages/chain-adapters/, internal/packages/core-banking/, internal/packages/vasp/
 ```
 
 ---
@@ -2915,7 +2915,7 @@ blockchain/             → Solidity 컨트랙트 (Hardhat) — 독립 패키지
 ├── test/                       ← M6/M7 단위 테스트
 └── hardhat.config.ts
 
-dmz/                    → Node.js 서비스 (ISMS-P DMZ 구간)
+internal/ (Node.js 서비스) → Node.js 마이크로서비스 (내부망, DMZ Nginx 경유 수신)
 ├── packages/
 │   ├── chain-adapters/  → IBlockchainAdapter 레이어 (@kyobo/chain-adapters)
 │   │   └── src/
@@ -2991,7 +2991,7 @@ dmz/                    → Node.js 서비스 (ISMS-P DMZ 구간)
 │           └── types/domain.ts
 │
 └── apps/
-    └── issuer-service/     → DMZ 비즈니스 로직 진입점 (Node.js)
+    └── issuer-service/     → 비즈니스 로직 진입점 (Node.js, 내부망)
         └── src/
             ├── abi/NFTIssuer.json            ← 컨트랙트 ABI
             ├── services/
@@ -3033,10 +3033,10 @@ infrastructure/         → 인프라 설정
 ├── docker/
 │   ├── docker-compose.yml          ← 로컬 개발 환경 (PostgreSQL + Redis)
 │   └── postgres/initdb.d/
-│       ├── 01-dmz-schema.sql       ← DMZ DB 스키마
+│       ├── 01-internal-schema.sql  ← 내부망(Node.js 서비스) DB 스키마
 │       └── 02-internal-schema.sql  ← 내부망 DB 스키마
 ├── dmz/nginx/
-│   └── dmz.conf                   ← DMZ Nginx 설정
+│   └── dmz.conf                   ← DMZ Nginx 설정 (L7 게이트웨이)
 └── monitoring/
     └── prometheus/                 ← 모니터링 설정
 
@@ -3055,7 +3055,7 @@ course/exercises/M2/event-listener/src/   → 이벤트 리스너 유틸 (개발
 > | `blockchain/src/phase3/` (빈 폴더) | `SecurityToken.sol` | placeholder 파일 추가 |
 > | 인터페이스 2개 | 인터페이스 6개 | ISecurityToken, IDividendDistributor 등 추가 |
 > | `WalletMappingService.ts` | + `WalletProvisioningService.ts` | 프로비저닝 서비스 분리 |
-> | `dmz/packages/compliance/` — 미포함 | **추가됨** | IKYCProvider, ISMS체크리스트, Phase1/3 컴플라이언스 |
+> | `internal/packages/compliance/` — 미포함 | **추가됨** | IKYCProvider, ISMS체크리스트, Phase1/3 컴플라이언스 |
 
 ---
 
@@ -3066,17 +3066,17 @@ course/exercises/M2/event-listener/src/   → 이벤트 리스너 유틸 (개발
 ```
 ── TypeScript import 의존 방향 (컴파일 타임) ───────────────────────
 
-dmz/apps/issuer-service
+internal/apps/issuer-service
     ↓ import
-dmz/packages/vasp  +  dmz/packages/core-banking  +  dmz/packages/event-engine
+internal/packages/vasp  +  internal/packages/core-banking  +  internal/packages/event-engine
     ↓ import              ↓ import
-dmz/packages/chain-adapters
+internal/packages/chain-adapters
     ↓ import
 blockchain/ (NFTIssuer.json ABI — typechain 대신 직접 관리)
 
 ── 런타임 HTTP 호출 방향 (네트워크) ─────────────────────────────────
 
-dmz/apps/issuer-service
+internal/apps/issuer-service
     → KyoboCoreBankingAdapter
         → InternalGatewayClient          (fetch, X-Internal-Secret)
             ──── HTTP POST/GET ────►  internal/blockchain-gateway:8080
@@ -3086,14 +3086,14 @@ dmz/apps/issuer-service
 
 **TypeScript import와 HTTP 호출은 완전히 다른 개념이다.**
 
-- `import`는 컴파일 타임에 타입을 공유하는 것. `internal/` Java 코드는 TypeScript에서 절대 import하지 않는다.
+- `import`는 컴파일 타임에 타입을 공유하는 것. `internal/blockchain-gateway/` Java 코드는 TypeScript에서 절대 import하지 않는다.
 - HTTP 호출은 런타임에 네트워크를 통해 데이터를 교환하는 것. 두 시스템은 JSON DTO로만 계약한다.
 - 이 분리가 "언어가 달라도 함께 동작하는" 마이크로서비스 아키텍처의 핵심이다.
 
 **역방향 의존이 금지되는 이유:**
 
 ```
-dmz/packages/chain-adapters가 dmz/packages/vasp를 import한다고 가정:
+internal/packages/chain-adapters가 internal/packages/vasp를 import한다고 가정:
   - chain-adapters를 빌드하려면 vasp가 먼저 빌드되어야 함
   - vasp는 chain-adapters를 import함
   - chain-adapters도 vasp를 import함
@@ -3142,7 +3142,7 @@ class VaspRecoveryService {
 **`ICoreBankingAdapter`도 동일한 패턴이다:**
 
 ```typescript
-// 인터페이스 — DMZ가 아는 것은 이것뿐
+// 인터페이스 — Node.js 서비스가 아는 것은 이것뿐
 interface ICoreBankingAdapter {
   getUserAccount(userId: string): Promise<UserAccount | null>;
   recordNftHolding(params: { ... }): Promise<void>;
@@ -3170,16 +3170,16 @@ class IssuerService {
 }
 ```
 
-`ICoreBankingAdapter`가 중요한 이유: DMZ(Node.js)와 내부망(Java)은 **언어가 다르다**. TypeScript에서 Java 클래스를 import할 수 없다. 두 시스템의 계약은 인터페이스 + JSON DTO로만 맺어지고, 런타임에 HTTP로 연결된다. `ICoreBankingAdapter`가 그 계약이고, `InternalGatewayClient`가 그 계약을 이행하는 HTTP 클라이언트다.
+`ICoreBankingAdapter`가 중요한 이유: Node.js 서비스(내부망)와 Java 서비스(내부망)는 **언어가 다르다**. TypeScript에서 Java 클래스를 import할 수 없다. 두 시스템의 계약은 인터페이스 + JSON DTO로만 맺어지고, 런타임에 HTTP로 연결된다. `ICoreBankingAdapter`가 그 계약이고, `InternalGatewayClient`가 그 계약을 이행하는 HTTP 클라이언트다.
 
 ---
 
-## DMZ → 내부망 RPC 패턴
+## Node.js → Java 내부망 RPC 패턴
 
 `InternalGatewayClient`가 내부 RPC를 처리하는 방식:
 
 ```typescript
-// dmz/packages/core-banking/src/adapters/InternalGatewayClient.ts
+// internal/packages/core-banking/src/adapters/InternalGatewayClient.ts
 
 export class InternalGatewayClient {
   constructor(private config: {
@@ -3474,17 +3474,17 @@ describe('KyoboNFT', () => {
 
 | 개념 | 핵심 내용 | 코드 위치 |
 |---|---|---|
-| 3존 아키텍처 | 내부망(Java)↔DMZ(Node.js)↔VASP↔블록체인 | `docs/architecture/` |
-| IBlockchainAdapter | 체인 교체 시 비즈니스 로직 무변경 보장 | `dmz/packages/chain-adapters/src/interfaces/` |
-| IVASPAdapter | VASP 교체 시 비즈니스 로직 무변경 보장 | `dmz/packages/vasp/src/interfaces/` |
-| ICoreBankingAdapter | DMZ → Java 내부망 호출 추상화 | `dmz/packages/core-banking/src/interfaces/` |
-| InternalGatewayClient | Java Gateway HTTP 클라이언트 (`X-Internal-Secret`) | `dmz/packages/core-banking/src/adapters/` |
-| StubCoreBankingAdapter | Java 없이 DMZ 실습·테스트 가능한 인메모리 스텁 | `dmz/packages/core-banking/src/adapters/` |
-| 단방향 의존 | 순환 참조 방지, 변경 파급 최소화 | 모든 dmz/packages/ |
+| 3존 아키텍처 | 내부망(Node.js+Java)↔DMZ Nginx↔VASP↔블록체인 | `docs/architecture/` |
+| IBlockchainAdapter | 체인 교체 시 비즈니스 로직 무변경 보장 | `internal/packages/chain-adapters/src/interfaces/` |
+| IVASPAdapter | VASP 교체 시 비즈니스 로직 무변경 보장 | `internal/packages/vasp/src/interfaces/` |
+| ICoreBankingAdapter | Node.js → Java 내부망 호출 추상화 | `internal/packages/core-banking/src/interfaces/` |
+| InternalGatewayClient | Java Gateway HTTP 클라이언트 (`X-Internal-Secret`) | `internal/packages/core-banking/src/adapters/` |
+| StubCoreBankingAdapter | Java 없이 Node.js 실습·테스트 가능한 인메모리 스텁 | `internal/packages/core-banking/src/adapters/` |
+| 단방향 의존 | 순환 참조 방지, 변경 파급 최소화 | 모든 internal/packages/ |
 | Strategy Pattern | 인터페이스 + 교체 가능한 구현체 | chain-adapters, vasp |
 | Hardhat mainnet fork | 로컬에서 메인넷 상태 재현, 결정론적 테스트 | `blockchain/hardhat.config.ts` |
 | viaIR + optimizer | 복잡한 상속 구조 컴파일, 가스 최적화 | `blockchain/hardhat.config.ts` |
 | .openzeppelin/ | Storage layout 기록, upgrade 충돌 검증 | `blockchain/.openzeppelin/` |
-| SHA-256 감사 체인 (DMZ) | TX 이벤트 로그 변조 감지 | `dmz/packages/core-banking/src/audit/` |
+| SHA-256 감사 체인 (내부망) | TX 이벤트 로그 변조 감지 | `internal/packages/core-banking/src/audit/` |
 | SHA-256 감사 체인 (Java) | 영구 금융 감사 로그, append-only + Row-level security | `internal/blockchain-gateway/src/.../AuditLogService.java` |
-| 202 패턴 + DLQ | Webhook 유실 없이 비동기 처리 | `dmz/packages/event-engine/src/webhook/` |
+| 202 패턴 + DLQ | Webhook 유실 없이 비동기 처리 | `internal/packages/event-engine/src/webhook/` |

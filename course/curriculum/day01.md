@@ -20,7 +20,7 @@
 | ERC-721 기초 | ERC-1155, tokenId 인코딩, mintBatch 가스 최적화 |
 | ethers.js 기초 RPC | VASP 추상화 — TX 상태머신, Idempotency, 복구 전략 |
 | EVM 단일 체인 가정 | IBlockchainAdapter — EVM·XRPL·Circle ARC 추상화 |
-| 이벤트 리스너 기초 | DMZ 파이프라인 — 202 패턴, Redis Streams, DLQ |
+| 이벤트 리스너 기초 | 이벤트 파이프라인 — 202 패턴, Redis Streams, DLQ |
 | 개인키·지갑 개념 | Gnosis Safe 2-of-3, EIP-712 SafeTx, Travel Rule |
 | 블록체인 데이터 구조 이해 | 내부 원장 + SHA-256 감사 체인, Reconcile |
 
@@ -38,9 +38,9 @@
 
 **5레이어 경계선:**
 ```
-사용자 앱 → DMZ → 내부망 → VASP → 블록체인
+사용자 앱 → DMZ Nginx → 내부망 → VASP → 블록체인
 ```
-각 레이어의 신뢰 의미: DMZ는 완충, 내부망은 신뢰 영역, VASP는 외부 위임
+각 레이어의 신뢰 의미: DMZ Nginx는 L7 게이트웨이(앱 없음), 내부망은 신뢰 영역, VASP는 외부 위임
 
 **IBlockchainAdapter 위치**: VASP와 블록체인 사이에 삽입되는 체인 교체 가능 어댑터  
 → 비즈니스 로직·원장은 EVM·XRPL·Circle ARC 전환에 무관하게 유지됨
@@ -48,7 +48,7 @@
 **당사 직접 구축(D·E 영역) vs VASP 위임(A·B·C 영역)**: 코드 책임 분리 이유
 
 **커리큘럼 2단 구조:**
-- M2~M5: 오프체인 — DMZ 파이프라인, VASP 연동, 원장, 비즈니스 로직 (Phase 1 운영 핵심)
+- M2~M5: 오프체인 — 이벤트 파이프라인, VASP 연동, 원장, 비즈니스 로직 (Phase 1 운영 핵심)
 - M6~M7: 온체인 — 컨트랙트 구현과 보안 감사 (서비스 레이어 요건을 이미 아는 상태에서 설계)
 
 ### 🔴 실습 (30분) — 수강생 직접 작성
@@ -65,8 +65,8 @@ cd kyobo-digital-asset-platform
 ```
 | 패키지 경로 | 5레이어 위치 | 역할 |
 |---|---|---|
-| dmz/packages/chain-adapters/ | | |
-| dmz/packages/event-engine/ | | |
+| internal/packages/chain-adapters/ | | |
+| internal/packages/event-engine/ | | |
 | internal/packages/vasp/ | | |
 | blockchain/ | | |
 | internal/packages/ledger/ | | |
@@ -91,8 +91,8 @@ npm install   # 또는 yarn install
 # Step 2 완성 예시
 | 패키지 경로 | 5레이어 위치 | 역할 |
 |---|---|---|
-| dmz/packages/chain-adapters/ | DMZ | 블록체인 어댑터 |
-| dmz/packages/event-engine/ | DMZ | 체인 이벤트 수신·처리 |
+| internal/packages/chain-adapters/ | 내부망 | 블록체인 어댑터 |
+| internal/packages/event-engine/ | 내부망 | 체인 이벤트 수신·처리 |
 | internal/packages/vasp/ | 내부망 | VASP 추상화 레이어 |
 | blockchain/ | 블록체인 | 스마트컨트랙트 |
 | internal/packages/ledger/ | 내부망 | 내부 원장 |
@@ -129,7 +129,7 @@ find . -name "IBlockchainAdapter.ts"
 ```bash
 # TODO: event-engine에서 chain-adapters 방향 import 확인
 # TODO: chain-adapters에서 event-engine 방향 import가 없음을 확인
-grep -r "from.*event-engine" dmz/packages/chain-adapters/
+grep -r "from.*event-engine" internal/packages/chain-adapters/
 ```
 
 **Step 2**: 미구현 함수 전체 목록 파악
@@ -158,7 +158,7 @@ npm run build
 
 ```bash
 # Step 1 — 순환 참조 없음 확인
-grep -r "from.*event-engine" dmz/packages/chain-adapters/
+grep -r "from.*event-engine" internal/packages/chain-adapters/
 # 출력 없음 = 순환 참조 없음
 
 # Step 2 — TODO 목록

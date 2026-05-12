@@ -179,7 +179,7 @@ cd kyobo-digital-asset-platform
 copy .env.example .env
 ```
 
-`dmz\.env`를 열어 아래 항목만 입력 — 나머지는 기본값으로 동작:
+`internal\.env`를 열어 아래 항목만 입력 — 나머지는 기본값으로 동작:
 
 ```
 EVM_SIGNER_KEY=0x...   # 테스트넷 전용 계정 개인키 (MetaMask → 계정 내보내기)
@@ -220,7 +220,7 @@ npm run build:all
 
 | 종류 | 위치 | 명령 | 목적 |
 |---|---|---|---|
-| **소스 단위 테스트** | `dmz/packages/*/src/__tests__/` | `npm test` | 스켈레톤 코드 동작 검증 |
+| **소스 단위 테스트** | `internal/packages/*/src/__tests__/` | `npm test` | 스켈레톤 코드 동작 검증 |
 | **실습 채점 테스트** | `course/exercises/__tests__/` | `npm run test:exercises` | 실습 파일 채점 |
 
 ---
@@ -239,12 +239,12 @@ npm test
 #### 패키지별 개별 실행
 
 ```powershell
-npm test --workspace=dmz/packages/chain-adapters
-npm test --workspace=dmz/packages/compliance
-npm test --workspace=dmz/packages/core-banking
-npm test --workspace=dmz/packages/shared
-npm test --workspace=dmz/packages/vasp
-npm test --workspace=dmz/packages/event-engine
+npm test --workspace=internal/packages/chain-adapters
+npm test --workspace=internal/packages/compliance
+npm test --workspace=internal/packages/core-banking
+npm test --workspace=internal/packages/shared
+npm test --workspace=internal/packages/vasp
+npm test --workspace=internal/packages/event-engine
 ```
 
 #### 패키지별 테스트 현황
@@ -263,13 +263,13 @@ npm test --workspace=dmz/packages/event-engine
 
 ```powershell
 # RetryAdapterDecorator 테스트만
-npm test --workspace=dmz/packages/chain-adapters -- --testPathPattern RetryAdapterDecorator
+npm test --workspace=internal/packages/chain-adapters -- --testPathPattern RetryAdapterDecorator
 
 # TxStateMachineService 테스트만
-npm test --workspace=dmz/packages/vasp -- --testPathPattern TxStateMachine
+npm test --workspace=internal/packages/vasp -- --testPathPattern TxStateMachine
 
 # CircuitBreaker 테스트만
-npm test --workspace=dmz/packages/core-banking -- --testPathPattern CircuitBreaker
+npm test --workspace=internal/packages/core-banking -- --testPathPattern CircuitBreaker
 ```
 
 ---
@@ -395,11 +395,11 @@ npm run exercise:s04:answer
 
 #### M2 · M3 실습 (event-engine 폴더에서 실행)
 
-M2·M3 실습 파일은 `dmz/packages/event-engine` 폴더에서 실행.  
+M2·M3 실습 파일은 `internal/packages/event-engine` 폴더에서 실행.  
 `import`가 `@kyobo/event-engine` 패키지를 참조하므로 **해당 폴더 외에서는 동작하지 않음.**
 
 ```powershell
-cd dmz\packages\event-engine
+cd internal\packages\event-engine
 
 # S06 Redis Streams 실습
 npx ts-node ..\..\..\..\course\exercises\M2\S06_redis_stream.ts
@@ -420,7 +420,7 @@ code course\exercises\M2\S09_atleastonce.ts
 # 2. TODO 블록 구현
 
 # 3. 특정 세션만 채점
-cd dmz\packages\event-engine
+cd internal\packages\event-engine
 npx jest --config jest.exercises.config.json --testPathPattern S09
 
 # 4. 전체 채점
@@ -456,7 +456,7 @@ npm run test:exercises
 | S20 | `M3/S20_timeout_reorg_handler.ts` | 타임아웃 · 체인 재편성 핸들러 |
 | S22 | `M3/S22_pollstale_lab.ts` | Stale TX 복구 |
 
-참고 구현체: `dmz/packages/event-engine/src/` · `dmz/packages/vasp/src/`
+참고 구현체: `internal/packages/event-engine/src/` · `internal/packages/vasp/src/`
 
 #### M4 — 원장 · 감사 로그
 
@@ -554,7 +554,7 @@ kyobo-digital-asset-platform/
 │       ├── interfaces/          IToken · ICompliance · ISecurityToken 등
 │       └── mocks/               테스트용 Mock 컨트랙트
 │
-├── dmz/                         Node.js 서비스 (ISMS-P DMZ 구간)
+├── internal/ (Node.js 서비스)   Node.js 마이크로서비스 (내부망)
 │   ├── apps/
 │   │   └── issuer-service/      NFT 발행 서비스 진입점
 │   └── packages/
@@ -699,10 +699,10 @@ npm install
 
 ### `npx ts-node` 실행 시 "Cannot find module '@kyobo/event-engine'"
 
-실습 파일은 `dmz/packages/event-engine` 폴더에서만 실행 가능.
+실습 파일은 `internal/packages/event-engine` 폴더에서만 실행 가능.
 
 ```powershell
-cd dmz\packages\event-engine
+cd internal\packages\event-engine
 npx ts-node ..\..\..\..\course\exercises\M2\S09_atleastonce.ts
 ```
 

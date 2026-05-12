@@ -1,8 +1,8 @@
 # Runbook: DLQ 운영 — 재큐잉 판단 기준과 드랍 정책
 
-**대상**: DMZ Consumer Group 운영자  
+**대상**: Consumer Group 운영자 (내부망)  
 **관련 세션**: S51  
-**관련 코드**: `dmz/packages/event-engine/`
+**관련 코드**: `internal/packages/event-engine/`
 
 ---
 

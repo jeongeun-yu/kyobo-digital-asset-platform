@@ -2,8 +2,8 @@
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
-> Block A — DMZ 이벤트 파이프라인 · Day 02 · 강의 25분 + 실습 30분  
-> 대상: `dmz/packages/event-engine/src/webhook/WebhookServer.ts`
+> Block A — 이벤트 파이프라인 · Day 02 · 강의 25분 + 실습 30분  
+> 대상: `internal/packages/event-engine/src/webhook/WebhookServer.ts`
 
 ---
 
@@ -36,7 +36,7 @@ Q3. timingSafeEqual이 throw하는 경우는 언제인가?
    │  X-Kyobo-Signature: <hmac-sha256-hex>
    │  Body: { eventType: "ACTIVITY_ACHIEVED", data: {...}, requestId: "..." }
    ▼
-[WebhookServer._handleRequest()]  ← DMZ 경계. 서명 검증 후 큐 적재.
+[WebhookServer._handleRequest()]  ← 내부망 진입점. 서명 검증 후 큐 적재.
    │
    ├── _readBody()             ← rawBody Buffer 수집
    │       │
@@ -532,7 +532,7 @@ Step 4: timingSafeEqual
 실습 파일: `exercises/S06_hmac_webhook.ts` / 답안: `S06_hmac_webhook.answer.ts`
 
 ```bash
-# dmz/packages/event-engine 폴더에서
+# internal/packages/event-engine 폴더에서
 npx ts-node src/exercises/S06_hmac_webhook.ts
 ```
 
@@ -723,7 +723,7 @@ const reserialized = JSON.stringify(parsed);  // '{"b":2,"a":1}' ← 같을 수�
 import { WebhookServer }          from './webhook/WebhookServer';
 import { WebhookPublishHandler }  from './webhook/WebhookPublishHandler';
 import { IdempotencyGuard, InMemoryIdempotencyStore } from './webhook/IdempotencyGuard';
-import { RedisStreamPublisher }   from './dmz/RedisStreamPublisher';
+import { RedisStreamPublisher }   from './internal/RedisStreamPublisher';
 
 const redis = createRedisClient();  // ioredis 등
 
@@ -745,7 +745,7 @@ server.on('NFT_ISSUED', handler.createHandler());
 // ↑ createHandler()가 반환한 함수가 payload를 받아 idempotency.run() → publisher.publish()
 
 await server.listen();
-console.log('[app] DMZ event pipeline ready');
+console.log('[app] 이벤트 파이프라인 준비 완료');
 ```
 
 **WebhookPublishHandler 역할:**

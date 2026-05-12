@@ -1,8 +1,8 @@
 # Runbook: Consumer 장애 대응
 
-**대상**: DMZ Consumer Group 운영자  
+**대상**: Consumer Group 운영자 (내부망)  
 **관련 세션**: S52  
-**관련 코드**: `dmz/packages/event-engine/dmz/ConsumerGroupWorker.ts`
+**관련 코드**: `internal/packages/event-engine/internal/ConsumerGroupWorker.ts`
 
 ---
 

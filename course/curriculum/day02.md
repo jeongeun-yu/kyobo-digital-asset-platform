@@ -1,4 +1,4 @@
-# Day 02 — M2: DMZ 이벤트 파이프라인 전반부 (S5~S8)
+# Day 02 — M2: 이벤트 파이프라인 전반부 (S5~S8)
 
 **세션**: S5~S8 | **모듈**: M2 | **시간**: 4시간 (4세션 × 1시간)  
 **산출물**: WebhookServer(202 패턴 + HMAC 서명 검증) + Redis Streams 이론 + CLI 실습
@@ -35,7 +35,7 @@
 
 **Step 1**: WebhookReceiver 기본 구조 생성
 ```typescript
-// dmz/packages/event-engine/src/webhook/WebhookReceiver.ts
+// internal/packages/event-engine/src/webhook/WebhookReceiver.ts
 // TODO: POST /webhook 라우트 핸들러 구현
 // 요구사항:
 // 1. 요청 수신 즉시 202 반환
