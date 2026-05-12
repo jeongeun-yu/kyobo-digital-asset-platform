@@ -42,7 +42,7 @@ services:
   # ── NFT 발행 서비스 ───────────────────────────────────────────────────────────
   issuer-service:
     build:
-      context: ../../dmz/apps/issuer-service
+      context: ../../internal/apps/issuer-service
       dockerfile: Dockerfile
     environment:
       RPC_URL:                    http://hardhat-node:8545
