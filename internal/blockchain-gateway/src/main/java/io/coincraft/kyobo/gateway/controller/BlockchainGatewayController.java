@@ -11,7 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * DMZ Node.js issuer-service로부터 오는 REST 요청을 처리한다.
+ * 내부망 Node.js issuer-service로부터 오는 REST 요청을 처리한다.
  *
  * 보안: 이 엔드포인트는 내부망 IP에서만 접근 가능 (방화벽 레벨에서 제한)
  * 인증: mTLS 또는 내부망 공유 시크릿 헤더 (X-Internal-Secret)
@@ -28,7 +28,7 @@ public class BlockchainGatewayController {
 
     /**
      * 사용자 계정 정보 조회 (KYC 상태 + 지갑 주소 포함)
-     * DMZ issuer-service가 NFT 발행 전 호출
+     * issuer-service가 NFT 발행 전 호출
      */
     @GetMapping("/users/{userId}")
     public ResponseEntity<UserAccountResponse> getUserAccount(@PathVariable String userId) {
@@ -42,7 +42,7 @@ public class BlockchainGatewayController {
 
     /**
      * NFT 보유 현황 기록
-     * DMZ issuer-service가 on-chain Transfer 이벤트 확정 후 호출
+     * issuer-service가 on-chain Transfer 이벤트 확정 후 호출
      * 이 데이터는 교보 Oracle DB에 영구 보관됨
      */
     @PostMapping("/users/{userId}/nft-holdings")
@@ -56,7 +56,7 @@ public class BlockchainGatewayController {
 
     /**
      * 감사 로그 기록 (append-only)
-     * DMZ issuer-service의 모든 상태 변경 시 호출
+     * issuer-service의 모든 상태 변경 시 호출
      * ISMS-P §A.9 접근 제어 + 가상자산이용자보호법 §15 거래 기록 보존
      */
     @PostMapping("/audit-log")

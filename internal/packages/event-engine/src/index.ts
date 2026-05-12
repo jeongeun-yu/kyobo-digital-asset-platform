@@ -1,12 +1,12 @@
 export { ChainEventListener } from './listener/ChainEventListener';
 export { NFTIssuedHandler }   from './handlers/NFTIssuedHandler';
 export { NFTIssuedProcessor } from './processors/NFTIssuedProcessor';
-export { ConsumerGroupWorker } from './dmz/ConsumerGroupWorker';
-export type { StreamMessage, EventProcessor, RedisConsumerClient, DeferredProcessingError } from './dmz/ConsumerGroupWorker';
-export { DLQHandler }          from './dmz/DLQHandler';
-export type { DLQItem, DLQRedisClient } from './dmz/DLQHandler';
-export { RedisStreamPublisher, QueueService } from './dmz/RedisStreamPublisher';
-export type { StreamEvent, RedisStreamClient } from './dmz/RedisStreamPublisher';
+export { ConsumerGroupWorker } from './stream/ConsumerGroupWorker';
+export type { StreamMessage, EventProcessor, RedisConsumerClient, DeferredProcessingError } from './stream/ConsumerGroupWorker';
+export { DLQHandler }          from './stream/DLQHandler';
+export type { DLQItem, DLQRedisClient } from './stream/DLQHandler';
+export { RedisStreamPublisher, QueueService } from './stream/RedisStreamPublisher';
+export type { StreamEvent, RedisStreamClient } from './stream/RedisStreamPublisher';
 export { InMemoryLedgerService } from './processors/NFTIssuedProcessor';
 export { WebhookServer }        from './webhook/WebhookServer';
 export { WebhookPublishHandler } from './webhook/WebhookPublishHandler';

@@ -1,7 +1,7 @@
 /**
- * DMZ Operational Ledger
+ * 운영 원장 (Operational Ledger)
  *
- * 이 서비스는 DMZ 레이어(Node.js)의 블록체인 운영 데이터만 관리한다.
+ * 이 서비스는 Node.js issuer-service(내부망)의 블록체인 운영 데이터만 관리한다.
  * 임시적/기술적 데이터: 트랜잭션 in-flight 상태, 이벤트 중복 방지
  *
  * 영구 금융 원장(NFT 보유 현황, 감사 로그)은 내부망 Java Gateway가 관리한다.

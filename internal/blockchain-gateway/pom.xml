@@ -15,7 +15,7 @@
   <artifactId>blockchain-gateway</artifactId>
   <version>1.0.0-SNAPSHOT</version>
   <name>kyobo-blockchain-gateway</name>
-  <description>교보생명 내부망 블록체인 게이트웨이 — DMZ Node.js issuer-service와 Core Banking 사이의 브릿지</description>
+  <description>교보생명 내부망 블록체인 게이트웨이 — Node.js issuer-service와 Core Banking 사이의 브릿지</description>
 
   <properties>
     <java.version>17</java.version>

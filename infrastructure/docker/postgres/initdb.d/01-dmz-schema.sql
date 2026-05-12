@@ -1,4 +1,4 @@
--- DMZ 운영 원장 스키마 (Node.js issuer-service 소유)
+-- 운영 원장 스키마 (Node.js issuer-service 소유, 내부망)
 -- 임시/기술적 데이터: 블록체인 트랜잭션 in-flight 상태
 
 -- 발행 요청 상태머신 (PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED | FAILED | REORGED)
