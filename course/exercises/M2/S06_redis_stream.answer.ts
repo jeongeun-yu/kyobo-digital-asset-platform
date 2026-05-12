@@ -1,9 +1,9 @@
 /**
- * S07 실습 — Redis Streams 전체 흐름 (답안)
+ * S06 실습 — Redis Streams 전체 흐름 (답안)
  *
- * 강의 노트: M2_S7_redis_streams_theory.md
+ * 강의 노트: M2_S6_redis_streams_theory.md
  *
- * 실행 방법 (루트에서): npm run exercise:s07
+ * 실행 방법 (루트에서): npm run exercise:s06:answer
  *
  * 사전 조건: 없음 (Mock Redis 사용 — 실제 Docker 불필요)
  *

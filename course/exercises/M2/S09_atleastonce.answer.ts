@@ -60,6 +60,8 @@ export class IdempotentNftProcessor implements EventProcessor {
   }
 }
 
+export const idempotentProcessor = new IdempotentNftProcessor();
+
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(
   { async xadd() { return `${Date.now()}-0`; }, async xrange() { return []; }, async xdel() { return 0; } },

@@ -1,7 +1,7 @@
 /**
- * S07 채점 — NFTIssuedProcessor (RedisStream 전체 흐름)
+ * S06 채점 — NFTIssuedProcessor (RedisStream 전체 흐름)
  *
- * S07_redis_stream.ts는 export가 없으므로, EventProcessor 인터페이스 명세대로
+ * S06_redis_stream.ts는 export가 없으므로, EventProcessor 인터페이스 명세대로
  * 동일한 구현을 인라인으로 검증한다.
  *
  * 채점 기준:
@@ -17,7 +17,7 @@ import {
   type StreamMessage,
 } from '@kyobo/event-engine';
 
-// ── 학생 코드와 동일한 구현 (S07의 nftIssuedProcessor 재현) ───────────────────
+// ── 학생 코드와 동일한 구현 (S06의 nftIssuedProcessor 재현) ───────────────────
 const nftIssuedProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
 
@@ -26,7 +26,7 @@ const nftIssuedProcessor: EventProcessor = {
     const requestId = msg.fields['requestId'];
     void payload;
     void requestId;
-    // S07 구현: 콘솔 출력만 수행, 에러 없음
+    // S06 구현: 콘솔 출력만 수행, 에러 없음
   },
 };
 
@@ -76,7 +76,7 @@ async function runWorker(msgs: StreamMessage[]): Promise<void> {
 }
 
 // ── 채점 테스트 ───────────────────────────────────────────────────────────────
-describe('S07 채점 — NFTIssuedProcessor', () => {
+describe('S06 채점 — NFTIssuedProcessor', () => {
   it('eventTypes 에 NFT_ISSUED 가 포함되어야 한다', () => {
     expect(nftIssuedProcessor.eventTypes).toContain('NFT_ISSUED');
   });
