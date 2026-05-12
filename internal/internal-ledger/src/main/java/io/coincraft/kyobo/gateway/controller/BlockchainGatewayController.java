@@ -71,8 +71,8 @@ public class BlockchainGatewayController {
      */
     @PostMapping("/rewards/notify")
     public ResponseEntity<Void> notifyReward(@Valid @RequestBody RewardNotificationRequest request) {
-        log.info("[Gateway] notifyReward: userId={} rewardType={} tokenId={}", request.userId(), request.rewardType(), request.tokenId());
-        coreBankingClient.notifyReward(request.userId(), request.rewardType(), request.tokenId());
+        log.info("[Gateway] notifyReward: userId={} policyId={} tokenId={}", request.userId(), request.policyId(), request.tokenId());
+        coreBankingClient.notifyReward(request.userId(), request.policyId(), request.tokenId());
         return ResponseEntity.ok().build();
     }
 

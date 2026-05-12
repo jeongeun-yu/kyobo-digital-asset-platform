@@ -1,65 +1,65 @@
-# 네트워크 토폴로지
+﻿# ?ㅽ듃?뚰겕 ?좏뤃濡쒖?
 
-**확정일**: 2026-04-25  
-**근거**: 교보생명 교보DTS 유선 협의 반영
+**?뺤젙??*: 2026-04-25  
+**洹쇨굅**: 援먮낫?앸챸 援먮낫DTS ?좎꽑 ?묒쓽 諛섏쁺
 
-## 3-Zone 아키텍처
+## 3-Zone ?꾪궎?띿쿂
 
 ```
-[인터넷 / 외부]
-  - 이더리움 메인넷 피어
-  - 월렛원(WalletOne) VASP REST API
-        ↓
-[방화벽 1] — 허용: P2P 포트(30303), HTTPS(443)
-        ↓
+[?명꽣??/ ?몃?]
+  - ?대뜑由ъ? 硫붿씤???쇱뼱
+  - ?붾젢??WalletOne) VASP REST API
+        ??
+[諛⑺솕踰?1] ???덉슜: P2P ?ы듃(30303), HTTPS(443)
+        ??
 [DMZ]
-  ┌─────────────────────────────────────┐
-  │ Nginx 리버스 프록시                  │
-  │   :8545 → Private Ethereum Node     │
-  │   :8546 → WebSocket (이벤트 구독)   │
-  │   :443  → issuer-service Webhook    │
-  │                                     │
-  │ Private Ethereum Node (geth/besu)   │
-  │   외부 피어와 동기화                 │
-  └─────────────────────────────────────┘
-        ↓
-[방화벽 2] — 허용: 내부망 IP만 (10.0.0.0/8)
-        ↓
-[교보 내부망]
-  ┌─────────────────────────────────────────────────────┐
-  │ issuer-service (Node.js)          포트: 3000        │
-  │   ← DMZ Nginx webhook (inbound)                     │
-  │   → DMZ Nginx :8545 (outbound, EVM RPC)             │
-  │   → DMZ Nginx :443  (outbound, VASP proxy)          │
-  │   → blockchain-gateway :8080 (outbound, REST)       │
-  │                                                     │
-  │ blockchain-gateway (Java Spring Boot) 포트: 8080    │
-  │   ← issuer-service REST (inbound)                   │
-  │   → Core Banking WAS :? (outbound, 교보 레거시)     │
-  │   → Oracle DB / PostgreSQL                          │
-  │                                                     │
-  │ Core Banking WAS (Java, 교보 기존 시스템)            │
-  │   고객 정보, 보험 계약, 포인트                       │
-  │                                                     │
-  │ Oracle DB (교보 내부 표준) / PostgreSQL (개발용)     │
-  └─────────────────────────────────────────────────────┘
+  ?뚢???????????????????????????????????????
+  ??Nginx 由щ쾭???꾨줉??                 ??
+  ??  :8545 ??Private Ethereum Node     ??
+  ??  :8546 ??WebSocket (?대깽??援щ룆)   ??
+  ??  :443  ??issuer-service Webhook    ??
+  ??                                    ??
+  ??Private Ethereum Node (geth/besu)   ??
+  ??  ?몃? ?쇱뼱? ?숆린??                ??
+  ?붴???????????????????????????????????????
+        ??
+[諛⑺솕踰?2] ???덉슜: ?대?留?IP留?(10.0.0.0/8)
+        ??
+[援먮낫 ?대?留?
+  ?뚢???????????????????????????????????????????????????????
+  ??issuer-service (Node.js)          ?ы듃: 3000        ??
+  ??  ??DMZ Nginx webhook (inbound)                     ??
+  ??  ??DMZ Nginx :8545 (outbound, EVM RPC)             ??
+  ??  ??DMZ Nginx :443  (outbound, VASP proxy)          ??
+  ??  ??internal-ledger :8080 (outbound, REST)       ??
+  ??                                                    ??
+  ??internal-ledger (Java Spring Boot) ?ы듃: 8080    ??
+  ??  ??issuer-service REST (inbound)                   ??
+  ??  ??Core Banking WAS :? (outbound, 援먮낫 ?덇굅??     ??
+  ??  ??Oracle DB / PostgreSQL                          ??
+  ??                                                    ??
+  ??Core Banking WAS (Java, 援먮낫 湲곗〈 ?쒖뒪??            ??
+  ??  怨좉컼 ?뺣낫, 蹂댄뿕 怨꾩빟, ?ъ씤??                      ??
+  ??                                                    ??
+  ??Oracle DB (援먮낫 ?대? ?쒖?) / PostgreSQL (媛쒕컻??     ??
+  ?붴???????????????????????????????????????????????????????
 ```
 
-## 포트 정책
+## ?ы듃 ?뺤콉
 
-| 서비스 | 포트 | 허용 출처 | 비고 |
+| ?쒕퉬??| ?ы듃 | ?덉슜 異쒖쿂 | 鍮꾧퀬 |
 |--------|------|-----------|------|
-| issuer-service | 3000 | DMZ Nginx (webhook), 내부망 only | Node.js |
-| blockchain-gateway | 8080 | 내부망 only (issuer-service) | Java |
-| Core Banking WAS | TBD | 내부망 only | 교보 기존 |
-| Ethereum RPC | 8545 | 내부망 IP only (via DMZ Nginx) | |
-| Ethereum WS | 8546 | 내부망 IP only (via DMZ Nginx) | |
+| issuer-service | 3000 | DMZ Nginx (webhook), ?대?留?only | Node.js |
+| internal-ledger | 8080 | ?대?留?only (issuer-service) | Java |
+| Core Banking WAS | TBD | ?대?留?only | 援먮낫 湲곗〈 |
+| Ethereum RPC | 8545 | ?대?留?IP only (via DMZ Nginx) | |
+| Ethereum WS | 8546 | ?대?留?IP only (via DMZ Nginx) | |
 
-## Phase별 변화
+## Phase蹂?蹂??
 
-| Phase | 변화 내용 |
+| Phase | 蹂???댁슜 |
 |-------|-----------|
-| Phase 1 | 현재 구조 — 외부 VASP(월렛원), Ethereum Mainnet |
-| Phase 2 | KRW 스테이블코인 추가 — ReconcileService 가동, Circle ARC 검토 |
-| Phase 3 | XRPL 브릿지 추가, 보안토큰(STO) — XRPLAdapter 활성화 |
-| Phase 4 | 교보 자체 VASP 라이센스 — KyoboVASPAdapter로 교체 (1줄 변경) |
+| Phase 1 | ?꾩옱 援ъ“ ???몃? VASP(?붾젢??, Ethereum Mainnet |
+| Phase 2 | KRW ?ㅽ뀒?대툝肄붿씤 異붽? ??ReconcileService 媛?? Circle ARC 寃??|
+| Phase 3 | XRPL 釉뚮┸吏 異붽?, 蹂댁븞?좏겙(STO) ??XRPLAdapter ?쒖꽦??|
+| Phase 4 | 援먮낫 ?먯껜 VASP ?쇱씠?쇱뒪 ??KyoboVASPAdapter濡?援먯껜 (1以?蹂寃? |

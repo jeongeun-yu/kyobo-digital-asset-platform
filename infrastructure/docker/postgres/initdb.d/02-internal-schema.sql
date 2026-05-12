@@ -1,4 +1,4 @@
--- 내부망 영구 원장 스키마 (Java blockchain-gateway 소유)
+-- 내부망 영구 원장 스키마 (Java internal-ledger 소유)
 -- 규제 데이터: NFT 보유 현황, 감사 로그 (Oracle에서도 사용 가능한 SQL)
 
 -- 사용자 NFT 보유 현황 (온체인에서 파생, 영구 보존)

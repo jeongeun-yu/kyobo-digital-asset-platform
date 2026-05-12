@@ -12,10 +12,10 @@
   </parent>
 
   <groupId>io.coincraft.kyobo</groupId>
-  <artifactId>blockchain-gateway</artifactId>
+  <artifactId>internal-ledger</artifactId>
   <version>1.0.0-SNAPSHOT</version>
-  <name>kyobo-blockchain-gateway</name>
-  <description>교보생명 내부망 블록체인 게이트웨이 — Node.js issuer-service와 Core Banking 사이의 브릿지</description>
+  <name>kyobo-internal-ledger</name>
+  <description>교보생명 내부망 영구 원장 서비스 — NFT 보유 현황 · 금융 감사 로그 (Java Spring Boot)</description>
 
   <properties>
     <java.version>17</java.version>
@@ -60,6 +60,11 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -74,6 +79,13 @@
               <artifactId>lombok</artifactId>
             </exclude>
           </excludes>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>-XX:+EnableDynamicAgentLoading -Xshare:off</argLine>
         </configuration>
       </plugin>
     </plugins>

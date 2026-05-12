@@ -57,6 +57,8 @@ export interface OutboxEvent {
   createdAt:   Date;
 }
 
+export type OutboxHandler = (payload: Record<string, unknown>) => Promise<void>;
+
 // ── OutboxWorker ──────────────────────────────────────────────────────────────
 
 /**
@@ -78,19 +80,77 @@ export interface OutboxEvent {
  */
 export class OutboxWorker {
   private static readonly MAX_ATTEMPTS = 5;
+  private static readonly BATCH_SIZE   = 10;
 
   constructor(
     private readonly db: { query(sql: string, params?: unknown[]): Promise<unknown[]> },
+    private readonly handlers: Partial<Record<OutboxEventType, OutboxHandler>> = {},
   ) {}
 
   /**
-   * Phase 3: PENDING 이벤트 일괄 처리
-   *   1. SELECT FOR UPDATE SKIP LOCKED — 동시 워커 간 중복 처리 방지
+   * PENDING 이벤트 일괄 처리
+   *   1. UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING
+   *      → 짧은 트랜잭션으로 PROCESSING 상태로 선점 (동시 워커 중복 방지)
    *   2. 이벤트 유형별 핸들러 호출
-   *   3. 성공: status=PROCESSED
-   *   4. 실패: attemptCount++, nextRetryAt = now + 2^attempt초, status=DEAD if 5회 초과
+   *   3. 성공: status=PROCESSED, processed_at=NOW()
+   *   4. 실패: attempt_count++, next_retry_at=NOW()+2^attempt초, MAX_ATTEMPTS 초과 시 status=DEAD
    */
   async processPending(): Promise<{ processed: number; failed: number }> {
-    throw new Error('Phase 3 — OutboxWorker.processPending 구현 필요');
+    let processed = 0;
+    let failed    = 0;
+
+    // 짧은 트랜잭션으로 배치 선점 — 락 보유 시간 최소화
+    await this.db.query('BEGIN');
+    let claimed: Array<{ id: string; type: OutboxEventType; payload: Record<string, unknown>; attempt_count: number }>;
+    try {
+      const rows = await this.db.query(
+        `UPDATE outbox_events
+         SET status = 'PROCESSING'
+         WHERE id IN (
+           SELECT id FROM outbox_events
+           WHERE status = 'PENDING' AND next_retry_at <= NOW()
+           ORDER BY next_retry_at ASC
+           LIMIT $1
+           FOR UPDATE SKIP LOCKED
+         )
+         RETURNING id, type, payload, attempt_count`,
+        [OutboxWorker.BATCH_SIZE],
+      );
+      await this.db.query('COMMIT');
+      claimed = rows as typeof claimed;
+    } catch (err) {
+      await this.db.query('ROLLBACK');
+      throw err;
+    }
+
+    for (const event of claimed) {
+      try {
+        const handler = this.handlers[event.type];
+        if (handler) {
+          await handler(event.payload);
+        }
+        await this.db.query(
+          `UPDATE outbox_events SET status = 'PROCESSED', processed_at = NOW() WHERE id = $1`,
+          [event.id],
+        );
+        processed++;
+      } catch (err) {
+        const nextAttempt = event.attempt_count + 1;
+        const isDead      = nextAttempt >= OutboxWorker.MAX_ATTEMPTS;
+        const backoffSecs = Math.pow(2, nextAttempt);
+
+        await this.db.query(
+          `UPDATE outbox_events
+           SET status        = $1,
+               attempt_count = $2,
+               next_retry_at = NOW() + ($3 * INTERVAL '1 second')
+           WHERE id = $4`,
+          [isDead ? 'DEAD' : 'PENDING', nextAttempt, backoffSecs, event.id],
+        );
+        failed++;
+      }
+    }
+
+    return { processed, failed };
   }
 }

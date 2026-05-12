@@ -11,8 +11,12 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "build:all": "npm run build --workspaces --if-present && cd blockchain && npx hardhat compile",
+    "build:hardhat": "cd blockchain && npx hardhat compile",
+    "build:java": "internal\\internal-ledger\\mvnw.cmd -f internal/internal-ledger/pom.xml package -q -DskipTests",
+    "build:all": "npm run build && npm run build:hardhat && npm run build:java",
     "test": "npm run test --workspaces --if-present",
+    "test:java": "internal\\internal-ledger\\mvnw.cmd -f internal/internal-ledger/pom.xml test -q",
+    "test:all": "npm run test && npm run test:java",
     "test:exercises": "npm run test:exercises --workspace=internal/packages/event-engine",
     "test:exercises:answer": "npm run test:exercises:answer --workspace=internal/packages/event-engine",
     "typecheck": "npm run typecheck --workspaces --if-present",

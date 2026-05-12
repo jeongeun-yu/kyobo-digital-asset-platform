@@ -1,11 +1,11 @@
-/**
- * ICoreBankingAdapter — 교보생명 Core Banking 시스템 연동 인터페이스
+﻿/**
+ * ICoreBankingAdapter ??援먮낫?앸챸 Core Banking ?쒖뒪???곕룞 ?명꽣?섏씠??
  *
- * Phase 1 (확정): NFT 발행 후 포인트/쿠폰 상태 업데이트 알림
- * 향후 확장: 스테이블코인·증권 계좌 연동 등 (교보생명 내부 결정)
+ * Phase 1 (?뺤젙): NFT 諛쒗뻾 ???ъ씤??荑좏룿 ?곹깭 ?낅뜲?댄듃 ?뚮┝
+ * ?ν썑 ?뺤옣: ?ㅽ뀒?대툝肄붿씤쨌利앷텒 怨꾩쥖 ?곕룞 ??(援먮낫?앸챸 ?대? 寃곗젙)
  *
- * Core Banking API 스펙은 교보DTS 내부 시스템에 따라 결정.
- * 이 인터페이스가 확정되면 양측이 독립적으로 구현 가능.
+ * Core Banking API ?ㅽ럺? 援먮낫DTS ?대? ?쒖뒪?쒖뿉 ?곕씪 寃곗젙.
+ * ???명꽣?섏씠?ㅺ? ?뺤젙?섎㈃ ?묒륫???낅┰?곸쑝濡?援ы쁽 媛??
  */
 
 export interface UserAccount {
@@ -34,22 +34,22 @@ export interface BalanceSyncRequest {
 
 export interface ICoreBankingAdapter {
   /**
-   * 사용자 계정 조회 — KYC 상태·지갑 주소 매핑 확인
+   * ?ъ슜??怨꾩젙 議고쉶 ??KYC ?곹깭쨌吏媛?二쇱냼 留ㅽ븨 ?뺤씤
    */
   getUserAccount(userId: string): Promise<UserAccount | null>;
 
   /**
-   * NFT 발행 완료 알림 → 포인트·쿠폰 시스템 상태 업데이트
+   * NFT 諛쒗뻾 ?꾨즺 ?뚮┝ ???ъ씤?맞룹퓼???쒖뒪???곹깭 ?낅뜲?댄듃
    */
   notifyReward(notification: RewardNotification): Promise<void>;
 
   /**
-   * Phase 2: 원화 입금 → 스테이블코인 발행 요청
+   * Phase 2: ?먰솕 ?낃툑 ???ㅽ뀒?대툝肄붿씤 諛쒗뻾 ?붿껌
    */
   syncBalance(req: BalanceSyncRequest): Promise<{ confirmed: boolean }>;
 
   /**
-   * 거래 이력 기록 — 감사 추적 (ISMS-P 요건)
+   * 嫄곕옒 ?대젰 湲곕줉 ??媛먯궗 異붿쟻 (ISMS-P ?붽굔)
    */
   recordTransaction(tx: {
     txHash:   string;
@@ -60,10 +60,10 @@ export interface ICoreBankingAdapter {
     timestamp: number;
   }): Promise<void>;
 
-  // ── 내부망 영구 원장 위임 (Java blockchain-gateway가 실제 기록) ────────────
+  // ?? ?대?留??곴뎄 ?먯옣 ?꾩엫 (Java internal-ledger媛 ?ㅼ젣 湲곕줉) ????????????
 
   /**
-   * 온체인 NFT Transfer 이벤트 확인 후 호출 — Java gateway가 user_nft_holdings 테이블에 기록
+   * ?⑥껜??NFT Transfer ?대깽???뺤씤 ???몄텧 ??Java gateway媛 user_nft_holdings ?뚯씠釉붿뿉 湲곕줉
    */
   recordNftHolding(params: {
     userId: string;
@@ -75,7 +75,7 @@ export interface ICoreBankingAdapter {
   }): Promise<void>;
 
   /**
-   * issuer-service 상태 변경마다 호출 — Java gateway가 audit_log 테이블에 append-only 기록
+   * issuer-service ?곹깭 蹂寃쎈쭏???몄텧 ??Java gateway媛 audit_log ?뚯씠釉붿뿉 append-only 湲곕줉
    */
   recordAuditLog(entry: {
     actor: string;

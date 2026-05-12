@@ -1,4 +1,4 @@
-// Interfaces
+﻿// Interfaces
 export type {
   ICoreBankingAdapter,
   UserAccount,
@@ -10,7 +10,7 @@ export type {
 export { CircuitBreaker, CircuitOpenError } from './adapters/CircuitBreaker';
 export type { CircuitState, CircuitBreakerOptions } from './adapters/CircuitBreaker';
 
-// HTTP client → internal/blockchain-gateway
+// HTTP client ??internal/internal-ledger
 export { InternalGatewayClient, InternalGatewayError, CircuitOpenError as GatewayCircuitOpenError } from './adapters/InternalGatewayClient';
 export type {
   GatewayUserAccountResponse,
