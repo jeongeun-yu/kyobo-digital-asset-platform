@@ -1,4 +1,4 @@
-import { DLQHandler, DLQMessageNotFoundError } from '../dmz/DLQHandler';
+import { DLQHandler, DLQMessageNotFoundError } from '../stream/DLQHandler';
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 function makeDLQRedis() {

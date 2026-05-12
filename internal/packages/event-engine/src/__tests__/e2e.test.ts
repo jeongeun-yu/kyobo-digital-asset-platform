@@ -1,5 +1,5 @@
 /**
- * S12 채점 — M2 DMZ 이벤트 파이프라인 E2E
+ * S12 채점 — M2 이벤트 파이프라인 E2E
  *
  * Mock Redis로 전체 파이프라인을 검증한다.
  * WebhookServer는 실제 HTTP 서버를 사용하지 않고 내부 로직만 직접 호출.
@@ -7,9 +7,9 @@
 
 import { WebhookPublishHandler } from '../webhook/WebhookPublishHandler';
 import { IdempotencyGuard, InMemoryIdempotencyStore } from '../webhook/IdempotencyGuard';
-import { RedisStreamPublisher, type RedisStreamClient } from '../dmz/RedisStreamPublisher';
-import { ConsumerGroupWorker, type RedisConsumerClient, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import { RedisStreamPublisher, type RedisStreamClient } from '../stream/RedisStreamPublisher';
+import { ConsumerGroupWorker, type RedisConsumerClient, type StreamMessage } from '../stream/ConsumerGroupWorker';
+import { DLQHandler } from '../stream/DLQHandler';
 import { NFTIssuedProcessor, InMemoryLedgerService } from '../processors/NFTIssuedProcessor';
 import { type WebhookPayload } from '../webhook/WebhookServer';
 

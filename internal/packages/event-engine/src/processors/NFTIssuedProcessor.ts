@@ -16,7 +16,7 @@
  *   M4에서 PostgreSQL + Knex 구현체로 교체 예정.
  */
 
-import { type EventProcessor, type StreamMessage, DeferredProcessingError } from '../dmz/ConsumerGroupWorker';
+import { type EventProcessor, type StreamMessage, DeferredProcessingError } from '../stream/ConsumerGroupWorker';
 import { IdempotencyGuard } from '../webhook/IdempotencyGuard';
 import { logger } from '../infra/logger';
 

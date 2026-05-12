@@ -17,7 +17,7 @@
  */
 
 import { type WebhookHandler, type WebhookPayload } from './WebhookServer';
-import { RedisStreamPublisher } from '../dmz/RedisStreamPublisher';
+import { RedisStreamPublisher } from '../stream/RedisStreamPublisher';
 import { IdempotencyGuard } from './IdempotencyGuard';
 import { logger } from '../infra/logger';
 

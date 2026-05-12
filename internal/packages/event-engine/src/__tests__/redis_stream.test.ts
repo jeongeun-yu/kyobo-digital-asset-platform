@@ -1,6 +1,6 @@
-import { RedisStreamPublisher, type StreamEvent } from '../dmz/RedisStreamPublisher';
-import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../dmz/ConsumerGroupWorker';
-import { DLQHandler } from '../dmz/DLQHandler';
+import { RedisStreamPublisher, type StreamEvent } from '../stream/RedisStreamPublisher';
+import { ConsumerGroupWorker, type EventProcessor, type StreamMessage } from '../stream/ConsumerGroupWorker';
+import { DLQHandler } from '../stream/DLQHandler';
 
 // ══════════════════════════════════════════════════════════════════════════
 // RedisStreamPublisher 헬퍼
