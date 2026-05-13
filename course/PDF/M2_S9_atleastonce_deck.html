@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>M2 S9 — At-least-once 설계</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #2a2a2a; }
+
+  .slide {
+    width: 960px; height: 540px;
+    margin: 32px auto;
+    position: relative; overflow: hidden;
+    box-shadow: 0 6px 28px rgba(0,0,0,0.4);
+    background-size: 100% 100%; background-repeat: no-repeat;
+  }
+  .slide-cover { background-image: url('file:///C:/Users/eskim/Workspace/CoinCraft-Operating-System/Work/CDO/Archive/PPT_표지_White.png'); }
+  .slide-body  { background-image: url('file:///C:/Users/eskim/Workspace/CoinCraft-Operating-System/Work/CDO/Archive/PPT_본문_White.png'); }
+
+  .num { position: absolute; bottom: 14px; right: 24px; font-size: 11px; color: #999; letter-spacing: 1px; }
+
+  /* ── 표지 ── */
+  .cover-content { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; width: 80%; }
+  .cover-tag   { font-size: 12px; font-weight: 600; color: #C9A84C; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 16px; }
+  .cover-title { font-size: 48px; font-weight: 700; color: #1F2D5A; line-height: 1.3; margin-bottom: 12px; }
+  .cover-sub   { font-size: 14px; color: #888; line-height: 1.6; }
+  .cover-badges { display: flex; justify-content: center; gap: 10px; margin-top: 24px; }
+  .cover-badge  { padding: 5px 16px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
+  .cb-navy  { background: #1F2D5A; color: #fff; }
+  .cb-gold  { background: #C9A84C; color: #fff; }
+  .cb-light { background: #f0f0f0; color: #555; }
+
+  /* ── 본문 ── */
+  .body-content { position: absolute; top: 38px; left: 40px; right: 40px; bottom: 105px; overflow: hidden; }
+  .body-header  { margin-bottom: 16px; }
+  .body-header h1 { font-size: 30px; font-weight: 700; color: #1F2D5A; margin-bottom: 3px; }
+  .body-header p  { font-size: 11px; color: #C9A84C; font-weight: 600; letter-spacing: 0.5px; }
+
+  /* 콜아웃 */
+  .callout       { border-left: 3px solid #1F2D5A; background: #f0f3fa; padding: 6px 14px; border-radius: 0 4px 4px 0; margin: 5px 0; font-size: 12px; color: #1F2D5A; line-height: 1.65; }
+  .callout-gold  { border-left-color: #C9A84C; background: #fdf8ee; color: #7a5a10; }
+  .callout-green { border-left-color: #27AE60; background: #f0faf4; color: #1a5c35; }
+  .callout-red   { border-left-color: #c0392b; background: #fdecea; color: #7a1a10; }
+  .callout strong { font-weight: 700; }
+
+  /* 그리드 */
+  .cols  { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0; }
+  .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 6px 0; }
+  .col-box { border: 1px solid #dde3f0; border-radius: 4px; padding: 7px 12px; background: #fafbff; }
+  .col-box h3 { font-size: 11px; font-weight: 700; color: #1F2D5A; margin-bottom: 5px; padding-bottom: 4px; border-bottom: 1px solid #dde3f0; letter-spacing: 0.3px; }
+  .col-box ul { list-style: none; font-size: 11.5px; color: #444; line-height: 1.7; }
+  .col-box ul li::before { content: "· "; color: #C9A84C; font-weight: 700; }
+  .col-box p { font-size: 11.5px; color: #444; line-height: 1.65; }
+
+  /* 테이블 */
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 8px 0; }
+  thead tr { background: #1F2D5A; color: #fff; }
+  thead th { padding: 6px 10px; text-align: left; font-weight: 600; }
+  tbody tr:nth-child(even) { background: #f5f7fc; }
+  tbody td { padding: 5px 10px; border-bottom: 1px solid #eaecf4; color: #333; vertical-align: middle; }
+
+  /* 배지 */
+  .b    { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10.5px; font-weight: 600; }
+  .b-g  { background: #e6f9f0; color: #1a8a50; }
+  .b-r  { background: #fdecea; color: #c0392b; }
+  .b-y  { background: #fef6e4; color: #b7770d; }
+  .b-b  { background: #eaeef8; color: #1F2D5A; }
+
+  h2 { font-size: 12px; font-weight: 700; color: #1F2D5A; margin: 6px 0 4px; }
+  h3 { font-size: 11.5px; font-weight: 700; color: #1F2D5A; margin: 5px 0 3px; }
+
+  /* 코드 */
+  .code { background: #1a2035; color: #cdd6f4; border-radius: 4px; padding: 7px 16px; font-family: 'Consolas', 'D2Coding', monospace; font-size: 11px; line-height: 1.6; margin: 5px 0; white-space: pre; }
+  .c-cm { color: #5c6a8a; } .c-kw { color: #89dceb; } .c-st { color: #a6e3a1; }
+  .c-fn { color: #cba6f7; } .c-nu { color: #fab387; } .c-ty { color: #f9e2af; }
+
+  /* 플로우 */
+  .flow { background: #f8f9ff; border: 1px solid #dde3f0; border-radius: 4px; padding: 6px 14px; font-family: 'Consolas', 'D2Coding', monospace; font-size: 11px; line-height: 1.6; color: #333; white-space: pre; margin: 5px 0; }
+
+  /* 섹션 라벨 */
+  .sec-label { display: inline-block; background: #1F2D5A; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 3px; margin-bottom: 6px; letter-spacing: 0.5px; }
+
+  @media print {
+    body { background: #fff; }
+    .slide { margin: 0; box-shadow: none; page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+
+
+<!-- ══ 1. 표지 ══ -->
+<div class="slide slide-cover">
+  <div class="cover-content">
+    <div class="cover-tag">M2 · 이벤트 파이프라인 · S09</div>
+    <div class="cover-title">At-least-once<br>설계 원리</div>
+    <div class="cover-sub">
+      두 저장소 문제 · 처리 순서 불변 규칙 · 멱등성<br>
+      강의 55min + 실습 30min
+    </div>
+    <div class="cover-badges">
+      <span class="cover-badge cb-navy">Redis Streams</span>
+      <span class="cover-badge cb-gold">At-least-once</span>
+      <span class="cover-badge cb-light">ConsumerGroupWorker</span>
+    </div>
+  </div>
+  <div class="num">1 / 5</div>
+</div>
+
+
+<!-- ══ 2. 두 저장소 문제 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>두 저장소 문제 — 핵심 질문</h1>
+      <p>THE TWO-STORAGE PROBLEM</p>
+    </div>
+    <div class="cols">
+      <div class="col-box">
+        <h3>저장소 A — Redis (PEL)</h3>
+        <ul>
+          <li><strong>XACK</strong> → PEL에서 메시지 제거</li>
+          <li>"이 메시지를 내가 책임지고 처리했다"</li>
+          <li>큐 시스템의 영수증</li>
+        </ul>
+      </div>
+      <div class="col-box">
+        <h3>저장소 B — DB (원장)</h3>
+        <ul>
+          <li><strong>COMMIT</strong> → user_nft_holdings +1</li>
+          <li>"실제 비즈니스 처리가 완료됐다"</li>
+          <li>데이터 변경의 원자적 확정</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout callout-red"><strong>문제</strong> — 두 저장소는 독립적이다. DB 커밋과 Redis XACK를 하나의 트랜잭션으로 묶을 수 없다. Redis는 XA 프로토콜(2PC)을 지원하지 않는다.</div>
+    <div class="callout callout-gold"><strong>선택</strong> — 두 저장소 중 하나가 반드시 "뒤처지는 순간"이 존재한다. 어느 쪽을 뒤처지게 할 것인가? → 이것이 설계의 핵심이다.</div>
+  </div>
+  <div class="num">2 / 5</div>
+</div>
+
+
+<!-- ══ 3. Exactly-once는 왜 불가능한가 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>Exactly-once는 왜 불가능한가</h1>
+      <p>WHY EXACTLY-ONCE IS IMPRACTICAL</p>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:22%">방식</th><th style="width:38%">문제</th><th style="width:20%">결과</th><th style="width:20%">판정</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>XACK → DB</strong><br><span style="font-size:10px;color:#888">ACK 먼저</span></td>
+          <td>ACK 후 DB 실패 → PEL 없음 → 재수신 불가</td>
+          <td>데이터 영구 유실</td>
+          <td><span class="b b-r">❌ 치명적</span></td>
+        </tr>
+        <tr>
+          <td><strong>DB → XACK</strong><br><span style="font-size:10px;color:#888">커밋 먼저</span></td>
+          <td>DB 커밋 후 XACK 실패 → PEL 재수신 → 중복 처리 가능</td>
+          <td>중복 (복구 가능)</td>
+          <td><span class="b b-y">△ 멱등성 필요</span></td>
+        </tr>
+        <tr>
+          <td><strong>2PC</strong><br><span style="font-size:10px;color:#888">분산 트랜잭션</span></td>
+          <td>Redis가 XA 미지원 · 구현 복잡도 폭발 · 성능 저하</td>
+          <td>현실적 불가</td>
+          <td><span class="b b-r">❌ 비현실</span></td>
+        </tr>
+        <tr>
+          <td><strong>At-least-once<br>+ 멱등성</strong></td>
+          <td>DB 커밋 먼저, XACK 나중. 중복 수신 시 멱등성이 차단</td>
+          <td>정합성 보장</td>
+          <td><span class="b b-g">✅ 현실 해법</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout"><strong>결론</strong> — Exactly-once = 이상 &nbsp;/&nbsp; At-least-once + 멱등성 = 현실적 정답</div>
+  </div>
+  <div class="num">3 / 5</div>
+</div>
+
+
+<!-- ══ 4. 올바른 처리 순서 4단계 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>올바른 처리 순서 — 4단계 불변 규칙</h1>
+      <p>THE FOUR-STEP INVARIANT</p>
+    </div>
+    <div class="cols">
+      <div class="col-box">
+        <h3>4단계 순서 (절대 불변)</h3>
+        <ul>
+          <li><strong>Step 1</strong> — 멱등성 확인 → 이미 처리됐으면 XACK + 종료</li>
+          <li><strong>Step 2</strong> — DB 트랜잭션 시작 (원장 업데이트)</li>
+          <li><strong>Step 3</strong> — 트랜잭션 커밋 (원자적 완료)</li>
+          <li><strong>Step 4</strong> — XACK (PEL 제거, "처리 완료" 선언)</li>
+        </ul>
+      </div>
+      <div class="col-box">
+        <h3>각 단계가 그 위치에 있는 이유</h3>
+        <ul>
+          <li><strong>멱등성 먼저</strong> — 중복 수신 시 DB 접근 없이 차단</li>
+          <li><strong>DB 원자성</strong> — 원장+상태 전이 중 장애 시 전체 롤백</li>
+          <li><strong>XACK 마지막</strong> — ACK 전 장애 → PEL 재수신 → 멱등성 차단</li>
+        </ul>
+      </div>
+    </div>
+    <div class="flow">XREADGROUP (메시지 수신 + PEL 등록)
+  │
+  ├─ Step 1: 멱등성 확인  ── 이미 처리? → XACK만 실행 후 종료
+  │
+  ├─ Step 2+3: DB 트랜잭션 커밋
+  │
+  └─ Step 4: XACK  ← 절대 마지막 (XACK 전 크래시 = PEL 잔류 = 재수신 가능)</div>
+    <div class="callout callout-red"><strong>위반 시</strong> — XACK를 Step 1보다 먼저 하면 DB 실패 후 재수신 불가 → 원장 누락 → 감사 실패</div>
+  </div>
+  <div class="num">4 / 5</div>
+</div>
+
+
+<!-- ══ 5. 코드로 보는 4단계 + 실습 안내 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>코드로 보는 4단계 & 실습</h1>
+      <p>IMPLEMENTATION — ConsumerGroupWorker._handleWithRetry()</p>
+    </div>
+    <div class="cols">
+      <div class="col-box" style="grid-column: span 1;">
+        <div class="code"><span class="c-cm">// Step 1: 멱등성 (processor.process() 내부)</span>
+<span class="c-kw">await</span> <span class="c-fn">Promise.all</span>(processors.<span class="c-fn">map</span>(p =>
+  p.<span class="c-fn">process</span>(msg)  <span class="c-cm">// IdempotencyGuard.run() 포함</span>
+));
+
+<span class="c-cm">// Step 4: XACK — 항상 마지막</span>
+<span class="c-kw">await</span> redis.<span class="c-fn">xack</span>(streamKey, groupName, msg.id);</div>
+      </div>
+      <div class="col-box">
+        <h3>실습 — S09_atleastonce.ts</h3>
+        <ul>
+          <li><strong>Part 1</strong> — 동일 메시지 2회 처리 → 원장 +2 (버그 재현)</li>
+          <li><strong>Part 2</strong> — <code style="font-size:10px;background:#eef;padding:1px 4px;border-radius:2px;">IdempotentNftProcessor</code> 구현 (TODO 1~5)</li>
+          <li>Set&lt;string&gt; 활용한 인메모리 멱등성</li>
+          <li>처리 후 <code style="font-size:10px;background:#eef;padding:1px 4px;border-radius:2px;">processedIds.add()</code> 순서 중요</li>
+        </ul>
+        <div class="callout callout-gold" style="margin-top:6px;font-size:11px;"><strong>실행</strong>: event-engine 폴더에서<br><code>npx ts-node src/exercises/S09_atleastonce.ts</code></div>
+      </div>
+    </div>
+    <div class="callout callout-green"><strong>핵심 암기</strong> — 멱등성 확인 → DB 커밋 → XACK. 이 순서는 절대 바꾸지 않는다. 중복은 멱등성이 막고, 유실은 XACK 후치(後置)가 막는다.</div>
+  </div>
+  <div class="num">5 / 5</div>
+</div>
+
+
+</body>
+</html>
