@@ -22,7 +22,15 @@ jobs:
         run: npm ci
 
       - name: 테스트 실행
-        run: npm test
+        run: npm test -- --verbose 2>&1 | tee /tmp/test-out.txt; exit ${PIPESTATUS[0]}
+
+      - name: 테스트 결과 Summary 출력
+        if: always()
+        run: |
+          echo "## 🧪 테스트 결과" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/test-out.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: 수강생 이메일 발송
         uses: dawidd6/action-send-mail@v3
