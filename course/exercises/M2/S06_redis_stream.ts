@@ -89,10 +89,27 @@
  *   [worker] 종료 완료
  */
 
-import {
-  RedisStreamPublisher, ConsumerGroupWorker, DLQHandler,
-  type StreamEvent, type EventProcessor, type StreamMessage,
-} from '@kyobo/event-engine';
+// ────────────────────────────────────────────────────────────────────────
+// Type Definitions
+// ────────────────────────────────────────────────────────────────────────
+interface StreamEvent {
+  streamKey: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  txHash: string;
+  blockNumber: number;
+  requestId: string;
+}
+
+interface StreamMessage {
+  id: string;
+  fields: Record<string, string>;
+}
+
+interface EventProcessor {
+  readonly eventTypes: string[];
+  process(message: StreamMessage): Promise<void>;
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // Part 1 — RedisStreamPublisher
@@ -116,6 +133,92 @@ const publisherRedis = {
 };
 
 // ────────────────────────────────────────────────────────────────────────
+// RedisStreamPublisher Class
+// ────────────────────────────────────────────────────────────────────────
+class RedisStreamPublisher {
+  constructor(private redis: any) {}
+  
+  async initialize(): Promise<void> {
+    await this.redis.xgroupCreate('kyobo:events', 'issuer-consumers', '$', true).catch(() => {});
+  }
+  
+  async publish(event: StreamEvent): Promise<string> {
+    const fields: Record<string, string> = {
+      eventType: event.eventType,
+      payload: JSON.stringify(event.payload),
+      txHash: event.txHash,
+      blockNumber: String(event.blockNumber),
+      requestId: event.requestId,
+      publishedAt: String(Date.now()),
+      _retryCount: '0',
+    };
+    return this.redis.xadd(event.streamKey, fields);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// DLQHandler Class
+// ────────────────────────────────────────────────────────────────────────
+class DLQHandler {
+  constructor(private redis: any, private alertService: any) {}
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// ConsumerGroupWorker Class
+// ────────────────────────────────────────────────────────────────────────
+class ConsumerGroupWorker {
+  private running = false;
+  
+  constructor(
+    private redis: any,
+    private processors: EventProcessor[],
+    private dlq: DLQHandler,
+    private config: {
+      streamKey: string;
+      groupName: string;
+      consumerId: string;
+      batchSize: number;
+      blockMs: number;
+      minIdleMs: number;
+    },
+  ) {}
+  
+  async start(): Promise<void> {
+    this.running = true;
+    while (this.running) {
+      const result = await this.redis.xreadgroup(
+        this.config.groupName,
+        this.config.consumerId,
+        [{ key: this.config.streamKey, id: '>' }],
+        this.config.batchSize,
+        this.config.blockMs,
+      );
+      
+      if (result && result.length > 0) {
+        for (const stream of result) {
+          for (const message of stream.messages) {
+            for (const processor of this.processors) {
+              if (processor.eventTypes.includes(message.fields['eventType'])) {
+                try {
+                  await processor.process(message);
+                  await this.redis.xack(this.config.streamKey, this.config.groupName, message.id);
+                } catch (error) {
+                  console.error('[ConsumerGroupWorker] 처리 실패:', error);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  stop(): void {
+    this.running = false;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Part 2 — ConsumerGroupWorker
 // ────────────────────────────────────────────────────────────────────────
 
@@ -123,14 +226,14 @@ const publisherRedis = {
 // 3회 이상 실패한 메시지는 여기로 이동됩니다 (S11에서 상세 학습)
 const mockDLQ = new DLQHandler(
   {
-    async xadd(key, fields) {
+    async xadd(key: string, fields: Record<string, string>) {
       console.log(`[DLQ XADD] ${key}`, fields);
       return `${Date.now()}-0`;
     },
     async xrange() { return []; },
     async xdel()   { return 0; },
   },
-  { async sendAlert(msg) { console.log('[DLQ ALERT]', msg); } },
+  { async sendAlert(msg: string) { console.log('[DLQ ALERT]', msg); } },
 );
 
 // ── Mock Redis (Consumer용) — 수정하지 않아도 됨 ──────────────────────
@@ -205,13 +308,13 @@ const consumerRedis = {
 //           또는 감사 로그 기록(AuditLogService.log())을 호출합니다.
 class SimpleNFTProcessor implements EventProcessor {
   // TODO 1: readonly eventTypes = ['NFT_ISSUED'];
-  readonly eventTypes: string[] = [];
+  readonly eventTypes: string[] = ['NFT_ISSUED'];
 
   async process(message: StreamMessage): Promise<void> {
-    // TODO 2: const payload = JSON.parse(message.fields['payload'] ?? '{}');
-    // TODO 3: console.log(`[SimpleNFTProcessor] NFT 처리 완료: tokenId=${payload.tokenId}, owner=${payload.owner}`);
-    void message;
-    return undefined as never;
+    // TODO 2 완성
+    const payload = JSON.parse(message.fields['payload'] ?? '{}');
+    // TODO 3 완성
+    console.log(`[SimpleNFTProcessor] NFT 처리 완료: tokenId=${payload.tokenId}, owner=${payload.owner}`);
   }
 }
 
@@ -247,7 +350,7 @@ class SimpleNFTProcessor implements EventProcessor {
   //           [XADD] kyobo:events { eventType: 'NFT_ISSUED', ... }
   //           [XADD] → messageId: 1714xxxxxx-0
   //           [check] 형식 확인: ✅ 정상
-  const messageId: string = undefined as never;
+  const messageId: string = await publisher.publish(event);
   console.log('[result] messageId:', messageId);
   console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
 
@@ -285,7 +388,19 @@ class SimpleNFTProcessor implements EventProcessor {
   //             { streamKey: 'kyobo:events', groupName: 'issuer-consumers',
   //               consumerId: 'consumer-1', batchSize: 10, blockMs: 500, minIdleMs: 30_000 },
   //           );
-  const worker: ConsumerGroupWorker = undefined as never;
+  const worker = new ConsumerGroupWorker(
+    consumerRedis,
+    [new SimpleNFTProcessor()],
+    mockDLQ,
+    {
+      streamKey:  'kyobo:events',
+      groupName:  'issuer-consumers',
+      consumerId: 'consumer-1',
+      batchSize:  10,
+      blockMs:    500,
+      minIdleMs:  30_000,
+    },
+  );
 
   setTimeout(() => {
     console.log('[worker] stop() 호출');

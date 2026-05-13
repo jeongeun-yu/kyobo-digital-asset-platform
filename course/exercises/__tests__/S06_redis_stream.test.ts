@@ -10,6 +10,8 @@
  *   · ConsumerGroupWorker와 연동 시 정상 처리되는지
  */
 
+/// <reference types="jest" />
+
 import {
   ConsumerGroupWorker,
   DLQHandler,
@@ -99,3 +101,4 @@ describe('S06 채점 — NFTIssuedProcessor', () => {
     expect(nftIssuedProcessor.eventTypes).not.toContain('NFT_BURNED');
   });
 });
+

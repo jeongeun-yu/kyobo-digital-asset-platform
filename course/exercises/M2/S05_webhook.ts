@@ -18,12 +18,10 @@ const server = new WebhookServer({
   maxBodyKb: 64,
 });
 
-// TODO: server.on('NFT_ISSUED', ...) 핸들러를 등록하라
-//   힌트: server.on(...)  ← 반환값(this)으로 체이닝 가능
 server.on('NFT_ISSUED', async (payload) => {
-  // TODO 1: console.log('[handler] NFT_ISSUED received:', JSON.stringify(payload, null, 2));
-  // TODO 2: await new Promise(r => setTimeout(r, 200));
-  // TODO 3: console.log('[handler] NFT_ISSUED processed');
+  console.log('[handler] NFT_ISSUED received:', JSON.stringify(payload, null, 2));
+  await new Promise(r => setTimeout(r, 200));  // 처리 시뮬레이션
+  console.log('[handler] NFT_ISSUED processed');
 });
 
 (async () => {
