@@ -26,7 +26,6 @@ const SEND_BAD_SIG = false;
 //  아래는 수정하지 않아도 됩니다
 // ══════════════════════════════════════════════════════════════════
 
-// 내부 워커/서버 로그를 억제 — 결과값만 표시
 process.env['LOG_LEVEL'] = 'error';
 
 import http from 'http';
@@ -46,7 +45,6 @@ class MockRedisStream implements RedisStreamClient, RedisConsumerClient {
   async xadd(_key: string, fields: Record<string, string>): Promise<string> {
     const id = `${Date.now()}-${this.store.length}`;
     this.store.push({ id, fields });
-    console.log(`  [XADD] ${id} | ${fields['eventType']}`);
     return id;
   }
   async xgroupCreate(): Promise<void> {}
@@ -62,7 +60,7 @@ class MockRedisStream implements RedisStreamClient, RedisConsumerClient {
     if (blockMs > 0) await new Promise(r => setTimeout(r, Math.min(blockMs, 30)));
     return [];
   }
-  async xack(): Promise<number> { console.log('  [XACK] 처리 완료'); return 1; }
+  async xack(): Promise<number> { return 1; }
   async xautoclaim(): Promise<{ nextId: string; messages: StreamMessage[] }> {
     return { nextId: '0-0', messages: [] };
   }
@@ -100,7 +98,6 @@ function result(label: string, pass: boolean): void {
 // ── 실험 실행 ────────────────────────────────────────────────────
 (async () => {
   const LINE = '─'.repeat(52);
-
   console.log('\n' + LINE);
   console.log('  S12 실습 — 이벤트 파이프라인 E2E 관찰');
   console.log(LINE);
@@ -111,14 +108,12 @@ function result(label: string, pass: boolean): void {
   const mockRedis           = new MockRedisStream();
   const publisher           = new RedisStreamPublisher(mockRedis);
   await publisher.initialize();
-
   const idempotencyWebhook  = new IdempotencyGuard(new InMemoryIdempotencyStore());
   const idempotencyConsumer = new IdempotencyGuard(new InMemoryIdempotencyStore());
   const ledger              = new InMemoryLedgerService();
-
-  const mockDLQ = new DLQHandler(
+  const mockDLQ             = new DLQHandler(
     { async xadd() { return `${Date.now()}-0`; }, async xrange() { return []; }, async xdel() { return 0; } },
-    { async sendAlert(msg) { console.log('  [DLQ]', msg.split('\n')[0]); } },
+    { async sendAlert() {} },
   );
 
   const server  = new WebhookServer({ port: PORT, secret: SECRET, maxBodyKb: 64 });
@@ -142,36 +137,35 @@ function result(label: string, pass: boolean): void {
     requestId: 'req-s12-e2e-001',
   });
 
-  // ── [1] 정상 Webhook 전송 ────────────────────────────────────────
-  console.log('[1] 정상 서명 → Webhook 전송');
+  // ── [1] 정상 Webhook ─────────────────────────────────────────────
+  console.log('[1] 정상 Webhook');
   const status1 = await sendWebhook(BODY, sign(BODY));
   result(`HTTP ${status1} (기대: 202)`, status1 === 202);
-  await new Promise(r => setTimeout(r, 80));
+  await new Promise(r => setTimeout(r, 150));
 
-  // ── [2] Stream 적재 확인 ─────────────────────────────────────────
-  console.log('\n[2] Stream 적재 확인');
-  result(`Stream 메시지 ${mockRedis.messageCount}건 (기대: 1)`, mockRedis.messageCount === 1);
+  // ── [2] Stream 적재 ──────────────────────────────────────────────
+  console.log('\n[2] Stream 적재');
+  result(`${mockRedis.messageCount}건 (기대: 1)`, mockRedis.messageCount === 1);
 
-  // ── [3] Consumer 처리 → 원장 확인 ───────────────────────────────
-  await new Promise(r => setTimeout(r, 100));
-  console.log('\n[3] Consumer 처리 후 원장');
+  // ── [3] Consumer → 원장 ──────────────────────────────────────────
+  console.log('\n[3] Consumer → 원장');
   const balance1 = await ledger.getNFTBalance('0xAlice', 'T-1001');
   result(`0xAlice T-1001 잔고: ${balance1} (기대: 1)`, balance1 === 1);
 
-  // ── [4] 중복 전송 (SEND_DUPLICATE = true 일 때) ──────────────────
+  // ── [4] 중복 전송 ────────────────────────────────────────────────
   console.log('\n[4] 중복 전송 (멱등성)');
   if (SEND_DUPLICATE) {
     const status2 = await sendWebhook(BODY, sign(BODY));
     result(`HTTP ${status2} (기대: 202)`, status2 === 202);
     await new Promise(r => setTimeout(r, 150));
     const balance2 = await ledger.getNFTBalance('0xAlice', 'T-1001');
-    result(`0xAlice T-1001 잔고: ${balance2} (기대: 1, 중복 차단)`, balance2 === 1);
-    result(`Stream 메시지 ${mockRedis.messageCount}건 (기대: 1, 추가 없음)`, mockRedis.messageCount === 1);
+    result(`Stream ${mockRedis.messageCount}건 (기대: 1, 추가 없음)`, mockRedis.messageCount === 1);
+    result(`잔고: ${balance2} (기대: 1, 중복 차단)`,                  balance2 === 1);
   } else {
     console.log('  (스킵 — SEND_DUPLICATE = true 로 바꿔보세요)');
   }
 
-  // ── [5] 잘못된 서명 (SEND_BAD_SIG = true 일 때) ──────────────────
+  // ── [5] 잘못된 서명 ──────────────────────────────────────────────
   console.log('\n[5] 잘못된 서명');
   if (SEND_BAD_SIG) {
     const status3 = await sendWebhook(BODY, 'wrong-signature');
@@ -189,7 +183,7 @@ function result(label: string, pass: boolean): void {
   console.log(LINE + '\n');
 
   console.log('[ 다음 실험을 해보세요 ]');
-  console.log('  1. SEND_DUPLICATE = true → Stream 메시지가 늘어나는지? 잔고가 2가 되는지?');
-  console.log('  2. SEND_BAD_SIG = true → 401 응답이 오는지?');
-  console.log('  3. 둘 다 true → 전체 흐름 한 번에 확인\n');
+  console.log('  1. SEND_DUPLICATE = true → Stream 1건 유지, 잔고 1 유지 확인');
+  console.log('  2. SEND_BAD_SIG = true → 401 확인');
+  console.log('  3. 둘 다 true → 전체 흐름\n');
 })();

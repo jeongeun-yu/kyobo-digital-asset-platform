@@ -21,12 +21,11 @@ const REQUEUE_MODE: 'first' | 'all' = 'first';
 //  아래는 수정하지 않아도 됩니다
 // ══════════════════════════════════════════════════════════════════
 
-// 내부 워커 로그를 억제 — 결과값만 표시
 process.env['LOG_LEVEL'] = 'error';
 
 import { ConsumerGroupWorker, DLQHandler, type EventProcessor, type StreamMessage } from '@kyobo/event-engine';
 
-// ── Mock Redis (DLQ용) ───────────────────────────────────────────
+// ── Mock Redis (DLQ용 인메모리) ──────────────────────────────────
 const dlqStore: Map<string, Array<{ id: string; fields: Record<string, string> }>> = new Map();
 function getStream(key: string) {
   if (!dlqStore.has(key)) dlqStore.set(key, []);
@@ -37,7 +36,6 @@ const dlqRedis = {
   async xadd(key: string, fields: Record<string, string>): Promise<string> {
     const id = `${Date.now()}-0`;
     getStream(key).push({ id, fields });
-    console.log(`  [DLQ XADD] ${key} → ${id}`);
     return id;
   },
   async xrange(key: string, start: string, end: string, count?: number) {
@@ -56,12 +54,6 @@ const dlqRedis = {
   },
 };
 
-const dlqNotifier = {
-  async sendAlert(msg: string): Promise<void> {
-    console.log(`  [DLQ ALERT] ${msg.split('\n')[0]}`);
-  },
-};
-
 // ── Consumer Mock ────────────────────────────────────────────────
 function makeConsumerRedis(msg: StreamMessage) {
   let count = 0;
@@ -71,10 +63,7 @@ function makeConsumerRedis(msg: StreamMessage) {
       await new Promise(r => setTimeout(r, 30));
       return [];
     },
-    async xack(_k: string, _g: string, ...ids: string[]) {
-      console.log(`  [XACK] ${ids.join(', ')}`);
-      return ids.length;
-    },
+    async xack(_k: string, _g: string, ...ids: string[]) { return ids.length; },
     async xautoclaim() { return { nextId: '0-0', messages: [] }; },
   };
 }
@@ -82,9 +71,7 @@ function makeConsumerRedis(msg: StreamMessage) {
 // ── 항상 실패하는 Processor ──────────────────────────────────────
 const brokenProcessor: EventProcessor = {
   eventTypes: ['NFT_BURNED'],
-  async process(_msg: StreamMessage): Promise<void> {
-    throw new Error('DB connection failed');
-  },
+  async process(): Promise<void> { throw new Error('DB connection failed'); },
 };
 
 // ── DLQ 운영 절차 ────────────────────────────────────────────────
@@ -95,34 +82,28 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
   console.log(LINE);
 
   const pending = await dlqHandler.listPending();
-  console.log(`  DLQ 항목 수: ${pending.length}`);
+  console.log(`\n  DLQ 항목 수: ${pending.length}`);
   for (const item of pending) {
-    console.log(`    - ${item.messageId} | ${item.event['eventType']} | ${item.reason}`);
+    console.log(`    ${item.event['eventType']} | ${item.reason}`);
   }
 
-  if (pending.length === 0) {
-    console.log('  [skip] DLQ 비어 있음');
-    return;
-  }
+  if (pending.length === 0) { console.log('  (DLQ 비어 있음)'); return; }
 
   const toRequeue = REQUEUE_MODE === 'all' ? pending : [pending[0]!];
   console.log(`\n  REQUEUE_MODE = '${REQUEUE_MODE}' → ${toRequeue.length}건 재큐잉`);
-
   for (const item of toRequeue) {
-    const result = await dlqHandler.requeueMessage(item.messageId);
-    console.log(`  [requeue] ${item.messageId} → 새 ID: ${result.newMessageId}`);
+    await dlqHandler.requeueMessage(item.messageId);
   }
 
-  const afterRequeue = await dlqHandler.listPending();
-  console.log(`\n  재큐잉 후 DLQ 항목 수: ${afterRequeue.length}`);
-  const reduced = pending.length - afterRequeue.length;
+  const after = await dlqHandler.listPending();
+  const reduced = pending.length - after.length;
+  console.log(`\n  재큐잉 후 DLQ 항목 수: ${after.length}`);
   console.log(`  ${reduced === toRequeue.length ? '✅' : '❌'} ${reduced}건 감소 (기대: ${toRequeue.length})`);
 }
 
 // ── 실험 실행 ────────────────────────────────────────────────────
 (async () => {
   const LINE = '─'.repeat(52);
-
   console.log('\n' + LINE);
   console.log('  S11 실습 — DLQ 운영 패턴 관찰');
   console.log(LINE);
@@ -131,16 +112,13 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
   console.log(LINE);
   console.log('\n  Part 1 — 실패 반복 → DLQ 이동\n');
 
-  const dlqHandler = new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events');
+  const dlqHandler = new DLQHandler(dlqRedis, { async sendAlert() {} }, 'kyobo:events');
 
   const msg: StreamMessage = {
     id: `${Date.now()}-0`,
     fields: {
-      eventType:   'NFT_BURNED',
-      payload:     JSON.stringify({ tokenId: 'T-999', owner: '0xVICTIM' }),
-      requestId:   'req-s11-001',
-      publishedAt: String(Date.now()),
-      _retryCount: '0',
+      eventType: 'NFT_BURNED', payload: JSON.stringify({ tokenId: 'T-999' }),
+      requestId: 'req-s11-001', publishedAt: String(Date.now()), _retryCount: '0',
     },
   };
 
@@ -155,7 +133,7 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
   clearTimeout(timeout);
 
   const dlqStream = getStream('kyobo:events:dlq');
-  console.log(`\n  DLQ 항목 수: ${dlqStream.length}`);
+  console.log(`  DLQ 항목 수: ${dlqStream.length}`);
   console.log(`  ${dlqStream.length >= 1 ? '✅' : '❌'} DLQ 이동 확인`);
 
   await runOperatorWorkflow(dlqHandler);

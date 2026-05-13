@@ -37,12 +37,8 @@ async function handleWithRetry(
 
   if (retryCount >= MAX_RETRIES) {
     await dlq.move({
-      messageId: msg.id,
-      streamKey: STREAM_KEY,
-      groupName: GROUP_NAME,
-      event:     msg.fields,
-      reason:    `max retries (${MAX_RETRIES}) exceeded`,
-      failedAt:  new Date(),
+      messageId: msg.id, streamKey: STREAM_KEY, groupName: GROUP_NAME,
+      event: msg.fields, reason: `max retries (${MAX_RETRIES}) exceeded`, failedAt: new Date(),
     });
     await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
     return;
@@ -57,7 +53,7 @@ async function handleWithRetry(
   try {
     await Promise.all(matched.map(p => p.process(msg)));
     await redis.xack(STREAM_KEY, GROUP_NAME, msg.id);
-  } catch (err) {
+  } catch {
     msg.fields['_retryCount'] = String(retryCount + 1);
   }
 }
@@ -66,39 +62,28 @@ async function handleWithRetry(
 function makeMsg(overrides: Partial<StreamMessage['fields']> = {}): StreamMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    fields: {
-      eventType:   'NFT_ISSUED',
-      payload:     JSON.stringify({ tokenId: 'T-001' }),
-      requestId:   'req-001',
-      publishedAt: String(Date.now()),
-      _retryCount: '0',
-      ...overrides,
-    },
+    fields: { eventType: 'NFT_ISSUED', payload: '{}', requestId: 'req-001',
+              publishedAt: String(Date.now()), _retryCount: '0', ...overrides },
   };
 }
 
-const xackLog: string[] = [];
+let xackCount = 0;
 const mockRedis: Pick<RedisConsumerClient, 'xack'> = {
-  async xack(_key, _group, ...ids) {
-    xackLog.push(...ids);
-    console.log(`  [XACK] ${ids.join(', ')}`);
-    return ids.length;
-  },
+  async xack(_key, _group, ...ids) { xackCount += ids.length; return ids.length; },
 };
 
-const dlqLog: string[] = [];
+let dlqCount = 0;
 const mockDLQ = new DLQHandler(
   { async xadd() { return `${Date.now()}-0`; }, async xrange() { return []; }, async xdel() { return 0; } },
-  { async sendAlert(msg) { console.log(`  [DLQ] ${msg.split('\n')[0]}`); } },
+  { async sendAlert() {} },
 );
 const _origMove = mockDLQ.move.bind(mockDLQ);
-mockDLQ.move = async (item) => { dlqLog.push(item.messageId); return _origMove(item); };
+mockDLQ.move = async (item) => { dlqCount++; return _origMove(item); };
 
 const successProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
-  async process(msg) { console.log(`  [processor] ${msg.fields['eventType']} → 성공`); },
+  async process() {},
 };
-
 const failProcessor: EventProcessor = {
   eventTypes: ['NFT_ISSUED'],
   async process() { throw new Error('일시적 오류'); },
@@ -111,7 +96,6 @@ function result(label: string, pass: boolean): void {
 // ── 실험 실행 ────────────────────────────────────────────────────
 (async () => {
   const LINE = '─'.repeat(52);
-
   console.log('\n' + LINE);
   console.log('  S10 실습 — 재시도 & DLQ 분기 관찰');
   console.log(LINE);
@@ -119,44 +103,41 @@ function result(label: string, pass: boolean): void {
   console.log(`  FAIL_MSG_RETRY_COUNT = ${FAIL_MSG_RETRY_COUNT}`);
   console.log(LINE + '\n');
 
-  // ── 시나리오 A: retryCount >= MAX_RETRIES → DLQ ──────────────────
-  console.log(`[A] retryCount=${MAX_RETRIES} (>= MAX_RETRIES=${MAX_RETRIES}) → DLQ`);
-  xackLog.length = 0; dlqLog.length = 0;
-  const msgA = makeMsg({ _retryCount: String(MAX_RETRIES) });
-  await handleWithRetry(msgA, [successProcessor], mockRedis, mockDLQ);
-  result(`DLQ 이동: ${dlqLog.length}건 (기대: 1)`,  dlqLog.length === 1);
-  result(`XACK: ${xackLog.length}건 (기대: 1)`,     xackLog.length === 1);
+  // ── [A] retryCount >= MAX_RETRIES → DLQ ─────────────────────
+  console.log(`[A] retryCount=${MAX_RETRIES} → DLQ`);
+  xackCount = 0; dlqCount = 0;
+  await handleWithRetry(makeMsg({ _retryCount: String(MAX_RETRIES) }), [successProcessor], mockRedis, mockDLQ);
+  result(`DLQ 이동: ${dlqCount}건 (기대: 1)`, dlqCount === 1);
+  result(`XACK: ${xackCount}건 (기대: 1)`,    xackCount === 1);
   console.log();
 
-  // ── 시나리오 B: 미지원 eventType → XACK만 ────────────────────────
-  console.log('[B] UNKNOWN_EVENT → 매칭 processor 없음');
-  xackLog.length = 0; dlqLog.length = 0;
-  const msgB = makeMsg({ eventType: 'UNKNOWN_EVENT' });
-  await handleWithRetry(msgB, [successProcessor], mockRedis, mockDLQ);
-  result(`DLQ 이동: ${dlqLog.length}건 (기대: 0)`,  dlqLog.length === 0);
-  result(`XACK: ${xackLog.length}건 (기대: 1)`,     xackLog.length === 1);
+  // ── [B] 미지원 eventType → XACK만 ────────────────────────────
+  console.log('[B] UNKNOWN_EVENT → processor 없음');
+  xackCount = 0; dlqCount = 0;
+  await handleWithRetry(makeMsg({ eventType: 'UNKNOWN_EVENT' }), [successProcessor], mockRedis, mockDLQ);
+  result(`DLQ 이동: ${dlqCount}건 (기대: 0)`, dlqCount === 0);
+  result(`XACK: ${xackCount}건 (기대: 1)`,    xackCount === 1);
   console.log();
 
-  // ── 시나리오 C: 정상 처리 → XACK ────────────────────────────────
-  console.log('[C] NFT_ISSUED → 처리 성공 → XACK');
-  xackLog.length = 0; dlqLog.length = 0;
-  const msgC = makeMsg();
-  await handleWithRetry(msgC, [successProcessor], mockRedis, mockDLQ);
-  result(`XACK: ${xackLog.length}건 (기대: 1)`,     xackLog.length === 1);
+  // ── [C] 처리 성공 → XACK ─────────────────────────────────────
+  console.log('[C] 처리 성공');
+  xackCount = 0; dlqCount = 0;
+  await handleWithRetry(makeMsg(), [successProcessor], mockRedis, mockDLQ);
+  result(`XACK: ${xackCount}건 (기대: 1)`, xackCount === 1);
   console.log();
 
-  // ── 시나리오 D: 처리 실패 → retryCount + 1, XACK 없음 ──────────
-  console.log(`[D] 처리 실패, 현재 retryCount=${FAIL_MSG_RETRY_COUNT}`);
-  xackLog.length = 0; dlqLog.length = 0;
+  // ── [D] 처리 실패 → retryCount+1, XACK 없음 ──────────────────
+  console.log(`[D] 처리 실패, retryCount=${FAIL_MSG_RETRY_COUNT}`);
+  xackCount = 0; dlqCount = 0;
   const msgD = makeMsg({ _retryCount: String(FAIL_MSG_RETRY_COUNT) });
   await handleWithRetry(msgD, [failProcessor], mockRedis, mockDLQ);
-  const nextRetry = parseInt(msgD.fields['_retryCount'] ?? '0', 10);
-  result(`retryCount: ${nextRetry} (기대: ${FAIL_MSG_RETRY_COUNT + 1})`, nextRetry === FAIL_MSG_RETRY_COUNT + 1);
-  result(`XACK: ${xackLog.length}건 (기대: 0, PEL 유지)`, xackLog.length === 0);
+  const next = parseInt(msgD.fields['_retryCount'] ?? '0', 10);
+  result(`retryCount: ${next} (기대: ${FAIL_MSG_RETRY_COUNT + 1})`, next === FAIL_MSG_RETRY_COUNT + 1);
+  result(`XACK: ${xackCount}건 (기대: 0)`,                          xackCount === 0);
 
   console.log('\n' + LINE + '\n');
   console.log('[ 다음 실험을 해보세요 ]');
-  console.log(`  1. MAX_RETRIES = 1 → 시나리오 D에서 바로 DLQ로 이동?`);
-  console.log(`  2. FAIL_MSG_RETRY_COUNT = MAX_RETRIES - 1 → 딱 한 번 더 실패하면 DLQ`);
-  console.log(`  3. FAIL_MSG_RETRY_COUNT = MAX_RETRIES → 이미 한계 → 시나리오 A처럼 DLQ\n`);
+  console.log(`  1. MAX_RETRIES = 1 → [D]가 다음 수신 시 [A]로 전환되는 시점`);
+  console.log(`  2. FAIL_MSG_RETRY_COUNT = ${MAX_RETRIES - 1} → 마지막 재시도`);
+  console.log(`  3. FAIL_MSG_RETRY_COUNT = ${MAX_RETRIES} → 이미 한계, [A] 분기로 빠짐\n`);
 })();
