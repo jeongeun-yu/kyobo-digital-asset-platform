@@ -12,6 +12,18 @@ jobs:
       - name: 레포 체크아웃
         uses: actions/checkout@v4
 
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 테스트 실행
+        run: npm test
+
       - name: 수강생 이메일 발송
         uses: dawidd6/action-send-mail@v3
         with:
