@@ -139,8 +139,4 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
   await runOperatorWorkflow(dlqHandler);
 
   console.log('\n' + LINE + '\n');
-  console.log('[ 다음 실험을 해보세요 ]');
-  console.log(`  1. MAX_RETRIES = 1 → 1회 실패만으로 DLQ 이동`);
-  console.log(`  2. MAX_RETRIES = 2 → 2회 실패 후 DLQ 이동`);
-  console.log(`  3. REQUEUE_MODE = 'all' → 전체 재큐잉\n`);
 })();

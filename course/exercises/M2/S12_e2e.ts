@@ -153,25 +153,21 @@ function result(label: string, pass: boolean): void {
   result(`0xAlice T-1001 잔고: ${balance1} (기대: 1)`, balance1 === 1);
 
   // ── [4] 중복 전송 ────────────────────────────────────────────────
-  console.log('\n[4] 중복 전송 (멱등성)');
   if (SEND_DUPLICATE) {
+    console.log('\n[4] 중복 전송 (멱등성)');
     const status2 = await sendWebhook(BODY, sign(BODY));
     result(`HTTP ${status2} (기대: 202)`, status2 === 202);
     await new Promise(r => setTimeout(r, 150));
     const balance2 = await ledger.getNFTBalance('0xAlice', 'T-1001');
-    result(`Stream ${mockRedis.messageCount}건 (기대: 1, 추가 없음)`, mockRedis.messageCount === 1);
-    result(`잔고: ${balance2} (기대: 1, 중복 차단)`,                  balance2 === 1);
-  } else {
-    console.log('  (스킵 — SEND_DUPLICATE = true 로 바꿔보세요)');
+    result(`Stream ${mockRedis.messageCount}건 (기대: 1)`, mockRedis.messageCount === 1);
+    result(`잔고: ${balance2} (기대: 1)`,                  balance2 === 1);
   }
 
   // ── [5] 잘못된 서명 ──────────────────────────────────────────────
-  console.log('\n[5] 잘못된 서명');
   if (SEND_BAD_SIG) {
+    console.log('\n[5] 잘못된 서명');
     const status3 = await sendWebhook(BODY, 'wrong-signature');
     result(`HTTP ${status3} (기대: 401)`, status3 === 401);
-  } else {
-    console.log('  (스킵 — SEND_BAD_SIG = true 로 바꿔보세요)');
   }
 
   worker.stop();
@@ -181,9 +177,4 @@ function result(label: string, pass: boolean): void {
   console.log('\n' + LINE);
   console.log(process.exitCode ? '  ❌ 일부 검증 실패' : '  ✅ 전체 통과');
   console.log(LINE + '\n');
-
-  console.log('[ 다음 실험을 해보세요 ]');
-  console.log('  1. SEND_DUPLICATE = true → Stream 1건 유지, 잔고 1 유지 확인');
-  console.log('  2. SEND_BAD_SIG = true → 401 확인');
-  console.log('  3. 둘 다 true → 전체 흐름\n');
 })();

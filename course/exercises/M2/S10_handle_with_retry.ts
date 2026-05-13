@@ -136,8 +136,4 @@ function result(label: string, pass: boolean): void {
   result(`XACK: ${xackCount}건 (기대: 0)`,                          xackCount === 0);
 
   console.log('\n' + LINE + '\n');
-  console.log('[ 다음 실험을 해보세요 ]');
-  console.log(`  1. MAX_RETRIES = 1 → [D]가 다음 수신 시 [A]로 전환되는 시점`);
-  console.log(`  2. FAIL_MSG_RETRY_COUNT = ${MAX_RETRIES - 1} → 마지막 재시도`);
-  console.log(`  3. FAIL_MSG_RETRY_COUNT = ${MAX_RETRIES} → 이미 한계, [A] 분기로 빠짐\n`);
 })();
