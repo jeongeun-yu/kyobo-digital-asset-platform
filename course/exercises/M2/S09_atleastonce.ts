@@ -47,19 +47,33 @@ const naiveProcessor: EventProcessor = {
 // ────────────────────────────────────────────────────────────────────────
 
 export class IdempotentNftProcessor implements EventProcessor {
-  // TODO 1: readonly eventTypes = ['NFT_ISSUED'];
+  // TODO 1: 이 프로세서가 처리할 이벤트 타입을 선언하라
+  //         힌트: EventProcessor 인터페이스의 eventTypes 필드 (string[])
   readonly eventTypes: string[] = [];
 
-  // TODO 2: private readonly processedIds = new Set<string>();
-  private readonly processedIds: Set<string> = undefined as never;
+  // TODO 2: 이미 처리한 requestId를 기억할 자료구조를 선언하라
+  //         힌트: 같은 값을 두 번 추가해도 한 번만 저장되는 자료구조
+  private readonly processedIds = new Set<string>();
 
   async process(message: StreamMessage): Promise<void> {
-    // TODO 3: const requestId = message.fields['requestId'] ?? message.id;
-    //         const payload   = JSON.parse(message.fields['payload'] ?? '{}');
-    // TODO 4: if (this.processedIds.has(requestId)) { console.log(`    [멱등성] 중복 요청 무시: ${requestId}`); return; }
-    // TODO 5: const { tokenId, owner } = payload; credit(tokenId, owner); this.processedIds.add(requestId);
+    // TODO 3: message.fields에서 requestId와 payload를 꺼내라
+    //         힌트: requestId가 없으면 message.id를 fallback으로 사용
+
+    // ── 체크포인트 A: 여기까지 작성 후 npm run exercise:s09 실행 ──
+    //   Part 1 출력: ❌ 중복 발행! 이 보이면 정상 (아직 멱등성 미적용 상태)
+
+    // TODO 4: requestId가 이미 처리됐으면 로그를 남기고 즉시 종료하라
+    //         힌트: Set의 has() 메서드로 확인
+
+    // TODO 5: payload에서 tokenId, owner를 꺼내 credit()을 호출하고
+    //         처리 완료 후 requestId를 기록하라
+    //         주의: 처리 전이 아닌 처리 후에 기록해야 한다 (이유를 생각해볼 것)
+
+    // ── 체크포인트 B: TODO 3~5 완성 후 npm run exercise:s09 실행 ──
+    //   Part 2 출력: ✅ 정상 이 보이면 구현 완료
+
     void message;
-    return undefined as never;
+    throw new Error('NOT IMPLEMENTED');
   }
 }
 

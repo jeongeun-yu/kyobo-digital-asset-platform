@@ -287,9 +287,90 @@ Redis가 메시지 분배 (XREADGROUP: 먼저 호출한 쪽이 소유)
 실습 파일: `exercises/S09_atleastonce.ts` / 답안: `S09_atleastonce.answer.ts`
 
 ```bash
-# internal/packages/event-engine 폴더에서
-npx ts-node src/exercises/S09_atleastonce.ts
+# 루트에서 실행
+npm run exercise:s09
+
+# 채점
+npm run test:exercises -- S09
 ```
+
+---
+
+## 단계별 진행 가이드
+
+### Step 0 — 현재 상태 확인 (구현 전)
+
+```bash
+npm run exercise:s09
+```
+
+**기대 출력:**
+```
+[ Part 1 ] 멱등성 없음 — 동일 메시지 2회 전달
+    [원장] T-001 → 0xKYOBO | 누적 처리 횟수: 1
+    [XACK] ...
+    [원장] T-001 → 0xKYOBO | 누적 처리 횟수: 2   ← 중복!
+    [XACK] ...
+  → 최종 원장 처리 횟수: 2 ❌ 중복 발행!
+
+[ Part 2 ] 멱등성 적용 — 동일 메시지 2회 전달
+  → 에러 발생 (NOT IMPLEMENTED)  ← 정상, 아직 미구현
+```
+
+> Part 1에서 ❌ 중복 발행이 보이면 환경 세팅 완료. Part 2로 진행.
+
+---
+
+### Step 1 — TODO 1: eventTypes 선언
+
+`IdempotentNftProcessor` 클래스에서 이 프로세서가 처리할 이벤트 타입을 선언하세요.
+
+```bash
+# 작성 후 채점
+npm run test:exercises -- S09
+```
+
+> 아직 다른 TODO가 미완성이므로 테스트는 실패합니다. 진행 방향 확인용.
+
+---
+
+### Step 2 — TODO 3~4: requestId 추출 + 중복 체크
+
+`process()` 안에서:
+1. `message.fields`에서 `requestId`를 꺼내세요
+2. 이미 처리한 적 있으면 로그를 남기고 `return`하세요
+
+---
+
+### Step 3 — TODO 5: 처리 + 기록
+
+1. `payload`에서 `tokenId`, `owner`를 꺼내 `credit()`을 호출하세요
+2. 처리가 끝난 **후에** `requestId`를 기록하세요
+
+```bash
+# 완성 후 실행
+npm run exercise:s09
+```
+
+**기대 출력 (Part 2):**
+```
+[ Part 2 ] 멱등성 적용 — 동일 메시지 2회 전달
+    [원장] T-001 → 0xKYOBO | 누적 처리 횟수: 1
+    [XACK] ...
+    [멱등성] 중복 요청 무시: req-dup-001        ← 두 번째는 차단
+    [XACK] ...
+  → 최종 원장 처리 횟수: 1 ✅ 정상
+```
+
+---
+
+### Step 4 — 최종 채점
+
+```bash
+npm run test:exercises -- S09
+```
+
+모든 테스트 통과 시 완료.
 
 **Part 1** — 멱등성 없는 Naive Processor 실행: 동일 메시지 2회 → 원장 +2 (버그) 확인  
 **Part 2** — TODO: `IdempotentNftProcessor` 구현
