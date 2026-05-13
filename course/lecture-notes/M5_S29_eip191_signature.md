@@ -1,9 +1,9 @@
-# M5 S29 — 블록체인 서명 기반 지갑 소유권 증명 원리
+﻿# M5 S29 — 블록체인 서명 기반 지갑 소유권 증명 원리
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 5 · 세션 29 · 1시간  
-> 스켈레톤: `dmz/apps/issuer-service/src/services/WalletMappingService.ts` → `verifyOwnership()`
+> 스켈레톤: `internal/apps/issuer-service/src/services/WalletMappingService.ts` → `verifyOwnership()`
 
 ---
 

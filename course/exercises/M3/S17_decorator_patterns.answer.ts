@@ -14,9 +14,9 @@
  *   [5] CircuitBreaker          — CLOSED → OPEN → HALF_OPEN 상태 전이
  *
  * 참조 구현:
- *   dmz/packages/chain-adapters/src/decorators/LoggingAdapterDecorator.ts
- *   dmz/packages/chain-adapters/src/decorators/RetryAdapterDecorator.ts
- *   dmz/packages/core-banking/src/adapters/CircuitBreaker.ts
+ *   internal/packages/chain-adapters/src/decorators/LoggingAdapterDecorator.ts
+ *   internal/packages/chain-adapters/src/decorators/RetryAdapterDecorator.ts
+ *   internal/packages/core-banking/src/adapters/CircuitBreaker.ts
  */
 
 import type {

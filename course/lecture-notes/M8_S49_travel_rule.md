@@ -1,7 +1,7 @@
-# M8 S49 — 가상자산 이전 규제 · Travel Rule 요건과 컴플라이언스 설계
+﻿# M8 S49 — 가상자산 이전 규제 · Travel Rule 요건과 컴플라이언스 설계
 
 > 모듈 8 · 세션 49 · 1시간  
-> 스켈레톤: `dmz/packages/vasp/src/governance/KeyGovernanceService.ts`
+> 스켈레톤: `internal/packages/vasp/src/governance/KeyGovernanceService.ts`
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
@@ -159,7 +159,7 @@ VASP API 요청:
 ### checkTravelRule 함수 구현 (독립 검증 유틸리티)
 
 ```typescript
-// dmz/packages/vasp/src/governance/travelRuleUtils.ts
+// internal/packages/vasp/src/governance/travelRuleUtils.ts
 import { TravelRuleData, TravelRuleRequiredError } from './KeyGovernanceService';
 
 const TRAVEL_RULE_THRESHOLD = BigInt(1_000_000);

@@ -144,14 +144,14 @@ curl -o /dev/null -w "%{http_code}" http://localhost:3000/admin/dashboard
 
 ```bash
 # PM2로 Consumer 강제 종료
-pm2 stop dmz-consumer
+pm2 stop issuer-consumer
 
 # 대시보드 조회
 curl http://localhost:3000/admin/dashboard | jq '.queueStats'
 # consumerCount: 0, status: "CRITICAL"
 
 # Consumer 재시작
-pm2 start dmz-consumer
+pm2 start issuer-consumer
 
 # 재시작 후 대시보드 재조회
 curl http://localhost:3000/admin/dashboard | jq '.queueStats'

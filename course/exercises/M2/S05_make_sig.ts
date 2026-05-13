@@ -14,13 +14,10 @@
 
 import crypto from 'crypto';
 
-/**
- * TODO: HMAC-SHA256 서명 계산
- * 힌트: crypto.createHmac('sha256', secret).update(Buffer.from(payload)).digest('hex')
- */
 export function computeHmac(payload: string, secret: string): string {
-  void payload; void secret;
-  return undefined as never;
+  // TODO: crypto.createHmac을 사용해 HMAC-SHA256 서명을 계산하고 hex 문자열로 반환하라
+  //   힌트: crypto.createHmac('sha256', secret).update(Buffer.from(payload)).digest('hex')
+  throw new Error('NOT IMPLEMENTED');
 }
 
 const payload = JSON.stringify({
@@ -30,10 +27,7 @@ const payload = JSON.stringify({
   requestId: 'test-001',
 });
 
-const sig = crypto
-  .createHmac('sha256', 'dev-secret-kyobo')
-  .update(Buffer.from(payload))
-  .digest('hex');
+const sig = computeHmac(payload, 'dev-secret-kyobo');
 
 console.log('signature:', sig);
 console.log('payload:  ', payload);

@@ -1,10 +1,10 @@
-# M6 S56 — 배포·롤백 운영 · 파이프라인 설계와 무중단 배포 절차
+﻿# M6 S56 — 배포·롤백 운영 · 파이프라인 설계와 무중단 배포 절차
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 6 · 세션 56 · 1시간 `운영`
 > 전제: M6 KyoboNFT.sol 배포 완료, Sepolia 운영 중
-> 스켈레톤: `dmz/packages/vasp/src/admin/DeployAdminService.ts`
+> 스켈레톤: `internal/packages/vasp/src/admin/DeployAdminService.ts`
 
 > ⚠️ **운영 세션** — M6(S35~S43)에서 컨트랙트 작성·배포·업그레이드 방법을 배웠다. 이번 세션은 **그 배포가 운영 환경에서 어떻게 이루어지는가**, **배포 후 이상 징후가 감지됐을 때 언제 롤백을 결정하는가**다. 특히 컨트랙트 롤백이 왜 불가능한지, 그래서 어떻게 대응하는지가 핵심이다.
 
@@ -201,7 +201,7 @@ Consumer를 계속 운영해도 되는 경우:
 ### 실습 1 — 헬스체크 엔드포인트 구현 (10분)
 
 ```typescript
-// dmz/packages/vasp/src/admin/DeployAdminService.ts
+// internal/packages/vasp/src/admin/DeployAdminService.ts
 
 export interface HealthStatus {
   status: 'ok' | 'degraded' | 'error';
@@ -645,7 +645,7 @@ curl "http://localhost:3000/admin/deploy/metrics?window=15"
 ### TypeScript 서비스 클래스 구현
 
 ```typescript
-// dmz/packages/vasp/src/admin/DeployMonitorService.ts
+// internal/packages/vasp/src/admin/DeployMonitorService.ts
 
 export interface DeployEvent {
   id: string;

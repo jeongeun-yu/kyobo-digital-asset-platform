@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: kyobo-internal-ledger
+
+  datasource:
+    # local/test env: PostgreSQL
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/kyobo_internal}
+    username: ${DB_USERNAME:kyobo}
+    password: ${DB_PASSWORD:kyobo}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+    # prod (Oracle): driver-class-name: oracle.jdbc.OracleDriver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate   # prod: validate (schema diff check), local: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: ${JPA_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
+        # prod (Oracle): org.hibernate.dialect.OracleDialect
+        format_sql: true
+
+server:
+  port: ${PORT:8080}
+
+kyobo:
+  core-banking:
+    base-url: ${CORE_BANKING_URL:http://localhost:9090}  # TODO: KyoboDTS actual URL
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    io.coincraft.kyobo: INFO
+    org.springframework.web: WARN

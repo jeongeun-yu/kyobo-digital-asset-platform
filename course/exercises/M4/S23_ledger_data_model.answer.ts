@@ -23,8 +23,8 @@ export type MintStatus =
   | 'REQUESTED'
   | 'SUBMITTED'
   | 'MINED'
-  | 'FINALIZED'
   | 'CONFIRMED'
+  | 'FINALIZED'
   | 'REORGED'
   | 'FAILED';
 
@@ -310,9 +310,10 @@ function check(label: string, pass: boolean) {
   check('status = MINED',             mined?.status === 'MINED');
   check('blockNumber 설정됨',         mined?.blockNumber === 12345n);
 
-  await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
-  const finalized = await ledger.getMintRequest(req.requestId);
-  check('status = FINALIZED',         finalized?.status === 'FINALIZED');
+  await ledger.updateMintRequestStatus(req.requestId, 'CONFIRMED', { tokenId: 1001n });
+  const confirmed = await ledger.getMintRequest(req.requestId);
+  check('status = CONFIRMED',         confirmed?.status === 'CONFIRMED');
+  check('tokenId 설정됨',             confirmed?.tokenId === 1001n);
 
   // ── [3] recordProcessedEvent — ON CONFLICT DO NOTHING ────────────────
   console.log('\n[검증 3] recordProcessedEvent — 멱등성 보장');
@@ -331,7 +332,7 @@ function check(label: string, pass: boolean) {
   // ── [4] addHolding — UNIQUE (userId, tokenId) ─────────────────────────
   console.log('\n[검증 4] addHolding — 중복 보유 방지');
 
-  await ledger.updateMintRequestStatus(req.requestId, 'CONFIRMED', { tokenId: 1001n });
+  await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
   await ledger.addHolding('K-20240001', 1001n, 'WALK-10000');
   await ledger.addHolding('K-20240001', 1001n, 'WALK-10000');  // 중복 시도
 
@@ -346,12 +347,11 @@ function check(label: string, pass: boolean) {
   check('다른 사용자 holdings 독립 관리', holdings2.length === 1);
 
   // ── [5] 전체 쓰기 경로 시뮬레이션 ────────────────────────────────────
-  console.log('\n[검증 5] 전체 쓰기 경로 — REQUESTED → CONFIRMED');
+  console.log('\n[검증 5] 전체 쓰기 경로 — REQUESTED → FINALIZED');
 
   const req2 = await ledger.createMintRequest('K-20240003', 'CYCLE-5000');
   await ledger.updateMintRequestStatus(req2.requestId, 'SUBMITTED', { txHash: '0xdef456' });
   await ledger.updateMintRequestStatus(req2.requestId, 'MINED', { blockNumber: 12400n });
-  await ledger.updateMintRequestStatus(req2.requestId, 'FINALIZED');
 
   // ConsumerGroupWorker 처리
   const evResult = await ledger.recordProcessedEvent('0xdef456', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
@@ -360,9 +360,12 @@ function check(label: string, pass: boolean) {
     await ledger.addHolding('K-20240003', 2001n, 'CYCLE-5000');
   }
 
+  // PoS Finality 확인 후 종단 전이
+  await ledger.updateMintRequestStatus(req2.requestId, 'FINALIZED');
+
   const finalReq = await ledger.getMintRequest(req2.requestId);
   const finalHoldings = await ledger.getHoldings('K-20240003');
-  check('최종 status = CONFIRMED',    finalReq?.status === 'CONFIRMED');
+  check('최종 status = FINALIZED',    finalReq?.status === 'FINALIZED');
   check('tokenId 확정됨',             finalReq?.tokenId === 2001n);
   check('holdings 등록됨',            finalHoldings.length === 1);
 

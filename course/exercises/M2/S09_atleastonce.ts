@@ -34,28 +34,36 @@ const naiveProcessor: EventProcessor = {
 };
 
 // ────────────────────────────────────────────────────────────────────────
-// Part 2 — 실습: IdempotentNftProcessor를 구현하라
+// Part 2 — 실습: IdempotentNftProcessor 클래스를 구현하라
 //
 // 구현 규칙:
-//   1. processedIds = new Set<string>() 로 이미 처리한 requestId를 기억한다
-//   2. eventTypes: ['NFT_ISSUED']
+//   1. eventTypes: ['NFT_ISSUED']
+//   2. private readonly processedIds = new Set<string>() 로 처리한 requestId 기억
 //   3. process() 흐름:
-//       a. requestId = msg.fields['requestId'] 추출
+//       a. requestId = message.fields['requestId'] ?? message.id 추출
 //       b. processedIds에 이미 있으면 '[멱등성] 중복 요청 무시: {requestId}' 로그 후 return
 //       c. payload 파싱 → credit(tokenId, owner) 호출
 //       d. processedIds에 requestId 추가
 // ────────────────────────────────────────────────────────────────────────
 
-const processedIds = new Set<string>();
+export class IdempotentNftProcessor implements EventProcessor {
+  // TODO 1: readonly eventTypes = ['NFT_ISSUED'];
+  readonly eventTypes: string[] = [];
 
-export const idempotentProcessor: EventProcessor = {
-  eventTypes: ['NFT_ISSUED'],
+  // TODO 2: private readonly processedIds = new Set<string>();
+  private readonly processedIds: Set<string> = undefined as never;
 
-  async process(msg: StreamMessage): Promise<void> {
-    void msg;
+  async process(message: StreamMessage): Promise<void> {
+    // TODO 3: const requestId = message.fields['requestId'] ?? message.id;
+    //         const payload   = JSON.parse(message.fields['payload'] ?? '{}');
+    // TODO 4: if (this.processedIds.has(requestId)) { console.log(`    [멱등성] 중복 요청 무시: ${requestId}`); return; }
+    // TODO 5: const { tokenId, owner } = payload; credit(tokenId, owner); this.processedIds.add(requestId);
+    void message;
     return undefined as never;
-  },
-};
+  }
+}
+
+export const idempotentProcessor = new IdempotentNftProcessor();
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(
@@ -117,5 +125,5 @@ if (require.main === module) (async () => {
   await runScenario(naiveProcessor);
 
   console.log('[ Part 2 ] 멱등성 적용 — 동일 메시지 2회 전달');
-  await runScenario(idempotentProcessor);
+  await runScenario(new IdempotentNftProcessor());
 })();

@@ -92,8 +92,9 @@ async function tryCheck(label: string, fn: () => Promise<boolean>) {
 async function issuanceHealth(adapter: IBlockchainAdapter): Promise<{
   chain: string; type: string; connected: boolean;
 }> {
-  const connected = await adapter.isConnected().catch(() => false);
-  return { chain: adapter.chainId, type: adapter.chainType, connected };
+  // TODO: adapter.isConnected()를 호출해 { chain, type, connected }를 반환하라
+  //       .catch(() => false) 로 에러 처리
+  throw new Error('NOT IMPLEMENTED');
 }
 
 // ────────────────────────────────────────────────────────────────────────══
@@ -104,7 +105,8 @@ async function issuanceHealth(adapter: IBlockchainAdapter): Promise<{
 // ────────────────────────────────────────────────────────────────────────══
 
 function formatGas(receipt: TransactionReceipt): string {
-  return receipt.gasUsed !== undefined ? receipt.gasUsed.toString() : 'N/A';
+  // TODO: receipt.gasUsed가 있으면 숫자 문자열을, 없으면 'N/A'를 반환하라
+  throw new Error('NOT IMPLEMENTED');
 }
 
 // ────────────────────────────────────────────────────────────────────────══
@@ -115,10 +117,9 @@ function formatGas(receipt: TransactionReceipt): string {
 // ────────────────────────────────────────────────────────────────────────══
 
 async function withSubscription(adapter: IBlockchainAdapter): Promise<boolean> {
-  const unsubscribe = await adapter.subscribeEvents('0x0', [], ['Transfer'], 0, async () => {});
-  const isFunc = typeof unsubscribe === 'function';
-  unsubscribe();
-  return isFunc;
+  // TODO: adapter.subscribeEvents()를 호출하고 반환된 unsubscribe 함수를 즉시 호출하라
+  //       반환값: unsubscribe가 'function' 타입이었는지 여부 (boolean)
+  throw new Error('NOT IMPLEMENTED');
 }
 
 // ────────────────────────────────────────────────────────────────────────══
@@ -134,12 +135,12 @@ async function withSubscription(adapter: IBlockchainAdapter): Promise<boolean> {
 // ────────────────────────────────────────────────────────────────────────══
 
 function getFeeModel(adapter: IBlockchainAdapter): string {
-  switch (adapter.chainType) {
-    case 'EVM':  return '가스(gas) 기반 — EIP-1559';
-    case 'XRPL': return '고정 수수료 — XRP drops';
-    case 'BFT':  return '수수료 없음 — Circle 자체 부담';
-    case 'UTXO': return 'UTXO 차액 — 채굴자 수수료';
-  }
+  // TODO: adapter.chainType을 switch로 분기해 각 체인의 수수료 모델 설명을 반환하라
+  //   'EVM'  → '가스(gas) 기반 — EIP-1559'
+  //   'XRPL' → '고정 수수료 — XRP drops'
+  //   'BFT'  → '수수료 없음 — Circle 자체 부담'
+  //   'UTXO' → 'UTXO 차액 — 채굴자 수수료'
+  throw new Error('NOT IMPLEMENTED');
 }
 
 const CONTRACT = contractConfig.mockERC1155 || '0xD7B7586bd890C1A2791c2C18cbAEB7e0c30DB93F';
@@ -155,16 +156,13 @@ const CONTRACT = contractConfig.mockERC1155 || '0xD7B7586bd890C1A2791c2C18cbAEB7
 // ────────────────────────────────────────────────────────────────────────══
 
 class IssuerService {
+  // TODO: constructor의 adapter 타입을 IBlockchainAdapter로 선언하라
   constructor(private adapter: IBlockchainAdapter) {}
 
   async issue(to: string, tokenId: bigint): Promise<TransactionReceipt> {
-    return this.adapter.mintNFT({
-      contractAddr: CONTRACT,
-      to,
-      tokenId,
-      amount:    1n,
-      requestId: `issue-${Date.now()}`,
-    });
+    // TODO: adapter.mintNFT()를 호출해 receipt를 반환하라
+    //       contractAddr: CONTRACT, to, tokenId, amount: 1n, requestId: `issue-${Date.now()}`
+    throw new Error('NOT IMPLEMENTED');
   }
 }
 

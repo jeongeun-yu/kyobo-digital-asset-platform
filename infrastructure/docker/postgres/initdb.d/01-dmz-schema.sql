@@ -1,4 +1,4 @@
--- DMZ 운영 원장 스키마 (Node.js issuer-service 소유)
+-- 운영 원장 스키마 (Node.js issuer-service 소유, 내부망)
 -- 임시/기술적 데이터: 블록체인 트랜잭션 in-flight 상태
 
 -- 발행 요청 상태머신 (PENDING → SUBMITTED → MINED → FINALIZED → CONFIRMED | FAILED | REORGED)
@@ -34,5 +34,27 @@ CREATE TABLE IF NOT EXISTS processed_events (
 
 CREATE INDEX IF NOT EXISTS idx_processed_events_block ON processed_events(block_number);
 
-COMMENT ON TABLE mint_requests IS 'DMZ 운영 원장: NFT 발행 요청 상태 추적. 30일 후 자동 만료.';
-COMMENT ON TABLE processed_events IS 'DMZ 운영 원장: 온체인 이벤트 중복 방지. 90일 보존.';
+COMMENT ON TABLE mint_requests IS '운영 원장 (issuer-service 소유): NFT 발행 요청 상태 추적. 30일 후 자동 만료.';
+COMMENT ON TABLE processed_events IS '운영 원장 (issuer-service 소유): 온체인 이벤트 중복 방지. 90일 보존.';
+
+-- Outbox 이벤트 테이블 (Phase 3: DB-외부 시스템 원자성 보장)
+-- DB 트랜잭션과 외부 API 호출(VASP, 원장 업데이트) 사이의 불일치 방지
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id            UUID         PRIMARY KEY,
+  type          VARCHAR(64)  NOT NULL
+                CHECK (type IN ('VASP_SUBMIT_MINT','VASP_SUBMIT_BURN','LEDGER_UPDATE_HOLDING','AUDIT_LOG_EMIT')),
+  payload       JSONB        NOT NULL,
+  status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING'
+                CHECK (status IN ('PENDING','PROCESSING','PROCESSED','DEAD')),
+  attempt_count INT          NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  processed_at  TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- PENDING 이벤트만 인덱싱 (OutboxWorker 폴링 최적화)
+CREATE INDEX IF NOT EXISTS idx_outbox_pending
+  ON outbox_events(status, next_retry_at)
+  WHERE status = 'PENDING';
+
+COMMENT ON TABLE outbox_events IS '운영 원장 (issuer-service 소유): Outbox 패턴 — DB-외부 시스템 원자성 보장. PENDING→PROCESSING→PROCESSED|DEAD. 5회 재시도 후 DEAD.';

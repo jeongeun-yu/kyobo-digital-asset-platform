@@ -1,4 +1,4 @@
-# Day 03 — M2: DMZ 이벤트 파이프라인 후반부 (S9~S12)
+# Day 03 — M2: 이벤트 파이프라인 후반부 (S9~S12)
 
 **세션**: S9~S12 | **모듈**: M2 | **시간**: 4시간 (4세션 × 1시간)  
 **산출물**: IdempotentProcessor 구현 + ConsumerGroupWorker `_handleWithRetry` 구현 + DLQ + Finalized 블록 처리 + M2 E2E 완주

@@ -70,26 +70,16 @@ function makeConsumerRedis(msg: StreamMessage) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// 실습 1 — DLQHandler 생성
+// 실습 1 — DLQHandler 생성 (이미 완성 — 수정하지 않아도 됨)
 // ────────────────────────────────────────────────────────────────────────
-// DLQHandler는 실패 메시지를 DLQ 스트림으로 옮기고 운영자에게 알림을 보내는 클래스다.
-// 생성자: new DLQHandler(redis, notifier, sourceStreamKey)
-//   - redis            : 위에서 만든 dlqRedis
-//   - notifier         : 위에서 만든 dlqNotifier
-//   - sourceStreamKey  : 'kyobo:events'  ← DLQ 스트림 키가 'kyobo:events:dlq'로 결정됨
-//
-// 힌트: export const dlqHandler = new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events')
+// DLQHandler(redis, notifier, sourceStreamKey) 형태로 생성한다.
+// sourceStreamKey 'kyobo:events' → DLQ 스트림 키가 'kyobo:events:dlq'로 결정됨
 export const dlqHandler = new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events');
 
 // ────────────────────────────────────────────────────────────────────────
-// 실습 2 — 항상 실패하는 EventProcessor 구현
+// 실습 2 — 항상 실패하는 EventProcessor (이미 완성 — 수정하지 않아도 됨)
 // ────────────────────────────────────────────────────────────────────────
-// ConsumerGroupWorker에 넘길 processor를 만든다.
-// eventTypes: ['NFT_BURNED']  ← 이 타입의 메시지만 처리
-// process(): 항상 throw new Error('DB connection failed')
-//   → 3회 재시도 후 DLQ로 이동하는 흐름을 확인하기 위해 의도적으로 실패
-//
-// 힌트: export const brokenProcessor: EventProcessor = { eventTypes: [...], async process() { throw ... } }
+// 3회 재시도 후 DLQ로 이동하는 흐름을 확인하기 위해 의도적으로 실패
 export const brokenProcessor: EventProcessor = {
   eventTypes: ['NFT_BURNED'],
   async process(_msg: StreamMessage): Promise<void> {
@@ -109,7 +99,8 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
   // 반환값: DLQItem[]  (messageId, event, reason, failedAt 등 포함)
   //
   // 힌트: const pending = await dlqHandler.listPending()
-  const pending = await dlqHandler.listPending();
+  // TODO 실습 3: const pending = await dlqHandler.listPending();
+  const pending: DLQItem[] = undefined as never;
 
   console.log(`[listPending] DLQ 항목 수: ${pending.length}`);
   for (const item of pending) {
@@ -128,18 +119,20 @@ async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
   //
   // 힌트: const result = await dlqHandler.requeueMessage(pending[0]!.messageId)
   const first = pending[0]!;
-  const result = await dlqHandler.requeueMessage(first.messageId);
+  // TODO 실습 4: const result = await dlqHandler.requeueMessage(first.messageId);
+  const result: { newMessageId: string } = undefined as never;
   console.log(`[requeue] 재큐잉 완료: ${result.newMessageId}`);
 
   // 실습 5 — 재큐잉 후 DLQ 항목 수 확인
   // 힌트: const afterRequeue = await dlqHandler.listPending()
-  const afterRequeue = await dlqHandler.listPending();
+  // TODO 실습 5: const afterRequeue = await dlqHandler.listPending();
+  const afterRequeue: DLQItem[] = undefined as never;
   console.log(`[listPending after requeue] DLQ 항목 수: ${afterRequeue.length}`);
   console.log(pending.length - afterRequeue.length === 1 ? '✅ 재큐잉 후 항목 1개 감소' : '❌ 항목 수 불일치');
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// 실행 — 실습 1~2 완성 후 실습 6 블록을 완성한다
+// 실행 — 실습 3~5 완성 후 runOperatorWorkflow가 정상 동작한다
 // ────────────────────────────────────────────────────────────────────────
 
 async function main() {

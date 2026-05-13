@@ -1,10 +1,10 @@
-# M4 S55 — 감사 로그 보관 운영 · 규제 요건과 Hot/Warm/Cold 아키텍처
+﻿# M4 S55 — 감사 로그 보관 운영 · 규제 요건과 Hot/Warm/Cold 아키텍처
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 4 · 세션 55 · 1시간 `운영`
 > 전제: S26에서 AuditLogService(SHA-256 체인) 구현 완료
-> 스켈레톤: `dmz/packages/core-banking/src/admin/AuditLogAdminService.ts`
+> 스켈레톤: `internal/packages/core-banking/src/admin/AuditLogAdminService.ts`
 
 > ⚠️ **운영 세션** — S26에서 SHA-256 체인 방식으로 감사 로그를 기록하고 무결성을 검증하는 방법을 배웠다. 이번 세션은 **그 감사 로그를 5년간 어떻게 보관하는가**, **감독원 조회 요청이 왔을 때 어떻게 대응하는가**다. 기술보다 규정과 절차가 핵심이다.
 
@@ -223,7 +223,7 @@ await auditLog.log({
 ### 실습 1 — 감사 로그 추출 API 구현 (10분)
 
 ```typescript
-// dmz/packages/core-banking/src/admin/AuditLogAdminService.ts
+// internal/packages/core-banking/src/admin/AuditLogAdminService.ts
 
 export class AuditLogAdminService {
   constructor(
@@ -699,7 +699,7 @@ curl "http://localhost:3000/admin/audit/integrity-check\
 ### TypeScript 서비스 클래스 구현
 
 ```typescript
-// dmz/packages/core-banking/src/admin/AuditLogAdminService.ts (전체)
+// internal/packages/core-banking/src/admin/AuditLogAdminService.ts (전체)
 
 export class AuditLogAdminService {
   constructor(

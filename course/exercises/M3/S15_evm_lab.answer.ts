@@ -1,9 +1,9 @@
-/**
+﻿/**
  * S15 실습 — EVMAdapter 구현 분석 + XRPL Mock 교체 시뮬레이션
  *
  * 강의 노트: M3_S15_evm_implementation.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
+ * 실행 방법 (internal/packages/event-engine 폴더에서):
  *   npx ts-node src/exercises/S15_evm_lab.ts
  *
  * 전제 조건:

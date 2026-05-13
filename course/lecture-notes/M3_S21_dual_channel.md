@@ -5,7 +5,7 @@
 > **Phase 2+ 맥락:** `ChainEventListener`를 통한 직접 이벤트 구독이 활성화되면 이중 채널이 본격적으로 필요해집니다. Push(직접 구독) + Pull(폴링)의 상호 보완이 Phase 2의 핵심 이유입니다.
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S21 · 강의 55분  
-> 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
+> 대상: `internal/packages/vasp/src/tx/TxStateMachineService.ts`
 
 ---
 
@@ -140,7 +140,7 @@ Pull 채널 (폴링):
 ### 1. 단일 콜백 방식의 취약점
 
 ```
-흐름: VASP TX 완료 → VASP가 Webhook 콜백 → DMZ WebhookReceiver
+흐름: VASP TX 완료 → VASP가 Webhook 콜백 → 내부망 WebhookReceiver
                                                     ↓
                                               ConsumerGroupWorker
                                                     ↓
@@ -148,7 +148,7 @@ Pull 채널 (폴링):
 
 문제 1: 콜백 1회 유실
   VASP Webhook 전송 → 네트워크 순단
-  → 콜백 DMZ에 도달 안 됨
+  → 콜백 내부망에 도달 안 됨
   → 재전송 정책이 없는 VASP → 영구 PENDING
 
 문제 2: WebhookReceiver 처리 실패
@@ -193,7 +193,7 @@ VASP SLA: 정상 처리 시간 평균 2~10분
 
 ```
 경로 1: 네트워크 유실
-  VASP → [인터넷] → DMZ
+  VASP → [인터넷] → DMZ Nginx → 내부망
   유실 지점: 방화벽, NAT, 일시적 네트워크 오류
 
 경로 2: VASP 재전송 정책 없음

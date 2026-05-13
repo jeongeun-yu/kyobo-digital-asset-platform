@@ -1,9 +1,9 @@
-# M4 S23 — 온체인만으로 부족한 이유 · 내부 원장 필요성과 데이터 모델 설계
+﻿# M4 S23 — 온체인만으로 부족한 이유 · 내부 원장 필요성과 데이터 모델 설계
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 4 · 세션 23 · 1시간  
-> 스켈레톤: `dmz/packages/core-banking/src/ledger/LedgerService.ts`
+> 스켈레톤: `internal/packages/core-banking/src/ledger/LedgerService.ts`
 
 ---
 

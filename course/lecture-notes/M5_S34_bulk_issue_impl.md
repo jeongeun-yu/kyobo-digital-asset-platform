@@ -1,9 +1,9 @@
-# M5 S34 — BulkIssueService 구현과 1000건 부분 실패 통합 테스트
+﻿# M5 S34 — BulkIssueService 구현과 1000건 부분 실패 통합 테스트
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 5 · 세션 34 · 1시간  
-> 스켈레톤: `dmz/apps/issuer-service/src/services/BulkIssueService.ts`
+> 스켈레톤: `internal/apps/issuer-service/src/services/BulkIssueService.ts`
 
 ---
 

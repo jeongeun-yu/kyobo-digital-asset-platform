@@ -67,7 +67,7 @@ flowchart TB
 ### 🔒 DMZ 존 (게이트웨이 레이어)
 | 구성 요소 | 역할 |
 |---|---|
-| Private RPC Node | DMZ 내 전용 노드 (자체 운영 또는 Dedicated). 퍼블릭 RPC 직접 노출 차단 |
+| Private RPC Node | 전용 노드 (자체 운영 또는 Dedicated). DMZ Nginx 경유로만 접근, 퍼블릭 RPC 직접 노출 차단 |
 | Gateway Server | 내부망과 외부 블록체인 사이의 유일한 통신 채널. 직접 접속 차단 |
 | Webhook Receiver | 블록체인 이벤트를 안전하게 수신하는 엔드포인트 |
 | 메시지 큐 (Redis Streams) | 수신 이벤트를 비동기로 적재. 유실 방지·재처리 보장 |

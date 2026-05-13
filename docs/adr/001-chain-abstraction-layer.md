@@ -31,7 +31,7 @@ IBlockchainAdapter
 
 ## 결과
 
-- `EVMAdapter`는 DMZ 내부 private RPC 노드에만 연결 (public RPC 금지)
+- `EVMAdapter`는 내부망 private RPC 노드에만 연결 (public RPC 금지)
 - Missed event 복구는 `queryEvents()` 인터페이스 메서드로 표준화
 - 체인별 특성(UTXO vs Account, gas vs fee)은 어댑터 내부에서 처리
 

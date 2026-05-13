@@ -1,12 +1,12 @@
 # M3 S13 — 비동기 트랜잭션 상태 관리와 전이 규칙 설계
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S13 · 1시간  
-> 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
+> 대상: `internal/packages/vasp/src/tx/TxStateMachineService.ts`
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > **Phase 1 TX 상태머신 특이사항**  
-> - `handleMined()` 트리거: Phase 1에서는 직접 체인을 폴링하지 않는다. **월렛원 Webhook** 콜백(`NFT_ISSUED`)이 DMZ WebhookReceiver → Redis Streams → Consumer 경로를 거쳐 `handleMined()`를 호출한다.  
+> - `handleMined()` 트리거: Phase 1에서는 직접 체인을 폴링하지 않는다. **월렛원 Webhook** 콜백(`NFT_ISSUED`)이 내부망 WebhookReceiver → Redis Streams → Consumer 경로를 거쳐 `handleMined()`를 호출한다.  
 > - `sendTransaction()` 직접 호출은 없다: TX 서명·브로드캐스트는 `vaspAdapter.submitTransaction()`으로 월렛원에 위탁한다. `chainAdapter.sendTransaction()`은 Phase 3에서 활성화된다.  
 > - Phase 3 전환 시: `KyoboVASPAdapter`로 교체하고 `chainAdapter.sendTransaction()` + 자체 HSM/MPC 서명 경로가 활성화된다.
 
@@ -51,7 +51,7 @@ M3: "TX를 보냈을 때 블록체인이 어떤 경로로 실패하는가, 각�
 블록체인 TX는 다르다. **완료까지 여러 단계를 거치고, 각 단계에서 실패할 수 있다.**
 
 ```
-DMZ ──TX 전송──→ 블록체인 네트워크
+issuer-service ──TX 전송──→ 블록체인 네트워크
                       │
                  mempool 대기 (수초 ~ 수분)
                       │
@@ -190,7 +190,7 @@ REORGED    보장: "MINED 이후 블록 재편으로 TX 소실. 재처리 대기
 
 **Custody TxAttempt 상태와 대응표:**
 
-| 이 강의 (DMZ TX) | Custody TxAttempt | 의미 |
+| 이 강의 (TX) | Custody TxAttempt | 의미 |
 |---|---|---|
 | MINED | A4 INCLUDED | 블록에 포함됨, Finality 미확보 |
 | — | A5 CONFIRMED | n confirmations (교육 단순화로 생략) |
@@ -467,7 +467,7 @@ M5(S27~S29)에서 이 인터페이스의 실제 구현을 다룬다. 지금은 "
 ```
 ❌ 나쁜 순서: VASP 먼저 → DB 나중
 
-  DMZ          VASP          DB
+  issuer-svc   VASP          DB
    │── mint ──→│              │
    │           │── TX 전송   │
    │←── OK ───│              │
@@ -480,7 +480,7 @@ M5(S27~S29)에서 이 인터페이스의 실제 구현을 다룬다. 지금은 "
 
 ✅ 올바른 순서: DB 먼저 → VASP 나중
 
-  DMZ          DB            VASP
+  issuer-svc   DB            VASP
    │── save ──→│              │
    │  REQUESTED│              │
    │←── OK ───│              │
@@ -642,7 +642,7 @@ M2 S9에서 정의한 At-least-once 가드 원칙 그대로다 — 이미 처리
 S13의 핵심 개념인 전이 규칙을 직접 구현해 본다.
 
 ```typescript
-// 실습 파일: dmz/packages/vasp/src/tx/TxStateMachineService.ts 상단 추가
+// 실습 파일: internal/packages/vasp/src/tx/TxStateMachineService.ts 상단 추가
 
 // TODO 1: VALID_TRANSITIONS 정의 (전이도 기반)
 export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {

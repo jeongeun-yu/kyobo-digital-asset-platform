@@ -1,8 +1,8 @@
-# Runbook: VASP SLA 운영 — 월렛원 장애 에스컬레이션과 TX Stuck 모니터링
+﻿# Runbook: VASP SLA 운영 — 월렛원 장애 에스컬레이션과 TX Stuck 모니터링
 
-**대상**: DMZ 운영자, VASP 담당자  
+**대상**: 내부망 운영자, VASP 담당자  
 **관련 세션**: S53  
-**관련 코드**: `dmz/packages/vasp/src/external/ExternalVASPAdapter.ts`
+**관련 코드**: `internal/packages/vasp/src/external/ExternalVASPAdapter.ts`
 
 ---
 

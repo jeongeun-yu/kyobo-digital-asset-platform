@@ -1,8 +1,8 @@
-# M3 S53 — VASP SLA 운영 · 월렛원 장애 에스컬레이션과 TX Stuck 모니터링
+﻿# M3 S53 — VASP SLA 운영 · 월렛원 장애 에스컬레이션과 TX Stuck 모니터링
 
 > 모듈 3 · 세션 53 · 1시간 `운영`  
 > 전제: S13 TxStateMachineService 구현 완료, S17 RetryHandler 운영 중  
-> 스켈레톤: `dmz/packages/vasp/src/admin/VASPMonitorService.ts`
+> 스켈레톤: `internal/packages/vasp/src/admin/VASPMonitorService.ts`
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
@@ -191,7 +191,7 @@ Circuit Breaker 상태:
 ### 실습 1 — TX Stuck 모니터링 엔드포인트 (10분)
 
 ```typescript
-// dmz/packages/vasp/src/admin/VASPMonitorService.ts
+// internal/packages/vasp/src/admin/VASPMonitorService.ts
 
 export interface StuckTx {
   id: string;
@@ -390,7 +390,7 @@ curl http://localhost:3000/admin/vasp/health
 ### 실습 3 — 에스컬레이션 알림 트리거 cron 등록 (7분)
 
 ```typescript
-// dmz/packages/vasp/src/admin/index.ts
+// internal/packages/vasp/src/admin/index.ts
 
 // 5분마다 Stuck TX 체크 → 임계값 초과 시 자동 알림
 cron.schedule('*/5 * * * *', async () => {
@@ -650,7 +650,7 @@ CB 상태                          SLA 위반 인정 여부
 ### 구현
 
 ```typescript
-// dmz/packages/vasp/src/admin/VASPIncidentService.ts
+// internal/packages/vasp/src/admin/VASPIncidentService.ts
 
 export type EscalationLevel = 'L1' | 'L2' | 'L3' | 'L4';
 

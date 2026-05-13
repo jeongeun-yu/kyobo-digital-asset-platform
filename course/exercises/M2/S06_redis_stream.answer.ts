@@ -1,10 +1,9 @@
 /**
- * S07 실습 — Redis Streams 전체 흐름
+ * S06 실습 — Redis Streams 전체 흐름 (답안)
  *
- * 강의 노트: M2_S7_redis_streams_theory.md
+ * 강의 노트: M2_S6_redis_streams_theory.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S07_redis_stream.ts
+ * 실행 방법 (루트에서): npm run exercise:s06:answer
  *
  * 사전 조건: 없음 (Mock Redis 사용 — 실제 Docker 불필요)
  *
@@ -98,31 +97,17 @@ const consumerRedis = {
   },
 };
 
-const nftIssuedProcessor: EventProcessor = {
-  eventTypes: ['NFT_ISSUED'],
+// ── 실습 1 답안: SimpleNFTProcessor ────────────────────────────────────────
+class SimpleNFTProcessor implements EventProcessor {
+  readonly eventTypes = ['NFT_ISSUED'];   // TODO 1 완성
 
-  async process(msg: StreamMessage): Promise<void> {
-    const payload   = JSON.parse(msg.fields['payload'] ?? '{}');
-    const requestId = msg.fields['requestId'];
-    console.log(`[processor] NFT_ISSUED — tokenId: ${payload.tokenId}, owner: ${payload.owner}`);
-    console.log(`[processor] requestId: ${requestId}`);
-    console.log('[processor] NFT_ISSUED 처리 완료');
-  },
-};
-
-const worker = new ConsumerGroupWorker(
-  consumerRedis,
-  [nftIssuedProcessor],
-  mockDLQ,
-  {
-    streamKey:  'kyobo:events',
-    groupName:  'issuer-consumers',
-    consumerId: 'consumer-1',
-    batchSize:  10,
-    blockMs:    500,
-    minIdleMs:  30_000,
-  },
-);
+  async process(message: StreamMessage): Promise<void> {
+    // TODO 2 완성
+    const payload = JSON.parse(message.fields['payload'] ?? '{}');
+    // TODO 3 완성
+    console.log(`[SimpleNFTProcessor] NFT 처리 완료: tokenId=${payload.tokenId}, owner=${payload.owner}`);
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // 실행
@@ -144,6 +129,7 @@ const worker = new ConsumerGroupWorker(
     requestId:   'req-001',
   };
 
+  // TODO 실습 4 완성
   const messageId = await publisher.publish(event);
   console.log('[result] messageId:', messageId);
   console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
@@ -161,6 +147,21 @@ const worker = new ConsumerGroupWorker(
 
   console.log('\n=== Part 2: ConsumerGroupWorker ===\n');
   console.log('[worker] 시작 — 3초 후 자동 종료');
+
+  // TODO 실습 5 완성
+  const worker = new ConsumerGroupWorker(
+    consumerRedis,
+    [new SimpleNFTProcessor()],
+    mockDLQ,
+    {
+      streamKey:  'kyobo:events',
+      groupName:  'issuer-consumers',
+      consumerId: 'consumer-1',
+      batchSize:  10,
+      blockMs:    500,
+      minIdleMs:  30_000,
+    },
+  );
 
   setTimeout(() => {
     console.log('[worker] stop() 호출');

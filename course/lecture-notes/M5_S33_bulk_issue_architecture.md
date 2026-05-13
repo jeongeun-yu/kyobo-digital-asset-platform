@@ -1,9 +1,9 @@
-# M5 S33 — 대량 NFT 발행 아키텍처 · 배치 분할과 부분 실패 처리 정책
+﻿# M5 S33 — 대량 NFT 발행 아키텍처 · 배치 분할과 부분 실패 처리 정책
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 5 · 세션 33 · 1시간 (강의 55분)  
-> 스켈레톤: `dmz/apps/issuer-service/src/services/BulkIssueService.ts`
+> 스켈레톤: `internal/apps/issuer-service/src/services/BulkIssueService.ts`
 
 ---
 

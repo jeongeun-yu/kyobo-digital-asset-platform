@@ -1,9 +1,9 @@
-/**
+﻿/**
  * S10 실습 — ConsumerGroupWorker 핵심 로직: _handleWithRetry 구현
  *
  * 강의 노트: M2_S10_event_consumer_impl.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
+ * 실행 방법 (internal/packages/event-engine 폴더에서):
  *   npx ts-node src/exercises/S10_handle_with_retry.ts
  *
  * 목표:

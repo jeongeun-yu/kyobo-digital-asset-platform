@@ -1,10 +1,9 @@
 /**
- * S09 실습 — At-least-once + 멱등성 구현
+ * S09 실습 — At-least-once + 멱등성 구현 (답안)
  *
  * 강의 노트: M2_S9_atleastonce_design.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S09_atleastonce.ts
+ * 실행 방법 (루트에서): npm run exercise:s09
  *
  * 목표:
  *   Part 1 — 멱등성 없는 Naive 처리자: 동일 메시지 2회 → holdings +2 버그 확인
@@ -35,37 +34,33 @@ const naiveProcessor: EventProcessor = {
 };
 
 // ────────────────────────────────────────────────────────────────────────
-// Part 2 — 실습: IdempotentNftProcessor를 구현하라
-//
-// 구현 규칙:
-//   1. processedIds = new Set<string>() 로 이미 처리한 requestId를 기억한다
-//   2. eventTypes: ['NFT_ISSUED']
-//   3. process() 흐름:
-//       a. requestId = msg.fields['requestId'] 추출
-//       b. processedIds에 이미 있으면 '[멱등성] 중복 요청 무시: {requestId}' 로그 후 return
-//       c. payload 파싱 → credit(tokenId, owner) 호출
-//       d. processedIds에 requestId 추가
-// 주석을 풀면 바로 실행 가능. 직접 타이핑도 가능.
+// Part 2 — 답안: IdempotentNftProcessor
 // ────────────────────────────────────────────────────────────────────────
 
-const processedIds = new Set<string>();
+export class IdempotentNftProcessor implements EventProcessor {
+  readonly eventTypes = ['NFT_ISSUED'];                    // TODO 1 완성
 
-export const idempotentProcessor: EventProcessor = {
-  eventTypes: ['NFT_ISSUED'],
+  private readonly processedIds = new Set<string>();       // TODO 2 완성
 
-  async process(msg: StreamMessage): Promise<void> {
-    const requestId = msg.fields['requestId'] ?? '';
+  async process(message: StreamMessage): Promise<void> {
+    // TODO 3 완성
+    const requestId = message.fields['requestId'] ?? message.id;
+    const payload   = JSON.parse(message.fields['payload'] ?? '{}');
 
-    if (processedIds.has(requestId)) {
+    // TODO 4 완성
+    if (this.processedIds.has(requestId)) {
       console.log(`    [멱등성] 중복 요청 무시: ${requestId}`);
       return;
     }
 
-    const { tokenId, owner } = JSON.parse(msg.fields['payload'] ?? '{}');
+    // TODO 5 완성
+    const { tokenId, owner } = payload;
     credit(tokenId, owner);
-    processedIds.add(requestId);
-  },
-};
+    this.processedIds.add(requestId);
+  }
+}
+
+export const idempotentProcessor = new IdempotentNftProcessor();
 
 // ── Mock 헬퍼 ──────────────────────────────────────────────────────────────
 const mockDLQ = new DLQHandler(
@@ -127,5 +122,5 @@ if (require.main === module) (async () => {
   await runScenario(naiveProcessor);
 
   console.log('[ Part 2 ] 멱등성 적용 — 동일 메시지 2회 전달');
-  await runScenario(idempotentProcessor);
+  await runScenario(new IdempotentNftProcessor());
 })();

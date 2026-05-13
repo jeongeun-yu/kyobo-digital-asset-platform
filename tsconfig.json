@@ -16,13 +16,13 @@
     "outDir":           "./dist",
     "baseUrl":          ".",
     "paths": {
-      "@kyobo/chain-adapters":  ["dmz/packages/chain-adapters/src"],
-      "@kyobo/event-engine":    ["dmz/packages/event-engine/src"],
-      "@kyobo/event-engine/*":  ["dmz/packages/event-engine/src/*"],
-      "@kyobo/vasp":            ["dmz/packages/vasp/src"],
-      "@kyobo/compliance":      ["dmz/packages/compliance/src"],
-      "@kyobo/core-banking":    ["dmz/packages/core-banking/src"],
-      "@kyobo/shared":          ["dmz/packages/shared/src"]
+      "@kyobo/chain-adapters":  ["internal/packages/chain-adapters/src"],
+      "@kyobo/event-engine":    ["internal/packages/event-engine/src"],
+      "@kyobo/event-engine/*":  ["internal/packages/event-engine/src/*"],
+      "@kyobo/vasp":            ["internal/packages/vasp/src"],
+      "@kyobo/compliance":      ["internal/packages/compliance/src"],
+      "@kyobo/core-banking":    ["internal/packages/core-banking/src"],
+      "@kyobo/shared":          ["internal/packages/shared/src"]
     }
   },
   "exclude": ["node_modules", "dist", "course", "blockchain"]

@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: kyobo-internal-ledger-test
+
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+server:
+  port: 0
+
+kyobo:
+  core-banking:
+    base-url: http://localhost:9090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    io.coincraft.kyobo: WARN
+    org.springframework.web: WARN

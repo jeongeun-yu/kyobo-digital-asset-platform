@@ -1,9 +1,9 @@
-# M8 S45 — 운영 관리 API 설계 · 컨트랙트 제어와 시스템 운영 인터페이스
+﻿# M8 S45 — 운영 관리 API 설계 · 컨트랙트 제어와 시스템 운영 인터페이스
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 8 · 세션 45 · 1시간  
-> 스켈레톤: `dmz/packages/vasp/src/governance/KeyGovernanceService.ts`
+> 스켈레톤: `internal/packages/vasp/src/governance/KeyGovernanceService.ts`
 
 ---
 
@@ -177,7 +177,7 @@ POST /admin/roles/revoke
 ### Admin API 라우터 구현
 
 ```typescript
-// dmz/apps/admin-service/src/routes/adminRoutes.ts
+// internal/apps/admin-service/src/routes/adminRoutes.ts
 import express from 'express';
 import { requireRole } from '../middleware/auth';
 import { AdminController } from '../controllers/AdminController';
@@ -208,7 +208,7 @@ export default router;
 ### AdminController 구현
 
 ```typescript
-// dmz/apps/admin-service/src/controllers/AdminController.ts
+// internal/apps/admin-service/src/controllers/AdminController.ts
 import { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import { KyoboNFT__factory } from '../../../blockchain/typechain';

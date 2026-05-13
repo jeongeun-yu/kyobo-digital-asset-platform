@@ -58,7 +58,7 @@ curl http://localhost:3000/admin/queue/stats
 
 ```bash
 # Consumer 프로세스 중단 (테스트 환경에서)
-pm2 stop dmz-consumer
+pm2 stop issuer-consumer
 
 # 즉시 확인
 curl http://localhost:3000/admin/queue/stats
@@ -127,13 +127,13 @@ curl http://localhost:3000/admin/queue/stats
 
 ```bash
 # 1. 상태 확인
-pm2 status dmz-consumer
+pm2 status issuer-consumer
 
 # 2. 크래시 원인 확인
-pm2 logs dmz-consumer --lines 100
+pm2 logs issuer-consumer --lines 100
 
 # 3. 재시작
-pm2 restart dmz-consumer
+pm2 restart issuer-consumer
 
 # 4. 복구 확인
 curl http://localhost:3000/admin/queue/stats
@@ -157,7 +157,7 @@ psql -c "SELECT pid, EXTRACT(EPOCH FROM now() - query_start) AS duration, query
          ORDER BY duration DESC LIMIT 10;"
 
 # 3. Lag 500+ 이상이고 원인 불명이면 Consumer 인스턴스 추가
-pm2 start dmz-consumer --name dmz-consumer-2
+pm2 start issuer-consumer --name issuer-consumer-2
 
 # 4. Lag 감소 추세 확인 (5분 모니터링)
 curl http://localhost:3000/admin/queue/stats
@@ -198,7 +198,7 @@ redis-cli ping
 redis-cli info memory | grep used_memory_human
 
 # 3. Redis 정상 → Consumer만 재시작
-pm2 restart dmz-consumer
+pm2 restart issuer-consumer
 
 # 4. Redis 다운 → 인프라팀 에스컬레이션 (infra@kyobo.com)
 # Redis 문제 자체 해결 시도 금지
@@ -213,7 +213,7 @@ pm2 restart dmz-consumer
 ```markdown
 # Consumer 장애 대응 Runbook
 
-> 최종 수정: YYYY-MM-DD | 담당: DMZ 팀
+> 최종 수정: YYYY-MM-DD | 담당: 이벤트 파이프라인 팀
 
 ## 0. 먼저 확인할 것
 # pm2 status, /admin/queue/stats, /admin/dlq/pending

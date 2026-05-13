@@ -32,14 +32,14 @@ import type { TxRepository, VaspTxClient, WalletResolver, MintRequest } from '@k
 // TODO: 아래 각 항목에서 throw를 지우고 올바른 TxStatus 배열을 채우세요.
 // 예: REQUESTED: ['SUBMITTED', 'FAILED'],
 const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
-  REQUESTED: ['SUBMITTED', 'FAILED'],
-  SUBMITTED: ['PENDING',   'FAILED'],
-  PENDING:   ['MINED',     'FAILED'],
-  MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
-  FINALIZED: ['CONFIRMED'],
-  CONFIRMED: [],                          // 종단 — 원장 업데이트 완료
-  FAILED:    [],                          // 종단
-  REORGED:   ['MINED',     'FAILED'],
+  REQUESTED: [], // TODO: 허용되는 다음 상태를 채우세요
+  SUBMITTED: [], // TODO
+  PENDING:   [], // TODO
+  MINED:     [], // TODO
+  CONFIRMED: [], // TODO
+  FINALIZED: [], // 종단 — PoS 절대 불변 (수정 불필요)
+  FAILED:    [], // 종단 (수정 불필요)
+  REORGED:   [], // TODO
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -59,10 +59,9 @@ class InvalidStatusTransitionError extends Error {
 }
 
 function transitionStatus(current: TxStatus, next: TxStatus): void {
-  const allowed = VALID_TRANSITIONS[current] ?? [];
-  if (!allowed.includes(next)) {
-    throw new InvalidStatusTransitionError(current, next);
-  }
+  // TODO: VALID_TRANSITIONS[current]에서 허용 목록을 가져와
+  //       next가 포함되지 않으면 InvalidStatusTransitionError를 throw하라
+  throw new Error('NOT IMPLEMENTED');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -147,8 +146,8 @@ function expectNoThrow(label: string, fn: () => void) {
   console.log('\n[검증 2] 정상 전이 — 예외 없음');
   expectNoThrow('REQUESTED → SUBMITTED',  () => transitionStatus('REQUESTED', 'SUBMITTED'));
   expectNoThrow('PENDING   → MINED',      () => transitionStatus('PENDING',   'MINED'));
-  expectNoThrow('MINED     → FINALIZED',  () => transitionStatus('MINED',     'FINALIZED'));
-  expectNoThrow('FINALIZED → CONFIRMED',  () => transitionStatus('FINALIZED', 'CONFIRMED'));
+  expectNoThrow('MINED     → CONFIRMED',  () => transitionStatus('MINED',     'CONFIRMED'));
+  expectNoThrow('CONFIRMED → FINALIZED',  () => transitionStatus('CONFIRMED', 'FINALIZED'));
   expectNoThrow('MINED     → REORGED',    () => transitionStatus('MINED',     'REORGED'));
   expectNoThrow('REORGED   → FAILED',     () => transitionStatus('REORGED',   'FAILED'));
   expectNoThrow('SUBMITTED → FAILED',     () => transitionStatus('SUBMITTED', 'FAILED'));
@@ -158,8 +157,8 @@ function expectNoThrow(label: string, fn: () => void) {
   expectThrows('FAILED     → CONFIRMED',  () => transitionStatus('FAILED',    'CONFIRMED'));
   expectThrows('CONFIRMED  → PENDING',    () => transitionStatus('CONFIRMED', 'PENDING'));
   expectThrows('CONFIRMED  → REORGED',    () => transitionStatus('CONFIRMED', 'REORGED'));  // CONFIRMED는 종단
-  expectThrows('FINALIZED  → REORGED',    () => transitionStatus('FINALIZED', 'REORGED'));  // FINALIZED 이후 REORG 불가
-  expectThrows('MINED      → CONFIRMED',  () => transitionStatus('MINED',     'CONFIRMED')); // 반드시 FINALIZED 거쳐야 함
+  expectThrows('FINALIZED  → REORGED',    () => transitionStatus('FINALIZED', 'REORGED'));  // FINALIZED 종단 — REORG 불가
+  expectThrows('MINED      → FINALIZED',  () => transitionStatus('MINED',     'FINALIZED')); // 반드시 CONFIRMED 거쳐야 함
   expectThrows('REQUESTED  → MINED',      () => transitionStatus('REQUESTED', 'MINED'));
   expectThrows('MINED      → SUBMITTED',  () => transitionStatus('MINED',     'SUBMITTED'));
   expectThrows('FAILED     → REQUESTED',  () => transitionStatus('FAILED',    'REQUESTED'));
@@ -236,7 +235,7 @@ function expectNoThrow(label: string, fn: () => void) {
   console.log('\n핵심 정리:');
   console.log('  1. VALID_TRANSITIONS: 허용 전이를 명시적으로 열거 — 암묵적 전이 금지');
   console.log('  2. FAILED/CONFIRMED는 종단 상태 — 빈 배열로 모든 복구 시도 차단');
-  console.log('  3. MINED → FINALIZED → CONFIRMED (FINALIZED 건너뛰기 불가)');
+  console.log('  3. MINED → CONFIRMED → FINALIZED (CONFIRMED 건너뛰기 불가)');
   console.log('  4. REORG는 MINED 구간에서만 — FINALIZED 이후 REORG 절대 불가 (PoS 보장)');
   console.log('  5. 핸들러 가드: throw 대신 return — At-least-once 재배달 시 DLQ 이동 방지');
   console.log('  6. _getOrThrow: 존재하지 않는 requestId → 즉시 에러 (개발 오류 조기 발견)');

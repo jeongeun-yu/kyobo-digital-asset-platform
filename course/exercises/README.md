@@ -42,7 +42,7 @@ Copy-Item .env.example .env
 | `npm run exercise:s11` | `M2/S11_dlq.ts` | Dead Letter Queue 이동 |
 | `npm run exercise:s12` | `M2/S12_e2e.ts` | 전체 파이프라인 E2E 통합 |
 
-> 참고 구현체: `dmz/packages/event-engine/src/`
+> 참고 구현체: `internal/packages/event-engine/src/`
 
 #### S07 Docker 버전 사용법
 
@@ -73,8 +73,8 @@ docker compose -f docker-compose.redis.yml down
 | `npm run exercise:s16` | `M3/S16_idempotency.ts` | requestId 기반 Idempotency 구현 |
 | `npm run exercise:s17` | `M3/S17_decorator_patterns.ts` | Logging·Retry Decorator + Circuit Breaker |
 
-> 참고 구현체: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`  
-> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`dmz/packages/chain-adapters/src/evm/EVMAdapter.ts`
+> 참고 구현체: `internal/packages/vasp/src/tx/TxStateMachineService.ts`  
+> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`internal/packages/chain-adapters/src/evm/EVMAdapter.ts`
 
 ---
 
@@ -84,7 +84,7 @@ docker compose -f docker-compose.redis.yml down
 |------|------|------|
 | `npm run exercise:s22` | `M3/S22_pollstale_lab.ts` | `pollStaleRequests()` + TIMEOUT·REORG·REVERT 복구 |
 
-> 참고 구현체: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
+> 참고 구현체: `internal/packages/vasp/src/tx/TxStateMachineService.ts`
 
 ---
 
@@ -97,7 +97,7 @@ docker compose -f docker-compose.redis.yml down
 | `M5/_check_balance.ts` | ERC-1155 잔액 조회 |
 
 ```powershell
-npx ts-node --project dmz/packages/event-engine/tsconfig.json course/exercises/M5/_deploy_mock.ts
+npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M5/_deploy_mock.ts
 ```
 
 배포 후 `MOCK_CONTRACT_ADDR` 를 `.env`에 기록
@@ -140,4 +140,4 @@ npm run exercise:s13:answer
 | `S##_이름.answer.ts` | 정답 파일 — 막힐 때만 참고 |
 | `__tests__/` | 자동 채점 테스트 |
 
-참고 구현체(`dmz/packages/*/src/`)는 수정하지 않는다. 실습 파일에서만 코드를 작성한다.
+참고 구현체(`internal/packages/*/src/`)는 수정하지 않는다. 실습 파일에서만 코드를 작성한다.

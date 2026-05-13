@@ -145,8 +145,8 @@ describe('S23 채점 — Ledger 데이터 모델', () => {
       const req = await ledger.createMintRequest('K-20240003', 'CYCLE-5000');
       await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xdef456' });
       await ledger.updateMintRequestStatus(req.requestId, 'MINED', { blockNumber: 12400n });
-      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       await ledger.updateMintRequestStatus(req.requestId, 'CONFIRMED', { tokenId: 2001n });
+      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       const auditLog = ledger.getAuditLog();
       const actions = auditLog.map(e => e.action);
       expect(actions).toContain('MINT_REQUESTED');
@@ -155,20 +155,20 @@ describe('S23 채점 — Ledger 데이터 모델', () => {
     });
   });
 
-  describe('전체 쓰기 경로 — REQUESTED → CONFIRMED 시뮬레이션', () => {
-    it('TODO: 전체 상태 경로를 거쳐 최종 CONFIRMED가 되어야 한다', async () => {
+  describe('전체 쓰기 경로 — REQUESTED → FINALIZED 시뮬레이션', () => {
+    it('TODO: 전체 상태 경로를 거쳐 최종 FINALIZED가 되어야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('K-20240003', 'CYCLE-5000');
       await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xdef456' });
       await ledger.updateMintRequestStatus(req.requestId, 'MINED', { blockNumber: 12400n });
-      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       const evResult = await ledger.recordProcessedEvent('0xdef456', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
       if (!evResult.skipped) {
         await ledger.updateMintRequestStatus(req.requestId, 'CONFIRMED', { tokenId: 2001n });
         await ledger.addHolding('K-20240003', 2001n, 'CYCLE-5000');
       }
+      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       const finalReq = await ledger.getMintRequest(req.requestId);
-      expect(finalReq?.status).toBe('CONFIRMED');
+      expect(finalReq?.status).toBe('FINALIZED');
       expect(finalReq?.tokenId).toBe(2001n);
     });
 
@@ -177,10 +177,10 @@ describe('S23 채점 — Ledger 데이터 모델', () => {
       const req = await ledger.createMintRequest('K-20240003', 'CYCLE-5000');
       await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xdef456' });
       await ledger.updateMintRequestStatus(req.requestId, 'MINED', { blockNumber: 12400n });
-      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       await ledger.recordProcessedEvent('0xdef456', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
       await ledger.updateMintRequestStatus(req.requestId, 'CONFIRMED', { tokenId: 2001n });
       await ledger.addHolding('K-20240003', 2001n, 'CYCLE-5000');
+      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       // 재처리
       const evDup = await ledger.recordProcessedEvent('0xdef456', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
       expect(evDup.skipped).toBe(true);
@@ -191,12 +191,12 @@ describe('S23 채점 — Ledger 데이터 모델', () => {
       const req = await ledger.createMintRequest('K-20240003', 'CYCLE-5000');
       await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xdef456' });
       await ledger.updateMintRequestStatus(req.requestId, 'MINED', { blockNumber: 12400n });
-      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       const evResult = await ledger.recordProcessedEvent('0xdef456', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
       if (!evResult.skipped) {
         await ledger.updateMintRequestStatus(req.requestId, 'CONFIRMED', { tokenId: 2001n });
         await ledger.addHolding('K-20240003', 2001n, 'CYCLE-5000');
       }
+      await ledger.updateMintRequestStatus(req.requestId, 'FINALIZED');
       const holdings = await ledger.getHoldings('K-20240003');
       expect(holdings).toHaveLength(1);
     });

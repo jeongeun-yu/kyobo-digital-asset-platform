@@ -33,7 +33,7 @@ const BIN_PATH  = path.join(ARTIFACTS, 'src_mocks_MockERC1155_sol_MockERC1155.bi
   const addr = await contract.getAddress();
   console.log('\n── 배포 완료 ──────────────────────────────');
   console.log('MOCK_CONTRACT_ADDR=' + addr);
-  console.log('\ndmz/.env에 아래 줄 추가:');
+  console.log('\ninternal/.env에 아래 줄 추가:');
   console.log('MOCK_CONTRACT_ADDR=' + addr);
 
   process.exit(0);

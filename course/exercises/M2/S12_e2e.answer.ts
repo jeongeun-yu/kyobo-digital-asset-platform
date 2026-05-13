@@ -1,9 +1,9 @@
-/**
- * S12 실습 — M2 DMZ 이벤트 파이프라인 E2E 검증
+﻿/**
+ * S12 실습 — M2 이벤트 파이프라인 E2E 검증
  *
  * 강의 노트: M2_S12_finalized_e2e.md
  *
- * 실행 방법 (dmz/packages/event-engine 폴더에서):
+ * 실행 방법 (internal/packages/event-engine 폴더에서):
  *   npx ts-node src/exercises/S12_e2e.ts
  *
  * 목표:
@@ -114,7 +114,7 @@ function check(label: string, pass: boolean) {
 // ────────────────────────────────────────────────────────────────────────
 
 (async () => {
-  console.log('=== S12 E2E: DMZ 이벤트 파이프라인 완주 ===\n');
+  console.log('=== S12 E2E: 이벤트 파이프라인 완주 ===\n');
 
   // ── 인프라 인스턴스 생성 ──────────────────────────────────────────────
 

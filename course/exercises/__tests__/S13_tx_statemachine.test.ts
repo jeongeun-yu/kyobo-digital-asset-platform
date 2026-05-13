@@ -8,7 +8,7 @@
  *   · InvalidStatusTransitionError 가 @kyobo/vasp 에서 export됨
  *   · 정상 전이 경로: throw 없음
  *   · 금지 전이 경로: InvalidStatusTransitionError throw
- *   · 종단 상태(FAILED, CONFIRMED)에서 모든 전이 금지
+ *   · 종단 상태(FAILED, FINALIZED)에서 모든 전이 금지
  */
 
 import type { TxRepository, VaspTxClient, WalletResolver, MintRequest, TxStatus, TxTransitionEvent } from '@kyobo/vasp';
@@ -47,9 +47,9 @@ const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   REQUESTED: ['SUBMITTED', 'FAILED'],
   SUBMITTED: ['PENDING',   'FAILED'],
   PENDING:   ['MINED',     'FAILED'],
-  MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
-  FINALIZED: ['CONFIRMED'],
-  CONFIRMED: [],
+  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
+  CONFIRMED: ['FINALIZED'],
+  FINALIZED: [],
   FAILED:    [],
   REORGED:   ['MINED', 'FAILED'],
 };
@@ -75,8 +75,8 @@ describe('S13 채점 — TX 상태머신', () => {
       expect(VALID_TRANSITIONS['FAILED']).toHaveLength(0);
     });
 
-    it('CONFIRMED 는 종단 상태 — 전이 목록 비어 있음', () => {
-      expect(VALID_TRANSITIONS['CONFIRMED']).toHaveLength(0);
+    it('FINALIZED 는 종단 상태 — 전이 목록 비어 있음', () => {
+      expect(VALID_TRANSITIONS['FINALIZED']).toHaveLength(0);
     });
   });
 
@@ -90,11 +90,11 @@ describe('S13 채점 — TX 상태머신', () => {
     it('PENDING → MINED', () => {
       expect(() => transitionStatus('PENDING', 'MINED')).not.toThrow();
     });
-    it('MINED → FINALIZED', () => {
-      expect(() => transitionStatus('MINED', 'FINALIZED')).not.toThrow();
+    it('MINED → CONFIRMED', () => {
+      expect(() => transitionStatus('MINED', 'CONFIRMED')).not.toThrow();
     });
-    it('FINALIZED → CONFIRMED', () => {
-      expect(() => transitionStatus('FINALIZED', 'CONFIRMED')).not.toThrow();
+    it('CONFIRMED → FINALIZED', () => {
+      expect(() => transitionStatus('CONFIRMED', 'FINALIZED')).not.toThrow();
     });
     it('MINED → REORGED', () => {
       expect(() => transitionStatus('MINED', 'REORGED')).not.toThrow();
@@ -108,23 +108,23 @@ describe('S13 채점 — TX 상태머신', () => {
   });
 
   describe('금지 전이 — InvalidStatusTransitionError', () => {
-    it('PENDING → CONFIRMED (FINALIZED 건너뛰기 불가)', () => {
-      expect(() => transitionStatus('PENDING', 'CONFIRMED')).toThrow(InvalidStatusTransitionError);
+    it('PENDING → FINALIZED (CONFIRMED 건너뛰기 불가)', () => {
+      expect(() => transitionStatus('PENDING', 'FINALIZED')).toThrow(InvalidStatusTransitionError);
     });
-    it('FAILED → CONFIRMED (종단 상태 탈출 불가)', () => {
-      expect(() => transitionStatus('FAILED', 'CONFIRMED')).toThrow(InvalidStatusTransitionError);
+    it('FAILED → FINALIZED (종단 상태 탈출 불가)', () => {
+      expect(() => transitionStatus('FAILED', 'FINALIZED')).toThrow(InvalidStatusTransitionError);
     });
-    it('CONFIRMED → PENDING (종단 상태 탈출 불가)', () => {
+    it('CONFIRMED → PENDING (CONFIRMED에서 역방향 전이 불가)', () => {
       expect(() => transitionStatus('CONFIRMED', 'PENDING')).toThrow(InvalidStatusTransitionError);
     });
-    it('CONFIRMED → REORGED (종단 상태 이후 REORG 불가)', () => {
+    it('CONFIRMED → REORGED (CONFIRMED 이후 REORG 불가)', () => {
       expect(() => transitionStatus('CONFIRMED', 'REORGED')).toThrow(InvalidStatusTransitionError);
     });
-    it('FINALIZED → REORGED (FINALIZED 이후 REORG 불가)', () => {
+    it('FINALIZED → REORGED (FINALIZED 종단 — REORG 불가)', () => {
       expect(() => transitionStatus('FINALIZED', 'REORGED')).toThrow(InvalidStatusTransitionError);
     });
-    it('MINED → CONFIRMED (반드시 FINALIZED 경유)', () => {
-      expect(() => transitionStatus('MINED', 'CONFIRMED')).toThrow(InvalidStatusTransitionError);
+    it('MINED → FINALIZED (반드시 CONFIRMED 경유)', () => {
+      expect(() => transitionStatus('MINED', 'FINALIZED')).toThrow(InvalidStatusTransitionError);
     });
     it('REQUESTED → MINED (중간 단계 건너뛰기 불가)', () => {
       expect(() => transitionStatus('REQUESTED', 'MINED')).toThrow(InvalidStatusTransitionError);

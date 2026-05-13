@@ -1,10 +1,10 @@
-# M3 S19 — TX TIMEOUT과 REORG 복구 전략 원리
+﻿# M3 S19 — TX TIMEOUT과 REORG 복구 전략 원리
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
 > **Phase 1 맥락:** TIMEOUT 발생 시 VASP로부터 Webhook 수신이 지연된 것입니다. `pollStaleRequests()`가 `IBlockchainAdapter.getReceipt()`를 통해 on-chain 상태를 조회하여 복구합니다.
 
 > Block C — VASP 연동 + 복구 + 멀티체인 추상화 · M3 S19 · 강의 55분  
-> 대상: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`
+> 대상: `internal/packages/vasp/src/tx/TxStateMachineService.ts`
 
 ---
 

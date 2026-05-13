@@ -71,7 +71,7 @@
 
 ## Step 2 — `/health` 엔드포인트 구현 (10분)
 
-`dmz/packages/vasp/src/admin/DeployAdminService.ts`에 아래 `getHealth()` 메서드를 구현한다.
+`internal/packages/vasp/src/admin/DeployAdminService.ts`에 아래 `getHealth()` 메서드를 구현한다.
 
 ### 완성 코드
 

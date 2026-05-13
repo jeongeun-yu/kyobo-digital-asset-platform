@@ -1,8 +1,8 @@
-# Runbook: 벌크 발행 부분 실패 재처리 — 대량 이벤트 배포 실패 건 복구
+﻿# Runbook: 벌크 발행 부분 실패 재처리 — 대량 이벤트 배포 실패 건 복구
 
 **대상**: 운영팀, 이벤트 담당자  
 **관련 세션**: S33–S34  
-**관련 코드**: `dmz/apps/issuer-service/src/services/BulkIssueService.ts`
+**관련 코드**: `internal/apps/issuer-service/src/services/BulkIssueService.ts`
 
 ---
 

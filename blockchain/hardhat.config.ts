@@ -48,6 +48,10 @@ const config: HardhatUserConfig = {
     tests:     './test',
     artifacts: './artifacts',
   },
+  mocha: {
+    // Node.js 24 + Windows: libuv UV_HANDLE_CLOSING assertion 방지
+    exit: true,
+  },
 };
 
 export default config;

@@ -1,8 +1,8 @@
-# Runbook: TX REORG·TIMEOUT 복구 — 블록체인 트랜잭션 비정상 종료 대응
+﻿# Runbook: TX REORG·TIMEOUT 복구 — 블록체인 트랜잭션 비정상 종료 대응
 
 **대상**: 운영팀, 온콜 담당자  
 **관련 세션**: S19–S20  
-**관련 코드**: `dmz/packages/vasp/src/tx/TxStateMachineService.ts`, `dmz/apps/issuer-service/`
+**관련 코드**: `internal/packages/vasp/src/tx/TxStateMachineService.ts`, `internal/apps/issuer-service/`
 
 ---
 

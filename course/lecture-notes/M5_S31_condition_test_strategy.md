@@ -1,9 +1,9 @@
-# M5 S31 — 조건 평가 로직의 테스트 전략과 플러그인 확장성 검증
+﻿# M5 S31 — 조건 평가 로직의 테스트 전략과 플러그인 확장성 검증
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
 > 모듈 5 · 세션 31 · 1시간  
-> 스켈레톤: `dmz/apps/issuer-service/src/services/EventConditionService.ts`
+> 스켈레톤: `internal/apps/issuer-service/src/services/EventConditionService.ts`
 
 ---
 
