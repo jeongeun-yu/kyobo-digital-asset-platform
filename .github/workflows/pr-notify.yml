@@ -3,10 +3,11 @@ name: PR 알림 — 수강생 이메일 발송
 on:
   pull_request:
     branches: [ master ]
-    types: [ opened, reopened ]
+    types: [ opened, reopened, closed ]
 
 jobs:
-  notify:
+  test-and-notify-new:
+    if: github.event.action == 'opened' || github.event.action == 'reopened'
     runs-on: ubuntu-latest
     steps:
       - name: 레포 체크아웃
@@ -32,7 +33,7 @@ jobs:
           cat /tmp/test-out.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: 수강생 이메일 발송
+      - name: 새 PR 이메일 발송
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -57,5 +58,36 @@ jobs:
             ─────────────────────────────────
 
             위 링크에서 PR 내용을 확인하세요.
+
+            CoinCraft 교육팀
+
+  notify-merged:
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: 머지 완료 이메일 발송
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: coincraft.edu@gmail.com
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "[교보생명 강의] PR이 머지됐습니다 — #${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}"
+          to: ${{ secrets.STUDENT_EMAILS }}
+          from: "CoinCraft 교육팀 <coincraft.edu@gmail.com>"
+          body: |
+            안녕하세요,
+
+            교보생명 디지털 자산 플랫폼 강의 레포에 PR이 master에 머지됐습니다.
+
+            ─────────────────────────────────
+            PR #${{ github.event.pull_request.number }}
+            제목:   ${{ github.event.pull_request.title }}
+            작성자: ${{ github.event.pull_request.user.login }}
+            링크:   ${{ github.event.pull_request.html_url }}
+            ─────────────────────────────────
+
+            최신 코드를 확인하세요.
 
             CoinCraft 교육팀
