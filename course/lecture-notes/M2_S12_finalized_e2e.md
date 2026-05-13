@@ -410,53 +410,126 @@ redis-cli XPENDING kyobo:events issuer-consumers - + 10
 ## 5. M2 전체 E2E 흐름 검증
 
 ```
-VASP (외부) → WebhookServer(내부망)
-→ WebhookPublishHandler (IdempotencyGuard → RedisStreamPublisher)
+VASP (외부) → WebhookServer(HMAC) → WebhookPublishHandler(멱등성)
 → kyobo:events Stream (MockRedisStream)
 → ConsumerGroupWorker → NFTIssuedProcessor
-→ InMemoryLedgerService (M2 실습용)
-→ XACK
-```
-
-**실습 파일:** `src/exercises/S12_e2e.ts`
-
-```typescript
-// MockRedisStream: RedisStreamClient + RedisConsumerClient 동시 구현
-// 메모리 배열(store[])로 XADD/XREADGROUP/XACK를 시뮬레이션
-// → Redis 서버 없이 전체 파이프라인을 로컬에서 완주
-
-// 실행:
-// npx ts-node src/exercises/S12_e2e.ts
-
-// 채점:
-// npx jest src/__tests__/e2e.test.ts
-```
-
-**5가지 검증 시나리오:**
-
-| 검증 | 확인 방법 | 기대값 |
-|------|----------|--------|
-| [1] 정상 Webhook | HTTP 응답 코드 | 202 |
-| [2] Stream 적재 | `mockRedis.messageCount` | 1 |
-| [3] 원장 업데이트 | `ledger.getNFTBalance()` | 1 |
-| [4] 멱등성 (동일 requestId 재전송) | Stream 수 + 원장 잔고 | 여전히 1 / 1 |
-| [5] HMAC 검증 실패 | 잘못된 서명 전송 → | 401 |
-
-**TODO 목록 (실습에서 직접 구현):**
-
-```
-TODO 1: WebhookPublishHandler 생성 + server.on('NFT_ISSUED', ...) 등록
-TODO 2: NFTIssuedProcessor 생성 (idempotencyConsumer, ledger)
-TODO 3: ConsumerGroupWorker 생성
-        config: streamKey='kyobo:events', groupName='issuer-consumers',
-                consumerId='worker-s12', batchSize=10, blockMs=30, minIdleMs=30_000
-TODO 4: 동일 BODY(requestId) 재전송 → 멱등성 확인
-TODO 5: 잘못된 서명으로 전송 → 401 확인
+→ InMemoryLedgerService → XACK
 ```
 
 ---
 
-## E2E 실습 스켈레톤과 답안
+## 실습 (30분)
+
+실습 파일: `course/exercises/M2/S12_e2e.ts`
+
+```bash
+npm run exercise:s12
+```
+
+파일 상단의 실험 변수를 바꾸고 실행하면서 출력이 어떻게 달라지는지 확인하세요.
+
+```typescript
+const SEND_DUPLICATE = false; // 같은 requestId로 두 번 보낼까?
+const SEND_BAD_SIG   = false; // 잘못된 서명으로 보낼까?
+```
+
+---
+
+## 단계별 진행 가이드
+
+### 실험 1 — 기본 파이프라인 확인 (변수 그대로)
+
+```
+SEND_DUPLICATE = false / SEND_BAD_SIG = false
+```
+
+```bash
+npm run exercise:s12
+```
+
+**기대 출력:**
+```
+[1] 정상 서명 → Webhook 전송
+  [XADD] ... | NFT_ISSUED
+  ✅ HTTP 202 (기대: 202)
+
+[2] Stream 적재 확인
+  ✅ Stream 메시지 1건 (기대: 1)
+
+[3] Consumer 처리 후 원장
+  [XACK] 처리 완료
+  ✅ 0xAlice T-1001 잔고: 1 (기대: 1)
+
+[4] 중복 전송 (멱등성)
+  (스킵 — SEND_DUPLICATE = true 로 바꿔보세요)
+
+[5] 잘못된 서명
+  (스킵 — SEND_BAD_SIG = true 로 바꿔보세요)
+
+  ✅ 전체 통과
+```
+
+> **확인 포인트:** `[XADD]` → `[XACK]` 의 순서로 파이프라인이 완주됩니다. Webhook 하나로 시작해서 원장 잔고가 1이 됩니다.
+
+---
+
+### 실험 2 — 멱등성 확인
+
+파일에서 `SEND_DUPLICATE = true` 로 바꾸고 실행하세요.
+
+**기대 출력 (추가 부분):**
+```
+[4] 중복 전송 (멱등성)
+  ✅ HTTP 202 (기대: 202)
+  ✅ 0xAlice T-1001 잔고: 1 (기대: 1, 중복 차단)
+  ✅ Stream 메시지 1건 (기대: 1, 추가 없음)
+```
+
+> **확인 포인트:** 같은 `requestId`를 두 번 보내도 Stream 메시지는 1건이고, 원장 잔고는 여전히 1입니다. `WebhookPublishHandler`의 `IdempotencyGuard`가 두 번째 전송을 차단합니다.
+
+---
+
+### 실험 3 — HMAC 서명 검증
+
+파일에서 `SEND_BAD_SIG = true` 로 바꾸고 실행하세요.
+
+**기대 출력 (추가 부분):**
+```
+[5] 잘못된 서명
+  ✅ HTTP 401 (기대: 401)
+```
+
+> **확인 포인트:** 서명이 틀리면 `WebhookServer`에서 즉시 401을 반환하고 처리 파이프라인으로 진입하지 않습니다. Stream은 여전히 1건입니다.
+
+---
+
+### 실험 4 — 전체 시나리오 동시 실행
+
+```
+SEND_DUPLICATE = true
+SEND_BAD_SIG   = true
+```
+
+**확인 포인트:** 세 가지 검증이 모두 통과하고 ✅ 전체 통과 가 출력됩니다. 이것이 M2 파이프라인의 완전한 E2E 검증입니다.
+
+---
+
+## 완료 기준
+
+- [ ] 실험 1: 파이프라인 완주 (`[XADD]` → `[XACK]` → 잔고 1)
+- [ ] 실험 2: 중복 전송 차단 확인 (Stream 1건, 잔고 1)
+- [ ] 실험 3: 잘못된 서명 → 401
+- [ ] M2 이벤트 파이프라인 전체 흐름을 말로 설명 가능:
+
+```
+Webhook(HMAC 검증) → IdempotencyGuard(requestId 중복 차단)
+→ XADD(Stream 적재) → XREADGROUP(Consumer 수신)
+→ NFTIssuedProcessor(멱등성 + 원장 업데이트) → XACK
+```
+
+---
+
+## E2E 참고 답안
 
 ### 스켈레톤 구조
 

@@ -600,26 +600,102 @@ for (const msg of dlqMessages) {
    → 실패 → DLQ 재진입 → 즉시 알림 (2회 DLQ = 비즈니스 로직 버그 의심)
 ```
 
-## 6. 실습 — DLQ 시나리오 실행
+## 6. 실습 — DLQ 시나리오 관찰
 
-| 파일 | 내용 |
-|---|---|
-| `S11_dlq.ts` | Part 1: 3회 실패 → DLQ 이동 시나리오 / Part 2: listPending + requeueMessage 운영 절차 |
+실습 파일: `course/exercises/M2/S11_dlq.ts`
 
 ```bash
-# internal/packages/event-engine 폴더에서
-npx ts-node src/exercises/S11_dlq.ts
+npm run exercise:s11
 ```
 
-**실습 순서 (파일 내 주석 안내에 따라):**
+파일 상단의 실험 변수를 바꾸고 실행하면서 출력이 어떻게 달라지는지 확인하세요.
 
-1. `dlqHandler` 인스턴스 생성 (실습 1 — 이미 완성)
-2. 항상 실패하는 `brokenProcessor` 확인 (실습 2 — 이미 완성)
-3. `ConsumerGroupWorker` 생성 + 실행 블록 주석 해제 (실습 6)
-   - 2초 후 worker.stop() → 3회 실패 → DLQ 이동 확인
-4. `listPending()` 주석 해제 (실습 3) → DLQ 항목 출력 확인
-5. `requeueMessage()` 주석 해제 (실습 4) → 원 스트림 재투입
-6. 재큐잉 후 `listPending()` 재확인 (실습 5) → 항목 1개 감소
+```typescript
+const MAX_RETRIES  = 3;       // DLQ 이동까지 최대 재시도 횟수
+const REQUEUE_MODE = 'first'; // 재큐잉할 항목 수: 'first' 또는 'all'
+```
+
+---
+
+## 단계별 진행 가이드
+
+### 실험 1 — 기본 상태 확인 (변수 그대로)
+
+```
+MAX_RETRIES = 3 / REQUEUE_MODE = 'first'
+```
+
+```bash
+npm run exercise:s11
+```
+
+**기대 출력:**
+```
+  Part 1 — 실패 반복 → DLQ 이동
+
+  [DLQ XADD] kyobo:events:dlq → ...
+  [XACK] ...
+  [DLQ ALERT] DLQ ...
+
+  DLQ 항목 수: 1
+  ✅ DLQ 이동 확인
+
+  Part 2 — 운영자 DLQ 처리 절차
+
+  DLQ 항목 수: 1
+    - ... | NFT_BURNED | max retries (3) exceeded
+
+  REQUEUE_MODE = 'first' → 1건 재큐잉
+  [requeue] ... → 새 ID: ...
+
+  재큐잉 후 DLQ 항목 수: 0
+  ✅ 1건 감소 (기대: 1)
+```
+
+> **확인 포인트:** `NFT_BURNED` 이벤트가 3회 실패 후 DLQ로 이동하고, 운영자가 `requeueMessage()`로 복구하는 전체 흐름을 확인하세요.
+
+---
+
+### 실험 2 — MAX_RETRIES를 1로 줄이면?
+
+파일에서 `MAX_RETRIES = 1` 로 바꾸고 실행하세요.
+
+**확인 포인트:**
+- `[DLQ XADD]` 로그가 더 빨리 나타납니다 (1회 실패 후 바로 DLQ)
+- `[XACK]` 는 이전과 동일하게 DLQ 이동 시 1회 호출됩니다
+- `DLQ 항목 수: 1` 은 동일하지만 도달하는 속도가 다릅니다
+
+> `MAX_RETRIES` 가 낮을수록 일시적 오류(네트워크 지연 등)도 DLQ로 가버립니다. 너무 낮으면 과민 반응, 너무 높으면 장애 감지가 늦어집니다.
+
+---
+
+### 실험 3 — 전체 재큐잉
+
+```
+MAX_RETRIES = 3
+REQUEUE_MODE = 'all'
+```
+
+**확인 포인트:** 이 실습에서는 DLQ 항목이 1건이라 `'first'` 와 `'all'` 결과가 같습니다. 실무에서 `'all'` 은 DLQ에 누적된 여러 메시지를 한 번에 재투입할 때 사용합니다.
+
+---
+
+## 완료 기준
+
+- [ ] 실험 1: `[DLQ XADD] kyobo:events:dlq` 로그 확인 (3회 실패 후 이동)
+- [ ] 실험 1: DLQ 항목 `reason` = `max retries (3) exceeded` 확인
+- [ ] 실험 1: 재큐잉 후 DLQ 항목 수 0 확인
+- [ ] 실험 2: MAX_RETRIES=1 시 DLQ 이동 속도 차이 관찰
+- [ ] 아래 운영 절차를 말로 설명 가능:
+
+```
+실패 반복 (MAX_RETRIES회)
+    → DLQ XADD (격리) + XACK (PEL 정리)
+    → 운영자 listPending() 으로 확인
+    → 원인 파악 후 requeueMessage()
+    → 원 스트림에 재투입 + DLQ에서 제거
+    → Consumer가 재처리
+```
 
 ---
 

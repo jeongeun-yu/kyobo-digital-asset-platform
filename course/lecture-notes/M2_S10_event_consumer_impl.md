@@ -572,25 +572,105 @@ async process(message: StreamMessage): Promise<void> {
 
 # 실습 (30분)
 
-실습 파일: `exercises/S10_handle_with_retry.ts` / 답안: `S10_handle_with_retry.answer.ts`
+실습 파일: `course/exercises/M2/S10_handle_with_retry.ts`
 
 ```bash
-# internal/packages/event-engine 폴더에서
-npx ts-node src/exercises/S10_handle_with_retry.ts
+npm run exercise:s10
 ```
 
-**목표:** `_handleWithRetry()` 함수를 직접 구현하고 4가지 시나리오로 검증
+파일 상단의 실험 변수를 바꾸고 실행하면서 출력이 어떻게 달라지는지 확인하세요.
 
-```
-TODO 구현 목록:
-  [ ] TODO 1: retryCount >= MAX_RETRIES → dlq.move() + xack + return
-  [ ] TODO 2: matched processor 없음 → xack + return
-  [ ] TODO 3: process 성공 → xack
-  [ ] TODO 4: process 실패 → _retryCount + 1 (xack 없음)
+```typescript
+const MAX_RETRIES          = 3;  // DLQ로 이동하는 임계값
+const FAIL_MSG_RETRY_COUNT = 1;  // 실패 메시지의 현재 재시도 횟수
 ```
 
-**완료 기준:**
-- [ ] 시나리오 1: DLQ 이동 ✅ + XACK ✅
-- [ ] 시나리오 2: XACK ✅ (processor 호출 없음)
-- [ ] 시나리오 3: XACK ✅
-- [ ] 시나리오 4: retryCount=2 ✅ + XACK 없음 ✅
+---
+
+## 단계별 진행 가이드
+
+### 실험 1 — 기본 상태 확인 (변수 그대로)
+
+```
+MAX_RETRIES = 3 / FAIL_MSG_RETRY_COUNT = 1
+```
+
+```bash
+npm run exercise:s10
+```
+
+**기대 출력:**
+```
+[A] retryCount=3 (>= MAX_RETRIES=3) → DLQ
+  [DLQ] ...
+  [XACK] ...
+  ✅ DLQ 이동: 1건 (기대: 1)
+  ✅ XACK: 1건 (기대: 1)
+
+[B] UNKNOWN_EVENT → 매칭 processor 없음
+  [XACK] ...
+  ✅ DLQ 이동: 0건 (기대: 0)
+  ✅ XACK: 1건 (기대: 1)
+
+[C] NFT_ISSUED → 처리 성공 → XACK
+  [processor] NFT_ISSUED → 성공
+  [XACK] ...
+  ✅ XACK: 1건 (기대: 1)
+
+[D] 처리 실패, 현재 retryCount=1
+  [retry] message ... failed (attempt 2): 일시적 오류
+  ✅ retryCount: 2 (기대: 2)
+  ✅ XACK: 0건 (기대: 0, PEL 유지)
+```
+
+> **확인 포인트:** 4가지 분기가 모두 독립적으로 동작합니다. 시나리오 D에서는 XACK가 없어 PEL에 메시지가 남습니다.
+
+---
+
+### 실험 2 — MAX_RETRIES를 1로 줄이면?
+
+파일에서 `MAX_RETRIES = 1` 로 바꾸고 실행하세요.
+
+**확인 포인트:**
+- 시나리오 A는 `retryCount=1 >= MAX_RETRIES=1` 조건을 그대로 충족 → DLQ 이동
+- 시나리오 D의 `FAIL_MSG_RETRY_COUNT = 1` 이면 이미 MAX_RETRIES에 도달 → DLQ 분기로 빠짐
+
+> `MAX_RETRIES` 를 낮출수록 메시지가 더 빨리 DLQ로 이동합니다. 너무 낮으면 일시적 오류도 DLQ로 가버립니다.
+
+---
+
+### 실험 3 — 실패 카운터를 경계값으로 맞추기
+
+```
+MAX_RETRIES = 3
+FAIL_MSG_RETRY_COUNT = 2
+```
+
+**확인 포인트:** 시나리오 D에서 retryCount가 2→3이 됩니다. 다음 수신 시 시나리오 A(DLQ 분기)로 빠집니다. 이것이 "마지막 재시도"의 순간입니다.
+
+---
+
+### 실험 4 — FAIL_MSG_RETRY_COUNT = MAX_RETRIES이면?
+
+```
+MAX_RETRIES = 3
+FAIL_MSG_RETRY_COUNT = 3
+```
+
+**확인 포인트:** 시나리오 D는 처리 실패 상황인데, 메시지의 현재 카운트가 이미 MAX_RETRIES와 같습니다. 하지만 시나리오 A가 먼저 체크하므로 → 시나리오 D는 실행되지 않고 시나리오 A에서 DLQ로 이동합니다.
+
+---
+
+## 완료 기준
+
+- [ ] 실험 1: 4개 시나리오 모두 ✅ 확인
+- [ ] 실험 2: MAX_RETRIES=1 시 시나리오 D가 DLQ 분기로 전환됨 확인
+- [ ] 실험 3: retryCount 경계값(MAX_RETRIES - 1)의 의미 이해
+- [ ] 아래 결정 트리를 말로 설명 가능:
+
+```
+retryCount >= MAX_RETRIES? → DLQ + XACK
+매칭 processor 없음?       → XACK (무시)
+처리 성공?                  → XACK
+처리 실패?                  → retryCount+1, XACK 없음 (PEL 잔류)
+```

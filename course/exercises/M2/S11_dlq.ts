@@ -1,22 +1,32 @@
 /**
- * S11 실습 — Dead Letter Queue 운영 패턴
+ * S11 실습 — Dead Letter Queue 운영 패턴 관찰
  *
- * 강의 노트: M2_S11_dlq_design.md
+ * 실행 방법: npm run exercise:s11
  *
- * 실행 방법 (루트에서): npm run exercise:s11
- *
- * 목표:
- *   Part 1 — 3회 실패 → DLQ 이동 시나리오 관찰
- *   Part 2 — DLQHandler.listPending() / requeueMessage() 운영 절차 실습
+ * 아래 실험 변수를 바꾸고 실행하면서 출력이 어떻게 달라지는지 확인하세요.
+ * 각 실험의 의미는 실습 가이드(M2_S11_dlq_design.md)를 참고하세요.
  */
 
-import { ConsumerGroupWorker, DLQHandler, type EventProcessor, type StreamMessage, type DLQItem } from '@kyobo/event-engine';
+// ══════════════════════════════════════════════════════════════════
+//  실험 변수 — 여기 값을 바꿔가며 실행해보세요
+// ══════════════════════════════════════════════════════════════════
 
-// ────────────────────────────────────────────────────────────────────────
-// Mock 인프라 — 수정하지 않아도 됨
-// ────────────────────────────────────────────────────────────────────────
+/** 실험 1: DLQ 이동까지 최대 재시도 횟수 (1, 2, 3 으로 바꿔보세요) */
+const MAX_RETRIES = 3;
 
-// stream key별로 분리된 저장소
+/** 실험 2: 재큐잉할 항목 수 ('first' 또는 'all' 로 바꿔보세요) */
+const REQUEUE_MODE: 'first' | 'all' = 'first';
+
+// ══════════════════════════════════════════════════════════════════
+//  아래는 수정하지 않아도 됩니다
+// ══════════════════════════════════════════════════════════════════
+
+// 내부 워커 로그를 억제 — 결과값만 표시
+process.env['LOG_LEVEL'] = 'error';
+
+import { ConsumerGroupWorker, DLQHandler, type EventProcessor, type StreamMessage } from '@kyobo/event-engine';
+
+// ── Mock Redis (DLQ용) ───────────────────────────────────────────
 const dlqStore: Map<string, Array<{ id: string; fields: Record<string, string> }>> = new Map();
 function getStream(key: string) {
   if (!dlqStore.has(key)) dlqStore.set(key, []);
@@ -27,7 +37,7 @@ const dlqRedis = {
   async xadd(key: string, fields: Record<string, string>): Promise<string> {
     const id = `${Date.now()}-0`;
     getStream(key).push({ id, fields });
-    console.log(`[DLQ XADD] ${key} → ${id}`);
+    console.log(`  [DLQ XADD] ${key} → ${id}`);
     return id;
   },
   async xrange(key: string, start: string, end: string, count?: number) {
@@ -37,106 +47,91 @@ const dlqRedis = {
   },
   async xdel(key: string, ...ids: string[]): Promise<number> {
     const stream = getStream(key);
-    let count = 0;
+    let removed = 0;
     for (const id of ids) {
       const idx = stream.findIndex(i => i.id === id);
-      if (idx !== -1) { stream.splice(idx, 1); count++; }
+      if (idx !== -1) { stream.splice(idx, 1); removed++; }
     }
-    return count;
+    return removed;
   },
 };
 
 const dlqNotifier = {
   async sendAlert(msg: string): Promise<void> {
-    console.log('[DLQ ALERT]', msg.split('\n')[0]);
+    console.log(`  [DLQ ALERT] ${msg.split('\n')[0]}`);
   },
 };
 
-// Consumer Mock — 수정하지 않아도 됨
+// ── Consumer Mock ────────────────────────────────────────────────
 function makeConsumerRedis(msg: StreamMessage) {
   let count = 0;
   return {
     async xreadgroup() {
-      if (count++ < 4) return [{ key: 'kyobo:events', messages: [msg] }];
-      await new Promise(r => setTimeout(r, 50));
+      if (count++ < MAX_RETRIES + 1) return [{ key: 'kyobo:events', messages: [msg] }];
+      await new Promise(r => setTimeout(r, 30));
       return [];
     },
     async xack(_k: string, _g: string, ...ids: string[]) {
-      console.log(`[XACK] ${ids.join(', ')}`);
+      console.log(`  [XACK] ${ids.join(', ')}`);
       return ids.length;
     },
     async xautoclaim() { return { nextId: '0-0', messages: [] }; },
   };
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// 실습 1 — DLQHandler 생성 (이미 완성 — 수정하지 않아도 됨)
-// ────────────────────────────────────────────────────────────────────────
-// DLQHandler(redis, notifier, sourceStreamKey) 형태로 생성한다.
-// sourceStreamKey 'kyobo:events' → DLQ 스트림 키가 'kyobo:events:dlq'로 결정됨
-export const dlqHandler = new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events');
-
-// ────────────────────────────────────────────────────────────────────────
-// 실습 2 — 항상 실패하는 EventProcessor (이미 완성 — 수정하지 않아도 됨)
-// ────────────────────────────────────────────────────────────────────────
-// 3회 재시도 후 DLQ로 이동하는 흐름을 확인하기 위해 의도적으로 실패
-export const brokenProcessor: EventProcessor = {
+// ── 항상 실패하는 Processor ──────────────────────────────────────
+const brokenProcessor: EventProcessor = {
   eventTypes: ['NFT_BURNED'],
   async process(_msg: StreamMessage): Promise<void> {
     throw new Error('DB connection failed');
   },
 };
 
-// ────────────────────────────────────────────────────────────────────────
-// Part 2 — 운영 절차: listPending + requeueMessage
-// ────────────────────────────────────────────────────────────────────────
-
+// ── DLQ 운영 절차 ────────────────────────────────────────────────
 async function runOperatorWorkflow(dlqHandler: DLQHandler): Promise<void> {
-  console.log('\n=== Part 2: 운영자 DLQ 처리 절차 ===\n');
+  const LINE = '─'.repeat(52);
+  console.log('\n' + LINE);
+  console.log('  Part 2 — 운영자 DLQ 처리 절차');
+  console.log(LINE);
 
-  // 실습 3 — DLQ 항목 조회
-  // dlqHandler.listPending()으로 현재 DLQ에 쌓인 메시지 목록을 가져온다.
-  // 반환값: DLQItem[]  (messageId, event, reason, failedAt 등 포함)
-  //
-  // 힌트: const pending = await dlqHandler.listPending()
-  // TODO 실습 3: const pending = await dlqHandler.listPending();
-  const pending: DLQItem[] = undefined as never;
-
-  console.log(`[listPending] DLQ 항목 수: ${pending.length}`);
+  const pending = await dlqHandler.listPending();
+  console.log(`  DLQ 항목 수: ${pending.length}`);
   for (const item of pending) {
-    console.log(`  - ${item.messageId} | ${item.event['eventType']} | ${item.reason}`);
+    console.log(`    - ${item.messageId} | ${item.event['eventType']} | ${item.reason}`);
   }
 
   if (pending.length === 0) {
-    console.log('[skip] DLQ가 비어 있어 재큐잉 스킵');
+    console.log('  [skip] DLQ 비어 있음');
     return;
   }
 
-  // 실습 4 — 첫 번째 DLQ 항목 재큐잉
-  // dlqHandler.requeueMessage(messageId) → { newMessageId: string }
-  //   - DLQ에서 메시지를 꺼내 kyobo:events에 다시 XADD
-  //   - DLQ에서는 XDEL로 제거
-  //
-  // 힌트: const result = await dlqHandler.requeueMessage(pending[0]!.messageId)
-  const first = pending[0]!;
-  // TODO 실습 4: const result = await dlqHandler.requeueMessage(first.messageId);
-  const result: { newMessageId: string } = undefined as never;
-  console.log(`[requeue] 재큐잉 완료: ${result.newMessageId}`);
+  const toRequeue = REQUEUE_MODE === 'all' ? pending : [pending[0]!];
+  console.log(`\n  REQUEUE_MODE = '${REQUEUE_MODE}' → ${toRequeue.length}건 재큐잉`);
 
-  // 실습 5 — 재큐잉 후 DLQ 항목 수 확인
-  // 힌트: const afterRequeue = await dlqHandler.listPending()
-  // TODO 실습 5: const afterRequeue = await dlqHandler.listPending();
-  const afterRequeue: DLQItem[] = undefined as never;
-  console.log(`[listPending after requeue] DLQ 항목 수: ${afterRequeue.length}`);
-  console.log(pending.length - afterRequeue.length === 1 ? '✅ 재큐잉 후 항목 1개 감소' : '❌ 항목 수 불일치');
+  for (const item of toRequeue) {
+    const result = await dlqHandler.requeueMessage(item.messageId);
+    console.log(`  [requeue] ${item.messageId} → 새 ID: ${result.newMessageId}`);
+  }
+
+  const afterRequeue = await dlqHandler.listPending();
+  console.log(`\n  재큐잉 후 DLQ 항목 수: ${afterRequeue.length}`);
+  const reduced = pending.length - afterRequeue.length;
+  console.log(`  ${reduced === toRequeue.length ? '✅' : '❌'} ${reduced}건 감소 (기대: ${toRequeue.length})`);
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// 실행 — 실습 3~5 완성 후 runOperatorWorkflow가 정상 동작한다
-// ────────────────────────────────────────────────────────────────────────
+// ── 실험 실행 ────────────────────────────────────────────────────
+(async () => {
+  const LINE = '─'.repeat(52);
 
-async function main() {
-  console.log('=== Part 1: 3회 실패 → DLQ 이동 시나리오 ===\n');
+  console.log('\n' + LINE);
+  console.log('  S11 실습 — DLQ 운영 패턴 관찰');
+  console.log(LINE);
+  console.log(`  MAX_RETRIES  = ${MAX_RETRIES}`);
+  console.log(`  REQUEUE_MODE = '${REQUEUE_MODE}'`);
+  console.log(LINE);
+  console.log('\n  Part 1 — 실패 반복 → DLQ 이동\n');
+
+  const dlqHandler = new DLQHandler(dlqRedis, dlqNotifier, 'kyobo:events');
 
   const msg: StreamMessage = {
     id: `${Date.now()}-0`,
@@ -149,20 +144,25 @@ async function main() {
     },
   };
 
-  const redis = makeConsumerRedis(msg);
+  const redis  = makeConsumerRedis(msg);
   const worker = new ConsumerGroupWorker(
     redis, [brokenProcessor], dlqHandler,
     { streamKey: 'kyobo:events', groupName: 'issuer-consumers',
       consumerId: 'consumer-s11', batchSize: 1, blockMs: 0, minIdleMs: 30_000 },
   );
-  const timeout = setTimeout(() => worker.stop(), 2000);
+  const timeout = setTimeout(() => worker.stop(), 3000);
   await worker.start();
   clearTimeout(timeout);
 
   const dlqStream = getStream('kyobo:events:dlq');
-  console.log('\n[check] DLQ 항목 수:', dlqStream.length);
-  console.log(dlqStream.length >= 1 ? '✅ DLQ 이동 확인' : '❌ DLQ 이동 실패');
-  await runOperatorWorkflow(dlqHandler);
-}
+  console.log(`\n  DLQ 항목 수: ${dlqStream.length}`);
+  console.log(`  ${dlqStream.length >= 1 ? '✅' : '❌'} DLQ 이동 확인`);
 
-if (require.main === module) main();
+  await runOperatorWorkflow(dlqHandler);
+
+  console.log('\n' + LINE + '\n');
+  console.log('[ 다음 실험을 해보세요 ]');
+  console.log(`  1. MAX_RETRIES = 1 → 1회 실패만으로 DLQ 이동`);
+  console.log(`  2. MAX_RETRIES = 2 → 2회 실패 후 DLQ 이동`);
+  console.log(`  3. REQUEUE_MODE = 'all' → 전체 재큐잉\n`);
+})();
