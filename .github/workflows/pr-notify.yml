@@ -21,7 +21,7 @@ jobs:
           username: coincraft.edu@gmail.com
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
           subject: "[교보생명 강의] 새 PR이 등록됐습니다 — #${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}"
-          to: ${{ vars.STUDENT_EMAILS }}
+          to: ${{ secrets.STUDENT_EMAILS }}
           from: "CoinCraft 교육팀 <coincraft.edu@gmail.com>"
           body: |
             안녕하세요,
