@@ -1,0 +1,41 @@
+name: PR 알림 — 수강생 이메일 발송
+
+on:
+  pull_request:
+    branches: [ master ]
+    types: [ opened, reopened ]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 레포 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 수강생 이메일 발송
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: coincraft.edu@gmail.com
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "[교보생명 강의] 새 PR이 등록됐습니다 — #${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}"
+          to: ${{ vars.STUDENT_EMAILS }}
+          from: "CoinCraft 교육팀 <coincraft.edu@gmail.com>"
+          body: |
+            안녕하세요,
+
+            교보생명 디지털 자산 플랫폼 강의 레포에 새 PR이 등록됐습니다.
+
+            ─────────────────────────────────
+            PR #${{ github.event.pull_request.number }}
+            제목:   ${{ github.event.pull_request.title }}
+            작성자: ${{ github.event.pull_request.user.login }}
+            브랜치: ${{ github.event.pull_request.head.ref }} → master
+            링크:   ${{ github.event.pull_request.html_url }}
+            ─────────────────────────────────
+
+            위 링크에서 PR 내용을 확인하세요.
+
+            CoinCraft 교육팀
