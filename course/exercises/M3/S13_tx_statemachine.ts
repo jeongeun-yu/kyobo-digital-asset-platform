@@ -32,14 +32,14 @@ import type { TxRepository, VaspTxClient, WalletResolver, MintRequest } from '@k
 // TODO: 아래 각 항목에서 throw를 지우고 올바른 TxStatus 배열을 채우세요.
 // 예: REQUESTED: ['SUBMITTED', 'FAILED'],
 const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
-  REQUESTED: ['SUBMITTED', 'FAILED'],
-  SUBMITTED: ['PENDING',   'FAILED'],
-  PENDING:   ['MINED',     'FAILED'],
-  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
-  CONFIRMED: ['FINALIZED'],
-  FINALIZED: [],                          // 종단 — PoS 절대 불변
-  FAILED:    [],                          // 종단
-  REORGED:   ['MINED',     'FAILED'],
+  REQUESTED: [], // TODO: 허용되는 다음 상태를 채우세요
+  SUBMITTED: [], // TODO
+  PENDING:   [], // TODO
+  MINED:     [], // TODO
+  CONFIRMED: [], // TODO
+  FINALIZED: [], // 종단 — PoS 절대 불변 (수정 불필요)
+  FAILED:    [], // 종단 (수정 불필요)
+  REORGED:   [], // TODO
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -59,10 +59,9 @@ class InvalidStatusTransitionError extends Error {
 }
 
 function transitionStatus(current: TxStatus, next: TxStatus): void {
-  const allowed = VALID_TRANSITIONS[current] ?? [];
-  if (!allowed.includes(next)) {
-    throw new InvalidStatusTransitionError(current, next);
-  }
+  // TODO: VALID_TRANSITIONS[current]에서 허용 목록을 가져와
+  //       next가 포함되지 않으면 InvalidStatusTransitionError를 throw하라
+  throw new Error('NOT IMPLEMENTED');
 }
 
 // ────────────────────────────────────────────────────────────────────────
