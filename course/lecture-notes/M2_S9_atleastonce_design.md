@@ -284,21 +284,30 @@ Redis가 메시지 분배 (XREADGROUP: 먼저 호출한 쪽이 소유)
 
 # 실습 (30분)
 
-실습 파일: `exercises/S09_atleastonce.ts` / 답안: `S09_atleastonce.answer.ts`
+실습 파일: `course/exercises/M2/S09_atleastonce.ts`
 
 ```bash
-# 루트에서 실행
 npm run exercise:s09
+```
 
-# 채점
-npm run test:exercises -- S09
+파일 상단의 실험 변수를 바꾸고 실행하면서 출력이 어떻게 달라지는지 확인하세요.
+
+```typescript
+const DUPLICATE_COUNT    = 2;     // 같은 메시지를 몇 번 보낼까?
+const USE_IDEMPOTENCY    = false; // 멱등성 켜기
+const ACK_BEFORE_PROCESS = false; // XACK를 처리 전에 하면?
+const SIMULATE_CRASH     = false; // 처리 도중 크래시 시뮬레이션
 ```
 
 ---
 
 ## 단계별 진행 가이드
 
-### Step 0 — 현재 상태 확인 (구현 전)
+### 실험 1 — 기본 상태 확인 (변수 그대로)
+
+```
+DUPLICATE_COUNT = 2 / USE_IDEMPOTENCY = false
+```
 
 ```bash
 npm run exercise:s09
@@ -306,238 +315,143 @@ npm run exercise:s09
 
 **기대 출력:**
 ```
-[ Part 1 ] 멱등성 없음 — 동일 메시지 2회 전달
-    [원장] T-001 → 0xKYOBO | 누적 처리 횟수: 1
-    [XACK] ...
-    [원장] T-001 → 0xKYOBO | 누적 처리 횟수: 2   ← 중복!
-    [XACK] ...
-  → 최종 원장 처리 횟수: 2 ❌ 중복 발행!
+[메시지 1/2] requestId=req-001 수신
+  [원장] T-001 → 0xKYOBO 적립 | 누적: 1회
+  [XACK] 처리 완료 후 ACK 전송 ✅
 
-[ Part 2 ] 멱등성 적용 — 동일 메시지 2회 전달
-  → 에러 발생 (NOT IMPLEMENTED)  ← 정상, 아직 미구현
+[메시지 2/2] requestId=req-001 수신
+  [원장] T-001 → 0xKYOBO 적립 | 누적: 2회   ← 같은 메시지인데 또 적립됨!
+  [XACK] 처리 완료 후 ACK 전송 ✅
+
+  최종 원장 적립 횟수: 2회
+  ❌ 중복 발행! — NFT가 2회 적립됨
 ```
 
-> Part 1에서 ❌ 중복 발행이 보이면 환경 세팅 완료. Part 2로 진행.
+> **확인 포인트:** 같은 `requestId`인데 원장에 2번 적립됩니다. 이게 바로 멱등성이 없을 때 발생하는 중복 발행 버그입니다.
 
 ---
 
-### Step 1 — TODO 1: eventTypes 선언
+### 실험 2 — 중복 횟수 늘려보기
 
-`IdempotentNftProcessor` 클래스에서 이 프로세서가 처리할 이벤트 타입을 선언하세요.
+파일에서 `DUPLICATE_COUNT = 3` 으로 바꾸고 실행하세요.
 
 ```bash
-# 작성 후 채점
-npm run test:exercises -- S09
-```
-
-> 아직 다른 TODO가 미완성이므로 테스트는 실패합니다. 진행 방향 확인용.
-
----
-
-### Step 2 — TODO 3~4: requestId 추출 + 중복 체크
-
-`process()` 안에서:
-1. `message.fields`에서 `requestId`를 꺼내세요
-2. 이미 처리한 적 있으면 로그를 남기고 `return`하세요
-
----
-
-### Step 3 — TODO 5: 처리 + 기록
-
-1. `payload`에서 `tokenId`, `owner`를 꺼내 `credit()`을 호출하세요
-2. 처리가 끝난 **후에** `requestId`를 기록하세요
-
-```bash
-# 완성 후 실행
 npm run exercise:s09
 ```
 
-**기대 출력 (Part 2):**
-```
-[ Part 2 ] 멱등성 적용 — 동일 메시지 2회 전달
-    [원장] T-001 → 0xKYOBO | 누적 처리 횟수: 1
-    [XACK] ...
-    [멱등성] 중복 요청 무시: req-dup-001        ← 두 번째는 차단
-    [XACK] ...
-  → 최종 원장 처리 횟수: 1 ✅ 정상
-```
+**확인 포인트:** 메시지를 3번 보내면 원장 적립도 3회가 됩니다. DUPLICATE_COUNT를 늘릴수록 NFT가 그만큼 중복 발행되는 걸 직접 확인하세요.
 
 ---
 
-### Step 4 — 최종 채점
+### 실험 3 — 멱등성 켜기
 
-```bash
-npm run test:exercises -- S09
-```
-
-모든 테스트 통과 시 완료.
-
-**Part 1** — 멱등성 없는 Naive Processor 실행: 동일 메시지 2회 → 원장 +2 (버그) 확인  
-**Part 2** — TODO: `IdempotentNftProcessor` 구현
-
----
-
-## 실습 스켈레톤 (Part 2)
-
-```typescript
-// S09_atleastonce.ts — Part 2 스켈레톤
-
-export class IdempotentNftProcessor implements EventProcessor {
-  // TODO 1: eventTypes 선언 — NFT_ISSUED 이벤트만 처리
-
-  private ledger = new InMemoryLedger();
-
-  // TODO 2: 중복 처리 방지를 위한 Set 선언
-  //         Set은 같은 값을 두 번 추가해도 한 번만 저장되는 자료구조
-
-  async process(message: StreamMessage): Promise<void> {
-    const requestId = message.fields['requestId'] ?? message.id;
-    const payload   = JSON.parse(message.fields['payload'] ?? '{}');
-
-    // TODO 3: requestId가 이미 처리됐으면 return (중복 차단)
-
-    // TODO 4: 원장에 NFT 적립
-
-    // TODO 5: processedIds에 requestId 추가 (이 requestId 완료 기록)
-  }
-}
-```
-
----
-
-## 구현 힌트
+파일에서 아래와 같이 바꾸고 실행하세요.
 
 ```
-TODO 1:
-  readonly eventTypes = ['NFT_ISSUED'];
-  → EventProcessor 인터페이스의 eventTypes 필드. string[] 타입.
-
-TODO 2:
-  private readonly processedIds = new Set<string>();
-  → Set<string>: 문자열 집합. has(), add(), delete() 제공.
-  → new Set<string>(): 빈 집합으로 초기화.
-
-TODO 3:
-  if (this.processedIds.has(requestId)) return;
-  → Set.has(value): 값이 있으면 true
-  → return으로 즉시 종료 = 중복 처리 차단
-
-TODO 4:
-  await this.ledger.creditNFT(payload.to, payload.tokenId);
-  → payload 구조: { to: '0xABCD', tokenId: '42', ... }
-  → creditNFT는 async 함수이므로 await 필수
-
-TODO 5:
-  this.processedIds.add(requestId);
-  → 처리 완료 후 기록 (중요: 처리 전이 아닌 처리 후에 추가)
-  → 처리 전에 add하면 처리 실패 시에도 중복 처리로 간주 → 이벤트 유실
-```
-
----
-
-## 답안
-
-```typescript
-export class IdempotentNftProcessor implements EventProcessor {
-  // TODO 1 답안
-  readonly eventTypes = ['NFT_ISSUED'];
-
-  private ledger = new InMemoryLedger();
-
-  // TODO 2 답안
-  private readonly processedIds = new Set<string>();
-
-  async process(message: StreamMessage): Promise<void> {
-    const requestId = message.fields['requestId'] ?? message.id;
-    const payload   = JSON.parse(message.fields['payload'] ?? '{}');
-
-    // TODO 3 답안
-    if (this.processedIds.has(requestId)) {
-      console.log(`[IdempotentNftProcessor] skip (already processed): ${requestId}`);
-      return;
-    }
-
-    // TODO 4 답안
-    await this.ledger.creditNFT(payload.to, payload.tokenId);
-    console.log(`[IdempotentNftProcessor] credited NFT tokenId=${payload.tokenId} to ${payload.to}`);
-
-    // TODO 5 답안
-    this.processedIds.add(requestId);
-  }
-}
-```
-
----
-
-## 실습 시나리오와 기대 출력
-
-### Part 1: 버그 재현 (멱등성 없음)
-
-```typescript
-// 동일 메시지를 2번 처리
-const msg: StreamMessage = {
-  id: '1714000001000-0',
-  fields: {
-    eventType: 'NFT_ISSUED',
-    payload:   JSON.stringify({ to: '0xABCD', tokenId: '42' }),
-    requestId: 'req-001',
-  },
-};
-
-const naiveProcessor = new NaiveNftProcessor();
-await naiveProcessor.process(msg);  // → ledger: { '0xABCD:42': 1 }
-await naiveProcessor.process(msg);  // → ledger: { '0xABCD:42': 2 }  ← 중복!
+DUPLICATE_COUNT = 3
+USE_IDEMPOTENCY = true
 ```
 
 **기대 출력:**
 ```
-[NaiveProcessor] credited NFT tokenId=42 to 0xABCD (balance: 1)
-[NaiveProcessor] credited NFT tokenId=42 to 0xABCD (balance: 2)
-❌ 중복 발행! balance=2, expected=1
+[메시지 1/3] requestId=req-001 수신
+  [원장] T-001 → 0xKYOBO 적립 | 누적: 1회
+  [XACK] 처리 완료 후 ACK 전송 ✅
+
+[메시지 2/3] requestId=req-001 수신
+  [멱등성] 이미 처리된 요청 — 스킵: req-001   ← 차단!
+  [XACK] 스킵 후 ACK 전송
+
+[메시지 3/3] requestId=req-001 수신
+  [멱등성] 이미 처리된 요청 — 스킵: req-001   ← 차단!
+  [XACK] 스킵 후 ACK 전송
+
+  최종 원장 적립 횟수: 1회
+  ✅ 정상 — 중복 없이 정확히 1회 처리
 ```
 
-### Part 2: 멱등성 적용 후
+> **확인 포인트:** 3번 보내도 원장 적립은 1번만 됩니다. 멱등성이 중복을 완벽하게 차단하고 있습니다.
 
-```typescript
-const idempotentProcessor = new IdempotentNftProcessor();
-await idempotentProcessor.process(msg);  // → 처리 + processedIds.add('req-001')
-await idempotentProcessor.process(msg);  // → processedIds.has('req-001') = true → skip
+---
+
+### 실험 4 — XACK 순서를 바꾸면?
+
+```
+USE_IDEMPOTENCY = false
+ACK_BEFORE_PROCESS = true
 ```
 
 **기대 출력:**
 ```
-[IdempotentNftProcessor] credited NFT tokenId=42 to 0xABCD
-[IdempotentNftProcessor] skip (already processed): req-001
-✅ 정상: balance=1
+[메시지 1/2] requestId=req-001 수신
+  [XACK] 처리 전에 ACK 전송 — 위험!    ← ACK가 먼저!
+  [원장] T-001 → 0xKYOBO 적립 | 누적: 1회
 ```
+
+> **확인 포인트:** ACK를 먼저 보내면 이 순간 크래시가 나도 Redis에서 메시지가 사라집니다. 원장 적립 전에 크래시 → 영구 유실. 이것이 XACK를 마지막에 해야 하는 이유입니다.
 
 ---
 
-## 주의: 이 실습의 processedIds는 메모리 기반
+### 실험 5 — 크래시 시뮬레이션
 
 ```
-현재 구현의 한계:
-  processedIds = new Set<string>()
-  → 프로세스 재시작 시 초기화됨
-  → Consumer 2개 실행 시 각자 별도 Set → 중복 방지 불가
-
-실무 해결 방법:
-  1. DB unique constraint + ON CONFLICT DO NOTHING
-     INSERT INTO processed_events (request_id, ...) ON CONFLICT DO NOTHING
-     → DB가 원자적으로 중복 차단
-
-  2. Redis SET
-     SETNX processed:{requestId} 1 EX 86400   (24시간 TTL)
-     → 여러 Consumer 간 공유 가능, 분산 환경 안전
-
-  3. IdempotencyGuard (이 코드베이스의 구현체)
-     → S12 E2E 실습에서 RedisIdempotencyStore와 연결
+USE_IDEMPOTENCY = false
+ACK_BEFORE_PROCESS = false
+SIMULATE_CRASH = true
 ```
+
+**기대 출력:**
+```
+[메시지 1/2] requestId=req-001 수신
+  [크래시] DB 처리 전 프로세스 종료 시뮬레이션
+  [오류] SIMULATED_CRASH
+  → 크래시 발생: XACK 안 됨, PEL에 메시지 잔류
+  → 재시작 후 이 메시지를 다시 수신하게 됩니다
+```
+
+> **확인 포인트:** XACK가 안 됐으므로 메시지는 Redis PEL에 남아있습니다. 재시작 후 이 메시지를 다시 받게 됩니다.
 
 ---
 
-**완료 기준:**
-- [ ] Part 1 실행 시 `❌ 중복 발행!` 출력 확인 (버그 재현)
-- [ ] Part 2 TODO 1~5 구현 후 `✅ 정상` 출력 확인
-- [ ] XACK 순서: process 완료 후 Worker가 자동 호출됨을 출력에서 확인
-- [ ] processedIds가 메모리 기반임을 이해 + 실무 해법 설명 가능
+### 실험 6 — 크래시 + 멱등성 (안전한 재처리)
+
+```
+USE_IDEMPOTENCY = true
+SIMULATE_CRASH = true
+DUPLICATE_COUNT = 2
+```
+
+> **확인 포인트:** 첫 번째 메시지에서 크래시가 나도, 두 번째(재전달) 메시지는 멱등성으로 안전하게 처리됩니다. 이것이 At-least-once + 멱등성의 핵심입니다.
+
+---
+
+## 완료 기준
+
+- [ ] 실험 1: ❌ 중복 발행 확인
+- [ ] 실험 3: ✅ 멱등성으로 중복 차단 확인
+- [ ] 실험 4: XACK 순서가 왜 중요한지 설명 가능
+- [ ] 실험 5: 크래시 시 PEL 잔류 동작 이해
+- [ ] 실험 6: At-least-once + 멱등성 조합으로 안전한 재처리 설명 가능
+
+---
+
+## 메모리 기반 멱등성의 한계
+
+이 실습의 `processedIds`는 인메모리 `Set`입니다.
+
+| 한계 | 설명 |
+|------|------|
+| 프로세스 재시작 | Set 초기화 → 이전 처리 기록 사라짐 |
+| Consumer 2개 | 각자 별도 Set → 분산 환경에서 중복 차단 불가 |
+
+**실무 해결책:**
+```
+1. DB unique constraint
+   INSERT INTO processed_events (request_id) ON CONFLICT DO NOTHING
+
+2. Redis SETNX
+   SETNX processed:{requestId} 1 EX 86400
+
+3. IdempotencyGuard (이 코드베이스)
+   → S12 E2E 실습에서 연결
+```
