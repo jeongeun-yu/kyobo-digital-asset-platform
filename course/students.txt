@@ -1,4 +1,19 @@
-# 수강생 이메일 목록 (16명)
+# 수강생 이메일 목록 (15명)
 # 한 줄에 하나씩 입력
 # 주석은 # 으로 시작
 
+aimarkim@naver.com
+younjaekim@kyobo.com
+kyuheenam@kyobo.com
+cbj342332@gmail.com
+kdhpope@naver.com
+hrq789@naver.com
+dev.junyong@gmail.com
+jayy_z@naver.com
+uijinson159@gmail.com
+qlqjtkvus@naver.com
+namsukim@kyobo.com
+munlucky7@gmail.com
+shinjh@kyobo.com
+dongkilkim@kyobo.com
+jeongeunyu.kb@gmail.com
