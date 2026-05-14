@@ -12,12 +12,20 @@
  * 각 레이어는 인터페이스를 통해 주입 — Phase 2/3에서 구현체만 교체.
  */
 
+import Redis                        from 'ioredis';
 import { EVMAdapter }              from '@kyobo/chain-adapters';
 import { ChainEventListener }      from '@kyobo/event-engine/listener';
 import { WebhookServer }           from '@kyobo/event-engine/webhook';
 import { IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/webhook';
 import { RetryHandler, DeadLetterQueue } from '@kyobo/event-engine/webhook';
 import { NFTIssuedHandler }        from '@kyobo/event-engine/handlers';
+import {
+  ConsumerGroupPool,
+  DLQHandler,
+  NFTIssuedProcessor,
+  InMemoryLedgerService,
+}                                  from '@kyobo/event-engine';
+import { IoRedisAdapter }          from './infra/RedisAdapter';
 import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
 // Phase 3 전환 시: ExternalVASPAdapter → KyoboVASPAdapter 로 교체
 // KyoboVASPAdapter는 @kyobo/vasp 패키지에 stub 구현 완료 (IVASPAdapter 동일 인터페이스)
@@ -36,6 +44,7 @@ async function bootstrap() {
     'VASP_API_URL', 'VASP_API_KEY',
     'CORE_BANKING_URL', 'CORE_BANKING_SECRET',
     'WEBHOOK_SECRET', 'WEBHOOK_PORT',
+    'REDIS_URL',
   ];
   for (const key of required) {
     if (!process.env[key]) throw new Error(`Missing env: ${key}`);
@@ -68,6 +77,10 @@ async function bootstrap() {
     secret:  process.env.CORE_BANKING_SECRET!,
   });
   const coreBanking = new KyoboCoreBankingAdapter(gatewayClient);
+
+  // ── Redis ────────────────────────────────────────────────────────────────────
+  const redis        = new Redis(process.env.REDIS_URL!);
+  const redisAdapter = new IoRedisAdapter(redis);
 
   // ── 멱등성 가드 (프로덕션: RedisIdempotencyStore로 교체) ─────────────────────
   const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
@@ -140,16 +153,43 @@ async function bootstrap() {
     }
   }, 60 * 60 * 1000);  // 1시간마다
 
+  // ── Redis Streams Consumer (NFT_ISSUED) ──────────────────────────────────────
+  const streamDlq = new DLQHandler(
+    redisAdapter,
+    { async sendAlert(msg) { console.error('[DLQ]', msg); } },
+  );
+  const ledger = new InMemoryLedgerService(); // M4에서 PostgreSQL 구현체로 교체
+
+  const nftIssuedProcessor = new NFTIssuedProcessor(idempotency, ledger);
+
+  // 도메인별 Consumer Group 분리 — 프로세서/핸들러 추가 시 여기에 항목 추가
+  const pool = new ConsumerGroupPool(
+    redisAdapter,
+    streamDlq,
+    { streamKey: 'kyobo:events', batchSize: 10, blockMs: 5_000, minIdleMs: 30_000 },
+    [
+      { groupName: 'nft-consumers', consumerId: 'nft-1', processors: [nftIssuedProcessor] },
+      // { groupName: 'activity-consumers', consumerId: 'activity-1', processors: [activityProcessor] },
+      // { groupName: 'coupon-consumers',   consumerId: 'coupon-1',   processors: [couponProcessor]   },
+    ],
+  );
+
   // ── 시작 ─────────────────────────────────────────────────────────────────────
   await eventListener.start();
   await webhookServer.listen();
+  pool.start().catch(err => {
+    console.error('[pool] fatal error, exiting', err);
+    process.exit(1);
+  });
 
   console.log('[issuer-service] started');
 
   // ── 종료 핸들링 ──────────────────────────────────────────────────────────────
   const shutdown = async () => {
+    pool.stop();
     await eventListener.stop();
     await webhookServer.close();
+    await redis.quit();
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);
