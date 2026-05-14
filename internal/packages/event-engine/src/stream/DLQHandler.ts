@@ -141,6 +141,20 @@ export class DLQHandler {
 
     return { newMessageId };
   }
+
+  /**
+   * DLQ 메시지 영구 삭제 (drop)
+   *
+   * 재투입 없이 DLQ에서 제거. 감사 로그는 호출자 책임.
+   * 사용 사례: 이미 처리된 txHash, 파싱 불가 메시지, KYC 영구 거부
+   *
+   * @param dlqMessageId DLQ 스트림의 messageId
+   */
+  async drop(dlqMessageId: string): Promise<void> {
+    const [entry] = await this.redis.xrange(this.dlqStreamKey, dlqMessageId, dlqMessageId, 1);
+    if (!entry) throw new DLQMessageNotFoundError(dlqMessageId);
+    await this.redis.xdel(this.dlqStreamKey, dlqMessageId);
+  }
 }
 
 export class DLQMessageNotFoundError extends Error {

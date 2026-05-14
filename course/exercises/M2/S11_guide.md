@@ -4,80 +4,106 @@
 npm run exercise:s11
 ```
 
-파일 상단 실험 변수를 바꾸고 실행하면서 출력이 어떻게 달라지는지 확인하세요.
+---
+
+## 사전 준비
+
+프로젝트 루트 `.env`에 Redis URL을 설정하세요.
+
+```
+REDIS_URL=호스트:포트
+REDIS_PASSWORD=비밀번호
+```
+
+---
+
+## 실습 구조
+
+| Part | 내용 | 수정 여부 |
+|------|------|-----------|
+| Part 1 | 3가지 실패 시나리오 DLQ 적재 (`move()`) | 수정 불필요 |
+| Part 2 | `listPending()`으로 DLQ 조회 | 수정 불필요 |
+| Part 3 | **TODO ① · ②** — 분류 함수 + 처리 루프 구현 | **학생 구현** |
+| Part 4 | 처리 결과 검증 + 재투입 필드 확인 | 수정 불필요 |
+
+---
+
+## TODO ① — `classifyItem()` 구현
+
+`item.reason` 문자열을 보고 `'requeue' | 'drop' | 'hold'` 중 하나를 반환합니다.
+
+| reason 키워드 | 판단 | 이유 |
+|--------------|------|------|
+| `'timeout'` 포함 | **requeue** | 일시적 장애, VASP 복구됨 |
+| `'parse error'` 포함 | **hold** | 코드 버그 → 수정 후 재판단 |
+| `'permanently'` 포함 | **drop** | KYC 영구 거부 → 재시도 무의미 |
+
+---
+
+## TODO ② — 처리 루프 구현
 
 ```typescript
-const MAX_RETRIES  = 3;       // DLQ 이동까지 최대 재시도 횟수
-const REQUEUE_MODE = 'first'; // 재큐잉할 항목 수: 'first' 또는 'all'
+if (action === 'requeue') {
+  const { newMessageId } = await dlqHandler.requeueMessage(item.messageId);
+  console.log(`  ↩  REQUEUE ... → newMessageId=${newMessageId}`);
+} else if (action === 'drop') {
+  await dlqHandler.drop(item.messageId);
+  console.log(`  🗑  DROP   ...`);
+}
 ```
 
 ---
 
-## 실험 1 — 기본 상태 (변수 그대로)
+## 기대 출력 (Part 3)
 
 ```
-MAX_RETRIES = 3 / REQUEUE_MODE = 'first'
+  ⏸  HOLD   [NFT_ISSUED] userId=user-001 → 코드 수정 후 재판단 필요
+  ↩  REQUEUE [NFT_ISSUED] userId=user-002 → newMessageId=17...
+  🗑  DROP   [NFT_ISSUED] userId=user-003 → 영구 삭제 (KYC 영구 거부)
 ```
 
-**기대 출력:**
+## 기대 출력 (Part 4)
+
 ```
-  Part 1 — 실패 반복 → DLQ 이동
+  DLQ 잔류: 1건 (기대: 1 — HOLD만 남음)
+  ✅ 검증 완료
 
-  DLQ 항목 수: 1
-  ✅ DLQ 이동 확인
-
-  Part 2 — 운영자 DLQ 처리 절차
-
-  DLQ 항목 수: 1
-    NFT_BURNED | max retries (3) exceeded
-
-  REQUEUE_MODE = 'first' → 1건 재큐잉
-
-  재큐잉 후 DLQ 항목 수: 0
-  ✅ 1건 감소 (기대: 1)
+  재투입된 메시지 (kyobo:exercise:s11):
+  ┌─ 17...
+  │  [비즈니스] eventType   = NFT_ISSUED
+  │  [비즈니스] userId      = user-002
+  │  [비즈니스] tokenId     = 42
+  │  [비즈니스] txHash      = 0xabc123def456
+  │  [추적메타] _requeuedFrom = <원본 dlqId>
+  │  [추적메타] _requeuedAt   = 2026-...
+  └─
 ```
 
-`NFT_BURNED` 이벤트가 3회 실패 후 DLQ로 이동하고, 운영자가 `requeueMessage()`로 복구하는 전체 흐름입니다.
+`_reason` / `_failedAt` 등 DLQ 전용 필드는 제거되고, 비즈니스 필드만 재투입됩니다.
 
 ---
 
-## 실험 2 — MAX_RETRIES를 1로 줄이면?
+## Redis CLI 직접 확인
 
+```bash
+redis-cli -u "$REDIS_URL"
+
+> XRANGE kyobo:exercise:s11:dlq - +   # DLQ 잔류 확인
+> XRANGE kyobo:exercise:s11 - +        # 재투입된 메시지 확인
 ```
-MAX_RETRIES = 1
-```
-
-**확인 포인트:**
-- DLQ 항목 수는 동일하게 1건이지만 더 빨리 도달합니다 (1회 실패만으로 이동)
-- `reason` 필드가 `max retries (1) exceeded`로 바뀝니다
-
-MAX_RETRIES가 낮을수록 일시적 오류도 DLQ로 가버립니다. 적절한 임계값 선택이 중요합니다.
-
----
-
-## 실험 3 — 전체 재큐잉
-
-```
-MAX_RETRIES  = 3
-REQUEUE_MODE = 'all'
-```
-
-**확인 포인트:** 이 실습에서는 DLQ 항목이 1건이라 `'first'`와 `'all'` 결과가 같습니다. 실무에서 DLQ에 여러 메시지가 누적됐을 때 `'all'`로 한 번에 재투입합니다.
 
 ---
 
 ## 완료 기준
 
-- [ ] 실험 1: DLQ 항목 수 1 → 재큐잉 후 0 확인
-- [ ] 실험 1: `reason = max retries (3) exceeded` 확인
-- [ ] 실험 2: MAX_RETRIES=1 시 이동 속도 차이 관찰
-- [ ] 아래 운영 절차를 말로 설명 가능:
+- [ ] `classifyItem()`: timeout → requeue, permanently → drop, parse error → hold 반환
+- [ ] `requeueMessage()` 호출 후 `newMessageId` 출력
+- [ ] `drop()` 호출 후 DLQ에서 제거
+- [ ] Part 4: DLQ 잔류 1건 (HOLD만), 재투입 메시지에 `_requeuedFrom` 포함 확인
+- [ ] 아래를 말로 설명 가능:
 
 ```
-실패 반복 (MAX_RETRIES회)
-    → DLQ 격리 + XACK (PEL 정리)
-    → 운영자 listPending() 확인
-    → 원인 파악 후 requeueMessage()
-    → 원 스트림 재투입 + DLQ에서 제거
-    → Consumer 재처리
+move()           → DLQ에 비즈니스 필드 + _reason/_failedAt 등 인프라 메타 저장
+requeueMessage() → _ 메타 제거 → 비즈니스 필드 + _requeuedFrom/_requeuedAt 재투입
+drop()           → DLQ에서 영구 삭제 (원 스트림 재투입 없음)
 ```
