@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>M2 S51 — DLQ 운영 절차 · 재큐잉 판단 기준과 드랍 정책</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; background: #2a2a2a; }
+  .slide { width: 960px; height: 540px; margin: 32px auto; position: relative; overflow: hidden; box-shadow: 0 6px 28px rgba(0,0,0,0.4); background-size: 100% 100%; background-repeat: no-repeat; }
+  .slide-cover { background-image: url('file:///C:/Users/eskim/Workspace/CoinCraft-Operating-System/Work/CDO/Archive/PPT_표지_White.png'); }
+  .slide-body  { background-image: url('file:///C:/Users/eskim/Workspace/CoinCraft-Operating-System/Work/CDO/Archive/PPT_본문_White.png'); }
+  .num { position: absolute; bottom: 14px; right: 24px; font-size:13px; color: #999; letter-spacing: 1px; }
+  .cover-content { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; width: 82%; }
+  .cover-tag   { font-size:14px; font-weight:600; color:#C9A84C; letter-spacing:3px; text-transform:uppercase; margin-bottom:16px; }
+  .cover-title { font-size:40px; font-weight:700; color:#1F2D5A; line-height:1.3; margin-bottom:12px; }
+  .cover-sub   { font-size:16px; color:#888; line-height:1.6; }
+  .cover-badges { display:flex; justify-content:center; gap:10px; margin-top:24px; flex-wrap:wrap; }
+  .cover-badge  { padding:5px 16px; border-radius:20px; font-size:13px; font-weight:600; }
+  .cb-navy { background:#1F2D5A; color:#fff; } .cb-gold { background:#C9A84C; color:#fff; }
+  .cb-red  { background:#c0392b; color:#fff; } .cb-light { background:#f0f0f0; color:#555; }
+  .body-content { position:absolute; top:125px; left:40px; right:40px; bottom:18px; overflow:visible; }
+  .body-header  { position:absolute; top:-80px; left:0; right:0; }
+  .body-header h1 { font-size:30px; font-weight:700; color:#1F2D5A; margin-bottom:3px; }
+  .body-header p  { font-size:13px; color:#C9A84C; font-weight:600; letter-spacing:0.5px; }
+  .callout       { border-left:3px solid #1F2D5A; background:#f0f3fa; padding:7px 12px; border-radius:0 4px 4px 0; margin:5px 0; font-size:14px; color:#1F2D5A; line-height:1.65; }
+  .callout-gold  { border-left-color:#C9A84C; background:#fdf8ee; color:#7a5a10; }
+  .callout-green { border-left-color:#27AE60; background:#f0faf4; color:#1a5c35; }
+  .callout-red   { border-left-color:#c0392b; background:#fdecea; color:#7a1a10; }
+  .callout strong { font-weight:700; }
+  .cols  { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .cols3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .col-box { border:1.5px solid #dde3f0; border-radius:6px; padding:10px 12px; background:#fafbff; }
+  .col-box h3 { font-size:14px; font-weight:700; color:#1F2D5A; margin-bottom:6px; padding-bottom:4px; border-bottom:1px solid #dde3f0; }
+  .col-box ul { list-style:none; font-size:13px; color:#444; line-height:1.75; }
+  .col-box ul li::before { content:"· "; color:#C9A84C; font-weight:700; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin:4px 0; }
+  thead tr { background:#1F2D5A; color:#fff; }
+  thead th { padding:7px 10px; text-align:left; font-weight:600; }
+  tbody tr:nth-child(even) { background:#f5f7fc; }
+  tbody td { padding:6px 10px; border-bottom:1px solid #eaecf4; color:#333; vertical-align:top; line-height:1.6; }
+  .b { display:inline-block; padding:2px 8px; border-radius:3px; font-size:12px; font-weight:600; }
+  .b-g { background:#e6f9f0; color:#1a8a50; } .b-r { background:#fdecea; color:#c0392b; }
+  .b-y { background:#fef6e4; color:#b7770d; } .b-b { background:#eaeef8; color:#1F2D5A; }
+  .code { background:#1a2035; color:#cdd6f4; border-radius:5px; padding:8px 14px; font-family:'Consolas','D2Coding',monospace; font-size:12px; line-height:1.6; margin:4px 0; white-space:pre; }
+  .c-cm{color:#5c6a8a} .c-kw{color:#89dceb} .c-st{color:#a6e3a1} .c-fn{color:#cba6f7} .c-nu{color:#fab387} .c-ty{color:#f9e2af}
+  .box-navy  { background:#1F2D5A; border-radius:6px; padding:10px 14px; }
+  .box-green { background:#e6f9f0; border:1.5px solid #27AE60; border-radius:6px; padding:10px 14px; }
+  .box-red   { background:#fdecea; border:1.5px solid #c0392b; border-radius:6px; padding:10px 14px; }
+  .box-gold  { background:#fdf8ee; border:1.5px solid #C9A84C; border-radius:6px; padding:10px 14px; }
+  .box-blue  { background:#f0f3fa; border:1.5px solid #1F2D5A; border-radius:6px; padding:10px 14px; }
+  .step-circle { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0; color:#fff; }
+  .sc-navy{background:#1F2D5A} .sc-gold{background:#C9A84C} .sc-red{background:#c0392b} .sc-green{background:#27AE60}
+  .arr { color:#C9A84C; font-size:20px; font-weight:700; display:flex; align-items:center; padding:0 4px; }
+</style>
+</head>
+<body>
+
+
+<!-- ══ 1. 표지 ══ -->
+<div class="slide slide-cover">
+  <div class="cover-content">
+    <div class="cover-tag">M2 · 이벤트 파이프라인 · S51 · 운영</div>
+    <div class="cover-title">DLQ 운영 절차<br>재큐잉 판단 기준과 드랍 정책</div>
+    <div class="cover-sub">DLQ 앞에 선 운영자가 무엇을 어떻게 결정하는가<br>강의 25min + 실습 30min</div>
+    <div class="cover-badges">
+      <span class="cover-badge cb-navy">DLQAdminService</span>
+      <span class="cover-badge cb-gold">requeue 판단</span>
+      <span class="cover-badge cb-red">drop 정책</span>
+      <span class="cover-badge cb-light">IncidentService</span>
+    </div>
+  </div>
+  <div class="num">1 / 16</div>
+</div>
+
+
+<!-- ══ 2. 운영자의 첫 질문 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>DLQ 알림 수신 — 운영자의 첫 질문</h1>
+      <p>THREE ACTIONS WHEN DLQ ALERT ARRIVES — NOT "JUST REQUEUE"</p>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+      <!-- Decision tree -->
+      <div style="flex:1.2; display:flex; flex-direction:column; align-items:center; gap:4px;">
+        <div style="background:#1F2D5A; color:#fff; border-radius:6px; padding:8px 20px; font-size:15px; font-weight:700;">DLQ 메시지 수신</div>
+        <div style="font-size:18px; color:#C9A84C;">↓</div>
+        <div style="background:#f0f3fa; border:2px solid #1F2D5A; border-radius:6px; padding:8px 20px; font-size:14px; font-weight:700; color:#1F2D5A;">listPending() + 로그 조회<br><span style="font-size:12px; font-weight:400; color:#555;">_reason · failedAt · txHash 확인</span></div>
+        <div style="font-size:18px; color:#C9A84C;">↓</div>
+        <div style="display:flex; gap:6px; width:100%;">
+          <div style="flex:1; background:#e6f9f0; border:2px solid #27AE60; border-radius:6px; padding:8px 10px; text-align:center;">
+            <div style="font-size:12px; font-weight:700; color:#1a5c35; margin-bottom:4px;">일시적 외부 장애</div>
+            <div style="font-size:11px; color:#2d6a4f; line-height:1.5;">VASP 다운<br>DB 일시 불가</div>
+            <div style="margin-top:6px; font-size:12px; font-weight:700; color:#27AE60;">→ 복구 후 requeue</div>
+          </div>
+          <div style="flex:1; background:#fdf8ee; border:2px solid #C9A84C; border-radius:6px; padding:8px 10px; text-align:center;">
+            <div style="font-size:12px; font-weight:700; color:#7a5a10; margin-bottom:4px;">영구 실패</div>
+            <div style="font-size:11px; color:#7a5a10; line-height:1.5;">코드 버그<br>스키마 불일치</div>
+            <div style="margin-top:6px; font-size:12px; font-weight:700; color:#C9A84C;">→ 수정 배포 후 requeue</div>
+          </div>
+          <div style="flex:1; background:#fdecea; border:2px solid #c0392b; border-radius:6px; padding:8px 10px; text-align:center;">
+            <div style="font-size:12px; font-weight:700; color:#c0392b; margin-bottom:4px;">드랍 대상</div>
+            <div style="font-size:11px; color:#7a1a10; line-height:1.5;">이미 처리됨<br>파싱 불가</div>
+            <div style="margin-top:6px; font-size:12px; font-weight:700; color:#c0392b;">→ 감사 로그 후 drop</div>
+          </div>
+        </div>
+      </div>
+      <!-- Right side key principle -->
+      <div style="flex:0.8; display:flex; flex-direction:column; gap:8px;">
+        <div class="box-red" style="padding:14px;">
+          <div style="font-size:15px; font-weight:700; color:#c0392b; margin-bottom:8px;">❌ 절대 안 되는 것</div>
+          <div style="font-size:14px; color:#7a1a10; line-height:1.75;"><strong>"일단 requeue"</strong><br>→ 원인 모른 채 재투입<br>→ 또 실패 → 또 DLQ<br>→ 무한 루프</div>
+        </div>
+        <div class="box-green" style="padding:14px;">
+          <div style="font-size:15px; font-weight:700; color:#1a5c35; margin-bottom:8px;">✅ 반드시 지킬 것</div>
+          <div style="font-size:14px; color:#2d6a4f; line-height:1.75;"><strong>원인 파악 → 조치 → requeue</strong><br>이 순서를 절대 바꾸지 않는다</div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-gold" style="font-size:14px;"><strong>핵심</strong> — DLQ는 "일단 requeue"가 아니다. requeue는 원인이 해소됐다는 확신이 있을 때만 실행한다.</div>
+  </div>
+  <div class="num">2 / 16</div>
+</div>
+
+
+<!-- ══ 3. 재큐잉 판단 기준 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>재큐잉(requeue) 판단 기준</h1>
+      <p>WHEN TO REQUEUE — THREE CONDITIONS, ALL MUST BE MET</p>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <table style="font-size:14px;">
+        <thead>
+          <tr>
+            <th style="width:28%;">조건</th>
+            <th style="width:36%;">판단 근거 (_reason 확인)</th>
+            <th style="width:36%;">조치 순서</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="b b-b">일시적 외부 장애</span></td>
+            <td><code style="font-size:12px; background:#eaecf4; padding:1px 5px; border-radius:3px;">timeout</code> / <code style="font-size:12px; background:#eaecf4; padding:1px 5px; border-radius:3px;">connection refused</code></td>
+            <td>외부 서비스 복구 확인 → requeue</td>
+          </tr>
+          <tr>
+            <td><span class="b b-b">코드 버그 수정됨</span></td>
+            <td>배포 이력 확인 + 테스트 통과 확인</td>
+            <td>배포 완료 후 requeue</td>
+          </tr>
+          <tr>
+            <td><span class="b b-b">데이터 정정 완료</span></td>
+            <td>관련 시스템에서 정정 완료 확인</td>
+            <td>정정 확인 후 requeue</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="background:#f0f3fa; border:2px solid #1F2D5A; border-radius:8px; padding:14px 18px; margin-bottom:10px;">
+      <div style="font-size:15px; font-weight:700; color:#1F2D5A; margin-bottom:10px; text-align:center;">requeue 전 3가지 확인 — 셋 다 YES여야 requeue 가능</div>
+      <div style="display:flex; gap:8px;">
+        <div style="flex:1; display:flex; align-items:flex-start; gap:8px;">
+          <div class="step-circle sc-navy" style="font-size:14px; flex-shrink:0; margin-top:2px;">①</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;"><code style="background:#dde3f0; padding:1px 5px; border-radius:3px; font-size:12px;">processed_events</code>에 같은 txHash가 <strong>없다</strong><br><span style="color:#888; font-size:12px;">있으면 → 이미 처리됨 → drop 대상</span></div>
+        </div>
+        <div style="flex:1; display:flex; align-items:flex-start; gap:8px;">
+          <div class="step-circle sc-navy" style="font-size:14px; flex-shrink:0; margin-top:2px;">②</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;">실패 원인이 <strong>해소됐다</strong><br><span style="color:#888; font-size:12px;">장애 복구 / 코드 배포 / 데이터 정정</span></div>
+        </div>
+        <div style="flex:1; display:flex; align-items:flex-start; gap:8px;">
+          <div class="step-circle sc-navy" style="font-size:14px; flex-shrink:0; margin-top:2px;">③</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;">requeue하면 <strong>성공할 근거가 있다</strong><br><span style="color:#888; font-size:12px;">추측이 아닌 확인된 사실</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-red" style="font-size:14px;"><strong>하나라도 NO → requeue 금지.</strong> 원인 해소 후 재판단하거나 drop을 검토한다.</div>
+  </div>
+  <div class="num">3 / 16</div>
+</div>
+
+
+<!-- ══ 4. 드랍 판단 기준 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>드랍(drop) 판단 기준</h1>
+      <p>WHEN TO DROP — FOUR CONDITIONS, ANY ONE IS SUFFICIENT</p>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <table style="font-size:14px;">
+        <thead>
+          <tr>
+            <th style="width:30%;">조건</th>
+            <th style="width:36%;">판단 근거</th>
+            <th style="width:34%;">주의사항</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="b b-r">이미 원장에 반영됨</span></td>
+            <td><code style="font-size:12px; background:#eaecf4; padding:1px 4px; border-radius:3px;">processed_events</code>에 동일 txHash+logIndex 존재</td>
+            <td>멱등성 처리 완료 — drop 안전</td>
+          </tr>
+          <tr>
+            <td><span class="b b-r">파싱 불가 메시지</span></td>
+            <td><code style="font-size:12px; background:#eaecf4; padding:1px 4px; border-radius:3px;">_reason</code>에 JSON parse error / unknown field</td>
+            <td>발신 시스템에 포맷 오류 통보 필수</td>
+          </tr>
+          <tr>
+            <td><span class="b b-r">TTL 초과</span></td>
+            <td>이벤트 발생 시각 기준 N시간 초과</td>
+            <td>금융 이벤트는 TTL 길게 설정 권장</td>
+          </tr>
+          <tr>
+            <td><span class="b b-r">테스트/장애주입 데이터</span></td>
+            <td><code style="font-size:12px; background:#eaecf4; padding:1px 4px; border-radius:3px;">eventType</code>에 test_ prefix 등 식별</td>
+            <td>운영 환경 유입 방지 프로세스 점검</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box-red" style="padding:14px 16px;">
+      <div style="font-size:15px; font-weight:700; color:#c0392b; margin-bottom:10px;">⚠️ 드랍은 되돌릴 수 없다 — drop 전 반드시 3가지</div>
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1; display:flex; align-items:flex-start; gap:8px;">
+          <div class="step-circle sc-red" style="font-size:14px; flex-shrink:0;">1</div>
+          <div style="font-size:13px; color:#7a1a10; line-height:1.65;"><strong>감사 로그에 드랍 이유 기록</strong><br>DLQAdminService.drop()이 자동 처리</div>
+        </div>
+        <div style="flex:1; display:flex; align-items:flex-start; gap:8px;">
+          <div class="step-circle sc-red" style="font-size:14px; flex-shrink:0;">2</div>
+          <div style="font-size:13px; color:#7a1a10; line-height:1.65;"><strong>원본 메시지 전체 내용 백업</strong><br>S3 또는 별도 DB에 원본 페이로드 보존</div>
+        </div>
+        <div style="flex:1; display:flex; align-items:flex-start; gap:8px;">
+          <div class="step-circle sc-red" style="font-size:14px; flex-shrink:0;">3</div>
+          <div style="font-size:13px; color:#7a1a10; line-height:1.65;"><strong>2인 확인 원칙</strong><br>금융 시스템 내부 통제 요구사항</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="num">4 / 16</div>
+</div>
+
+
+<!-- ══ 5. 알림 단계 설계 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>알림 단계 설계 — 언제 누구에게 무엇을</h1>
+      <p>TIERED ALERT DESIGN — SEVERITY BY MESSAGE VOLUME AND RATE</p>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+      <div style="display:flex; gap:10px; align-items:stretch;">
+        <div style="flex:0.5; background:#f0f3fa; border:2px solid #1F2D5A; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+          <div style="font-size:28px; font-weight:700; color:#1F2D5A;">1건</div>
+          <div style="font-size:13px; color:#555; margin-top:4px;">DLQ 적재</div>
+        </div>
+        <div style="flex:2; background:#f0f3fa; border:1.5px solid #1F2D5A; border-radius:8px; padding:12px 16px;">
+          <div style="display:flex; gap:10px; align-items:center;">
+            <div style="font-size:22px;">💬</div>
+            <div>
+              <div style="font-size:14px; font-weight:700; color:#1F2D5A; margin-bottom:4px;">담당자 Slack DM + 채널 알림</div>
+              <div style="font-size:13px; color:#444; line-height:1.65;">메시지 ID · 이벤트 타입 · 실패 원인 · 현재 DLQ 수</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:stretch;">
+        <div style="flex:0.5; background:#fdf8ee; border:2px solid #C9A84C; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+          <div style="font-size:28px; font-weight:700; color:#7a5a10;">5건+</div>
+          <div style="font-size:13px; color:#555; margin-top:4px;">10분 내 누적</div>
+        </div>
+        <div style="flex:2; background:#fdf8ee; border:1.5px solid #C9A84C; border-radius:8px; padding:12px 16px;">
+          <div style="display:flex; gap:10px; align-items:center;">
+            <div style="font-size:22px;">📢</div>
+            <div>
+              <div style="font-size:14px; font-weight:700; color:#7a5a10; margin-bottom:4px;">팀 채널 @채널 태그</div>
+              <div style="font-size:13px; color:#555; line-height:1.65;">단발성이 아닌 <strong>반복 장애 가능성</strong> — 팀 전체 인지 필요</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:stretch;">
+        <div style="flex:0.5; background:#fdecea; border:2px solid #c0392b; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+          <div style="font-size:28px; font-weight:700; color:#c0392b;">20건+</div>
+          <div style="font-size:13px; color:#555; margin-top:4px;">누적</div>
+        </div>
+        <div style="flex:2; background:#fdecea; border:1.5px solid #c0392b; border-radius:8px; padding:12px 16px;">
+          <div style="display:flex; gap:10px; align-items:center;">
+            <div style="font-size:22px;">🚨</div>
+            <div>
+              <div style="font-size:14px; font-weight:700; color:#c0392b; margin-bottom:4px;">서비스 관리자 즉시 호출 (PagerDuty · 전화)</div>
+              <div style="font-size:13px; color:#7a1a10; line-height:1.65;"><strong>대량 장애 · 시스템 전반 영향 가능성</strong> — 에스컬레이션 필수</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-gold" style="font-size:14px;"><strong>알림 필수 항목</strong> — DLQ ID · 이벤트 타입 · 원인 · 발생 시각 · <strong>현재 DLQ 누적 수</strong>. 건수 없으면 심각도 판단 불가.</div>
+  </div>
+  <div class="num">5 / 16</div>
+</div>
+
+
+<!-- ══ 6. DLQAdminService 구조 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>DLQAdminService — 운영 API 구조</h1>
+      <p>ADMIN SERVICE — WRAPS DLQHANDLER WITH VALIDATION + AUDIT LOG</p>
+    </div>
+
+    <div class="cols" style="margin-bottom:10px; gap:12px;">
+      <div>
+        <div style="font-size:14px; font-weight:700; color:#1F2D5A; margin-bottom:6px;">listPending() — 이벤트 타입 필터 지원</div>
+        <div class="code" style="font-size:11.5px;"><span class="c-kw">async</span> <span class="c-fn">listPending</span>(options?: {
+  eventType?: <span class="c-ty">string</span>; limit?: <span class="c-ty">number</span>
+}) {
+  <span class="c-kw">const</span> all = <span class="c-kw">await</span> this.dlqHandler.<span class="c-fn">listPending</span>(
+    options?.limit ?? <span class="c-nu">100</span>
+  );
+  <span class="c-kw">const</span> filtered = options?.eventType
+    ? all.<span class="c-fn">filter</span>(i =>
+        i.event[<span class="c-st">'eventType'</span>] === options.eventType)
+    : all;
+
+  <span class="c-kw">return</span> filtered.<span class="c-fn">map</span>(item => ({
+    dlqId:     item.messageId,
+    eventType: item.event[<span class="c-st">'eventType'</span>] ?? <span class="c-st">'unknown'</span>,
+    reason:    item.reason,
+    failedAt:  item.failedAt,
+    txHash:    item.event[<span class="c-st">'txHash'</span>] ?? <span class="c-kw">null</span>,
+  }));
+}</div>
+      </div>
+      <div>
+        <div style="font-size:14px; font-weight:700; color:#1F2D5A; margin-bottom:6px;">DLQAdminService 의존성 3가지</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div class="box-blue" style="padding:8px 12px;">
+            <div style="font-size:13px; font-weight:700; color:#1F2D5A;">DLQHandler</div>
+            <div style="font-size:12px; color:#555; margin-top:2px;">move / listPending / requeueMessage / drop</div>
+          </div>
+          <div class="box-blue" style="padding:8px 12px;">
+            <div style="font-size:13px; font-weight:700; color:#1F2D5A;">Database</div>
+            <div style="font-size:12px; color:#555; margin-top:2px;">processed_events 조회 — 원장 중복 확인</div>
+          </div>
+          <div class="box-blue" style="padding:8px 12px;">
+            <div style="font-size:13px; font-weight:700; color:#1F2D5A;">AuditLogService</div>
+            <div style="font-size:12px; color:#555; margin-top:2px;">모든 운영 행위 기록 (operator, action, timestamp)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-gold" style="font-size:14px;"><strong>DLQAdminService의 역할</strong> — DLQHandler(저수준 Redis 작업)에 <strong>원장 확인 + 감사 로그</strong>를 추가한 운영자 전용 레이어. 직접 DLQHandler를 호출하지 않는다.</div>
+  </div>
+  <div class="num">6 / 16</div>
+</div>
+
+
+<!-- ══ 7. requeue API ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>requeue API — 원장 확인 + 감사 로그 필수</h1>
+      <p>REQUEUE WITH LEDGER GUARD AND AUDIT TRAIL</p>
+    </div>
+
+    <div class="code" style="font-size:10px; line-height:1.45; padding:6px 12px;"><span class="c-kw">async</span> <span class="c-fn">requeue</span>(
+  dlqId: <span class="c-ty">string</span>, operator: <span class="c-ty">string</span>, reason: <span class="c-ty">string</span>,
+): <span class="c-ty">Promise</span>&lt;{ newMessageId: <span class="c-ty">string</span> }&gt; {
+
+  <span class="c-cm">// 1. DLQ에서 메시지 확인</span>
+  <span class="c-kw">const</span> items = <span class="c-kw">await</span> this.dlqHandler.<span class="c-fn">listPending</span>();
+  <span class="c-kw">const</span> target = items.<span class="c-fn">find</span>(i => i.messageId === dlqId);
+  <span class="c-kw">if</span> (!target) <span class="c-kw">throw new</span> <span class="c-ty">Error</span>(<span class="c-st">`DLQ 메시지 없음: </span><span class="c-nu">${dlqId}</span><span class="c-st">`</span>);
+
+  <span class="c-cm">// 2. 이미 원장에 반영됐는지 확인 (drop해야 할 케이스 방어)</span>
+  <span class="c-kw">const</span> txHash = target.event[<span class="c-st">'txHash'</span>];
+  <span class="c-kw">if</span> (txHash) {
+    <span class="c-kw">const</span> alreadyProcessed = <span class="c-kw">await</span> this.db.<span class="c-fn">query</span>(
+      <span class="c-st">`SELECT 1 FROM processed_events WHERE tx_hash = $1 LIMIT 1`</span>, [txHash],
+    );
+    <span class="c-kw">if</span> (alreadyProcessed.rows.length > <span class="c-nu">0</span>)
+      <span class="c-kw">throw new</span> <span class="c-ty">Error</span>(<span class="c-st">'이미 원장에 반영됨. requeue 대신 drop을 사용하세요.'</span>);
+  }
+
+  <span class="c-cm">// 3. 재큐잉 실행</span>
+  <span class="c-kw">const</span> result = <span class="c-kw">await</span> this.dlqHandler.<span class="c-fn">requeueMessage</span>(dlqId);
+
+  <span class="c-cm">// 4. 감사 로그 기록 (운영 행위는 반드시 추적)</span>
+  <span class="c-kw">await</span> this.auditLog.<span class="c-fn">append</span>(operator, <span class="c-st">'DLQ_REQUEUE'</span>, dlqId, { ...result, reason });
+  <span class="c-kw">return</span> result;
+}</div>
+
+    <div class="callout callout-gold" style="margin-top:6px; font-size:13px;"><strong>원장 확인이 requeue 내부에 있는 이유</strong> — 운영자가 확인을 생략하는 실수를 API 레벨에서 차단. drop해야 할 메시지를 실수로 requeue하면 원장 오염.</div>
+  </div>
+  <div class="num">7 / 16</div>
+</div>
+
+
+<!-- ══ 8. drop API ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>drop API — 감사 로그 + 원본 백업 필수</h1>
+      <p>DROP WITH MANDATORY AUDIT LOG — IRREVERSIBLE OPERATION</p>
+    </div>
+
+    <div class="cols" style="gap:12px;">
+      <div>
+        <div class="code" style="font-size:10px; line-height:1.45; padding:6px 12px;"><span class="c-kw">async</span> <span class="c-fn">drop</span>(
+  dlqId: <span class="c-ty">string</span>, operator: <span class="c-ty">string</span>, reason: <span class="c-ty">string</span>,
+): <span class="c-ty">Promise</span>&lt;<span class="c-kw">void</span>&gt; {
+  <span class="c-kw">const</span> items = <span class="c-kw">await</span> this.dlqHandler.<span class="c-fn">listPending</span>();
+  <span class="c-kw">const</span> target = items.<span class="c-fn">find</span>(i => i.messageId === dlqId);
+  <span class="c-kw">if</span> (!target) <span class="c-kw">throw new</span> <span class="c-ty">Error</span>(<span class="c-st">`DLQ 메시지 없음: </span><span class="c-nu">${dlqId}</span><span class="c-st">`</span>);
+
+  <span class="c-cm">// 드랍 전: 전체 페이로드 감사 로그에 백업</span>
+  <span class="c-kw">await</span> this.auditLog.<span class="c-fn">append</span>(operator, <span class="c-st">'DLQ_DROP'</span>, dlqId, {
+    reason,
+    originalEvent:  target.event,   <span class="c-cm">// 전체 페이로드 보존</span>
+    originalReason: target.reason,
+    failedAt:       target.failedAt,
+  });
+
+  <span class="c-cm">// 실제 삭제</span>
+  <span class="c-kw">await</span> this.dlqHandler.<span class="c-fn">drop</span>(dlqId);
+}
+
+<span class="c-cm">// DLQHandler.drop() (S11에 추가)</span>
+<span class="c-kw">async</span> <span class="c-fn">drop</span>(dlqMessageId: <span class="c-ty">string</span>): <span class="c-ty">Promise</span>&lt;<span class="c-kw">void</span>&gt; {
+  <span class="c-kw">const</span> deleted = <span class="c-kw">await</span> this.redis.<span class="c-fn">xdel</span>(
+    this.dlqStreamKey, dlqMessageId
+  );
+  <span class="c-kw">if</span> (deleted === <span class="c-nu">0</span>)
+    <span class="c-kw">throw new</span> <span class="c-ty">DLQMessageNotFoundError</span>(dlqMessageId);
+}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="box-red" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#c0392b; margin-bottom:8px;">drop 순서 — 반드시 이 순서</div>
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="step-circle sc-red" style="font-size:13px; width:24px; height:24px;">1</div>
+              <div style="font-size:13px; color:#7a1a10;">감사 로그에 원본 전체 백업</div>
+            </div>
+            <div style="text-align:left; padding-left:32px; font-size:16px; color:#c0392b;">↓</div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="step-circle sc-red" style="font-size:13px; width:24px; height:24px;">2</div>
+              <div style="font-size:13px; color:#7a1a10;">xdel로 DLQ에서 영구 삭제</div>
+            </div>
+          </div>
+        </div>
+        <div class="box-gold" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#7a5a10; margin-bottom:6px;">감사 로그로 추적 가능</div>
+          <div class="code" style="font-size:11px; padding:5px 10px;">auditLog.<span class="c-fn">query</span>({
+  action: <span class="c-st">'DLQ_DROP'</span>,
+  resourceId: dlqId
+});
+<span class="c-cm">// afterState에 전체 원본 페이로드</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="num">8 / 16</div>
+</div>
+
+
+<!-- ══ 9. 운영 체크리스트 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>운영 체크리스트 — DLQ 알림 수신 시</h1>
+      <p>OPERATOR CHECKLIST — STEP BY STEP FROM ALERT TO RESOLUTION</p>
+    </div>
+
+    <div class="cols" style="gap:10px;">
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; align-items:flex-start; gap:8px; background:#f0f3fa; border-radius:6px; padding:8px 10px;">
+          <div class="step-circle sc-navy" style="font-size:13px; width:24px; height:24px; flex-shrink:0;">1</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;"><strong>DLQ 조회</strong><br><code style="background:#dde3f0; padding:1px 5px; border-radius:3px; font-size:11px;">GET /admin/dlq/pending</code><br>건수 · 이벤트 타입 · 원인 파악</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:8px; background:#f0f3fa; border-radius:6px; padding:8px 10px;">
+          <div class="step-circle sc-navy" style="font-size:13px; width:24px; height:24px; flex-shrink:0;">2</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;"><strong>_reason 분석</strong><br>timeout/conn → 외부 장애<br>parse error → 포맷 오류<br>business rule → 코드 버그</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:8px; background:#f0f3fa; border-radius:6px; padding:8px 10px;">
+          <div class="step-circle sc-navy" style="font-size:13px; width:24px; height:24px; flex-shrink:0;">3</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;"><strong>txHash 있으면</strong><br><code style="background:#dde3f0; padding:1px 5px; border-radius:3px; font-size:11px;">processed_events</code> 조회<br>이미 처리됐으면 → drop</div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; align-items:flex-start; gap:8px; background:#fdf8ee; border:1.5px solid #C9A84C; border-radius:6px; padding:8px 10px;">
+          <div class="step-circle sc-gold" style="font-size:13px; width:24px; height:24px; flex-shrink:0;">4</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;"><strong>원인 미해소 → requeue 금지</strong><br>원인 해소 확인 후에만 requeue</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:8px; background:#fdecea; border:1.5px solid #c0392b; border-radius:6px; padding:8px 10px;">
+          <div class="step-circle sc-red" style="font-size:13px; width:24px; height:24px; flex-shrink:0;">5</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;"><strong>drop 시 감사 로그 이유 기록</strong><br>2인 확인 권장 (금융 내부 통제)</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:8px; background:#e6f9f0; border:1.5px solid #27AE60; border-radius:6px; padding:8px 10px;">
+          <div class="step-circle sc-green" style="font-size:13px; width:24px; height:24px; flex-shrink:0;">6</div>
+          <div style="font-size:13px; color:#333; line-height:1.65;"><strong>requeue 후 5분 내 확인</strong><br>XACK → 정상 ✅<br>또 DLQ → 즉시 에스컬레이션</div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-red" style="margin-top:8px; font-size:14px;"><strong>2회 DLQ 진입 = 비즈니스 로직 버그 의심</strong> — 같은 메시지가 requeue 후 또 DLQ로 가면 원인 파악이 불충분. 즉시 에스컬레이션.</div>
+  </div>
+  <div class="num">9 / 16</div>
+</div>
+
+
+<!-- ══ 10. IncidentService 개요 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>IncidentService — 워크시트의 디지털 버전</h1>
+      <p>INCIDENT SERVICE — AUTOMATE WHAT CAN BE AUTOMATED, HUMAN FOR THE REST</p>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <div style="font-size:15px; font-weight:700; color:#1F2D5A; margin-bottom:8px;">아날로그 워크시트 → 디지털 자동화</div>
+      <div class="cols" style="gap:10px;">
+        <div class="box-red" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#c0392b; margin-bottom:8px;">운영자 직접 입력 (판단 필요)</div>
+          <ul style="list-style:none; font-size:13px; color:#7a1a10; line-height:1.85;">
+            <li>· 원인 분류</li>
+            <li>· requeue / drop 결정</li>
+            <li>· drop 이유</li>
+            <li>· 2차 확인자</li>
+          </ul>
+        </div>
+        <div class="box-green" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#1a5c35; margin-bottom:8px;">✅ 자동 수집 (API 조회)</div>
+          <ul style="list-style:none; font-size:13px; color:#2d6a4f; line-height:1.85;">
+            <li>· queueStats 스냅샷</li>
+            <li>· dlqItems 목록</li>
+            <li>· processed_events 중복 여부</li>
+            <li>· 인시던트 감지 시각</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:stretch;">
+      <div style="flex:1; background:#f0f3fa; border:2px solid #1F2D5A; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; align-items:center; text-align:center;">
+        <div style="font-size:14px; font-weight:700; color:#1F2D5A; margin-bottom:6px;">create(type)</div>
+        <div style="font-size:12px; color:#555; line-height:1.6;">현재 상태 자동 스냅샷<br>queueStats + dlqItems<br>alreadyInLedger 자동 확인<br>알림 발송</div>
+      </div>
+      <div class="arr">→</div>
+      <div style="flex:1; background:#fdf8ee; border:2px solid #C9A84C; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; align-items:center; text-align:center;">
+        <div style="font-size:14px; font-weight:700; color:#7a5a10; margin-bottom:6px;">addAction(id, action)</div>
+        <div style="font-size:12px; color:#555; line-height:1.6;">운영 행위 기록<br>REQUEUE / DROP<br>operator + note 추적<br>status → INVESTIGATING</div>
+      </div>
+      <div class="arr">→</div>
+      <div style="flex:1; background:#e6f9f0; border:2px solid #27AE60; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; align-items:center; text-align:center;">
+        <div style="font-size:14px; font-weight:700; color:#1a5c35; margin-bottom:6px;">resolve(id, note)</div>
+        <div style="font-size:12px; color:#555; line-height:1.6;">인시던트 종료<br>resolvedAt 기록<br>종료 알림 발송<br>status → RESOLVED</div>
+      </div>
+    </div>
+  </div>
+  <div class="num">10 / 16</div>
+</div>
+
+
+<!-- ══ 11. IncidentService 사용 흐름 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>IncidentService 사용 흐름</h1>
+      <p>DIGITAL WORKFLOW — API CALLS REPLACING PAPER WORKSHEET</p>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+      <div style="display:flex; gap:10px; align-items:stretch;">
+        <div style="width:90px; display:flex; align-items:center; justify-content:flex-end;">
+          <div style="font-size:12px; color:#888; font-weight:600; text-align:right;">워크시트<br>1단계</div>
+        </div>
+        <div style="flex:1; background:#f0f3fa; border:1.5px solid #1F2D5A; border-radius:6px; padding:8px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#1F2D5A; margin-bottom:4px;">초기 상태 확인</div>
+          <div class="code" style="font-size:11px; padding:4px 10px;"><span class="c-kw">POST</span> /admin/incidents { type: <span class="c-st">'DLQ'</span>, detectedBy: <span class="c-st">'alert-bot'</span> }
+<span class="c-cm">// 응답: queueStats + dlqItems(alreadyInLedger 포함) 자동 채워짐</span></div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:stretch;">
+        <div style="width:90px; display:flex; align-items:center; justify-content:flex-end;">
+          <div style="font-size:12px; color:#888; font-weight:600; text-align:right;">워크시트<br>3-4단계</div>
+        </div>
+        <div style="flex:1; background:#fdf8ee; border:1.5px solid #C9A84C; border-radius:6px; padding:8px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#7a5a10; margin-bottom:4px;">원인 파악 + 조치</div>
+          <div class="code" style="font-size:11px; padding:4px 10px;"><span class="c-kw">POST</span> /admin/incidents/:id/actions
+{ operator: <span class="c-st">'kim@kyobo.com'</span>, action: <span class="c-st">'DROP'</span>,
+  targetId: <span class="c-st">'1714320-0'</span>,
+  note: <span class="c-st">'alreadyInLedger=true 확인. 원장 정상, 중복 이벤트 드랍'</span> }</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:stretch;">
+        <div style="width:90px; display:flex; align-items:center; justify-content:flex-end;">
+          <div style="font-size:12px; color:#888; font-weight:600; text-align:right;">워크시트<br>5-6단계</div>
+        </div>
+        <div style="flex:1; background:#e6f9f0; border:1.5px solid #27AE60; border-radius:6px; padding:8px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#1a5c35; margin-bottom:4px;">사후 확인 + 기록</div>
+          <div class="code" style="font-size:11px; padding:4px 10px;"><span class="c-kw">POST</span> /admin/incidents/:id/resolve
+{ operator: <span class="c-st">'kim@kyobo.com'</span>,
+  resolutionNote: <span class="c-st">'중복 이벤트 드랍 완료. 발신 시스템 중복 발행 원인 조사 중'</span> }</div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-gold" style="font-size:14px;"><strong>자동화의 목표</strong> — 운영자가 판단해야 하는 부분(원인 분류, requeue/drop 결정)만 남기고, 나머지는 시스템이 채운다.</div>
+  </div>
+  <div class="num">11 / 16</div>
+</div>
+
+
+<!-- ══ 12. DLQ 메시지 분석 워크시트 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>DLQ 메시지 분석 워크시트</h1>
+      <p>PAPER WORKSHEET — FILL IN ORDER = DIAGNOSIS IN ORDER</p>
+    </div>
+
+    <div class="cols" style="gap:10px;">
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div class="box-blue" style="padding:10px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#1F2D5A; margin-bottom:6px;">기본 정보</div>
+          <div style="display:flex; flex-direction:column; gap:3px;">
+            <div style="display:flex; gap:8px; font-size:12px;">
+              <div style="color:#888; width:80px; flex-shrink:0;">DLQ ID</div>
+              <div style="border-bottom:1px solid #bbb; flex:1;"></div>
+            </div>
+            <div style="display:flex; gap:8px; font-size:12px;">
+              <div style="color:#888; width:80px; flex-shrink:0;">이벤트 타입</div>
+              <div style="border-bottom:1px solid #bbb; flex:1;"></div>
+            </div>
+            <div style="display:flex; gap:8px; font-size:12px;">
+              <div style="color:#888; width:80px; flex-shrink:0;">현재 DLQ 수</div>
+              <div style="border-bottom:1px solid #bbb; flex:1;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="box-gold" style="padding:10px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#7a5a10; margin-bottom:6px;">원인 분류</div>
+          <div style="font-size:12px; color:#555; line-height:2.0;">
+            ☐ 일시적 외부 장애 (서비스명: ________)<br>
+            ☐ 코드 버그 (위치 추정: ________)<br>
+            ☐ 스키마/파싱 오류 (필드: ________)<br>
+            ☐ 비즈니스 규칙 위반
+          </div>
+        </div>
+        <div class="box-blue" style="padding:10px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#1F2D5A; margin-bottom:6px;">원장 중복 확인</div>
+          <div style="font-size:12px; color:#555; line-height:2.0;">
+            txHash: _______________________<br>
+            ☐ 이미 반영됨 → drop 대상<br>
+            ☐ 미반영 → 재처리 대상
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div class="box-green" style="padding:10px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#1a5c35; margin-bottom:6px;">조치 결정</div>
+          <div style="font-size:12px; color:#555; line-height:2.0;">
+            ☐ requeue<br>
+            &nbsp;&nbsp;조치 완료: ___________________<br>
+            ☐ drop<br>
+            &nbsp;&nbsp;drop 이유: ___________________<br>
+            &nbsp;&nbsp;2차 확인자: __________________
+          </div>
+        </div>
+        <div class="box-red" style="padding:10px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#c0392b; margin-bottom:6px;">실행 기록</div>
+          <div style="font-size:12px; color:#555; line-height:2.0;">
+            ☐ POST /admin/dlq/requeue → 새 ID: ____<br>
+            ☐ DELETE /admin/dlq/drop
+          </div>
+        </div>
+        <div class="box-blue" style="padding:10px 12px;">
+          <div style="font-size:13px; font-weight:700; color:#1F2D5A; margin-bottom:6px;">사후 확인 (5분 후)</div>
+          <div style="font-size:12px; color:#555; line-height:2.0;">
+            ☐ XACK 정상 완료 ✅<br>
+            ☐ 또 DLQ 진입 → 에스컬레이션 ⚠️
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="num">12 / 16</div>
+</div>
+
+
+<!-- ══ 13. 주간 DLQ 리뷰 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>주간 DLQ 리뷰 — 패턴에서 개선 과제 찾기</h1>
+      <p>WEEKLY REVIEW — REPEAT PATTERNS ARE CODE/INFRA IMPROVEMENT SIGNALS</p>
+    </div>
+
+    <div class="cols" style="gap:10px; margin-bottom:10px;">
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="box-navy" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#C9A84C; margin-bottom:8px;">집계 항목</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:#cdd6f4;">총 DLQ 적재</span>
+              <span style="color:#fff; border-bottom:1px solid #5a6d9a; min-width:60px; text-align:right;">____건</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:#cdd6f4;">requeue 건수</span>
+              <span style="color:#fff; border-bottom:1px solid #5a6d9a; min-width:60px; text-align:right;">____건</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:#cdd6f4;">drop 건수</span>
+              <span style="color:#fff; border-bottom:1px solid #5a6d9a; min-width:60px; text-align:right;">____건</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:#C9A84C; font-weight:700;">2회 이상 DLQ 진입</span>
+              <span style="color:#C9A84C; border-bottom:1px solid #C9A84C; min-width:60px; text-align:right;">____건</span>
+            </div>
+          </div>
+        </div>
+        <div class="box-gold" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#7a5a10; margin-bottom:6px;">원인 분포</div>
+          <div style="display:flex; flex-direction:column; gap:3px; font-size:12px; color:#555;">
+            <div>외부 장애(timeout): ____건 (____%)</div>
+            <div>코드 버그: ____건 (____%)</div>
+            <div>파싱 오류: ____건 (____%)</div>
+            <div>멱등성(이미 반영): ____건 (____%)</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="box-red" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#c0392b; margin-bottom:8px;">⚠️ 반복 패턴 감지 기준</div>
+          <div style="font-size:13px; color:#7a1a10; line-height:1.75;"><strong>동일 원인 3회 이상</strong> = 코드/인프라 개선 필요 신호<br><strong>2회 이상 DLQ 재진입</strong> = 원인 분석 불충분<br><strong>외부 장애 비율 높음</strong> = SLA 재협상 필요</div>
+        </div>
+        <div class="box-green" style="padding:12px 14px;">
+          <div style="font-size:14px; font-weight:700; color:#1a5c35; margin-bottom:8px;">WeeklyReportService 자동 집계</div>
+          <div style="font-size:13px; color:#2d6a4f; line-height:1.75;">매주 월요일 09:00 KST 자동 발송<br>유형별 건수 · 평균 해소 시간<br>반복 패턴(동일 원인 3회+) 자동 감지</div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-gold" style="font-size:14px;"><strong>리뷰 목적</strong> — 주간 리뷰는 단발 장애 대응이 아니라 <strong>패턴 발견</strong>이다. 반복 패턴은 코드·인프라·프로세스 개선 신호.</div>
+  </div>
+  <div class="num">13 / 16</div>
+</div>
+
+
+<!-- ══ 14. CLI 테스트 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>실습 — CLI로 조회 · 재큐잉 · 드랍</h1>
+      <p>HANDS-ON — CURL COMMANDS FOR ALL THREE OPERATIONS</p>
+    </div>
+
+    <div class="cols3" style="gap:8px;">
+      <div>
+        <div style="background:#1F2D5A; border-radius:5px 5px 0 0; padding:6px 12px; font-size:13px; font-weight:700; color:#C9A84C;">① DLQ 조회</div>
+        <div class="code" style="border-radius:0 0 5px 5px; font-size:11px;"><span class="c-cm"># 전체 조회</span>
+curl http://localhost:3000\
+  /admin/dlq/pending
+
+<span class="c-cm"># 이벤트 타입 필터</span>
+curl http://localhost:3000\
+  /admin/dlq/pending\
+  ?eventType=NFT_MINTED</div>
+        <div class="code" style="margin-top:4px; font-size:11px; border-radius:5px;">[{
+  <span class="c-st">"dlqId"</span>: <span class="c-st">"1714320-0"</span>,
+  <span class="c-st">"eventType"</span>: <span class="c-st">"NFT_MINTED"</span>,
+  <span class="c-st">"reason"</span>: <span class="c-st">"VASP timeout"</span>,
+  <span class="c-st">"txHash"</span>: <span class="c-st">"0xabc..."</span>
+}]</div>
+      </div>
+      <div>
+        <div style="background:#1a5c35; border-radius:5px 5px 0 0; padding:6px 12px; font-size:13px; font-weight:700; color:#fff;">② requeue</div>
+        <div class="code" style="border-radius:0 0 5px 5px; font-size:11px;">curl -X POST \
+  /admin/dlq/requeue \
+  -H <span class="c-st">"Content-Type: application/json"</span> \
+  -d '{
+    <span class="c-st">"dlqId"</span>: <span class="c-st">"1714320-0"</span>,
+    <span class="c-st">"operator"</span>: <span class="c-st">"kim@kyobo"</span>,
+    <span class="c-st">"reason"</span>: <span class="c-st">"VASP 복구 확인"</span>
+  }'</div>
+        <div class="code" style="margin-top:4px; font-size:11px; border-radius:5px;">{
+  <span class="c-st">"newMessageId"</span>: <span class="c-st">"1714400-0"</span>
+}</div>
+      </div>
+      <div>
+        <div style="background:#7a1a10; border-radius:5px 5px 0 0; padding:6px 12px; font-size:13px; font-weight:700; color:#fff;">③ drop</div>
+        <div class="code" style="border-radius:0 0 5px 5px; font-size:11px;">curl -X DELETE \
+  /admin/dlq/drop \
+  -H <span class="c-st">"Content-Type: application/json"</span> \
+  -d '{
+    <span class="c-st">"dlqId"</span>: <span class="c-st">"1714320-0"</span>,
+    <span class="c-st">"operator"</span>: <span class="c-st">"kim@kyobo"</span>,
+    <span class="c-st">"reason"</span>: <span class="c-st">"processed_events 확인"</span>
+  }'</div>
+        <div class="code" style="margin-top:4px; font-size:11px; border-radius:5px;">{} <span class="c-cm">// 204 No Content
+// 감사 로그 자동 기록
+// 원본 페이로드 보존</span></div>
+      </div>
+    </div>
+    <div class="callout callout-gold" style="margin-top:8px; font-size:14px;"><strong>완료 기준</strong> — requeue 후 DLQ 건수 1 감소 · 이미 반영된 txHash → requeue 에러 응답 · drop 후 감사 로그에 원본 페이로드 기록 확인</div>
+  </div>
+  <div class="num">14 / 16</div>
+</div>
+
+
+<!-- ══ 15. 완료 기준 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>S51 완료 기준</h1>
+      <p>ACCEPTANCE CRITERIA — ALL MUST PASS BEFORE SIGN-OFF</p>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:7px; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:10px; background:#f0f3fa; border-radius:6px; padding:9px 14px;">
+        <div style="width:20px; height:20px; border:2px solid #1F2D5A; border-radius:4px; flex-shrink:0;"></div>
+        <div style="font-size:14px; color:#333;"><code style="background:#dde3f0; padding:1px 6px; border-radius:3px;">GET /admin/dlq/pending</code> — 전체 목록 및 이벤트 타입 필터 동작</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; background:#f0f3fa; border-radius:6px; padding:9px 14px;">
+        <div style="width:20px; height:20px; border:2px solid #1F2D5A; border-radius:4px; flex-shrink:0;"></div>
+        <div style="font-size:14px; color:#333;"><code style="background:#dde3f0; padding:1px 6px; border-radius:3px;">POST /admin/dlq/requeue</code> — 재큐잉 후 DLQ 건수 1 감소 확인</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; background:#fdecea; border-radius:6px; padding:9px 14px; border:1px solid #f5c6c2;">
+        <div style="width:20px; height:20px; border:2px solid #c0392b; border-radius:4px; flex-shrink:0;"></div>
+        <div style="font-size:14px; color:#333;"><code style="background:#fdecea; padding:1px 6px; border-radius:3px;">POST /admin/dlq/requeue</code> — 이미 원장에 반영된 txHash → <strong>에러 응답</strong> 확인</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; background:#fdecea; border-radius:6px; padding:9px 14px; border:1px solid #f5c6c2;">
+        <div style="width:20px; height:20px; border:2px solid #c0392b; border-radius:4px; flex-shrink:0;"></div>
+        <div style="font-size:14px; color:#333;"><code style="background:#fdecea; padding:1px 6px; border-radius:3px;">DELETE /admin/dlq/drop</code> — DLQ 건수 1 감소 + <strong>감사 로그에 원본 페이로드 기록</strong> 확인</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; background:#f0faf4; border-radius:6px; padding:9px 14px; border:1px solid #c3e6cb;">
+        <div style="width:20px; height:20px; border:2px solid #27AE60; border-radius:4px; flex-shrink:0;"></div>
+        <div style="font-size:14px; color:#333;">requeue · drop 모두 감사 로그에 <strong>operator 필드 포함</strong> 확인</div>
+      </div>
+    </div>
+    <div class="box-navy" style="padding:12px 16px; text-align:center;">
+      <div style="font-size:14px; color:#cdd6f4; line-height:1.75;"><strong style="color:#C9A84C;">S51의 핵심</strong> — DLQ는 "일단 requeue"가 아니다. <strong style="color:#fff;">원인 파악 → 조치 → requeue</strong> 순서.<br>drop은 되돌릴 수 없다. 감사 로그 + 2인 확인이 필수. 모든 운영 행위는 추적 가능해야 한다.</div>
+    </div>
+  </div>
+  <div class="num">15 / 16</div>
+</div>
+
+
+<!-- ══ 16. 핵심 정리 ══ -->
+<div class="slide slide-body">
+  <div class="body-content">
+    <div class="body-header">
+      <h1>S51 핵심 정리</h1>
+      <p>KEY TAKEAWAYS — DLQ OPERATIONS, JUDGMENT, AND GOVERNANCE</p>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+      <div class="box-navy" style="padding:12px 14px;">
+        <div style="font-size:14px; font-weight:700; color:#C9A84C; margin-bottom:8px;">운영 3원칙</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; align-items:flex-start; gap:6px;">
+            <div style="color:#C9A84C; font-weight:700; flex-shrink:0;">1.</div>
+            <div style="font-size:13px; color:#cdd6f4; line-height:1.6;"><strong style="color:#fff;">원인 파악 먼저</strong> — "일단 requeue"는 무한 루프의 시작</div>
+          </div>
+          <div style="display:flex; align-items:flex-start; gap:6px;">
+            <div style="color:#C9A84C; font-weight:700; flex-shrink:0;">2.</div>
+            <div style="font-size:13px; color:#cdd6f4; line-height:1.6;"><strong style="color:#fff;">원장 확인 필수</strong> — txHash가 processed_events에 있으면 drop</div>
+          </div>
+          <div style="display:flex; align-items:flex-start; gap:6px;">
+            <div style="color:#C9A84C; font-weight:700; flex-shrink:0;">3.</div>
+            <div style="font-size:13px; color:#cdd6f4; line-height:1.6;"><strong style="color:#fff;">모든 행위 추적</strong> — drop은 감사 로그 + 2인 확인</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="box-green" style="padding:10px 12px;">
+          <div style="font-size:14px; font-weight:700; color:#1a5c35; margin-bottom:4px;">requeue 조건 — 셋 다 YES</div>
+          <div style="font-size:13px; color:#2d6a4f;">① 원장 미반영 ② 원인 해소 ③ 성공 근거 있음</div>
+        </div>
+        <div class="box-red" style="padding:10px 12px;">
+          <div style="font-size:14px; font-weight:700; color:#c0392b; margin-bottom:4px;">drop 조건 — 하나라도 해당</div>
+          <div style="font-size:13px; color:#7a1a10;">① 원장 반영됨 ② 파싱 불가 ③ TTL 초과 ④ 테스트 데이터</div>
+        </div>
+        <div class="box-gold" style="padding:10px 12px;">
+          <div style="font-size:14px; font-weight:700; color:#7a5a10; margin-bottom:4px;">알림 → IncidentService 자동화</div>
+          <div style="font-size:13px; color:#7a5a10;">1건 알림 → 5건 채널 → 20건 에스컬레이션<br>워크시트 자동 수집 + 운영자 판단만 입력</div>
+        </div>
+      </div>
+    </div>
+    <div style="background:#1F2D5A; border-radius:6px; padding:10px 14px; text-align:center;">
+      <div style="font-size:14px; color:#cdd6f4; line-height:1.75;">S11의 DLQHandler는 <strong style="color:#C9A84C;">"어떻게 격리하는가"</strong>, S51은 <strong style="color:#C9A84C;">"운영자가 격리된 메시지 앞에서 무엇을 결정하는가"</strong>다.<br>기술이 아니라 <strong style="color:#fff;">판단 기준과 거버넌스</strong>가 핵심.</div>
+    </div>
+  </div>
+  <div class="num">16 / 16</div>
+</div>
+
+
+</body>
+</html>
