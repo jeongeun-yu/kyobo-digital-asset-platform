@@ -475,7 +475,7 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
       <div class="sess-hd"><span class="sn">S13</span><span class="st">비동기 트랜잭션의 상태 관리와 전이 규칙 설계</span><span class="stm">1h</span></div>
       <div class="sess-body">
         <div class="sb"><div class="lbl lec">강의 25분</div><ul class="il">
-          <li>TX 상태머신 — <span class="c">REQUESTED→SUBMITTED→PENDING→MINED→CONFIRMED/FAILED/REORGED</span>. 각 전이 조건</li>
+          <li>TX 상태머신 — <span class="c">REQUESTED→SUBMITTED→PENDING→MINED→CONFIRMED→FINALIZED</span> (MINED에서 REORGED·FAILED 분기). 각 전이 조건</li>
           <li>상태머신 없이 단순 HTTP 호출만 하면 — 중복 발행, 유실, 재시도 폭발 시나리오</li>
           <li>유효 전이 가드 원칙 — 허용되지 않은 전이는 예외 + DB 롤백. 상태 불일치 방지</li>
         </ul></div>
@@ -547,8 +547,8 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
           <li>Nonce 관리 원칙 — 각 주소 TX는 Nonce 순서대로 처리. Nonce 갭 발생 시 전체 큐 정지</li>
           <li>Gas Bump 전략 — 동일 Nonce로 가스 1.2배 범프 재전송. Replace-by-Fee로 기존 TX 자동 대체</li>
           <li>REORG 발생 원리 — PoS 네트워크에서도 단기 fork 발생. 두 블록 동시 제안 → 체인 하나 폐기 → 폐기된 쪽 TX 소실</li>
-          <li>CONFIRMED vs FINALIZED — CONFIRMED: 아직 reorg 가능. <span class="c">Finalized</span>: 2/3+ validator 동의 → 절대 불변</li>
-          <li>REORGED 전이 설계 — CONFIRMED TX가 reorg로 사라짐 → <span class="c">REORGED</span> 전이 → Finalized 이후 VASP 재조회 → 최종 상태 결정</li>
+          <li>CONFIRMED vs FINALIZED — CONFIRMED: 충분한 블록 확인, FINALIZED 전 단계 (MINED 구간에서만 REORG 가능). <span class="c">FINALIZED</span>: 2/3+ validator 동의 → 절대 불변</li>
+          <li>REORGED 전이 설계 — MINED TX가 reorg로 사라짐 → <span class="c">REORGED</span> 전이 → FINALIZED 이후 VASP 재조회 → 최종 상태 결정</li>
           <li>3종 복구 전략 요약 — REVERT: 즉시 FAILED + reason 저장 / TIMEOUT: gas bump 재전송 / REORG: 5블록 대기 후 재확인</li>
         </ul></div>
         <div class="sb" style="grid-column:1/-1"><div class="lbl chk">M3 완료 기준</div><div class="cr"><span class="ci">VALID_TRANSITIONS 맵 구현 + 전이 예외 테스트</span><span class="ci">동일 requestId 재전송 → 중복 발행 없음</span><span class="ci">5회 재시도 후 FAILED 전이</span><span class="ci">REVERT → FAILED + reason 저장</span><span class="ci">TIMEOUT/REORG 발생 원인 + 복구 전략 설명 가능</span></div></div>

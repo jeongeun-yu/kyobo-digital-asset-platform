@@ -129,7 +129,7 @@ function expectNoThrow(label: string, fn: () => void) {
     check(`${state}: ${JSON.stringify(VALID_TRANSITIONS[state])}`, state in VALID_TRANSITIONS);
   }
   check('FAILED는 종단 상태 — 전이 없음',    VALID_TRANSITIONS['FAILED']!.length === 0);
-  check('CONFIRMED는 종단 상태 — 전이 없음', VALID_TRANSITIONS['CONFIRMED']!.length === 0);
+  check('FINALIZED는 종단 상태 — 전이 없음', VALID_TRANSITIONS['FINALIZED']!.length === 0);
 
   // ── [2] 정상 전이 케이스 ─────────────────────────────────────────────
   console.log('\n[검증 2] 정상 전이 — 예외 없음');
@@ -145,7 +145,7 @@ function expectNoThrow(label: string, fn: () => void) {
   console.log('\n[검증 3] 금지 전이 — InvalidStatusTransitionError');
   expectThrows('FAILED     → CONFIRMED',  () => transitionStatus('FAILED',    'CONFIRMED'));
   expectThrows('CONFIRMED  → PENDING',    () => transitionStatus('CONFIRMED', 'PENDING'));
-  expectThrows('CONFIRMED  → REORGED',    () => transitionStatus('CONFIRMED', 'REORGED'));  // CONFIRMED는 종단
+  expectThrows('CONFIRMED  → REORGED',    () => transitionStatus('CONFIRMED', 'REORGED'));  // CONFIRMED → FINALIZED만 허용
   expectThrows('FINALIZED  → REORGED',    () => transitionStatus('FINALIZED', 'REORGED'));  // FINALIZED 종단 — REORG 불가
   expectThrows('MINED      → FINALIZED',  () => transitionStatus('MINED',     'FINALIZED')); // 반드시 CONFIRMED 거쳐야 함
   expectThrows('REQUESTED  → MINED',      () => transitionStatus('REQUESTED', 'MINED'));
@@ -197,7 +197,7 @@ function expectNoThrow(label: string, fn: () => void) {
   console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
   console.log('\n핵심 정리:');
   console.log('  1. VALID_TRANSITIONS: 허용 전이를 명시적으로 열거 — 암묵적 전이 금지');
-  console.log('  2. FAILED/CONFIRMED는 종단 상태 — 빈 배열로 모든 복구 시도 차단');
+  console.log('  2. FAILED/FINALIZED는 종단 상태 — 빈 배열로 모든 복구 시도 차단');
   console.log('  3. MINED → CONFIRMED → FINALIZED (CONFIRMED 건너뛰기 불가)');
   console.log('  4. REORG는 MINED 구간에서만 — FINALIZED 이후 REORG 절대 불가 (PoS 보장)');
   console.log('  5. 핸들러 가드: throw 대신 return — At-least-once 재배달 시 DLQ 이동 방지');

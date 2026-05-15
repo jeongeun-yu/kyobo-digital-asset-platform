@@ -70,14 +70,14 @@ export class MintRequestNotFoundError extends Error {
 // 실습 1: VALID_TRANSITIONS 맵을 완성하라
 //
 // 전이 다이어그램:
-//   REQUESTED → SUBMITTED → MINED → FINALIZED → CONFIRMED (종단)
+//   REQUESTED → SUBMITTED → MINED → CONFIRMED → FINALIZED (종단)
 //                  ↓          ↓ ↗ (복귀)
 //               FAILED    REORGED → MINED / FAILED
 //
 // 힌트:
-//   · 종단 상태(CONFIRMED, FAILED)는 빈 배열 []
+//   · 종단 상태(FINALIZED, FAILED)는 빈 배열 []
 //   · SUBMITTED → PENDING 없음 (M3 TxStateMachine과 다름!)
-//   · REORGED 이후 MINED 복귀 가능, CONFIRMED 직접 불가
+//   · REORGED 이후 MINED 복귀 가능, FINALIZED 직접 불가
 // ────────────────────────────────────────────────────────────────────────
 
 export class LedgerService {
@@ -85,9 +85,9 @@ export class LedgerService {
   private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
     REQUESTED: [], // TODO: ['SUBMITTED', 'FAILED']
     SUBMITTED: [], // TODO: ['MINED', 'FAILED']
-    MINED:     [], // TODO: ['FINALIZED', 'REORGED', 'FAILED']
-    FINALIZED: [], // TODO: ['CONFIRMED']
-    CONFIRMED: [], // 종단 — 원장 업데이트 완료
+    MINED:     [], // TODO: ['CONFIRMED', 'REORGED', 'FAILED']
+    CONFIRMED: [], // TODO: ['FINALIZED']
+    FINALIZED: [], // 종단 — PoS 절대 불변
     FAILED:    [], // 종단 — 재발행하려면 새 요청 필요
     REORGED:   [], // TODO: ['MINED', 'FAILED']
   };
@@ -380,7 +380,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
   console.log('\n핵심 정리:');
   console.log('  1. VALID_TRANSITIONS: 허용 전이만 명시 — 역전이/동일 상태 전이 자동 차단');
-  console.log('  2. 종단 상태(CONFIRMED, FAILED): [] → 어떤 전이도 차단');
+  console.log('  2. 종단 상태(FINALIZED, FAILED): [] → 어떤 전이도 차단');
   console.log('  3. 필드 유효성 가드: 상태 전이 가드와 독립 — 좀비 레코드 방지');
   console.log('  4. recordProcessedEvent가 이벤트 핸들러의 첫 번째 줄이어야 하는 이유: 선점 효과');
   console.log('  5. TxStateMachineService(M3)와 LedgerService(M4)가 각자 독립적으로 가드를 가져야 하는 이유: 두 레이어가 직렬로 작동하므로');

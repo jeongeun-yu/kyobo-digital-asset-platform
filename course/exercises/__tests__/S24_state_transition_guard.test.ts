@@ -4,7 +4,7 @@
  * 채점 기준:
  *   · VALID_TRANSITIONS: 7개 MintStatus 전이 규칙 정의
  *   · 금지 전이 → InvalidStateTransitionError
- *   · 종단 상태 (CONFIRMED, FAILED): 전이 목록 비어 있음
+ *   · 종단 상태 (FINALIZED, FAILED): 전이 목록 비어 있음
  *   · 필드 유효성: SUBMITTED txHash 필수 / CONFIRMED tokenId 필수
  *   · recordProcessedEvent 멱등성
  *   · handleNFTIssued 중복 이벤트 차단 (processed=false)
@@ -69,7 +69,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
   });
 
   describe('금지 전이 — InvalidStateTransitionError', () => {
-    it('TODO: CONFIRMED 종단 상태에서 SUBMITTED 전이 시 InvalidStateTransitionError가 발생해야 한다', async () => {
+    it('TODO: FINALIZED 종단 상태에서 SUBMITTED 전이 시 InvalidStateTransitionError가 발생해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-conf', 'WALK');
       await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xconf' });
@@ -81,7 +81,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
       ).rejects.toThrow(InvalidStateTransitionError);
     });
 
-    it('TODO: FAILED 종단 상태에서 CONFIRMED 전이 시 InvalidStateTransitionError가 발생해야 한다', async () => {
+    it('TODO: FAILED 종단 상태에서 FINALIZED 전이 시 InvalidStateTransitionError가 발생해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-fail', 'WALK');
       await ledger.updateMintRequest(req.requestId, { status: 'FAILED', errorMsg: 'REVERT' });

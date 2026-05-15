@@ -259,7 +259,7 @@ function classifyRevertReason(reason: string): 'BALANCE' | 'PAUSED' | 'ACCESS' |
 - FINALIZED: 2/3+ validator 동의 → 절대 불변 — 종단 상태 (약 12분)
 
 **REORGED 전이 설계:**
-- MINED TX가 reorg로 사라짐 → REORGED 전이 (CONFIRMED 이전에만 발생)
+- MINED TX가 reorg로 사라짐 → REORGED 전이 (FINALIZED 이전에만 발생)
 - 5블록 대기 후 VASP 재조회 → MINED 복귀 or FAILED
 
 **3종 복구 전략 요약:**
@@ -301,7 +301,7 @@ async handleTxTimeout(requestId: string): Promise<void> {
 // TODO: REORG 발생 시 처리
 
 async handleReorg(requestId: string): Promise<void> {
-  // TODO: MINED → REORGED 전이 (CONFIRMED 이전에만 REORG 가능)
+  // TODO: MINED → REORGED 전이 (FINALIZED 이전에만 REORG 가능)
   // TODO: 5블록 대기
   // TODO: VASP API에서 현재 상태 재조회
   // TODO: 재조회 결과에 따라 MINED or FAILED 전이
@@ -311,7 +311,7 @@ async handleReorg(requestId: string): Promise<void> {
 **Step 3**: REORG 시뮬레이션 테스트
 ```typescript
 it('REORG 시뮬레이션 → 재처리 후 MINED 복귀', async () => {
-  // 1. MINED 상태 설정 (REORG는 CONFIRMED 이전에만)
+  // 1. MINED 상태 설정 (REORG는 FINALIZED 이전에만)
   // 2. handleReorg 호출 → REORGED 전이
   // 3. Mock: 5블록 후 VASP 재조회 → mined 응답 (재채굴)
   // 4. 최종 상태 MINED 확인 → 이후 CONFIRMED → FINALIZED 흐름 계속
@@ -353,7 +353,7 @@ async handleTxTimeout(requestId: string): Promise<void> {
 
 // handleReorg 완성
 async handleReorg(requestId: string): Promise<void> {
-  await transitionStatus(requestId, 'MINED', 'REORGED', this.db);  // CONFIRMED 이전에만 REORG 가능
+  await transitionStatus(requestId, 'MINED', 'REORGED', this.db);  // FINALIZED 이전에만 REORG 가능
   
   // 5블록 대기 (재편이 진정되길 기다림)
   await new Promise((r) => setTimeout(r, 60_000));

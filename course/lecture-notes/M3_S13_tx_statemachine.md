@@ -182,8 +182,8 @@ REQUESTED  보장: "요청이 DB에 기록됐다. VASP에는 아직 전송 전."
 SUBMITTED  보장: "VASP에 전송했다. txHash를 받았다."
 PENDING    보장: "TX가 블록체인 네트워크에 들어갔다. 아직 블록에 없다."
 MINED      보장: "블록에 포함됐다. (≒ Custody A4 INCLUDED) REORG 가능성 존재."
-FINALIZED  보장: "PoS Finality 확보. TX 번복 불가. 원장 업데이트 허용." ← Custody A6 FINALIZED
-CONFIRMED  보장: "원장 업데이트까지 완료. 모든 내부 처리 종료." ← 종단
+CONFIRMED  보장: "충분한 블록 확인. 원장 업데이트 허용." → FINALIZED 대기
+FINALIZED  보장: "PoS Finality 확보. TX 번복 불가. 절대 불변." ← 종단 (Custody A6 FINALIZED)
 FAILED     보장: "더 이상 처리 시도 없음. 원인이 기록됐다." ← 종단
 REORGED    보장: "MINED 이후 블록 재편으로 TX 소실. 재처리 대기."
 ```
@@ -193,19 +193,18 @@ REORGED    보장: "MINED 이후 블록 재편으로 TX 소실. 재처리 대기
 | 이 강의 (TX) | Custody TxAttempt | 의미 |
 |---|---|---|
 | MINED | A4 INCLUDED | 블록에 포함됨, Finality 미확보 |
-| — | A5 CONFIRMED | n confirmations (교육 단순화로 생략) |
-| FINALIZED | A6 FINALIZED | PoS Finality 확보, 번복 불가 |
-| CONFIRMED | (W9 LEDGER_POSTED) | 내부 원장 업데이트 완료, 최종 종단 |
+| CONFIRMED | A5 CONFIRMED | 충분한 블록 확인, 원장 업데이트 허용 |
+| FINALIZED | A6 FINALIZED | PoS Finality 확보, 번복 불가 — 종단 |
 
-> **왜 REORGED는 CONFIRMED가 아니라 MINED에서 분기하는가:**  
-> FINALIZED 이후에는 PoS 합의 규칙상 REORG가 불가능하다.  
-> REORG는 반드시 MINED(≒ INCLUDED) ~ FINALIZED 구간에서만 발생한다.  
-> 따라서 CONFIRMED(원장 완료)에서 REORGED로 가는 경로는 논리적으로 존재하지 않는다.
+> **왜 REORGED는 MINED에서만 분기하는가:**  
+> MINED 구간(CONFIRMED 이전)에서만 REORG를 처리한다. CONFIRMED 도달 시 충분한 블록이 쌓여  
+> 실질적 REORG 위험이 없다고 판단, MINED → REORGED 경로만 허용하는 단순화 모델을 채택했다.  
+> FINALIZED 이후에는 PoS 합의 규칙상 REORG 자체가 불가능하다.
 
 이 정의가 있으면:
 - "지금 PENDING이면 txHash가 있다" → txHash 없이 PENDING인 건 DB 불일치 버그
-- "FINALIZED면 원장 업데이트해도 된다" → FINALIZED 미만에서 원장 건드리면 안 됨
-- "CONFIRMED는 종단" → CONFIRMED 이후 추가 전이 없음, 재처리 시도 불가
+- "CONFIRMED면 원장 업데이트해도 된다" → CONFIRMED 미만에서 원장 건드리면 안 됨
+- "FINALIZED는 종단" → FINALIZED 이후 추가 전이 없음, 재처리 시도 불가
 
 ```typescript
 // TxStateMachineService.ts:34
@@ -214,8 +213,8 @@ export type TxStatus =
   | 'SUBMITTED'   // VASP에 전송됨, TX hash 미획득
   | 'PENDING'     // TX 전송됨, 블록 미채굴
   | 'MINED'       // 블록에 포함됨 (INCLUDED), Finality 미확보
-  | 'FINALIZED'   // PoS Finality 확보 — 원장 업데이트 트리거
-  | 'CONFIRMED'   // 원장 업데이트 완료 — 종단
+  | 'CONFIRMED'   // 충분한 블록 확인 → 원장 업데이트
+  | 'FINALIZED'   // PoS 2/3+ validator 동의 → 절대 불변 — 종단 상태
   | 'FAILED'      // REVERT 또는 최종 실패 — 종단
   | 'REORGED';    // MINED 후 REORG로 TX 소실, 재처리 대기
 ```
@@ -241,22 +240,22 @@ REQUESTED ──submitMintRequest()──→ SUBMITTED
                 ↓
              MINED (재진입)
                 │
-           Finality 확보
+           N블록 확인
                 ↓
-           FINALIZED
+           CONFIRMED
                 │
-         원장 업데이트
+         PoS Finality
                 ↓
-           CONFIRMED ◀── 종단
+           FINALIZED ◀── 종단
 ```
 
 **MINED / FINALIZED / CONFIRMED 구분 (운영 핵심):**
 
 | 상태 | Custody 대응 | 의미 | 원장 업데이트 |
 |---|---|---|---|
-| MINED | A4 INCLUDED | 블록에 포함됨 — REORG 가능 | ❌ 금지 |
-| FINALIZED | A6 FINALIZED | PoS 2/3+ validator 동의 (~12분) — 절대 불변 | ✅ 허용 |
-| CONFIRMED | (W9 LEDGER_POSTED) | 원장 처리 완료 — 종단 | ✅ 완료됨 |
+| MINED | A4 INCLUDED | 블록에 포함됨 — REORG 가능 구간 | ❌ 금지 |
+| CONFIRMED | A5 CONFIRMED | 충분한 블록 확인 — 원장 업데이트 허용 | ✅ 허용 |
+| FINALIZED | A6 FINALIZED | PoS 2/3+ validator 동의 (~12분) — 절대 불변, 종단 | ✅ 완료됨 |
 
 > **원장 업데이트는 FINALIZED 이후만.** MINED 즉시 원장을 올리면 REORG 시 잔액 오염이 생긴다.
 
@@ -318,15 +317,15 @@ CONFIRMED → REQUESTED 시도
 │ REORGED  │──┘ 재채굴 대기 → MINED 재진입     │  FAILED │
 └──────────┘                                  └─────────┘
        │ (REORGED에서 FAILED 가능)
-  Finality 확보
+  N블록 확인 (충분한 확인)
        ▼
   ┌──────────┐
-  │FINALIZED │   ← PoS finality 확보 (Custody A6 FINALIZED)
+  │CONFIRMED │   ← 원장 업데이트 허용 (Custody A5 CONFIRMED 해당)
   └────┬─────┘
-       │ 원장 업데이트
+       │ PoS Finality 대기
        ▼
   ┌──────────┐
-  │CONFIRMED │   ← 원장 처리 완료 (종단, Custody W9 LEDGER_POSTED 해당)
+  │FINALIZED │   ← PoS 절대 불변 — 종단 (Custody A6 FINALIZED 해당)
   └──────────┘
 ```
 
@@ -337,9 +336,9 @@ export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   REQUESTED:  ['SUBMITTED', 'FAILED'],
   SUBMITTED:  ['PENDING', 'FAILED'],
   PENDING:    ['MINED', 'FAILED'],
-  MINED:      ['FINALIZED', 'REORGED', 'FAILED'], // REORG는 MINED~FINALIZED 구간에서만
-  FINALIZED:  ['CONFIRMED'],                        // Finality 후 원장 업데이트
-  CONFIRMED:  [],                                   // 종단 — 원장 처리 완료
+  MINED:      ['CONFIRMED', 'REORGED', 'FAILED'],   // REORG는 MINED 구간에서만
+  CONFIRMED:  ['FINALIZED'],                        // 충분한 블록 확인 → PoS Finality 대기
+  FINALIZED:  [],                                   // 종단 — PoS 절대 불변
   FAILED:     [],                                   // 종단 — 더 이상 전이 없음
   REORGED:    ['MINED', 'FAILED'],                  // 재채굴 대기 or 포기
 };
@@ -661,15 +660,15 @@ export function transitionStatus(current: TxStatus, next: TxStatus): void {
 ```typescript
 // ✅ 통과해야 하는 케이스
 transitionStatus('PENDING',   'MINED');     // 정상
-transitionStatus('MINED',     'FINALIZED'); // 정상 — MINED → FINALIZED (CONFIRMED 직행 불가)
-transitionStatus('FINALIZED', 'CONFIRMED'); // 정상 — 원장 업데이트 완료
+transitionStatus('MINED',     'CONFIRMED'); // 정상 — MINED → CONFIRMED
+transitionStatus('CONFIRMED', 'FINALIZED'); // 정상 — PoS Finality 완료 (종단)
 transitionStatus('MINED',     'REORGED');   // 정상 — REORG는 MINED에서 발생
 transitionStatus('REORGED',   'MINED');     // 정상 — 재채굴 대기
 
 // ❌ 예외가 발생해야 하는 케이스
 transitionStatus('FAILED',    'CONFIRMED'); // InvalidStatusTransitionError — 종단에서 전이 불가
 transitionStatus('CONFIRMED', 'REORGED');  // InvalidStatusTransitionError — Finality 후 REORG 불가
-transitionStatus('MINED',     'CONFIRMED'); // InvalidStatusTransitionError — FINALIZED 거치지 않고 직행 불가
+transitionStatus('MINED',     'FINALIZED'); // InvalidStatusTransitionError — CONFIRMED 거치지 않고 직행 불가
 transitionStatus('REQUESTED', 'MINED');    // InvalidStatusTransitionError
 ```
 
@@ -680,9 +679,9 @@ export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   REQUESTED:  ['SUBMITTED', 'FAILED'],
   SUBMITTED:  ['PENDING', 'FAILED'],
   PENDING:    ['MINED', 'FAILED'],
-  MINED:      ['FINALIZED', 'REORGED', 'FAILED'],
-  FINALIZED:  ['CONFIRMED'],
-  CONFIRMED:  [],                          // 종단 — 원장 처리 완료
+  MINED:      ['CONFIRMED', 'REORGED', 'FAILED'],
+  CONFIRMED:  ['FINALIZED'],
+  FINALIZED:  [],                          // 종단 — PoS 절대 불변
   FAILED:     [],                          // 종단
   REORGED:    ['MINED', 'FAILED'],
 };
@@ -821,10 +820,10 @@ svc.on('transition', async (evt) => {
 | 왜 상태머신 | TX는 즉시 확정되지 않음 — 각 단계를 DB에 기록해야 재시작 후 복구 가능 |
 | DB 먼저 쓰기 | `repo.save(REQUESTED)` 후 VASP 호출 — 크래시 후 고아 TX 방지 |
 | 가드 패턴 | 각 핸들러: `if (status !== 허용된_이전) return` — At-least-once 환경에서 중복 방어 |
-| FINALIZED 기준 | MINED(=INCLUDED)가 아니라 FINALIZED 이후만 원장 업데이트 허용 — REORG 오염 방지 |
-| REORG 구간 | REORG는 MINED → FINALIZED 사이에서만 발생 — FINALIZED 이후 REORG 불가 |
-| 종단 상태 | CONFIRMED(원장 완료)·FAILED 모두 `VALID_TRANSITIONS = []` — 잘못된 재처리 차단 |
-| Custody 연결 | MINED=A4 INCLUDED / FINALIZED=A6 FINALIZED / CONFIRMED=W9 LEDGER_POSTED |
+| CONFIRMED 기준 | MINED(=INCLUDED)가 아니라 CONFIRMED 이후만 원장 업데이트 허용 — REORG 오염 방지 |
+| REORG 구간 | REORG는 MINED 구간에서만 처리 — FINALIZED 이후 REORG 불가 (PoS 보장) |
+| 종단 상태 | FINALIZED·FAILED 모두 `VALID_TRANSITIONS = []` — 잘못된 재처리 차단 |
+| Custody 연결 | MINED=A4 INCLUDED / CONFIRMED=A5 CONFIRMED / FINALIZED=A6 FINALIZED |
 | Observer Pattern | `svc.on('transition', handler)` — TxStateMachineService 변경 없이 구독자 추가 |
 | TxTransitionEvent | `{ requestId, from, to, req }` — 전이 시점의 상태 스냅샷 포함 |
 

@@ -74,9 +74,9 @@ S23에서 오프체인 원장의 필요성을 배웠다. 원장이 있으면 충
 private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
   REQUESTED: ['SUBMITTED', 'FAILED'],          // 발행 요청 생성 → VASP 제출 or 즉시 실패
   SUBMITTED: ['MINED',     'FAILED'],          // TX 제출 완료 → 블록 포함 or 실패
-  MINED:     ['FINALIZED', 'REORGED', 'FAILED'], // 블록 포함 → finality or 재편 or 실패
-  FINALIZED: ['CONFIRMED'],                    // finality 확보 → 원장 업데이트 완료
-  CONFIRMED: [],                               // 종단 상태 — 더 이상 전이 없음
+  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'], // 블록 포함 → 충분한 확인 or 재편 or 실패
+  CONFIRMED: ['FINALIZED'],                    // 충분한 블록 확인 → PoS Finality 대기
+  FINALIZED: [],                               // 종단 상태 — PoS 절대 불변
   FAILED:    [],                               // 종단 상태 — 재발행하려면 새 요청 필요
   REORGED:   ['MINED', 'FAILED'],              // 재편 → MINED 복귀(confirmation 재시작) or 포기
 };
@@ -95,10 +95,10 @@ private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
      │                                                          │
      │              └───────────────────────────────────────── │
      ▼
-[FINALIZED]
+[CONFIRMED]
      │
      ▼
-[CONFIRMED]  ← 종단 (원장 업데이트 완료, 이후 전이 없음)
+[FINALIZED]  ← 종단 (PoS 절대 불변, 이후 전이 없음)
 ```
 
 각 상태의 의미:
@@ -108,12 +108,12 @@ private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
 | `REQUESTED` | IssuerService가 발행 요청 생성 | IssuerService | NULL |
 | `SUBMITTED` | VASP에 TX 제출 완료, 블록 대기 중 | TxStateMachineService | 있음 |
 | `MINED` | 블록에 포함됨, REORG 가능 구간 | TxStateMachineService | 있음 |
-| `FINALIZED` | PoS 2/3+ validator 동의 → 절대 불변 | TxStateMachineService | 있음 |
-| `CONFIRMED` | 원장 업데이트 완료 — 종단 상태 | LedgerService | 있음 |
+| `CONFIRMED` | 충분한 블록 확인 — 원장 업데이트 허용 | TxStateMachineService | 있음 |
+| `FINALIZED` | PoS 2/3+ validator 동의 → 절대 불변 — 종단 | TxStateMachineService | 있음 |
 | `FAILED` | TX 실패로 종결, 재발행하려면 새 요청 | TxStateMachineService | 있을 수도 없을 수도 |
 | `REORGED` | 체인 재편으로 TX 소실 (임시) | TxStateMachineService | 있음 (무효화된 hash) |
 
-`CONFIRMED`와 `FAILED`는 **종단 상태**다. 허용 전이 목록이 `[]`이라서 어떤 전이 시도도 예외로 차단된다.
+`FINALIZED`와 `FAILED`는 **종단 상태**다. 허용 전이 목록이 `[]`이라서 어떤 전이 시도도 예외로 차단된다.
 
 ---
 
@@ -205,10 +205,10 @@ allowed = VALID_TRANSITIONS['CONFIRMED'] = []
 
 ```
 현재: MINED
-요청: { status: 'FINALIZED' }
+요청: { status: 'CONFIRMED' }
 
-allowed = VALID_TRANSITIONS['MINED'] = ['FINALIZED', 'REORGED', 'FAILED']
-'FINALIZED'이 목록 안에 있음 → 통과
+allowed = VALID_TRANSITIONS['MINED'] = ['CONFIRMED', 'REORGED', 'FAILED']
+'CONFIRMED'이 목록 안에 있음 → 통과
 → DB UPDATE 실행
 ```
 
