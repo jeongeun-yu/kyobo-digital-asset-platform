@@ -15,13 +15,13 @@
 const DUPLICATE_COUNT = 2;
 
 /** 실험 2: 멱등성을 켤까요? (false → true 로 바꿔보세요) */
-const USE_IDEMPOTENCY = false;
+const USE_IDEMPOTENCY = true;
 
 /** 실험 3: XACK를 처리 전에 할까요? (false → true 로 바꿔보세요) */
 const ACK_BEFORE_PROCESS = false;
 
 /** 실험 4: 처리 도중 크래시를 낼까요? (false → true 로 바꿔보세요) */
-const SIMULATE_CRASH = false;
+const SIMULATE_CRASH = true;
 
 // ══════════════════════════════════════════════════════════════════
 //  아래는 수정하지 않아도 됩니다

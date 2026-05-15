@@ -1,0 +1,40 @@
+---
+id: f2ea2a18-957e-4248-bf4b-4339a7794afb
+---
+flowchart TD
+  subgraph Webhook
+    A[WebhookServer]
+    B[IdempotencyGuard]
+    C[WebhookHandler]
+  end
+
+  subgraph RedisStream
+    P[RedisStreamPublisher]
+    S["Stream: kyobo:events"]
+    DLQ["Stream: kyobo:events:dlq"]
+  end
+
+  subgraph Consumers
+    subgraph Pool
+      W1["Worker group: nft-consumers"]
+      W2["Worker group: activity-consumers"]
+      W3["Worker group: coupon-consumers"]
+    end
+  end
+
+  A -->|"POST + HMAC 검증"| B
+  B -->|"중복 검사"| C
+  C -->|"publish() -> XADD"| P
+  P --> S
+
+  S -->|"XREADGROUP / XAUTOCLAIM"| W1
+  S -->|"XREADGROUP / XAUTOCLAIM"| W2
+  S -->|"XREADGROUP / XAUTOCLAIM"| W3
+
+  W1 -->|"eventType 필터"| EP1[EventProcessor]
+  W2 -->|"eventType 필터"| EP2[EventProcessor]
+  W3 -->|"eventType 필터"| EP3[EventProcessor]
+
+  W1 -->|"retry 초과"| DLQ
+  W2 -->|"retry 초과"| DLQ
+  W3 -->|"retry 초과"| DLQ

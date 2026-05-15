@@ -25,15 +25,23 @@ import fs from 'fs';
 import path from 'path';
 
 // .env 로드 (dotenv 없이)
-const envPath = path.resolve(__dirname, '../../../.env');
-if (fs.existsSync(envPath)) {
+const envPath = process.env.REDIS_URL
+  ? undefined
+  : path.resolve(__dirname, '../../../.env');
+
+if (envPath && fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
-    const match = line.match(/^([^#=]+)=(.*)$/);
-    if (match) process.env[match[1]!.trim()] ??= match[2]!.split('#')[0]!.trim();
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const match = line.match(/^([^=]+)=(.*)$/);
+    if (match) {
+      const key = match[1]!.trim();
+      const value = match[2]!.split('#')[0]!.trim();
+      if (!process.env[key]) process.env[key] = value;
+    }
   }
 }
 
-const REDIS_URL      = process.env['REDIS_URL'];
+const REDIS_URL      = process.env['REDIS_URL'] || 'redis://default:4SHo10nGq5iEF9NVSx7Vk8bMmYq1fSFw@empowering-coppery-root-47518.db.redis.io:10498';
 const REDIS_PASSWORD = process.env['REDIS_PASSWORD'];
 if (!REDIS_URL) throw new Error('.env에 REDIS_URL이 설정되지 않았습니다. S11_guide.md 사전 준비 섹션을 확인하세요.');
 const STREAM_KEY = 'kyobo:exercise:s11';
@@ -148,8 +156,7 @@ async function seedDLQ(dlqHandler: DLQHandler): Promise<void> {
   console.log('  S11 실습 — DLQ 운영 패턴 (Real Redis)');
   console.log(LINE);
 
-  const [host, portStr] = REDIS_URL.split(':');
-  const redis = new Redis({ host, port: parseInt(portStr ?? '6379', 10), password: REDIS_PASSWORD, lazyConnect: true });
+  const redis = new Redis(REDIS_URL, { lazyConnect: true });
   await redis.connect();
 
   // 이전 실행 데이터 초기화
