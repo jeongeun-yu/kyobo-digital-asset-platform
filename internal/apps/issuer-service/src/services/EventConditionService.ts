@@ -24,6 +24,8 @@
  * 관련 모듈: M5 S30~S31 (Strategy 패턴 · 플러그인 확장)
  */
 
+import { EventType } from '@kyobo/event-engine';
+
 // ── 인터페이스 ────────────────────────────────────────────────────────────
 
 export interface ActivityEvent {
@@ -57,7 +59,7 @@ export interface IConditionStrategy {
  *   - tokenId = encodeTokenId(PRODUCT_WALK, event.eventCode)
  */
 export class ActivityConditionStrategy implements IConditionStrategy {
-  supportedEventTypes = ['WALK_GOAL_MET', 'HEALTH_CHECK_DONE'];
+  supportedEventTypes = [EventType.WALK_GOAL_MET, EventType.HEALTH_CHECK_DONE];
 
   private static readonly PRODUCT_WALK         = BigInt(0x01);  // productCode
   private static readonly PRODUCT_HEALTH        = BigInt(0x02);
@@ -91,7 +93,7 @@ export class ActivityConditionStrategy implements IConditionStrategy {
  *   - tokenId = encodeTokenId(PRODUCT_COUPON, event.eventCode)
  */
 export class CouponConditionStrategy implements IConditionStrategy {
-  supportedEventTypes = ['COUPON_CLAIM', 'CAMPAIGN_REWARD'];
+  supportedEventTypes = [EventType.COUPON_CLAIM, EventType.CAMPAIGN_REWARD];
 
   private static readonly PRODUCT_COUPON     = BigInt(0x10);
   private static readonly PRODUCT_CODE_SHIFT = BigInt(64);

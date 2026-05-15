@@ -89,6 +89,15 @@ export interface EventProcessor {
  *     2. processNew()      — 새 메시지 XREADGROUP (blockMs 대기)
  *   }
  */
+export interface WorkerConfig {
+  streamKey:    string;   // "kyobo:events"
+  groupName:    string;   // "issuer-consumers"
+  consumerId:   string;   // "consumer-1", "consumer-2", ...
+  batchSize:    number;   // XREADGROUP COUNT
+  blockMs:      number;   // XREADGROUP BLOCK — 0=무한 대기
+  minIdleMs:    number;   // XAUTOCLAIM 기준 idle 시간 (기본 30_000ms)
+}
+
 export class ConsumerGroupWorker {
   private running = false;
   private readonly MAX_RETRIES = 3;
@@ -97,14 +106,7 @@ export class ConsumerGroupWorker {
     private readonly redis:      RedisConsumerClient,
     private readonly processors: EventProcessor[],
     private readonly dlq:        DLQHandler,
-    private readonly config: {
-      streamKey:    string;   // "kyobo:events"
-      groupName:    string;   // "issuer-consumers"
-      consumerId:   string;   // "consumer-1", "consumer-2", ...
-      batchSize:    number;   // XREADGROUP COUNT
-      blockMs:      number;   // XREADGROUP BLOCK — 0=무한 대기
-      minIdleMs:    number;   // XAUTOCLAIM 기준 idle 시간 (기본 30_000ms)
-    },
+    private readonly config:     WorkerConfig,
   ) {}
 
   async start(): Promise<void> {

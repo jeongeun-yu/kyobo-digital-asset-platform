@@ -18,6 +18,7 @@
 
 import { type EventProcessor, type StreamMessage, DeferredProcessingError } from '../stream/ConsumerGroupWorker';
 import { IdempotencyGuard } from '../webhook/IdempotencyGuard';
+import { EventType } from '../EventTypes';
 import { logger } from '../infra/logger';
 
 // ── LedgerService 인터페이스 ─────────────────────────────────────────────────
@@ -35,7 +36,7 @@ export interface FinalizedBlockProvider {
 // ── NFTIssuedProcessor ───────────────────────────────────────────────────────
 
 export class NFTIssuedProcessor implements EventProcessor {
-  readonly eventTypes = ['NFT_ISSUED'];
+  readonly eventTypes = [EventType.NFT_ISSUED];
 
   constructor(
     private readonly idempotency:             IdempotencyGuard,

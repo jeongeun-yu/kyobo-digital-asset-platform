@@ -2,6 +2,7 @@ import type { ChainEvent } from '@kyobo/chain-adapters';
 import type { IEventHandler } from '../interfaces/IEventHandler';
 import { IdempotencyGuard } from '../webhook/IdempotencyGuard';
 import { RetryHandler } from '../webhook/RetryHandler';
+import { EventType } from '../EventTypes';
 import { logger } from '../infra/logger';
 
 /**
@@ -45,7 +46,7 @@ export class NFTIssuedHandler implements IEventHandler {
         requestId: idempotencyKey,
         targetUrl: this.config.coreBankingWebhookUrl,
         payload: {
-          eventType:   'NFT_ISSUED',
+          eventType:   EventType.NFT_ISSUED,
           to,
           tokenId:     tokenId.toString(),
           reason,
