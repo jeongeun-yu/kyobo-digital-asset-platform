@@ -152,7 +152,7 @@ export interface WalletResolver {
 
 export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   REQUESTED: ['SUBMITTED', 'FAILED'],
-  SUBMITTED: ['PENDING',   'FAILED'],
+  SUBMITTED: ['PENDING',   'MINED', 'FAILED'],
   PENDING:   ['MINED',     'FAILED'],
   MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
   CONFIRMED: ['FINALIZED'],
