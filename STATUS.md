@@ -49,4 +49,9 @@
 |---|---|---|
 | 2026-05-11 | 이벤트 파이프라인(Redis Stream + EventEngine)을 내부망에 배치 | 교보 내부 담당자 |
 
+## 마지막 작업 (2026-05-16)
+- S13 답안 파일 전면 재작성: 실제 `TxStateMachineService` 사용, 10개 블록, 순수 console.log
+- 개별 S13_1~S13_6 파일 삭제, package.json 관련 스크립트 정리
+- `TxStateMachineService.ts` 수정 반영
+
 ## 다음 작업

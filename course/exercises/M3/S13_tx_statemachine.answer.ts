@@ -1,205 +1,208 @@
-﻿/**
- * S13 실습 — TX 상태머신: VALID_TRANSITIONS + transitionStatus 구현
- *
- * 강의 노트: M3_S13_tx_statemachine.md
- *
- * 실행 방법 (internal/packages/event-engine 폴더에서):
- *   npx ts-node src/exercises/S13_tx_statemachine.ts
- *
- * 목표:
- *   [1] VALID_TRANSITIONS 맵 — 7개 상태 전이 규칙 정의
- *   [2] transitionStatus() — 허용되지 않은 전이 시 InvalidStatusTransitionError
- *   [3] 정상 전이 케이스 3가지 — 예외 없음
- *   [4] 금지 전이 케이스 3가지 — 예외 발생
- *   [5] 실제 TxStateMachineService 핸들러 가드 패턴 확인
+/**
+ * S13 실습 답안 — TX 상태머신
+ * 실행: npm run exercise:s13:answer
  */
 
-import type { TxStatus } from '@kyobo/vasp';
-import { TxStateMachineService, MintRequestNotFoundError } from '@kyobo/vasp';
-import type { TxRepository, VaspTxClient, WalletResolver, MintRequest } from '@kyobo/vasp';
+import { TxStateMachineService, MintRequestNotFoundError, InvalidStatusTransitionError } from '@kyobo/vasp';
+import type { TxStatus, MintRequest, TxRepository, VaspTxClient, WalletResolver, TxTransitionEvent } from '@kyobo/vasp';
 
-// ────────────────────────────────────────────────────────────────────────
-// 실습 1 + 2: VALID_TRANSITIONS 맵 + transitionStatus 구현
-//
-// TX 상태 전이도:
-//   REQUESTED → SUBMITTED → PENDING → MINED → FINALIZED → CONFIRMED
-//                     ↓         ↓        ↓        ↓
-//                   FAILED    FAILED   FAILED   REORGED → MINED / FAILED
-//                                      ↓
-//                                    FAILED
-//
-const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
-  REQUESTED: ['SUBMITTED', 'FAILED'],
-  SUBMITTED: ['PENDING',   'FAILED'],
-  PENDING:   ['MINED',     'FAILED'],
-  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
-  CONFIRMED: ['FINALIZED'],
-  FINALIZED: [],                          // 종단 — PoS 절대 불변
-  FAILED:    [],                          // 종단
-  REORGED:   ['MINED',     'FAILED'],
-};
+// ── Mock 구현체 ────────────────────────────────────────────────────────────
 
-class InvalidStatusTransitionError extends Error {
-  constructor(from: TxStatus, to: TxStatus) {
-    super(`Invalid status transition: ${from} → ${to}`);
-    this.name = 'InvalidStatusTransitionError';
-  }
-}
-
-function transitionStatus(current: TxStatus, next: TxStatus): void {
-  const allowed = VALID_TRANSITIONS[current] ?? [];
-  if (!allowed.includes(next)) {
-    throw new InvalidStatusTransitionError(current, next);
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// 실습 5용 In-memory TxRepository
-// ────────────────────────────────────────────────────────────────────────
-
-class InMemoryTxRepository implements TxRepository {
-  private store = new Map<string, MintRequest>();
-
-  async save(req: MintRequest): Promise<void> { this.store.set(req.id, { ...req }); }
-
-  async findById(id: string): Promise<MintRequest | null> {
-    return this.store.get(id) ?? null;
-  }
-
-  async updateStatus(id: string, status: TxStatus, extra?: Partial<MintRequest>): Promise<void> {
+class InMemoryRepo implements TxRepository {
+  store = new Map<string, MintRequest>();
+  async save(req: MintRequest)   { this.store.set(req.id, { ...req }); }
+  async findById(id: string)     { return this.store.get(id) ?? null; }
+  async updateStatus(id: string, status: TxStatus, extra?: Partial<MintRequest>) {
     const r = this.store.get(id);
     if (r) this.store.set(id, { ...r, ...extra, status, updatedAt: new Date() });
   }
-
-  async findPendingOlderThan(_minutes: number): Promise<MintRequest[]> { return []; }
+  async findPendingOlderThan(_m: number) { return []; }
 }
 
-class MockVaspTxClient implements VaspTxClient {
-  async submitMint(p: { to: string; tokenId: bigint; amount: bigint; requestId: string }) {
-    return { txHash: `0xmock-${p.requestId.slice(0, 8)}` };
-  }
-  async getStatus(_txHash: string) { return { status: 'pending' as const }; }
-  async resubmitWithGasBump(_txHash: string, _pct: number) { return { txHash: '0xbump' }; }
+class MockVasp implements VaspTxClient {
+  reorgedStatus: 'mined' | 'not_found' = 'mined';
+  async submitMint(p: any)                           { return { txHash: `0xmock-${p.requestId.slice(0,8)}` }; }
+  async getStatus(_h: string)                        { return { status: this.reorgedStatus as any }; }
+  async resubmitWithGasBump(_t: string, _p: number) { return { txHash: '0xbump-new' }; }
 }
 
-class MockWalletResolver implements WalletResolver {
-  async getWalletAddr(userId: string) { return `0x${userId.padEnd(40, '0')}`; }
+class MockWallet implements WalletResolver {
+  async getWalletAddr(userId: string) { return `0x${userId.padEnd(40,'0')}`; }
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// 헬퍼
-// ────────────────────────────────────────────────────────────────────────
-
-function check(label: string, pass: boolean) {
-  console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
-  if (!pass) process.exitCode = 1;
+function makeTx(id: string, status: TxStatus, txHash?: string): MintRequest {
+  const now = new Date();
+  return { id, userId: 'u1', tokenId: 1n, amount: 1n,
+    status, txHash, retryCount: 0, createdAt: now, updatedAt: now };
 }
 
-function expectThrows(label: string, fn: () => void) {
-  try {
-    fn();
-    check(`${label} → 예외 발생해야 함`, false);
-  } catch (err) {
-    const isCorrectError = err instanceof InvalidStatusTransitionError;
-    check(`${label} → InvalidStatusTransitionError`, isCorrectError);
-  }
-}
-
-function expectNoThrow(label: string, fn: () => void) {
-  try {
-    fn();
-    check(`${label} → 예외 없음`, true);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    check(`${label} → 예외 없어야 함 (실제: ${msg})`, false);
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// 실습 진입점
-// ────────────────────────────────────────────────────────────────────────
+// ── 답안 ──────────────────────────────────────────────────────────────────
 
 (async () => {
-  console.log('=== S13: TX 상태머신 — VALID_TRANSITIONS + transitionStatus ===\n');
+  console.log('=== S13: TX 상태머신 (답안) ===\n');
 
-  // ── [1] VALID_TRANSITIONS 맵 구조 확인 ───────────────────────────────
-  console.log('[검증 1] VALID_TRANSITIONS — 8개 상태 정의');
-  const states: TxStatus[] = ['REQUESTED', 'SUBMITTED', 'PENDING', 'MINED', 'FINALIZED', 'CONFIRMED', 'FAILED', 'REORGED'];
-  for (const state of states) {
-    check(`${state}: ${JSON.stringify(VALID_TRANSITIONS[state])}`, state in VALID_TRANSITIONS);
-  }
-  check('FAILED는 종단 상태 — 전이 없음',    VALID_TRANSITIONS['FAILED']!.length === 0);
-  check('FINALIZED는 종단 상태 — 전이 없음', VALID_TRANSITIONS['FINALIZED']!.length === 0);
+  // ── [1] _transition() — DB 저장 ──────────────────────────────────────
+  console.log('[1] _transition() — DB 저장');
+  {
+    const repo = new InMemoryRepo();
+    const svc  = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    await repo.save(makeTx('r1', 'PENDING', '0xabc'));
 
-  // ── [2] 정상 전이 케이스 ─────────────────────────────────────────────
-  console.log('\n[검증 2] 정상 전이 — 예외 없음');
-  expectNoThrow('REQUESTED → SUBMITTED',  () => transitionStatus('REQUESTED', 'SUBMITTED'));
-  expectNoThrow('PENDING   → MINED',      () => transitionStatus('PENDING',   'MINED'));
-  expectNoThrow('MINED     → CONFIRMED',  () => transitionStatus('MINED',     'CONFIRMED'));
-  expectNoThrow('CONFIRMED → FINALIZED',  () => transitionStatus('CONFIRMED', 'FINALIZED'));
-  expectNoThrow('MINED     → REORGED',    () => transitionStatus('MINED',     'REORGED'));
-  expectNoThrow('REORGED   → FAILED',     () => transitionStatus('REORGED',   'FAILED'));
-  expectNoThrow('SUBMITTED → FAILED',     () => transitionStatus('SUBMITTED', 'FAILED'));
+    await svc.handleMined('r1', 100);
 
-  // ── [3] 금지 전이 케이스 ─────────────────────────────────────────────
-  console.log('\n[검증 3] 금지 전이 — InvalidStatusTransitionError');
-  expectThrows('FAILED     → CONFIRMED',  () => transitionStatus('FAILED',    'CONFIRMED'));
-  expectThrows('CONFIRMED  → PENDING',    () => transitionStatus('CONFIRMED', 'PENDING'));
-  expectThrows('CONFIRMED  → REORGED',    () => transitionStatus('CONFIRMED', 'REORGED'));  // CONFIRMED → FINALIZED만 허용
-  expectThrows('FINALIZED  → REORGED',    () => transitionStatus('FINALIZED', 'REORGED'));  // FINALIZED 종단 — REORG 불가
-  expectThrows('MINED      → FINALIZED',  () => transitionStatus('MINED',     'FINALIZED')); // 반드시 CONFIRMED 거쳐야 함
-  expectThrows('REQUESTED  → MINED',      () => transitionStatus('REQUESTED', 'MINED'));
-  expectThrows('MINED      → SUBMITTED',  () => transitionStatus('MINED',     'SUBMITTED'));
-  expectThrows('FAILED     → REQUESTED',  () => transitionStatus('FAILED',    'REQUESTED'));
-
-  // ── [4] MINED에서 MINED → 금지 (동일 상태 전이도 차단) ────────────────
-  console.log('\n[검증 4] 동일 상태 전이 — 금지');
-  expectThrows('MINED     → MINED',      () => transitionStatus('MINED',     'MINED'));
-  expectThrows('PENDING   → PENDING',    () => transitionStatus('PENDING',   'PENDING'));
-
-  // ── [5] 실제 TxStateMachineService 핸들러 가드 패턴 확인 ────────────
-  //
-  // handleMined: req.status !== 'PENDING' && !== 'SUBMITTED' 이면 return (throw 아님)
-  // → At-least-once 재배달 시 DLQ 이동 없이 조용히 무시
-  console.log('\n[검증 5] handleMined 가드 — 이미 CONFIRMED 상태면 조용히 무시');
-
-  const repo   = new InMemoryTxRepository();
-  const svc    = new TxStateMachineService(repo, new MockVaspTxClient(), new MockWalletResolver());
-  const now    = new Date();
-  const mockReq: MintRequest = {
-    id: 'req-guard', userId: 'u1', tokenId: 1n, amount: 1n,
-    status: 'CONFIRMED', retryCount: 0, createdAt: now, updatedAt: now,
-  };
-  await repo.save(mockReq);
-
-  let threw = false;
-  try {
-    await svc.handleMined('req-guard', 9999);
-  } catch {
-    threw = true;
-  }
-  check('CONFIRMED 상태에서 handleMined → throw 없음', !threw);
-
-  const afterGuard = await repo.findById('req-guard');
-  check('상태 변화 없음: CONFIRMED 유지', afterGuard?.status === 'CONFIRMED');
-
-  // [6] 존재하지 않는 requestId → MintRequestNotFoundError
-  console.log('\n[검증 6] 존재하지 않는 requestId → MintRequestNotFoundError');
-  try {
-    await svc.handleMined('not-exist', 1);
-    check('존재하지 않는 requestId → 에러', false);
-  } catch (err) {
-    check(`MintRequestNotFoundError 발생: ${err instanceof MintRequestNotFoundError}`, err instanceof MintRequestNotFoundError);
+    const after = await repo.findById('r1');
+    console.log('  status     :', after?.status);      // MINED
+    console.log('  blockNumber:', after?.blockNumber); // 100
   }
 
-  // ── 정리 ─────────────────────────────────────────────────────────────
-  console.log('\n=== S13 실습 완료 ===');
-  console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
-  console.log('\n핵심 정리:');
-  console.log('  1. VALID_TRANSITIONS: 허용 전이를 명시적으로 열거 — 암묵적 전이 금지');
-  console.log('  2. FAILED/FINALIZED는 종단 상태 — 빈 배열로 모든 복구 시도 차단');
-  console.log('  3. MINED → CONFIRMED → FINALIZED (CONFIRMED 건너뛰기 불가)');
-  console.log('  4. REORG는 MINED 구간에서만 — FINALIZED 이후 REORG 절대 불가 (PoS 보장)');
-  console.log('  5. 핸들러 가드: throw 대신 return — At-least-once 재배달 시 DLQ 이동 방지');
-  console.log('  6. _getOrThrow: 존재하지 않는 requestId → 즉시 에러 (개발 오류 조기 발견)');
+  // ── [2] _transition() — 이벤트 emit ──────────────────────────────────
+  console.log('\n[2] _transition() — 이벤트 emit');
+  {
+    const repo   = new InMemoryRepo();
+    const svc    = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    const events: TxTransitionEvent[] = [];
+    svc.on('transition', (evt: TxTransitionEvent) => events.push(evt));
+    await repo.save(makeTx('r2', 'PENDING', '0xdef'));
+
+    await svc.handleMined('r2', 200);
+
+    console.log('  이벤트 수  :', events.length);    // 1
+    console.log('  from       :', events[0]?.from);  // PENDING
+    console.log('  to         :', events[0]?.to);    // MINED
+  }
+
+  // ── [3] _transition() — VALID_TRANSITIONS 가드 ───────────────────────
+  console.log('\n[3] _transition() — VALID_TRANSITIONS 가드');
+  {
+    const repo = new InMemoryRepo();
+    const svc  = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    // handleFailed는 가드 없음 → FAILED 상태에서 호출 → _transition(FAILED→FAILED) 가드 발동
+    await repo.save(makeTx('r3', 'FAILED'));
+
+    try {
+      await svc.handleFailed('r3', 'again');
+    } catch (err) {
+      console.log('  에러:', (err as Error).constructor.name); // InvalidStatusTransitionError
+      console.log('  메시지:', (err as Error).message);
+    }
+  }
+
+  // ── [4] 핸들러 가드 — 예상 상태 아니면 조용히 return ────────────────
+  console.log('\n[4] 핸들러 가드 — 예상 상태 아니면 조용히 return');
+  {
+    const repo = new InMemoryRepo();
+    const svc  = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    await repo.save(makeTx('r4', 'CONFIRMED'));
+
+    await svc.handleMined('r4', 999); // 예외 없음 — 조용히 return
+
+    const after = await repo.findById('r4');
+    console.log('  status:', after?.status); // CONFIRMED (그대로)
+  }
+
+  // ── [5] handleFailed — 가드 없음 ─────────────────────────────────────
+  console.log('\n[5] handleFailed — 가드 없음');
+  {
+    const repo = new InMemoryRepo();
+    const svc  = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    await repo.save(makeTx('r5', 'PENDING'));
+
+    await svc.handleFailed('r5', 'revert: out of gas');
+
+    const after = await repo.findById('r5');
+    console.log('  status    :', after?.status);     // FAILED
+    console.log('  failReason:', after?.failReason); // revert: out of gas
+  }
+
+  // ── [6] handleTimeout — gas bump, PENDING 유지 ───────────────────────
+  console.log('\n[6] handleTimeout — gas bump, PENDING 유지');
+  {
+    const repo = new InMemoryRepo();
+    const svc  = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    await repo.save(makeTx('r6', 'PENDING', '0xold'));
+
+    await svc.handleTimeout('r6');
+
+    const after = await repo.findById('r6');
+    console.log('  status     :', after?.status);     // PENDING (그대로)
+    console.log('  txHash     :', after?.txHash);     // 0xbump-new
+    console.log('  retryCount :', after?.retryCount); // 1
+  }
+
+  // ── [7] handleReorg — 재채굴 성공 ────────────────────────────────────
+  console.log('\n[7] handleReorg — 재채굴 성공 (getStatus → mined)');
+  {
+    const repo   = new InMemoryRepo();
+    const svc    = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    const events: TxTransitionEvent[] = [];
+    svc.on('transition', (evt: TxTransitionEvent) => events.push(evt));
+    await repo.save(makeTx('r7', 'MINED', '0xreorg'));
+    (svc as any)._waitBlocks = async () => {};
+
+    await svc.handleReorg('r7');
+
+    const after = await repo.findById('r7');
+    console.log('  최종 status:', after?.status);                              // MINED
+    console.log('  전이 흐름  :', events.map(e => `${e.from}→${e.to}`).join(', ')); // MINED→REORGED, REORGED→MINED
+  }
+
+  // ── [8] handleReorg — 영구 소실 ──────────────────────────────────────
+  console.log('\n[8] handleReorg — 영구 소실 (getStatus → not_found)');
+  {
+    const repo = new InMemoryRepo();
+    const vasp = new MockVasp();
+    vasp.reorgedStatus = 'not_found';
+    const svc  = new TxStateMachineService(repo, vasp, new MockWallet());
+    await repo.save(makeTx('r8', 'MINED', '0xdrop'));
+    (svc as any)._waitBlocks = async () => {};
+
+    await svc.handleReorg('r8');
+
+    const after = await repo.findById('r8');
+    console.log('  status    :', after?.status);     // FAILED
+    console.log('  failReason:', after?.failReason); // reorg: tx not found after wait
+  }
+
+  // ── [9] Observer — CONFIRMED·FAILED 구독자 ───────────────────────────
+  console.log('\n[9] Observer — CONFIRMED·FAILED 구독자');
+  {
+    const repo           = new InMemoryRepo();
+    const svc            = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+    const ledgerUpdates: TxTransitionEvent[] = [];
+    const alertLog:      TxTransitionEvent[] = [];
+
+    svc.on('transition', (evt: TxTransitionEvent) => {
+      if (evt.to === 'CONFIRMED') ledgerUpdates.push(evt);
+    });
+    svc.on('transition', (evt: TxTransitionEvent) => {
+      if (evt.to === 'FAILED') alertLog.push(evt);
+    });
+
+    await repo.save(makeTx('r9a', 'MINED'));
+    await repo.save(makeTx('r9b', 'PENDING'));
+    await repo.save(makeTx('r9c', 'MINED'));
+
+    await svc.handleConfirmed('r9a');
+    await svc.handleFailed('r9b', 'revert');
+    await svc.handleConfirmed('r9c');
+
+    console.log('  ledgerUpdates:', ledgerUpdates.length, ledgerUpdates.map(e => e.to)); // 2 ['CONFIRMED','CONFIRMED']
+    console.log('  alertLog     :', alertLog.length,      alertLog.map(e => e.to));      // 1 ['FAILED']
+  }
+
+  // ── [10] 없는 requestId ───────────────────────────────────────────────
+  console.log('\n[10] 없는 requestId → MintRequestNotFoundError');
+  {
+    const repo = new InMemoryRepo();
+    const svc  = new TxStateMachineService(repo, new MockVasp(), new MockWallet());
+
+    try { await svc.handleMined('no-such', 1); }
+    catch (err) { console.log('  handleMined  :', (err as Error).constructor.name); }
+
+    try { await svc.handleTimeout('no-such'); }
+    catch (err) { console.log('  handleTimeout:', (err as Error).constructor.name); }
+
+    try { await svc.handleReorg('no-such'); }
+    catch (err) { console.log('  handleReorg  :', (err as Error).constructor.name); }
+  }
 })();

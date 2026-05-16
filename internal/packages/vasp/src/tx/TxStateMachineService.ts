@@ -148,6 +148,19 @@ export interface WalletResolver {
   getWalletAddr(userId: string): Promise<string>;
 }
 
+// ── 유효 전이 규칙 ────────────────────────────────────────────────────────
+
+export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
+  REQUESTED: ['SUBMITTED', 'FAILED'],
+  SUBMITTED: ['PENDING',   'FAILED'],
+  PENDING:   ['MINED',     'FAILED'],
+  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
+  CONFIRMED: ['FINALIZED'],
+  FINALIZED: [],   // 종단 — PoS 절대 불변
+  FAILED:    [],   // 종단
+  REORGED:   ['MINED', 'FAILED'],
+};
+
 // ── 서비스 ────────────────────────────────────────────────────────────────
 
 /**
@@ -299,7 +312,8 @@ export class TxStateMachineService extends EventEmitter {
       req.txHash,
       TxStateMachineService.GAS_BUMP_PERCENT,
     );
-    await this._transition(req, 'PENDING', { txHash: newTxHash, retryCount: req.retryCount + 1 });
+    // Gas bump: 상태 유지(PENDING), txHash·retryCount만 갱신 — 상태 전이 아님
+    await this.repo.updateStatus(req.id, 'PENDING', { txHash: newTxHash, retryCount: req.retryCount + 1 });
   }
 
   // ── REORG 처리 (S20) ───────────────────────────────────────────────────
@@ -402,6 +416,9 @@ export class TxStateMachineService extends EventEmitter {
     extra?: Partial<MintRequest>,
   ): Promise<void> {
     const from = req.status;
+    if (!VALID_TRANSITIONS[from].includes(to)) {
+      throw new InvalidStatusTransitionError(from, to);
+    }
     await this.repo.updateStatus(req.id, to, extra);
     const updated: MintRequest = { ...req, status: to, ...extra, updatedAt: new Date() };
     this.emit('transition', { requestId: req.id, from, to, req: updated } satisfies TxTransitionEvent);
