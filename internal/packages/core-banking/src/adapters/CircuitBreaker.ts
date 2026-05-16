@@ -1,25 +1,25 @@
-﻿/**
- * CircuitBreaker ???몃? ?쒕퉬???μ븷 李⑤떒 ?⑦꽩
+/**
+ * CircuitBreaker — 외부 서비스 장애 시 자동 차단
  *
- * M8 ISMS-P ?곌퀎: issuer-service ??internal/internal-ledger ?곌껐 ?μ븷 ??
- * 臾댄븳 ?ъ떆?????鍮좊Ⅸ ?ㅽ뙣(fail-fast)濡??꾪솚.
+ * M8 ISMS-P 연계: issuer-service → internal/internal-ledger 연결 장애 시
+ * 반복적인 재시도 대신 빠른 실패(fail-fast)로 전환.
  *
- * ?곹깭 ?꾩씠:
- *   CLOSED    ???뺤긽. 紐⑤뱺 ?붿껌 ?듦낵.
- *   OPEN      ??李⑤떒. failureThreshold 珥덇낵 ???꾩씠. CircuitOpenError 利됱떆 諛섑솚.
- *   HALF_OPEN ??蹂듦뎄 ?먯깋. recoveryTimeMs 寃쎄낵 ??泥??붿껌留??듦낵.
- *               ?깃났 ??CLOSED / ?ㅽ뙣 ??OPEN ?ъ쭊??
+ * 상태 전이:
+ *   CLOSED    — 정상. 모든 요청 통과.
+ *   OPEN      — 차단. failureThreshold 초과 시 전이. CircuitOpenError 즉시 반환.
+ *   HALF_OPEN — 복구 탐색. recoveryTimeMs 경과 후 첫 요청만 통과.
+ *               성공 → CLOSED / 실패 → OPEN 재전이.
  *
- *   CLOSED ??(N???ㅽ뙣)????OPEN ??(recoveryTimeMs 寃쎄낵)????HALF_OPEN
- *                                                            ???깃났 ??CLOSED
- *                                                            ???ㅽ뙣 ??OPEN
+ *   CLOSED →(N회 실패)→ OPEN →(recoveryTimeMs 경과)→ HALF_OPEN
+ *                                                      →(성공) → CLOSED
+ *                                                      →(실패) → OPEN
  */
 
 export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
 export interface CircuitBreakerOptions {
-  failureThreshold: number;   // OPEN ?꾪솚 湲곗? ?곗냽 ?ㅽ뙣 ?잛닔 (湲곕낯 5)
-  recoveryTimeMs:   number;   // OPEN ??HALF_OPEN ?꾪솚 ?湲?ms (湲곕낯 30000)
+  failureThreshold: number;   // OPEN 전환 기준 연속 실패 횟수 (기본 5)
+  recoveryTimeMs:   number;   // OPEN → HALF_OPEN 전환 대기 ms (기본 30000)
 }
 
 const DEFAULT_OPTIONS: CircuitBreakerOptions = {
@@ -81,7 +81,7 @@ export class CircuitBreaker {
 
 export class CircuitOpenError extends Error {
   constructor(retryAfterMs: number) {
-    super(`Circuit breaker OPEN ??retry after ${Math.ceil(retryAfterMs / 1000)}s`);
+    super(`Circuit breaker OPEN — retry after ${Math.ceil(retryAfterMs / 1000)}s`);
     this.name = 'CircuitOpenError';
   }
 }

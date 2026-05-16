@@ -67,7 +67,8 @@ export class RetryAdapterDecorator extends AdapterDecorator {
         if (NON_RETRYABLE.some(p => msg.includes(p))) throw err;
         if (attempt === this.opts.maxAttempts) throw err;
 
-        await new Promise(r => setTimeout(r, delayMs));
+        const jittered = delayMs * (0.8 + Math.random() * 0.4);
+        await new Promise(r => setTimeout(r, jittered));
         delayMs = Math.min(delayMs * this.opts.backoffFactor, this.opts.maxDelayMs);
       }
     }
