@@ -289,6 +289,7 @@ export class TxStateMachineService extends EventEmitter {
    */
   async handleFailed(requestId: string, reason: string): Promise<void> {
     const req = await this._getOrThrow(requestId);
+    if (req.status === 'FAILED') return;
     await this._transition(req, 'FAILED', { failReason: reason });
   }
 

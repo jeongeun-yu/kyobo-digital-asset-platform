@@ -19,7 +19,13 @@
  *                    vaspClient.resubmit()    → Broadcaster.broadcast()
  */
 
-import type { LedgerService, MintStatus } from '@kyobo/core-banking';
+import type { MintStatus } from '@kyobo/core-banking';
+import { MintRequestNotFoundError } from '../tx/TxStateMachineService';
+
+interface LedgerService {
+  getMintRequest(id: string): Promise<{ status: string; txHash?: string; errorMsg?: string; [k: string]: unknown } | null>;
+  updateMintRequest(id: string, patch: { status: MintStatus; txHash?: string; errorMsg?: string }): Promise<unknown>;
+}
 
 export type FailureReason = 'REVERT' | 'OUT_OF_GAS' | 'NONCE_TOO_LOW' | 'TIMEOUT' | 'NETWORK_ERROR';
 
@@ -68,7 +74,10 @@ export class VaspRecoveryService {
 
   async handleTxRevert(requestId: string, txHash: string, reason: string): Promise<RecoveryResult> {
     const req = await this.ledger.getMintRequest(requestId);
-    if (!req) throw new Error(`MintRequest not found: ${requestId}`);
+    if (!req) throw new MintRequestNotFoundError(requestId);
+    if ((req as { status: string }).status !== 'SUBMITTED') {
+      throw new InvalidStateTransitionError((req as { status: string }).status, 'FAILED');
+    }
 
     await this.ledger.updateMintRequest(requestId, { status: 'FAILED', txHash, errorMsg: reason });
     await this.notifier.send({ type: 'TX_FAILED', requestId, txHash, reason });
@@ -97,7 +106,7 @@ export class VaspRecoveryService {
     detectedAtBlock: number,
   ): Promise<RecoveryResult> {
     const req = await this.ledger.getMintRequest(requestId);
-    if (!req) throw new Error(`MintRequest not found: ${requestId}`);
+    if (!req) throw new MintRequestNotFoundError(requestId);
     if (req.status !== 'MINED') {
       throw new Error(`REORG only valid from MINED status, current: ${req.status}`);
     }
@@ -147,6 +156,15 @@ export class VaspRecoveryService {
       }
     }
     throw lastError;
+  }
+}
+
+// ── Errors ────────────────────────────────────────────────────
+
+export class InvalidStateTransitionError extends Error {
+  constructor(from: string, to: string) {
+    super(`Invalid state transition: ${from} → ${to}`);
+    this.name = 'InvalidStateTransitionError';
   }
 }
 
