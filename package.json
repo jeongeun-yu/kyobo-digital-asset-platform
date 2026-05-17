@@ -54,6 +54,7 @@
     "exercise:s17:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S17_decorator_patterns.answer.ts",
     "exercise:s18": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S18_tx_revert.ts",
     "exercise:s18:answer": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S18_tx_revert.answer.ts",
+    "exercise:s19": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S19_timeout_reorg_handler.ts",
     "exercise:s22": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S22_pollstale_lab.ts",
     "exercise:s22:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S22_pollstale_lab.answer.ts",
     "exercise:s23": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M4/S23_ledger_data_model.ts",

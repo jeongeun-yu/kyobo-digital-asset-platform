@@ -33,7 +33,7 @@ const LEDGER_VALID: Record<string, string[]> = {
   CONFIRMED: ['FINALIZED'],
   FINALIZED: [],
   FAILED:    [],
-  REORGED:   ['MINED', 'FAILED'],
+  REORGED:   ['MINED', 'SUBMITTED', 'FAILED'],
 };
 
 export class InMemoryLedger {
@@ -78,18 +78,21 @@ export class InMemoryLedger {
 export class MockVaspClient {
   async resyncNonce(): Promise<void> {}
   async resubmit(_requestId: string): Promise<{ txHash: string }> {
-    return { txHash: `0xREBUMPED_${Date.now().toString(16)}` };
+    const t = Date.now().toString(16);
+    return { txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
   async submitMint(_params: {
     to: string; tokenId: bigint; amount: bigint; requestId: string;
   }): Promise<{ txHash: string }> {
-    return { txHash: `0xMOCK_${Date.now().toString(16)}` };
+    const t = Date.now().toString(16);
+    return { txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
   async getStatus(_txHash: string) {
     return { status: 'pending' as const };
   }
   async resubmitWithGasBump(_txHash: string, _pct: number) {
-    return { txHash: `0xBUMP_${Date.now().toString(16)}` };
+    const t = Date.now().toString(16);
+    return { txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 }
 
