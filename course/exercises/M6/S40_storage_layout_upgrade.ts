@@ -293,11 +293,11 @@ function expectThrows(label: string, fn: () => void, errorSubstring?: string): v
   );
 
   const proxy = new ProxyStorageModel();
-  proxy.initializeV1('0xAdmin');
+  proxy.initializeV1('0xad1111111111111111111111111111111111ad11');
 
   const tokenId = encodeTokenId(1n, 42n);
-  proxy.writeBalance(tokenId, '0xUser', 5n);
-  check('v1 잔액 정상 기록: balanceOf(0xUser, tokenId) = 5', proxy.readBalance_V1(tokenId, '0xUser') === 5n);
+  proxy.writeBalance(tokenId, '0xaaaa111111111111111111111111111111111111', 5n);
+  check('v1 잔액 정상 기록: balanceOf(0xUser, tokenId) = 5', proxy.readBalance_V1(tokenId, '0xaaaa111111111111111111111111111111111111') === 5n);
 
   const slot1AsUri = proxy.readSlot1_AsUri_BAD();
   check(
@@ -337,12 +337,12 @@ function expectThrows(label: string, fn: () => void, errorSubstring?: string): v
 
   const tracker = new InitializationVersionTracker();
 
-  tracker.initialize('0xAdmin');
+  tracker.initialize('0xad1111111111111111111111111111111111ad11');
   check('initialize() 실행 → _initialized = 1', tracker.getVersion() === 1);
 
   expectThrows(
     'initialize() 재호출 → InvalidInitialization',
-    () => tracker.initialize('0xAttacker'),
+    () => tracker.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0'),
     'InvalidInitialization',
   );
   check('initialize() 재호출 후 version 변화 없음', tracker.getVersion() === 1);
@@ -358,7 +358,7 @@ function expectThrows(label: string, fn: () => void, errorSubstring?: string): v
 
   expectThrows(
     'initialize() (v1) 재호출도 여전히 차단',
-    () => tracker.initialize('0xAttacker'),
+    () => tracker.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0'),
     'InvalidInitialization',
   );
 
@@ -369,19 +369,19 @@ function expectThrows(label: string, fn: () => void, errorSubstring?: string): v
   console.log('\n[검증 6] v2 업그레이드 후 기존 토큰 잔액 보존 확인');
 
   const proxy2 = new ProxyStorageModel();
-  proxy2.initializeV1('0xAdmin');
+  proxy2.initializeV1('0xad1111111111111111111111111111111111ad11');
 
   const tid = encodeTokenId(1n, 1n);
-  proxy2.writeBalance(tid, '0xUser', 5n);
+  proxy2.writeBalance(tid, '0xaaaa111111111111111111111111111111111111', 5n);
 
-  const balanceBefore = proxy2.readBalance_V1(tid, '0xUser');
+  const balanceBefore = proxy2.readBalance_V1(tid, '0xaaaa111111111111111111111111111111111111');
   check(`업그레이드 전 잔액 = ${balanceBefore}`, balanceBefore === 5n);
 
   // v2 업그레이드 (슬롯 레이아웃 변경 없음 — slot 6, 7만 추가)
   proxy2.rawSlots.set(6, 'https://api.kyobo.com/');
   proxy2.rawSlots.set(7, 1000);
 
-  const balanceAfter = proxy2.readBalance_V1(tid, '0xUser');
+  const balanceAfter = proxy2.readBalance_V1(tid, '0xaaaa111111111111111111111111111111111111');
   check(`업그레이드 후 잔액 보존 = ${balanceAfter} (기존과 동일)`, balanceAfter === 5n);
   check('slot 6: _baseTokenURI 정상 설정', proxy2.rawSlots.get(6) === 'https://api.kyobo.com/');
   check('slot 7: _maxSupplyPerToken 정상 설정', proxy2.rawSlots.get(7) === 1000);

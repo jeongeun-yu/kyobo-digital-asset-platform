@@ -44,20 +44,20 @@ function makeVasp(opts: {
 } = {}): VaspTxClient {
   return {
     async submitMint() {
-      return { txHash: opts.txHash ?? '0xvasp-tx' };
+      return { txHash: opts.txHash ?? '0xaaaa1111bbbb2222cccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222' };
     },
     async getStatus() {
       return opts.statusResponse ?? { status: 'pending' };
     },
     async resubmitWithGasBump() {
-      return { txHash: '0xbumped-tx' };
+      return { txHash: '0xbbbb2222cccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333' };
     },
   };
 }
 
 function makeWallet(): WalletResolver {
   return {
-    async getWalletAddr(userId) { return `0xwallet-${userId}`; },
+    async getWalletAddr(userId) { return `0x${userId.slice(0, 8).padEnd(40, '0')}`; },
   };
 }
 
@@ -72,11 +72,11 @@ describe('TxStateMachineService.submitMintRequest()', () => {
 
   it('SUBMITTED 상태로 저장 + txHash 세팅', async () => {
     const repo = makeRepo();
-    const svc  = new TxStateMachineService(repo, makeVasp({ txHash: '0xfirst' }), makeWallet());
+    const svc  = new TxStateMachineService(repo, makeVasp({ txHash: '0xf1f5700000000000000000000000000000000000000000000000000000f1f570' }), makeWallet());
     const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
     const req  = await repo.findById(id);
     expect(req?.status).toBe('SUBMITTED');
-    expect(req?.txHash).toBe('0xfirst');
+    expect(req?.txHash).toBe('0xf1f5700000000000000000000000000000000000000000000000000000f1f570');
   });
 
   it('VASP 전송 실패 → FAILED 전이 후 에러 throw', async () => {
@@ -169,16 +169,16 @@ describe('TxStateMachineService.handleFailed()', () => {
 describe('TxStateMachineService.handleTimeout()', () => {
   it('PENDING 상태 → gas bump 후 PENDING 유지 + retryCount++', async () => {
     const repo = makeRepo();
-    const svc  = new TxStateMachineService(repo, makeVasp({ txHash: '0xoriginal' }), makeWallet());
+    const svc  = new TxStateMachineService(repo, makeVasp({ txHash: '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333' }), makeWallet());
     const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     // SUBMITTED → 수동으로 PENDING 상태로 변경
-    await repo.updateStatus(id, 'PENDING', { txHash: '0xoriginal' });
+    await repo.updateStatus(id, 'PENDING', { txHash: '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333' });
 
     await svc.handleTimeout(id);
     const req = await repo.findById(id);
     expect(req?.status).toBe('PENDING');
-    expect(req?.txHash).toBe('0xbumped-tx');
+    expect(req?.txHash).toBe('0xbbbb2222cccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333');
     expect(req?.retryCount).toBeGreaterThan(0);
   });
 
@@ -204,7 +204,7 @@ describe('TxStateMachineService.pollStaleRequests()', () => {
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
     req.status    = 'MINED';
-    req.txHash    = '0xstale';
+    req.txHash    = '0x57a1e00000000000000000000000000000000000000000000000000000057a1e';
     repo.store.set(id, req);
 
     const { processed } = await svc.pollStaleRequests();
@@ -221,7 +221,7 @@ describe('TxStateMachineService.pollStaleRequests()', () => {
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
     req.status    = 'PENDING';
-    req.txHash    = '0xstale';
+    req.txHash    = '0x57a1e00000000000000000000000000000000000000000000000000000057a1e';
     repo.store.set(id, req);
 
     await svc.pollStaleRequests();
@@ -262,7 +262,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
     req.status    = 'PENDING';
-    req.txHash    = '0xstale';
+    req.txHash    = '0x57a1e00000000000000000000000000000000000000000000000000000057a1e';
     repo.store.set(id, req);
 
     const { processed } = await svc.pollStaleRequests();
@@ -275,9 +275,9 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const repo = makeRepo();
     const vasp: VaspTxClient = {
-      async submitMint() { return { txHash: '0xtx' }; },
+      async submitMint() { return { txHash: '0x7777000000000000000000000000000000000000000000000000000000007777' }; },
       async getStatus()  { throw new Error('VASP timeout'); },
-      async resubmitWithGasBump() { return { txHash: '0xbumped' }; },
+      async resubmitWithGasBump() { return { txHash: '0xcccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444' }; },
     };
     const svc = new TxStateMachineService(repo, vasp, makeWallet());
     const id  = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
@@ -285,7 +285,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
     req.status    = 'PENDING';
-    req.txHash    = '0xtx';
+    req.txHash    = '0x7777000000000000000000000000000000000000000000000000000000007777';
     repo.store.set(id, req);
 
     const { processed } = await svc.pollStaleRequests();

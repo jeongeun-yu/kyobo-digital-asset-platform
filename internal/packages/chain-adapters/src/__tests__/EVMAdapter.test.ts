@@ -21,9 +21,9 @@ jest.mock('ethers', () => {
       // mintBatch, balanceOf, mint, burn 모두 기본 응답
       const mockTxResponse = {
         wait: jest.fn().mockResolvedValue({
-          hash:        '0xmockhash',
+          hash:        '0xa1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8',
           blockNumber: 18_500_001,
-          blockHash:   '0xblockHash',
+          blockHash:   '0x1c2d3e4f5a6b7c8d1c2d3e4f5a6b7c8d1c2d3e4f5a6b7c8d1c2d3e4f5a6b7c8d',
           status:      1,
           gasUsed:     21000n,
         }),
@@ -130,7 +130,7 @@ describe('EVMAdapter', () => {
         method:       'mint',
         args:         ['0xrecipient', 1n, 1n],
       });
-      expect(result.txHash).toBe('0xmockhash');
+      expect(result.txHash).toBe('0xa1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8');
       expect(result.blockNumber).toBe(18_500_001);
       expect(result.status).toBe('success');
     });
@@ -160,7 +160,7 @@ describe('EVMAdapter', () => {
         requestId:    'req-batch-001',
       };
       const result = await adapter.mintNFTBatch(BATCH_PARAMS);
-      expect(result.txHash).toBe('0xmockhash');
+      expect(result.txHash).toBe('0xa1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8');
       expect(result.status).toBe('success');
       expect(result.gasUsed).toBe(21000n);
     });
@@ -179,7 +179,7 @@ describe('EVMAdapter', () => {
     it('소각 성공 → TransactionReceipt 반환', async () => {
       const adapter = new EVMAdapter(CONFIG_WITH_KEY);
       const result = await adapter.burnNFT(BURN_PARAMS);
-      expect(result.txHash).toBe('0xmockhash');
+      expect(result.txHash).toBe('0xa1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8');
       expect(result.status).toBe('success');
     });
   });
@@ -207,17 +207,17 @@ describe('EVMAdapter', () => {
       JsonRpcProvider.mockImplementationOnce(() => ({
         getBlockNumber: jest.fn().mockResolvedValue(18_500_000),
         getTransactionReceipt: jest.fn().mockResolvedValue({
-          hash:        '0xknownhash',
+          hash:        '0xdeadbeefcafe1234deadbeefcafe1234deadbeefcafe1234deadbeefcafe1234',
           blockNumber: 18_500_010,
-          blockHash:   '0xblockhash2',
+          blockHash:   '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12',
           status:      1,
           gasUsed:     50000n,
         }),
       }));
       const adapter = new EVMAdapter(CONFIG_READONLY);
-      const receipt = await adapter.getReceipt('0xknownhash');
+      const receipt = await adapter.getReceipt('0xdeadbeefcafe1234deadbeefcafe1234deadbeefcafe1234deadbeefcafe1234');
       expect(receipt).not.toBeNull();
-      expect(receipt!.txHash).toBe('0xknownhash');
+      expect(receipt!.txHash).toBe('0xdeadbeefcafe1234deadbeefcafe1234deadbeefcafe1234deadbeefcafe1234');
       expect(receipt!.status).toBe('success');
       expect(receipt!.gasUsed).toBe(50000n);
     });
@@ -227,11 +227,11 @@ describe('EVMAdapter', () => {
       JsonRpcProvider.mockImplementationOnce(() => ({
         getBlockNumber: jest.fn().mockResolvedValue(18_500_000),
         getTransactionReceipt: jest.fn().mockResolvedValue({
-          hash: '0xfailedhash', blockNumber: 1, blockHash: '0xbh', status: 0, gasUsed: 21000n,
+          hash: '0xfaceface00000000faceface00000000faceface00000000faceface00000000ff', blockNumber: 1, blockHash: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', status: 0, gasUsed: 21000n,
         }),
       }));
       const adapter = new EVMAdapter(CONFIG_READONLY);
-      const receipt = await adapter.getReceipt('0xfailedhash');
+      const receipt = await adapter.getReceipt('0xfaceface00000000faceface00000000faceface00000000faceface00000000ff');
       expect(receipt!.status).toBe('failed');
     });
   });
@@ -257,7 +257,7 @@ describe('EVMAdapter', () => {
 
     it('이벤트 반환 시 ChainEvent 배열로 변환 (fragment 있음)', async () => {
       const mockLog = {
-        transactionHash: '0xeventhash',
+        transactionHash: '0xc0ffee00deadbeef00000000c0ffee00deadbeef00000000c0ffee00deadbeef00',
         blockNumber:     18_500_005,
         index:           0,
         fragment:        { inputs: [{ name: 'to' }, { name: 'tokenId' }] },
@@ -276,14 +276,14 @@ describe('EVMAdapter', () => {
       const adapter = new EVMAdapter(CONFIG_READONLY);
       const events = await adapter.queryEvents('0xcontract', [], 'Transfer', 100, 200);
       expect(events).toHaveLength(1);
-      expect(events[0]!.txHash).toBe('0xeventhash');
+      expect(events[0]!.txHash).toBe('0xc0ffee00deadbeef00000000c0ffee00deadbeef00000000c0ffee00deadbeef00');
       expect(events[0]!.blockNumber).toBe(18_500_005);
       expect(events[0]!.args).toEqual({ to: '0xrecipient', tokenId: 42n });
     });
 
     it('fragment 없는 log → args.raw 로 변환', async () => {
       const mockLog = {
-        transactionHash: '0xrawhash',
+        transactionHash: '0xbabe000000000000babe000000000000babe000000000000babe000000000000ff',
         blockNumber:     18_500_006,
         index:           1,
         fragment:        null,

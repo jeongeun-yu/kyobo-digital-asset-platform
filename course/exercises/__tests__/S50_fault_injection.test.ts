@@ -120,7 +120,7 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
       const dlq    = new MockDLQService();
       const issuer = new MockIssuerService(vasp, ledger, dlq, 0);
       const req    = await ledger.createMintRequest({ userId: 'u-fail', tokenId: 99n, amount: 1n, activityId: 'a-fail' });
-      const result = await issuer.issueSingleWithRetry({ to: '0xWF', tokenId: req.tokenId, amount: req.amount, requestId: req.id, maxRetries: 5 });
+      const result = await issuer.issueSingleWithRetry({ to: '0xfeed000000000000000000000000000000000002', tokenId: req.tokenId, amount: req.amount, requestId: req.id, maxRetries: 5 });
       return { ledger, vasp, dlq, req, result };
     }
 
@@ -159,7 +159,7 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
       await ledger.updateStatus(req.id, 'SUBMITTED', { vaspTxId: 'vasp-tx-004' });
       await ledger.updateStatus(req.id, 'MINED');
       await ledger.updateStatus(req.id, 'FINALIZED');
-      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0xOriginalTxHash' });
+      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0x0119100000000000000000000000000000000000000000000000000000119100' });
       expect((await ledger.get(req.id))?.status).toBe('CONFIRMED');
     });
 
@@ -169,7 +169,7 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
       await ledger.updateStatus(req.id, 'SUBMITTED');
       await ledger.updateStatus(req.id, 'MINED');
       await ledger.updateStatus(req.id, 'FINALIZED');
-      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0xOriginalHash' });
+      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0x0119100000000000000000000000000000000000000000000000000001191000' });
       await ledger.updateStatus(req.id, 'REORGED');
       expect((await ledger.get(req.id))?.status).toBe('REORGED');
     });
@@ -179,14 +179,14 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
       const req = await ledger.createMintRequest({ userId: 'u-reorg3', tokenId: 1006n, amount: 1n, activityId: 'a-reorg3' });
       await ledger.updateStatus(req.id, 'SUBMITTED');
       await ledger.updateStatus(req.id, 'MINED');
-      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0xOriginalHash' });
+      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0x0119100000000000000000000000000000000000000000000000000001191000' });
       await ledger.updateStatus(req.id, 'REORGED');
       await ledger.updateStatus(req.id, 'MINED');
       await ledger.updateStatus(req.id, 'FINALIZED');
-      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0xNewTxHash789' });
+      await ledger.updateStatus(req.id, 'CONFIRMED', { onChainTxHash: '0x0e00000000000000000000000000000000000000000000000000000000007890' });
       const final = await ledger.get(req.id);
       expect(final?.status).toBe('CONFIRMED');
-      expect(final?.onChainTxHash).toBe('0xNewTxHash789');
+      expect(final?.onChainTxHash).toBe('0x0e00000000000000000000000000000000000000000000000000000000007890');
     });
   });
 
@@ -212,10 +212,10 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
       const req    = await ledger.createMintRequest({ userId: 'u-idem', tokenId: 5100n, amount: 1n, activityId: 'evt-idem' });
       let updateCount = 0;
 
-      const first  = await ledger.confirmIfNotAlready(req.id, '0xTx100a');
+      const first  = await ledger.confirmIfNotAlready(req.id, '0x100a000000000000000000000000000000000000000000000000000000100a00');
       if (first) updateCount++;
 
-      const second = await ledger.confirmIfNotAlready(req.id, '0xTx100b');
+      const second = await ledger.confirmIfNotAlready(req.id, '0x100b000000000000000000000000000000000000000000000000000000100b00');
       if (second) updateCount++;
 
       expect(updateCount).toBe(1);
@@ -224,15 +224,15 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
     it('첫 번째 확인: true 반환', async () => {
       const ledger = new MockLedgerService();
       const req    = await ledger.createMintRequest({ userId: 'u-idem2', tokenId: 5101n, amount: 1n, activityId: 'evt-idem2' });
-      const first  = await ledger.confirmIfNotAlready(req.id, '0xTx');
+      const first  = await ledger.confirmIfNotAlready(req.id, '0x1000000000000000000000000000000000000000000000000000000000001000');
       expect(first).toBe(true);
     });
 
     it('두 번째 확인(이미 CONFIRMED): false 반환', async () => {
       const ledger = new MockLedgerService();
       const req    = await ledger.createMintRequest({ userId: 'u-idem3', tokenId: 5102n, amount: 1n, activityId: 'evt-idem3' });
-      await ledger.confirmIfNotAlready(req.id, '0xTx1');
-      const second = await ledger.confirmIfNotAlready(req.id, '0xTx2');
+      await ledger.confirmIfNotAlready(req.id, '0x1000100000000000000000000000000000000000000000000000000000100010');
+      const second = await ledger.confirmIfNotAlready(req.id, '0x1000200000000000000000000000000000000000000000000000000000100020');
       expect(second).toBe(false);
     });
 
@@ -253,11 +253,11 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
   });
 
   describe('TODO: 1-of-3 차단 / 2-of-3 성공', () => {
-    const SIGNERS = ['0xSignerA', '0xSignerB', '0xSignerC'];
+    const SIGNERS = ['0xa111a000000000000000000000000000000000a1', '0xb111b000000000000000000000000000000000b1', '0xc111c000000000000000000000000000000000c1'];
 
     it('1-of-3 단독 실행 → GS020 에러', () => {
       const safe = new SimpleSafe(SIGNERS, 2);
-      expect(() => safe.execTransaction([{ signer: '0xSignerA', sig: '0xsig_a' }])).toThrow(/GS020/);
+      expect(() => safe.execTransaction([{ signer: '0xa111a000000000000000000000000000000000a1', sig: '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b' }])).toThrow(/GS020/);
     });
 
     it('0-of-3 → GS020 에러', () => {
@@ -268,8 +268,8 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
     it('2-of-3 서명 → execTransaction txHash 반환', () => {
       const safe = new SimpleSafe(SIGNERS, 2);
       const result = safe.execTransaction([
-        { signer: '0xSignerA', sig: '0xsig_a' },
-        { signer: '0xSignerB', sig: '0xsig_b' },
+        { signer: '0xa111a000000000000000000000000000000000a1', sig: '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b' },
+        { signer: '0xb111b000000000000000000000000000000000b1', sig: '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b' },
       ]);
       expect(result.txHash).toMatch(/^0x/);
     });
@@ -277,8 +277,8 @@ describe('S50 채점 — 장애 주입 기반 복원력 검증', () => {
     it('비소유자 서명은 유효 서명으로 카운트 안 됨', () => {
       const safe = new SimpleSafe(SIGNERS, 2);
       expect(() => safe.execTransaction([
-        { signer: '0xNotOwner', sig: '0xsig_x' },
-        { signer: '0xAlsoNotOwner', sig: '0xsig_y' },
+        { signer: '0xd000000000000000000000000000000000000001', sig: '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b' },
+        { signer: '0xd000000000000000000000000000000000000002', sig: '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b' },
       ])).toThrow(/GS020/);
     });
   });

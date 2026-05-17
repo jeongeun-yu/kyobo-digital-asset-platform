@@ -130,8 +130,8 @@ describe('S25 채점 — ReconcileService', () => {
 
   describe('reconcileNftHoldings() — 온체인 vs 원장 NFT 대조', () => {
     it('TODO: 원장과 온체인 보유 NFT가 일치하면 isHealthy=true, discrepancies 없음이어야 한다', async () => {
-      const wallets = new Map([['user-001', '0xABCD']]);
-      const onchainH = new Map([['0xABCD', [1001n, 1002n]]]);
+      const wallets = new Map([['user-001', '0xabcd000000000000000000000000000000000000']]);
+      const onchainH = new Map([['0xabcd000000000000000000000000000000000000', [1001n, 1002n]]]);
       const ledgerH  = new Map([['user-001', [1001n, 1002n]]]);
       const { onchain, ledger, alerter, alertCalls } = createStubs({
         totalSupply: 1_000_000n, bankBalance: 1_000_000n,
@@ -145,8 +145,8 @@ describe('S25 채점 — ReconcileService', () => {
     });
 
     it('TODO: 원장에만 있는 NFT는 LEDGER_ONLY 불일치로 감지되어야 한다', async () => {
-      const wallets = new Map([['user-002', '0xEFGH']]);
-      const onchainH = new Map([['0xEFGH', [1001n]]]);
+      const wallets = new Map([['user-002', '0xef890000000000000000000000000000000000ef']]);
+      const onchainH = new Map([['0xef890000000000000000000000000000000000ef', [1001n]]]);
       const ledgerH  = new Map([['user-002', [1001n, 9999n]]]);
       const { onchain, ledger, alerter, alertCalls } = createStubs({
         totalSupply: 1_000_000n, bankBalance: 1_000_000n,
@@ -163,8 +163,8 @@ describe('S25 채점 — ReconcileService', () => {
     });
 
     it('TODO: 온체인에만 있는 NFT는 ONCHAIN_ONLY 불일치로 감지되어야 한다', async () => {
-      const wallets = new Map([['user-003', '0xIJKL']]);
-      const onchainH = new Map([['0xIJKL', [1001n, 2001n]]]);
+      const wallets = new Map([['user-003', '0x194b0000000000000000000000000000000000ab']]);
+      const onchainH = new Map([['0x194b0000000000000000000000000000000000ab', [1001n, 2001n]]]);
       const ledgerH  = new Map([['user-003', [1001n]]]);
       const { onchain, ledger, alerter } = createStubs({
         totalSupply: 1_000_000n, bankBalance: 1_000_000n,
@@ -184,7 +184,7 @@ describe('S25 채점 — ReconcileService', () => {
     });
 
     it('TODO: checkedAt 타임스탬프가 양수여야 한다', async () => {
-      const wallets = new Map([['user-001', '0xABCD']]);
+      const wallets = new Map([['user-001', '0xabcd000000000000000000000000000000000000']]);
       const { onchain, ledger, alerter } = createStubs({
         totalSupply: 1_000_000n, bankBalance: 1_000_000n,
         wallets,

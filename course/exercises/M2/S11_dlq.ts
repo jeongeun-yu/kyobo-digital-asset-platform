@@ -119,7 +119,7 @@ function makeScenarios(): Omit<DLQItem, 'messageId'>[] {
     {
       streamKey: STREAM_KEY,
       groupName: GROUP_NAME,
-      event: { eventType: 'NFT_ISSUED', userId: 'user-002', tokenId: '42', txHash: '0xabc123def456' },
+      event: { eventType: 'NFT_ISSUED', userId: 'user-002', tokenId: '42', txHash: '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1' },
       reason:   'VASP connection timeout after 30s — 장애 복구 완료',
       failedAt: new Date(Date.now() - 5 * 60 * 1000),
     },

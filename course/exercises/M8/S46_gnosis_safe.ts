@@ -229,7 +229,7 @@ export function signHash(wallet: ethers.HDNodeWallet | ethers.Wallet, hash: stri
 
   // 2-of-3: 서명자 A 키 탈취 → 단독으로 execTransaction 불가
   const txParams: SafeTxParams = {
-    to: '0xKyoboNFTProxy00000000000000000000000000',
+    to: '0xc0de000000000000000000000000000000000001',
     value: 0n,
     data: '0x8456cb59', // pause() selector
     operation: 0,

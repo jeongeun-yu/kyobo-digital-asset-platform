@@ -56,14 +56,16 @@ class MockVaspTxClient implements VaspTxClient {
   }
 
   async submitMint(p: { to: string; tokenId: bigint; amount: bigint; requestId: string }) {
-    return { txHash: `0xmock-${p.requestId.slice(0, 8)}` };
+    const raw = Buffer.from(p.requestId).toString('hex');
+    return { txHash: `0x${raw.repeat(Math.ceil(64 / raw.length)).slice(0, 64)}` };
   }
   async getStatus(txHash: string): Promise<VaspStatusResult> {
     return this.statusMap.get(txHash) ?? { status: 'pending' };
   }
   async resubmitWithGasBump(txHash: string, pct: number) {
     if (this.maxRetryReached) throw new Error('MaxRetryExceeded');
-    const newHash = `${txHash}-bumped-${pct}pct`;
+    const t = Date.now().toString(16);
+    const newHash = `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}`;
     this.gasBumpLog.push(newHash);
     return { txHash: newHash };
   }
@@ -102,11 +104,13 @@ function makeVaspClientForRecovery(opts: {
   resubmitTxHash?: string;
   alwaysFail?: boolean;
 } = {}) {
+  const t = Date.now().toString(16);
+  const defaultHash = `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}`;
   return {
     async resyncNonce() {},
     async resubmit() {
       if (opts.alwaysFail) throw new Error('VASP unreachable');
-      return { txHash: opts.resubmitTxHash ?? '0xresubmit-new' };
+      return { txHash: opts.resubmitTxHash ?? defaultHash };
     },
   };
 }
@@ -123,7 +127,7 @@ function makeNotifier() {
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────────────────
 
-function makeMintReq(id: string, status: TxStatus, txHash = '0xORIG'): MintRequest {
+function makeMintReq(id: string, status: TxStatus, txHash = '0x04190000000000000000000000000000000000000000000000000000041900ab'): MintRequest {
   return {
     id,
     userId:     'user-1',
@@ -180,7 +184,7 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-to-1', 'PENDING', '0xOLD'));
+      await repo.save(makeMintReq('req-to-1', 'PENDING', '0x01d000000000000000000000000000000000000000000000000000000001d000'));
       await svc.handleTimeout('req-to-1');
 
       const req = await repo.findById('req-to-1');
@@ -192,11 +196,11 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-to-2', 'PENDING', '0xOLD_HASH'));
+      await repo.save(makeMintReq('req-to-2', 'PENDING', '0x01d0ba5e0000000000000000000000000000000000000000000000000001d000'));
       await svc.handleTimeout('req-to-2');
 
       const req = await repo.findById('req-to-2');
-      expect(req?.txHash).not.toBe('0xOLD_HASH');
+      expect(req?.txHash).not.toBe('0x01d0ba5e0000000000000000000000000000000000000000000000000001d000');
     });
 
     it('TODO: handleTimeout 후 retryCount 1 증가', async () => {
@@ -204,7 +208,7 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-to-3', 'PENDING', '0xPENDING_HASH'));
+      await repo.save(makeMintReq('req-to-3', 'PENDING', '0x9e0d1000000000000000000000000000000000000000000000000000009e0d10'));
       await svc.handleTimeout('req-to-3');
 
       const req = await repo.findById('req-to-3');
@@ -216,7 +220,7 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-to-4', 'PENDING', '0xGAS_BUMP_HASH'));
+      await repo.save(makeMintReq('req-to-4', 'PENDING', '0x9a50b000000000000000000000000000000000000000000000000000009a50b0'));
       await svc.handleTimeout('req-to-4');
 
       expect(vasp.getGasBumpLog()).toHaveLength(1);
@@ -228,7 +232,7 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       vasp.setMaxRetryReached(true);
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save({ ...makeMintReq('req-to-5', 'PENDING', '0xSTALE'), retryCount: 3 });
+      await repo.save({ ...makeMintReq('req-to-5', 'PENDING', '0x57a1e000000000000000000000000000000000000000000000000000057a1e00'), retryCount: 3 });
 
       let failedAfterMaxRetry = false;
       try {
@@ -247,7 +251,7 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-to-6', 'SUBMITTED', '0xSUBMITTED'));
+      await repo.save(makeMintReq('req-to-6', 'SUBMITTED', '0x50b00000000000000000000000000000000000000000000000000000050b0000'));
       await svc.handleTimeout('req-to-6');
 
       const req = await repo.findById('req-to-6');
@@ -259,7 +263,7 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-to-7', 'CONFIRMED', '0xCONFIRMED'));
+      await repo.save(makeMintReq('req-to-7', 'CONFIRMED', '0xc04f10eed0000000000000000000000000000000000000000000000000c04f10'));
       await svc.handleTimeout('req-to-7');
 
       const req = await repo.findById('req-to-7');
@@ -298,7 +302,7 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-rg-guard', 'CONFIRMED', '0xCONFIRMED'));
+      await repo.save(makeMintReq('req-rg-guard', 'CONFIRMED', '0xc04f10eed0000000000000000000000000000000000000000000000000c04f10'));
       await svc.handleReorg('req-rg-guard'); // CONFIRMED → no-op
 
       const req = await repo.findById('req-rg-guard');
@@ -308,98 +312,98 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
 
   describe('[4] VaspRecoveryService.handleReorg — retryWithBackoff + 재제출', () => {
     it('TODO: MINED 상태에서 재제출 성공 → action: RESUBMITTED', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-ok', status: 'MINED', txHash: '0xORIG' });
-      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0xNEW_TX' });
+      const ledger   = makeLedger({ id: 'req-vrg-ok', status: 'MINED', txHash: '0x04190000000000000000000000000000000000000000000000000000041900ab' });
+      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0x0e7000000000000000000000000000000000000000000000000000000e700000' });
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier);
 
-      const result = await svc.handleReorg('req-vrg-ok', '0xORIG', 12345);
+      const result = await svc.handleReorg('req-vrg-ok', '0x04190000000000000000000000000000000000000000000000000000041900ab', 12345);
       expect(result.action).toBe('RESUBMITTED');
     });
 
     it('TODO: 재제출 성공 → newTxHash 반환', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-hash', status: 'MINED', txHash: '0xORIG' });
-      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0xNEW_TX' });
+      const ledger   = makeLedger({ id: 'req-vrg-hash', status: 'MINED', txHash: '0x04190000000000000000000000000000000000000000000000000000041900ab' });
+      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0x0e7000000000000000000000000000000000000000000000000000000e700000' });
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier);
 
-      const result = await svc.handleReorg('req-vrg-hash', '0xORIG', 12345);
-      expect(result.newTxHash).toBe('0xNEW_TX');
+      const result = await svc.handleReorg('req-vrg-hash', '0x04190000000000000000000000000000000000000000000000000000041900ab', 12345);
+      expect(result.newTxHash).toBe('0x0e7000000000000000000000000000000000000000000000000000000e700000');
     });
 
     it('TODO: 재제출 성공 → ledger status: SUBMITTED', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-sub', status: 'MINED', txHash: '0xORIG' });
-      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0xNEW_TX' });
+      const ledger   = makeLedger({ id: 'req-vrg-sub', status: 'MINED', txHash: '0x04190000000000000000000000000000000000000000000000000000041900ab' });
+      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0x0e7000000000000000000000000000000000000000000000000000000e700000' });
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier);
 
-      await svc.handleReorg('req-vrg-sub', '0xORIG', 12345);
+      await svc.handleReorg('req-vrg-sub', '0x04190000000000000000000000000000000000000000000000000000041900ab', 12345);
       expect(ledger.store.status).toBe('SUBMITTED');
     });
 
     it('TODO: 재제출 성공 → ledger txHash가 새 값으로 교체됨', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-newhash', status: 'MINED', txHash: '0xORIG' });
-      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0xNEW_TX' });
+      const ledger   = makeLedger({ id: 'req-vrg-newhash', status: 'MINED', txHash: '0x04190000000000000000000000000000000000000000000000000000041900ab' });
+      const vasp     = makeVaspClientForRecovery({ resubmitTxHash: '0x0e7000000000000000000000000000000000000000000000000000000e700000' });
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier);
 
-      await svc.handleReorg('req-vrg-newhash', '0xORIG', 12345);
-      expect(ledger.store.txHash).toBe('0xNEW_TX');
+      await svc.handleReorg('req-vrg-newhash', '0x04190000000000000000000000000000000000000000000000000000041900ab', 12345);
+      expect(ledger.store.txHash).toBe('0x0e7000000000000000000000000000000000000000000000000000000e700000');
     });
 
     it('TODO: 재제출 전패 → action: FAILED', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-fail', status: 'MINED', txHash: '0xFAIL' });
+      const ledger   = makeLedger({ id: 'req-vrg-fail', status: 'MINED', txHash: '0xfa110000000000000000000000000000000000000000000000000000fa110001' });
       const vasp     = makeVaspClientForRecovery({ alwaysFail: true });
       const notifier = makeNotifier();
       const policy   = { maxAttempts: 1, initialDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, retryableErrors: [], nonRetryableErrors: [] } as any;
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier, policy);
 
-      const result = await svc.handleReorg('req-vrg-fail', '0xFAIL', 12346);
+      const result = await svc.handleReorg('req-vrg-fail', '0xfa110000000000000000000000000000000000000000000000000000fa110001', 12346);
       expect(result.action).toBe('FAILED');
     });
 
     it('TODO: 재제출 전패 → ledger status: FAILED', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-status-f', status: 'MINED', txHash: '0xFAIL2' });
+      const ledger   = makeLedger({ id: 'req-vrg-status-f', status: 'MINED', txHash: '0xfa110000000000000000000000000000000000000000000000000000fa110002' });
       const vasp     = makeVaspClientForRecovery({ alwaysFail: true });
       const notifier = makeNotifier();
       const policy   = { maxAttempts: 1, initialDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, retryableErrors: [], nonRetryableErrors: [] } as any;
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier, policy);
 
-      await svc.handleReorg('req-vrg-status-f', '0xFAIL2', 12346);
+      await svc.handleReorg('req-vrg-status-f', '0xfa110000000000000000000000000000000000000000000000000000fa110002', 12346);
       expect(ledger.store.status).toBe('FAILED');
     });
 
     it('TODO: 재제출 전패 → REORG_RESUBMIT_FAILED 알림 발송', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-notify', status: 'MINED', txHash: '0xFAIL3' });
+      const ledger   = makeLedger({ id: 'req-vrg-notify', status: 'MINED', txHash: '0xfa110000000000000000000000000000000000000000000000000000fa110003' });
       const vasp     = makeVaspClientForRecovery({ alwaysFail: true });
       const notifier = makeNotifier();
       const policy   = { maxAttempts: 1, initialDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, retryableErrors: [], nonRetryableErrors: [] } as any;
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier, policy);
 
-      await svc.handleReorg('req-vrg-notify', '0xFAIL3', 12347);
+      await svc.handleReorg('req-vrg-notify', '0xfa110000000000000000000000000000000000000000000000000000fa110003', 12347);
       const reorgFailedEvent = notifier.sentEvents.find(e => e.type === 'REORG_RESUBMIT_FAILED');
       expect(reorgFailedEvent).toBeDefined();
     });
 
     it('TODO: MINED 가 아닌 상태(FAILED)에서 handleReorg → Error throw', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-inv', status: 'FAILED', txHash: '0xFAILED' });
+      const ledger   = makeLedger({ id: 'req-vrg-inv', status: 'FAILED', txHash: '0xfa11ed00000000000000000000000000000000000000000000000000fa11ed00' });
       const vasp     = makeVaspClientForRecovery();
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier);
 
       await expect(
-        svc.handleReorg('req-vrg-inv', '0xFAILED', 12347),
+        svc.handleReorg('req-vrg-inv', '0xfa11ed00000000000000000000000000000000000000000000000000fa11ed00', 12347),
       ).rejects.toThrow();
     });
 
     it('TODO: SUBMITTED 상태에서 handleReorg → Error throw (MINED에서만 허용)', async () => {
-      const ledger   = makeLedger({ id: 'req-vrg-sub-inv', status: 'SUBMITTED', txHash: '0xSUB' });
+      const ledger   = makeLedger({ id: 'req-vrg-sub-inv', status: 'SUBMITTED', txHash: '0x50b00000000000000000000000000000000000000000000000000000050b0000' });
       const vasp     = makeVaspClientForRecovery();
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, vasp, notifier);
 
       await expect(
-        svc.handleReorg('req-vrg-sub-inv', '0xSUB', 12348),
+        svc.handleReorg('req-vrg-sub-inv', '0x50b00000000000000000000000000000000000000000000000000000050b0000', 12348),
       ).rejects.toThrow(/REORG only valid from MINED/i);
     });
   });
@@ -439,12 +443,12 @@ describe('S20 채점 — TIMEOUT·REORG 복구 핸들러 구현', () => {
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeMintReq('req-bump-new', 'PENDING', '0xORIG_PENDING'));
+      await repo.save(makeMintReq('req-bump-new', 'PENDING', '0x041900000000000000000000000000000000000000000000000000009e0d1090'));
       await svc.handleTimeout('req-bump-new');
 
       const req = await repo.findById('req-bump-new');
       expect(req?.txHash).toBeDefined();
-      expect(req?.txHash).not.toBe('0xORIG_PENDING');
+      expect(req?.txHash).not.toBe('0x041900000000000000000000000000000000000000000000000000009e0d1090');
     });
   });
 });

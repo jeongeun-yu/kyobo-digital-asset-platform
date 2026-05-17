@@ -15,7 +15,7 @@ describe('S05 채점 — HMAC-SHA256 서명 생성', () => {
   const SECRET  = 'dev-secret-kyobo';
   const PAYLOAD = JSON.stringify({
     eventType: 'NFT_ISSUED',
-    data:      { tokenId: '42', owner: '0xABCD' },
+    data:      { tokenId: '42', owner: '0xabcd000000000000000000000000000000000000' },
     requestId: 'test-001',
   });
 

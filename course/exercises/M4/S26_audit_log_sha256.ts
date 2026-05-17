@@ -237,7 +237,7 @@ function check(label: string, pass: boolean) {
     resourceType: 'MintRequest',
     resourceId: 'req-001',
     beforeState: { status: 'REQUESTED' },
-    afterState: { status: 'SUBMITTED', txHash: '0xabc' },
+    afterState: { status: 'SUBMITTED', txHash: '0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0' },
   });
 
   const id3 = await auditLog.log({

@@ -283,9 +283,9 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   const ledger = new LedgerService();
   const req = await ledger.createMintRequest('user-1', 'WALK-10000');
 
-  const sub = await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc123' });
+  const sub = await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000' });
   check('REQUESTED → SUBMITTED 성공',  sub.status === 'SUBMITTED');
-  check('txHash 설정됨',               sub.txHash === '0xabc123');
+  check('txHash 설정됨',               sub.txHash === '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000');
 
   const mined = await ledger.updateMintRequest(req.requestId, { status: 'MINED', blockNumber: 12345n });
   check('SUBMITTED → MINED 성공',      mined.status === 'MINED');
@@ -298,10 +298,10 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
 
   // CONFIRMED 상태 레코드 직접 생성 (테스트용)
   const confirmedReq = await ledger.createMintRequest('user-conf', 'WALK');
-  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'SUBMITTED', txHash: '0xconf' });
+  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'SUBMITTED', txHash: '0xc04f000000000000000000000000000000000000000000000000000000c04f00' });
   await ledger.updateMintRequest(confirmedReq.requestId, { status: 'MINED' });
   await ledger.updateMintRequest(confirmedReq.requestId, { status: 'FINALIZED' });
-  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'CONFIRMED', tokenId: 9001n, txHash: '0xconf' });
+  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'CONFIRMED', tokenId: 9001n, txHash: '0xc04f000000000000000000000000000000000000000000000000000000c04f00' });
 
   await expectRejects(
     'CONFIRMED → SUBMITTED',
@@ -321,7 +321,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
 
   // MINED → CONFIRMED 차단 (FINALIZED 반드시 거쳐야)
   const minedReq = await ledger.createMintRequest('user-mined', 'WALK');
-  await ledger.updateMintRequest(minedReq.requestId, { status: 'SUBMITTED', txHash: '0xmined' });
+  await ledger.updateMintRequest(minedReq.requestId, { status: 'SUBMITTED', txHash: '0x10ded000000000000000000000000000000000000000000000000000010ded00' });
   await ledger.updateMintRequest(minedReq.requestId, { status: 'MINED' });
 
   await expectRejects(
@@ -340,7 +340,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
     ledger.updateMintRequest(req2.requestId, { status: 'SUBMITTED' }),
   );
 
-  await ledger.updateMintRequest(req2.requestId, { status: 'SUBMITTED', txHash: '0xvalid' });
+  await ledger.updateMintRequest(req2.requestId, { status: 'SUBMITTED', txHash: '0xa11d000000000000000000000000000000000000000000000000000000a11d00' });
   await ledger.updateMintRequest(req2.requestId, { status: 'MINED' });
   await ledger.updateMintRequest(req2.requestId, { status: 'FINALIZED' });
 
@@ -352,9 +352,9 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   // ── [4] 멱등성 — 동일 (txHash, logIndex) 2회 처리 ────────────────────
   console.log('\n[검증 4] 멱등성 — recordProcessedEvent');
 
-  const r1 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
-  const r2 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
-  const r3 = await ledger.recordProcessedEvent('0xabc', 1, 'NFTIssued', 100n, {});
+  const r1 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
+  const r2 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
+  const r3 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 1, 'NFTIssued', 100n, {});
 
   check('첫 번째 처리: skipped = false', r1.skipped === false);
   check('중복 처리: skipped = true',     r2.skipped === true);
@@ -367,11 +367,11 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
 
   const ledger2 = new LedgerService();
   const rq = await ledger2.createMintRequest('user-evt', 'CYCLE-5000');
-  await ledger2.updateMintRequest(rq.requestId, { status: 'SUBMITTED', txHash: '0xevt' });
+  await ledger2.updateMintRequest(rq.requestId, { status: 'SUBMITTED', txHash: '0xe0e7000000000000000000000000000000000000000000000000000000e0e700' });
   await ledger2.updateMintRequest(rq.requestId, { status: 'MINED' });
   await ledger2.updateMintRequest(rq.requestId, { status: 'FINALIZED' });
 
-  const evt = { txHash: '0xevt', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: rq.requestId };
+  const evt = { txHash: '0xe0e7000000000000000000000000000000000000000000000000000000e0e700', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: rq.requestId };
 
   const result1 = await handleNFTIssued(ledger2, evt);
   check('첫 번째 처리: processed = true',  result1.processed === true);
@@ -397,7 +397,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
 
   const ledger3 = new LedgerService();
   const rq2 = await ledger3.createMintRequest('user-reorg', 'WALK-10000');
-  await ledger3.updateMintRequest(rq2.requestId, { status: 'SUBMITTED', txHash: '0xreorg' });
+  await ledger3.updateMintRequest(rq2.requestId, { status: 'SUBMITTED', txHash: '0x4e049000000000000000000000000000000000000000000000000000004e04900' });
   await ledger3.updateMintRequest(rq2.requestId, { status: 'MINED' });
   await ledger3.updateMintRequest(rq2.requestId, { status: 'REORGED' });
 
@@ -411,7 +411,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
     'REORGED 상태에서 CONFIRMED 직접 전이 차단',
     (async () => {
       const rq3 = await ledger3.createMintRequest('user-reorg2', 'WALK');
-      await ledger3.updateMintRequest(rq3.requestId, { status: 'SUBMITTED', txHash: '0xr2' });
+      await ledger3.updateMintRequest(rq3.requestId, { status: 'SUBMITTED', txHash: '0x4e049200000000000000000000000000000000000000000000000000004e04920' });
       await ledger3.updateMintRequest(rq3.requestId, { status: 'MINED' });
       await ledger3.updateMintRequest(rq3.requestId, { status: 'REORGED' });
       await ledger3.updateMintRequest(rq3.requestId, { status: 'CONFIRMED', tokenId: 1n });

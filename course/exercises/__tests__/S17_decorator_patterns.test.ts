@@ -30,7 +30,7 @@ import {
 
 // ── ControllableAdapter (S17 Stub 재현) ──────────────────────────────────────
 const STUB_RECEIPT: TransactionReceipt = {
-  txHash: '0xstub', blockNumber: 1, blockHash: '0xblock',
+  txHash: '0x5700b000000000000000000000000000000000000000000000000000005700b0', blockNumber: 1, blockHash: '0xb10c0000000000000000000000000000000000000000000000000000b10c0000',
   status: 'success', gasUsed: 21000n, timestamp: Date.now(),
 };
 
@@ -48,7 +48,8 @@ class ControllableAdapter implements IBlockchainAdapter {
   async mintNFT(_p: MintParams): Promise<TransactionReceipt> {
     this.callCount++;
     if (this.callCount <= this.failUntil) throw new Error(this.failMessage);
-    return { ...STUB_RECEIPT, txHash: `0xstub-${this.callCount}` };
+    const t = Date.now().toString(16);
+    return { ...STUB_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 
   async mintNFTBatch(_p: MintBatchParams):   Promise<TransactionReceipt>  { return STUB_RECEIPT; }

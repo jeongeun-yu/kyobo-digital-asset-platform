@@ -58,17 +58,17 @@ export function simulateUUPSDeployment(adminAddress: string): DeploymentResult {
       {
         step: 1,
         description: `Implementation 컨트랙트 배포 — KyoboNFT 바이트코드 → Sepolia`,
-        txHash: '0xSTEP1_' + implAddress.slice(2, 10),
+        txHash: '0x5e91000000000000000000000000000000000000000000000000000000005e91',
       },
       {
         step: 2,
         description: `ERC1967Proxy 배포 — constructor(_implementation=${implAddress}, _data)`,
-        txHash: '0xSTEP2_' + proxyAddress.slice(2, 10),
+        txHash: '0x5e92000000000000000000000000000000000000000000000000000000005e92',
       },
       {
         step: 3,
         description: `initialize(admin=${adminAddress}) 호출 via delegatecall → Proxy storage에 역할 등록`,
-        txHash: '0xSTEP3_init',
+        txHash: '0x5e93000000000000000000000000000000000000000000000000000000005e93',
       },
     ],
   };

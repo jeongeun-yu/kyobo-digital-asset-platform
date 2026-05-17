@@ -23,7 +23,7 @@ function makeMsg(): StreamMessage {
     id: `${Date.now()}-0`,
     fields: {
       eventType:   'NFT_BURNED',
-      payload:     JSON.stringify({ tokenId: 'T-999', owner: '0xVICTIM' }),
+      payload:     JSON.stringify({ tokenId: 'T-999', owner: '0xfeed000000000000000000000000000000000001' }),
       requestId:   `req-s11-${Date.now()}`,
       publishedAt: String(Date.now()),
       _retryCount: '0',

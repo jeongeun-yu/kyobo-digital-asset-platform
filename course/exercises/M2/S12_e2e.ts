@@ -132,7 +132,7 @@ function result(label: string, pass: boolean): void {
 
   const BODY = JSON.stringify({
     eventType: 'NFT_ISSUED',
-    data:      { tokenId: 'T-1001', to: '0xAlice', blockNumber: 18_500_001 },
+    data:      { tokenId: 'T-1001', to: '0xa11ce00000000000000000000000000000000001', blockNumber: 18_500_001 },
     timestamp: Date.now(),
     requestId: 'req-s12-e2e-001',
   });
@@ -149,7 +149,7 @@ function result(label: string, pass: boolean): void {
 
   // ── [3] Consumer → 원장 ──────────────────────────────────────────
   console.log('\n[3] Consumer → 원장');
-  const balance1 = await ledger.getNFTBalance('0xAlice', 'T-1001');
+  const balance1 = await ledger.getNFTBalance('0xa11ce00000000000000000000000000000000001', 'T-1001');
   result(`0xAlice T-1001 잔고: ${balance1} (기대: 1)`, balance1 === 1);
 
   // ── [4] 중복 전송 ────────────────────────────────────────────────
@@ -158,7 +158,7 @@ function result(label: string, pass: boolean): void {
     const status2 = await sendWebhook(BODY, sign(BODY));
     result(`HTTP ${status2} (기대: 202)`, status2 === 202);
     await new Promise(r => setTimeout(r, 150));
-    const balance2 = await ledger.getNFTBalance('0xAlice', 'T-1001');
+    const balance2 = await ledger.getNFTBalance('0xa11ce00000000000000000000000000000000001', 'T-1001');
     result(`Stream ${mockRedis.messageCount}건 (기대: 1)`, mockRedis.messageCount === 1);
     result(`잔고: ${balance2} (기대: 1)`,                  balance2 === 1);
   }

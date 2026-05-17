@@ -25,8 +25,8 @@ import {
 // ── 테스트 ───────────────────────────────────────────────────────────────────
 
 describe('S43 채점 — MEDIUM 취약점 처리 + 보안 테스트 설계', () => {
-  const ADMIN   = { address: '0xADMIN',  role: 'DEFAULT_ADMIN_ROLE' as Role };
-  const ATTACKER = { address: '0xATTACK', role: 'NONE' as Role };
+  const ADMIN   = { address: '0xad1111111111111111111111111111111111ad11',  role: 'DEFAULT_ADMIN_ROLE' as Role };
+  const ATTACKER = { address: '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0', role: 'NONE' as Role };
 
   let registry: RoleRegistry;
 
@@ -82,14 +82,14 @@ describe('S43 채점 — MEDIUM 취약점 처리 + 보안 테스트 설계', () 
 
     it('TODO: 이벤트 있는 역할 부여 — RoleGranted 기록 1건 (감사 가능)', () => {
       const auditLog = new AuditLog();
-      auditLog.emit('RoleGranted', { role: 'MINTER_ROLE', account: '0xVASP', sender: '0xADMIN' });
+      auditLog.emit('RoleGranted', { role: 'MINTER_ROLE', account: '0xfeed000000000000000000000000000000000001', sender: '0xad1111111111111111111111111111111111ad11' });
       expect(auditLog.getRoleGrantHistory()).toHaveLength(1);
     });
 
     it('TODO: RoleGranted 이벤트에 account 정보가 포함된다', () => {
       const auditLog = new AuditLog();
-      auditLog.emit('RoleGranted', { role: 'MINTER_ROLE', account: '0xVASP', sender: '0xADMIN' });
-      expect(auditLog.getRoleGrantHistory()[0]?.params['account']).toBe('0xVASP');
+      auditLog.emit('RoleGranted', { role: 'MINTER_ROLE', account: '0xfeed000000000000000000000000000000000001', sender: '0xad1111111111111111111111111111111111ad11' });
+      expect(auditLog.getRoleGrantHistory()[0]?.params['account']).toBe('0xfeed000000000000000000000000000000000001');
     });
   });
 
@@ -118,7 +118,7 @@ describe('S43 채점 — MEDIUM 취약점 처리 + 보안 테스트 설계', () 
 
   describe('[4] 접근 제어 우회 시도 — KyoboNFT 역할 체계', () => {
     const TOKEN_ID = 1;
-    const USER     = { address: '0xUSER', role: 'NONE' as Role };
+    const USER     = { address: '0xaaaa111111111111111111111111111111111111', role: 'NONE' as Role };
     let nft: KyoboNFTSecure;
 
     beforeEach(() => {

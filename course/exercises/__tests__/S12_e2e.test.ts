@@ -137,7 +137,7 @@ describe('S12 채점 — E2E 파이프라인', () => {
   it('[1] 올바른 HMAC 서명으로 webhook 전송 → 202 응답', async () => {
     const body = JSON.stringify({
       eventType: 'NFT_ISSUED',
-      data:      { tokenId: 'T-2001', to: '0xAlice', blockNumber: 18_500_001 },
+      data:      { tokenId: 'T-2001', to: '0xa11ce00000000000000000000000000000000001', blockNumber: 18_500_001 },
       timestamp: Date.now(),
       requestId: 'req-s12-e2e-t1',
     });
@@ -148,7 +148,7 @@ describe('S12 채점 — E2E 파이프라인', () => {
   it('[2] 잘못된 서명으로 webhook 전송 → 401 응답', async () => {
     const body = JSON.stringify({
       eventType: 'NFT_ISSUED',
-      data:      { tokenId: 'T-2002', to: '0xBob', blockNumber: 18_500_002 },
+      data:      { tokenId: 'T-2002', to: '0xb0b0000000000000000000000000000000000002', blockNumber: 18_500_002 },
       timestamp: Date.now(),
       requestId: 'req-s12-e2e-t2',
     });
@@ -159,7 +159,7 @@ describe('S12 채점 — E2E 파이프라인', () => {
   it('[3] webhook 전송 후 Stream에 메시지가 적재된다', async () => {
     const body = JSON.stringify({
       eventType: 'NFT_ISSUED',
-      data:      { tokenId: 'T-2003', to: '0xCarol', blockNumber: 18_500_003 },
+      data:      { tokenId: 'T-2003', to: '0xca401000000000000000000000000000000000ca', blockNumber: 18_500_003 },
       timestamp: Date.now(),
       requestId: 'req-s12-e2e-t3',
     });
@@ -171,31 +171,31 @@ describe('S12 채점 — E2E 파이프라인', () => {
   it('[4] Consumer 처리 후 원장에 NFT가 반영된다', async () => {
     const body = JSON.stringify({
       eventType: 'NFT_ISSUED',
-      data:      { tokenId: 'T-2004', to: '0xDave', blockNumber: 18_500_004 },
+      data:      { tokenId: 'T-2004', to: '0xdafe000000000000000000000000000000000001', blockNumber: 18_500_004 },
       timestamp: Date.now(),
       requestId: 'req-s12-e2e-t4',
     });
     await sendWebhook(body, sign(body));
     await new Promise(r => setTimeout(r, 200));
-    const balance = await ledger.getNFTBalance('0xDave', 'T-2004');
+    const balance = await ledger.getNFTBalance('0xdafe000000000000000000000000000000000001', 'T-2004');
     expect(balance).toBe(1);
   });
 
   it('[5] 동일 requestId 재전송 → 원장 변화 없음 (멱등성)', async () => {
     const body = JSON.stringify({
       eventType: 'NFT_ISSUED',
-      data:      { tokenId: 'T-2005', to: '0xEve', blockNumber: 18_500_005 },
+      data:      { tokenId: 'T-2005', to: '0xe0e0000000000000000000000000000000000001', blockNumber: 18_500_005 },
       timestamp: Date.now(),
       requestId: 'req-s12-e2e-t5',
     });
     await sendWebhook(body, sign(body));
     await new Promise(r => setTimeout(r, 150));
-    const bal1 = await ledger.getNFTBalance('0xEve', 'T-2005');
+    const bal1 = await ledger.getNFTBalance('0xe0e0000000000000000000000000000000000001', 'T-2005');
 
     // 동일 requestId 재전송
     await sendWebhook(body, sign(body));
     await new Promise(r => setTimeout(r, 150));
-    const bal2 = await ledger.getNFTBalance('0xEve', 'T-2005');
+    const bal2 = await ledger.getNFTBalance('0xe0e0000000000000000000000000000000000001', 'T-2005');
 
     expect(bal1).toBe(1);
     expect(bal2).toBe(1); // 변화 없음

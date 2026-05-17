@@ -22,9 +22,9 @@ import type {
 
 // ── S15 학생 구현 재현 ─────────────────────────────────────────────────────────
 const MOCK_RECEIPT: TransactionReceipt = {
-  txHash:      '0xmock',
+  txHash:      '0xa1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
   blockNumber: 99_999_999,
-  blockHash:   '0xmockhash',
+  blockHash:   '0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff00',
   status:      'success',
   timestamp:   Date.now(),
 };
@@ -37,20 +37,24 @@ class XRPLMockAdapter implements IBlockchainAdapter {
   async getBlockNumber(): Promise<number> { return 99_999_999; }
 
   async mintNFT(_params: MintParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-mint' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
   async mintNFTBatch(_params: MintBatchParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-mintbatch' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
   async burnNFT(_params: BurnParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-burn' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
   async getBalance(_contractAddr: string, _owner: string, _tokenId: bigint): Promise<bigint> {
     return 0n;
   }
   async call(_params: ContractCallParams): Promise<unknown> { return null; }
   async sendTransaction(_params: ContractCallParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-tx' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
   async getReceipt(_txHash: string): Promise<TransactionReceipt | null> { return null; }
   async queryEvents(): Promise<ChainEvent[]> { return []; }
@@ -95,8 +99,8 @@ describe('S15 채점 — XRPLMockAdapter', () => {
   describe('mintNFT()', () => {
     it('txHash 가 있는 receipt를 반환한다', async () => {
       const receipt = await xrpl.mintNFT({
-        contractAddr: '0x0',
-        to:           '0xAlice',
+        contractAddr: '0x0000000000000000000000000000000000000000',
+        to:           '0xa11ce00000000000000000000000000000000001',
         tokenId:      1n,
         amount:       1n,
         requestId:    'req-s15-001',
@@ -108,7 +112,7 @@ describe('S15 채점 — XRPLMockAdapter', () => {
 
     it('status === "success"', async () => {
       const receipt = await xrpl.mintNFT({
-        contractAddr: '0x0', to: '0xBob', tokenId: 2n, amount: 1n, requestId: 'req-s15-002',
+        contractAddr: '0x0000000000000000000000000000000000000000', to: '0xb0b0000000000000000000000000000000000002', tokenId: 2n, amount: 1n, requestId: 'req-s15-002',
       });
       expect(receipt.status).toBe('success');
     });
@@ -116,31 +120,31 @@ describe('S15 채점 — XRPLMockAdapter', () => {
 
   describe('IBlockchainAdapter 인터페이스 전체 메서드 구현', () => {
     it('mintNFTBatch() 가 구현되어 있다', async () => {
-      await expect(xrpl.mintNFTBatch({ contractAddr: '0x0', to: [], tokenIds: [], amounts: [], requestId: 'r' })).resolves.toBeDefined();
+      await expect(xrpl.mintNFTBatch({ contractAddr: '0x0000000000000000000000000000000000000000', to: [], tokenIds: [], amounts: [], requestId: 'r' })).resolves.toBeDefined();
     });
 
     it('burnNFT() 가 구현되어 있다', async () => {
-      await expect(xrpl.burnNFT({ contractAddr: '0x0', from: '0x0', tokenId: 1n, amount: 1n })).resolves.toBeDefined();
+      await expect(xrpl.burnNFT({ contractAddr: '0x0000000000000000000000000000000000000000', from: '0x0000000000000000000000000000000000000000', tokenId: 1n, amount: 1n })).resolves.toBeDefined();
     });
 
     it('getBalance() 가 bigint를 반환한다', async () => {
-      const bal = await xrpl.getBalance('0x0', '0x0', 1n);
+      const bal = await xrpl.getBalance('0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000000000', 1n);
       expect(typeof bal).toBe('bigint');
     });
 
     it('queryEvents() 가 배열을 반환한다', async () => {
-      const events = await xrpl.queryEvents('0x0', [], 'Transfer', 0, 1);
+      const events = await xrpl.queryEvents('0x0000000000000000000000000000000000000000', [], 'Transfer', 0, 1);
       expect(Array.isArray(events)).toBe(true);
     });
 
     it('subscribeEvents() 가 unsubscribe 함수를 반환한다', async () => {
-      const unsub = await xrpl.subscribeEvents('0x0', [], ['Transfer'], 0, async () => {});
+      const unsub = await xrpl.subscribeEvents('0x0000000000000000000000000000000000000000', [], ['Transfer'], 0, async () => {});
       expect(typeof unsub).toBe('function');
       expect(() => unsub()).not.toThrow();
     });
 
     it('getReceipt() 가 null 또는 receipt를 반환한다', async () => {
-      const result = await xrpl.getReceipt('0xhash');
+      const result = await xrpl.getReceipt('0xba5e000000000000000000000000000000000000000000000000000000ba5e00');
       expect(result === null || typeof result === 'object').toBe(true);
     });
   });

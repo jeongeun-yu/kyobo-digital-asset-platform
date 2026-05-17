@@ -257,9 +257,9 @@ function check(label: string, pass: boolean) {
   // ── [3] tx.origin vs msg.sender ─────────────────────────────────────
   console.log('\n[검증 3] tx.origin vs msg.sender — 피싱 공격 취약점');
 
-  const owner            = '0xOWNER';
-  const victimEOA        = '0xOWNER';    // owner이기도 한 피해자
-  const attackerContract = '0xATTACKER'; // 중간 컨트랙트
+  const owner            = '0xeeee000000000000000000000000000000000001';
+  const victimEOA        = '0xeeee000000000000000000000000000000000001';    // owner이기도 한 피해자
+  const attackerContract = '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0'; // 중간 컨트랙트
 
   // 피해자가 공격자 컨트랙트를 통해 간접 호출:
   //   tx.origin = victimEOA (= owner), msg.sender = attackerContract

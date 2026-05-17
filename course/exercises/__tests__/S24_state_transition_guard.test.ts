@@ -26,15 +26,15 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: REQUESTED → SUBMITTED 전이가 성공해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-1', 'WALK-10000');
-      const sub = await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc123' });
+      const sub = await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000' });
       expect(sub.status).toBe('SUBMITTED');
-      expect(sub.txHash).toBe('0xabc123');
+      expect(sub.txHash).toBe('0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000');
     });
 
     it('TODO: SUBMITTED → MINED 전이가 성공해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-1', 'WALK-10000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000' });
       const mined = await ledger.updateMintRequest(req.requestId, { status: 'MINED', blockNumber: 12345n });
       expect(mined.status).toBe('MINED');
     });
@@ -42,7 +42,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: MINED → FINALIZED 전이가 성공해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-1', 'WALK-10000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       const fin = await ledger.updateMintRequest(req.requestId, { status: 'FINALIZED' });
       expect(fin.status).toBe('FINALIZED');
@@ -51,7 +51,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: MINED → REORGED 전이가 성공해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-reorg', 'WALK-10000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xreorg' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xde0a0000000000000000000000000000000000000000000000000000de0a0000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       const reorged = await ledger.updateMintRequest(req.requestId, { status: 'REORGED' });
       expect(reorged.status).toBe('REORGED');
@@ -60,7 +60,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: REORGED → MINED 복귀 전이가 성공해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-reorg', 'WALK-10000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xreorg' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xde0a0000000000000000000000000000000000000000000000000000de0a0000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'REORGED' });
       const restored = await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
@@ -72,10 +72,10 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: FINALIZED 종단 상태에서 SUBMITTED 전이 시 InvalidStateTransitionError가 발생해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-conf', 'WALK');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xconf' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xc0f00000000000000000000000000000000000000000000000000000000c0f00' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'FINALIZED' });
-      await ledger.updateMintRequest(req.requestId, { status: 'CONFIRMED', tokenId: 9001n, txHash: '0xconf' });
+      await ledger.updateMintRequest(req.requestId, { status: 'CONFIRMED', tokenId: 9001n, txHash: '0xc0f00000000000000000000000000000000000000000000000000000000c0f00' });
       await expect(
         ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED' }),
       ).rejects.toThrow(InvalidStateTransitionError);
@@ -93,7 +93,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: MINED → CONFIRMED (FINALIZED 건너뜀) 시 InvalidStateTransitionError가 발생해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-mined', 'WALK');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xmined' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xfeed0000000000000000000000000000000000000000000000000000feed0000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await expect(
         ledger.updateMintRequest(req.requestId, { status: 'CONFIRMED', tokenId: 1n }),
@@ -103,7 +103,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: REORGED → CONFIRMED 직접 전이 시 InvalidStateTransitionError가 발생해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-reorg2', 'WALK');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xr2' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xde0a200000000000000000000000000000000000000000000000000de0a20000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'REORGED' });
       await expect(
@@ -131,7 +131,7 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: CONFIRMED 전이 시 tokenId가 없으면 에러가 발생해야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-2', 'WALK-10000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xvalid' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xda110000000000000000000000000000000000000000000000000000da110000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'FINALIZED' });
       await expect(
@@ -143,22 +143,22 @@ describe('S24 채점 — 상태 전이 가드', () => {
   describe('멱등성 — recordProcessedEvent', () => {
     it('TODO: 첫 번째 처리는 skipped=false이어야 한다', async () => {
       const ledger = new LedgerService();
-      const r1 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
+      const r1 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
       expect(r1.skipped).toBe(false);
     });
 
     it('TODO: 중복 (txHash, logIndex) 처리는 skipped=true, id 없음이어야 한다', async () => {
       const ledger = new LedgerService();
-      await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
-      const r2 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
+      await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
+      const r2 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
       expect(r2.skipped).toBe(true);
       expect(r2.id).toBeUndefined();
     });
 
     it('TODO: 같은 txHash 다른 logIndex는 별개 이벤트이어야 한다', async () => {
       const ledger = new LedgerService();
-      const r1 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
-      const r3 = await ledger.recordProcessedEvent('0xabc', 1, 'NFTIssued', 100n, {});
+      const r1 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
+      const r3 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 1, 'NFTIssued', 100n, {});
       expect(r3.skipped).toBe(false);
       expect(r1.id).not.toBe(r3.id);
     });
@@ -168,10 +168,10 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: 첫 번째 처리 시 processed=true이어야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-evt', 'CYCLE-5000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xevt' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'FINALIZED' });
-      const evt = { txHash: '0xevt', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
+      const evt = { txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
       const result1 = await handleNFTIssued(ledger, evt);
       expect(result1.processed).toBe(true);
     });
@@ -179,10 +179,10 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: 처리 후 최종 status=CONFIRMED, tokenId가 확정되어야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-evt', 'CYCLE-5000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xevt' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'FINALIZED' });
-      const evt = { txHash: '0xevt', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
+      const evt = { txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
       await handleNFTIssued(ledger, evt);
       const finalReq = await ledger.getMintRequest(req.requestId);
       expect(finalReq?.status).toBe('CONFIRMED');
@@ -192,10 +192,10 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: 동일 이벤트 재처리 시 processed=false이어야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-evt', 'CYCLE-5000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xevt' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'FINALIZED' });
-      const evt = { txHash: '0xevt', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
+      const evt = { txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
       await handleNFTIssued(ledger, evt);
       const result2 = await handleNFTIssued(ledger, evt);
       expect(result2.processed).toBe(false);
@@ -204,10 +204,10 @@ describe('S24 채점 — 상태 전이 가드', () => {
     it('TODO: 재처리 후 상태 변화 없이 CONFIRMED가 유지되어야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-evt', 'CYCLE-5000');
-      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xevt' });
+      await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000' });
       await ledger.updateMintRequest(req.requestId, { status: 'MINED' });
       await ledger.updateMintRequest(req.requestId, { status: 'FINALIZED' });
-      const evt = { txHash: '0xevt', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
+      const evt = { txHash: '0xe1700000000000000000000000000000000000000000000000000000e1700000', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: req.requestId };
       await handleNFTIssued(ledger, evt);
       await handleNFTIssued(ledger, evt);
       const afterDup = await ledger.getMintRequest(req.requestId);

@@ -180,11 +180,11 @@ function expectThrows(label: string, fn: () => void): void {
 
   const proxy = new ProxySimulator();
   proxy.setImplementation(1);
-  proxy.call('initialize', '0xAdmin');
+  proxy.call('initialize', '0xad1111111111111111111111111111111111ad11');
 
-  check('initialize() → Proxy storage[0]에 admin 저장', proxy.proxyStorage[0] === '0xAdmin');
+  check('initialize() → Proxy storage[0]에 admin 저장', proxy.proxyStorage[0] === '0xad1111111111111111111111111111111111ad11');
   check('Proxy storage[1]에 _paused=false 저장',        proxy.proxyStorage[1] === false);
-  check('getAdmin() → Proxy storage에서 읽기',          proxy.call('getAdmin') === '0xAdmin');
+  check('getAdmin() → Proxy storage에서 읽기',          proxy.call('getAdmin') === '0xad1111111111111111111111111111111111ad11');
 
   // ── [2] 업그레이드 후 상태 보존 (올바른 v2) ──────────────────────────
   console.log('\n[검증 2] 올바른 v2 업그레이드 — 기존 상태 보존');
@@ -192,7 +192,7 @@ function expectThrows(label: string, fn: () => void): void {
   proxy.setImplementation(2);  // Implementation 교체 (Proxy storage는 그대로)
   proxy.call('initializeV2', 'https://api.kyobo.com/');
 
-  check('v2 업그레이드 후 admin 데이터 유지',     proxy.call('getAdmin') === '0xAdmin');
+  check('v2 업그레이드 후 admin 데이터 유지',     proxy.call('getAdmin') === '0xad1111111111111111111111111111111111ad11');
   check('v2 업그레이드 후 paused 상태 유지',      proxy.call('isPaused') === false);
   check('v2 새 기능(baseUri) slot 2에 정상 저장', proxy.call('getBaseUri') === 'https://api.kyobo.com/');
   check('기존 데이터(slot 0, 1) 변경 없음',       proxy.proxyStorage[2] === 'https://api.kyobo.com/');
@@ -200,14 +200,14 @@ function expectThrows(label: string, fn: () => void): void {
   // ── [3] Storage Collision — 앞에 삽입 시 슬롯 밀림 ──────────────────
   console.log('\n[검증 3] Storage Collision — BAD v2로 슬롯 해석 오염');
 
-  // Proxy storage에는 slot 0 = admin('0xAdmin'), slot 1 = false(_paused) 존재
+  // Proxy storage에는 slot 0 = admin('0xad1111111111111111111111111111111111ad11'), slot 1 = false(_paused) 존재
   // BAD Implementation이 slot 0을 newFeature로, slot 1을 admin으로 해석하면?
   const badImpl = new ImplementationV2_BAD(proxy.proxyStorage);
 
   // slot 0은 원래 admin 주소인데 BAD impl은 이를 newFeature로 읽음
   check(
     'BAD v2: slot 0(원래 admin)을 newFeature로 잘못 해석',
-    badImpl.getNewFeature() === '0xAdmin',  // admin 주소가 newFeature로 오염
+    badImpl.getNewFeature() === '0xad1111111111111111111111111111111111ad11',  // admin 주소가 newFeature로 오염
   );
   // slot 1은 원래 _paused(false)인데 BAD impl은 이를 admin으로 읽음
   check(
@@ -223,28 +223,28 @@ function expectThrows(label: string, fn: () => void): void {
   console.log('\n[검증 4] initializer 없는 취약 컨트랙트 — 재호출 공격');
 
   const vulnerable = new VulnerableImpl();
-  vulnerable.initialize('0xDeployer');
-  check('초기 배포 후 admin = 0xDeployer', vulnerable.getAdmin() === '0xDeployer');
+  vulnerable.initialize('0xde910000000000000000000000000000000000de');
+  check('초기 배포 후 admin = 0xDeployer', vulnerable.getAdmin() === '0xde910000000000000000000000000000000000de');
 
   // 공격자가 initialize 재호출
-  vulnerable.initialize('0xAttacker');
+  vulnerable.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0');
   check(
     '취약: initializer 없으면 공격자가 initialize 재호출 가능',
-    vulnerable.getAdmin() === '0xAttacker',  // admin 탈취됨
+    vulnerable.getAdmin() === '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0',  // admin 탈취됨
   );
 
   // ── [5] 안전한 컨트랙트 — initializer 보호 ───────────────────────────
   console.log('\n[검증 5] initializer modifier — 한 번만 실행 보장');
 
   const safe = new SafeImpl();
-  safe.initialize('0xDeployer');
-  check('초기 배포 후 admin = 0xDeployer', safe.getAdmin() === '0xDeployer');
+  safe.initialize('0xde910000000000000000000000000000000000de');
+  check('초기 배포 후 admin = 0xDeployer', safe.getAdmin() === '0xde910000000000000000000000000000000000de');
 
   expectThrows(
     '안전: 재호출 시 InvalidInitialization 발생',
-    () => safe.initialize('0xAttacker'),
+    () => safe.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0'),
   );
-  check('재호출 시도 후에도 admin은 0xDeployer 유지', safe.getAdmin() === '0xDeployer');
+  check('재호출 시도 후에도 admin은 0xDeployer 유지', safe.getAdmin() === '0xde910000000000000000000000000000000000de');
 
   // ── [6] 투명 프록시 vs UUPS 비교 ─────────────────────────────────────
   console.log('\n[검증 6] 투명 프록시 vs UUPS 특성 비교');

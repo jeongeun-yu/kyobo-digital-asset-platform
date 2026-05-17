@@ -70,8 +70,8 @@ describe('S40 채점 — Storage Layout 규칙과 안전한 업그레이드', ()
 
     it('TODO: BAD v2 업그레이드 후 slot 1을 _uri(string)로 읽으면 타입 불일치 발생', () => {
       const proxy = new ProxyStorageModel();
-      proxy.initializeV1('0xAdmin');
-      proxy.writeBalance(encodeTokenId(1n, 42n), '0xUser', 5n);
+      proxy.initializeV1('0xad1111111111111111111111111111111111ad11');
+      proxy.writeBalance(encodeTokenId(1n, 42n), '0xaaaa111111111111111111111111111111111111', 5n);
 
       const slot1AsUri = proxy.readSlot1_AsUri_BAD();
       expect(typeof slot1AsUri).not.toBe('string'); // mapping인데 string으로 읽으면 타입 불일치
@@ -120,47 +120,47 @@ describe('S40 채점 — Storage Layout 규칙과 안전한 업그레이드', ()
   describe('[5] reinitializer(N) — 버전 단조 증가', () => {
     it('TODO: initialize() 실행 → _initialized = 1', () => {
       const tracker = new InitializationVersionTracker();
-      tracker.initialize('0xAdmin');
+      tracker.initialize('0xad1111111111111111111111111111111111ad11');
       expect(tracker.getVersion()).toBe(1);
     });
 
     it('TODO: initialize() 재호출 → InvalidInitialization revert', () => {
       const tracker = new InitializationVersionTracker();
-      tracker.initialize('0xAdmin');
-      expect(() => tracker.initialize('0xAttacker')).toThrow('InvalidInitialization');
+      tracker.initialize('0xad1111111111111111111111111111111111ad11');
+      expect(() => tracker.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0')).toThrow('InvalidInitialization');
     });
 
     it('TODO: initialize() 재호출 후 version 변화 없음', () => {
       const tracker = new InitializationVersionTracker();
-      tracker.initialize('0xAdmin');
-      try { tracker.initialize('0xAttacker'); } catch { /* expected */ }
+      tracker.initialize('0xad1111111111111111111111111111111111ad11');
+      try { tracker.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0'); } catch { /* expected */ }
       expect(tracker.getVersion()).toBe(1);
     });
 
     it('TODO: initializeV2() 실행 → _initialized = 2', () => {
       const tracker = new InitializationVersionTracker();
-      tracker.initialize('0xAdmin');
+      tracker.initialize('0xad1111111111111111111111111111111111ad11');
       tracker.initializeV2('https://api.kyobo.com/', 1000);
       expect(tracker.getVersion()).toBe(2);
     });
 
     it('TODO: initializeV2() 재호출 → InvalidInitialization revert', () => {
       const tracker = new InitializationVersionTracker();
-      tracker.initialize('0xAdmin');
+      tracker.initialize('0xad1111111111111111111111111111111111ad11');
       tracker.initializeV2('https://api.kyobo.com/', 1000);
       expect(() => tracker.initializeV2('https://other.com/', 999)).toThrow('InvalidInitialization');
     });
 
     it('TODO: v2 배포 후에도 v1 initialize 재호출 차단', () => {
       const tracker = new InitializationVersionTracker();
-      tracker.initialize('0xAdmin');
+      tracker.initialize('0xad1111111111111111111111111111111111ad11');
       tracker.initializeV2('https://api.kyobo.com/', 1000);
-      expect(() => tracker.initialize('0xAttacker')).toThrow('InvalidInitialization');
+      expect(() => tracker.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0')).toThrow('InvalidInitialization');
     });
 
     it('TODO: initializeV3() 실행 → _initialized = 3', () => {
       const tracker = new InitializationVersionTracker();
-      tracker.initialize('0xAdmin');
+      tracker.initialize('0xad1111111111111111111111111111111111ad11');
       tracker.initializeV2('https://api.kyobo.com/', 1000);
       tracker.initializeV3('newFeatureValue');
       expect(tracker.getVersion()).toBe(3);
@@ -170,24 +170,24 @@ describe('S40 채점 — Storage Layout 규칙과 안전한 업그레이드', ()
   describe('[6] v2 업그레이드 후 기존 토큰 잔액 보존', () => {
     it('TODO: v2 업그레이드 후 기존 잔액이 그대로 유지된다', () => {
       const proxy = new ProxyStorageModel();
-      proxy.initializeV1('0xAdmin');
+      proxy.initializeV1('0xad1111111111111111111111111111111111ad11');
       const tid = encodeTokenId(1n, 1n);
-      proxy.writeBalance(tid, '0xUser', 5n);
+      proxy.writeBalance(tid, '0xaaaa111111111111111111111111111111111111', 5n);
 
-      const balanceBefore = proxy.readBalance_V1(tid, '0xUser');
+      const balanceBefore = proxy.readBalance_V1(tid, '0xaaaa111111111111111111111111111111111111');
       expect(balanceBefore).toBe(5n);
 
       // v2 업그레이드: slot 6, 7만 추가, slot 1(_balances) 변경 없음
       proxy.rawSlots.set(6, 'https://api.kyobo.com/');
       proxy.rawSlots.set(7, 1000);
 
-      const balanceAfter = proxy.readBalance_V1(tid, '0xUser');
+      const balanceAfter = proxy.readBalance_V1(tid, '0xaaaa111111111111111111111111111111111111');
       expect(balanceAfter).toBe(5n);
     });
 
     it('TODO: v2 업그레이드 후 새 슬롯(6, 7)이 정상 설정된다', () => {
       const proxy = new ProxyStorageModel();
-      proxy.initializeV1('0xAdmin');
+      proxy.initializeV1('0xad1111111111111111111111111111111111ad11');
       proxy.rawSlots.set(6, 'https://api.kyobo.com/');
       proxy.rawSlots.set(7, 1000);
 

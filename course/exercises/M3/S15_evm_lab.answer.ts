@@ -58,9 +58,9 @@ const EVM_SIGNER_KEY     = process.env['EVM_SIGNER_KEY'];       // write 모드 
 // ═══════════════════════════════════════════════════════════════════════
 
 const MOCK_RECEIPT: TransactionReceipt = {
-  txHash:      '0xmock',
+  txHash:      '0xa1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
   blockNumber: 99_999_999,
-  blockHash:   '0xmockhash',
+  blockHash:   '0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff00',
   status:      'success',
   timestamp:   Date.now(),
 };
@@ -80,15 +80,18 @@ class XRPLMockAdapter implements IBlockchainAdapter {
   }
 
   async mintNFT(_params: MintParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-mint' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 
   async mintNFTBatch(_params: MintBatchParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-mintbatch' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 
   async burnNFT(_params: BurnParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-burn' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 
   async getBalance(_contractAddr: string, _owner: string, _tokenId: bigint): Promise<bigint> {
@@ -100,7 +103,8 @@ class XRPLMockAdapter implements IBlockchainAdapter {
   }
 
   async sendTransaction(_params: ContractCallParams): Promise<TransactionReceipt> {
-    return { ...MOCK_RECEIPT, txHash: '0xmock-xrpl-tx' };
+    const t = Date.now().toString(16);
+    return { ...MOCK_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 
   async getReceipt(_txHash: string): Promise<TransactionReceipt | null> {

@@ -82,7 +82,8 @@ class MockVaspTxClient implements VaspTxClient {
   async submitMint(params: {
     to: string; tokenId: bigint; amount: bigint; requestId: string;
   }): Promise<{ txHash: string }> {
-    return { txHash: `0xmock-${params.requestId.slice(0, 8)}` };
+    const raw = Buffer.from(params.requestId).toString('hex');
+    return { txHash: `0x${raw.repeat(Math.ceil(64 / raw.length)).slice(0, 64)}` };
   }
 
   async getStatus(txHash: string): Promise<VaspStatusResult> {
@@ -90,7 +91,8 @@ class MockVaspTxClient implements VaspTxClient {
   }
 
   async resubmitWithGasBump(txHash: string, gasBumpPercent: number): Promise<{ txHash: string }> {
-    const newHash = `${txHash}-bumped`;
+    const t = Date.now().toString(16);
+    const newHash = `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}`;
     this.gasBumpLog.push(`${txHash} → ${newHash} (+${gasBumpPercent}%)`);
     return { txHash: newHash };
   }
@@ -153,9 +155,9 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   // ══════════════════════════════════════════════════════════════════════
   console.log('[검증 1] FAILED 시나리오: VASP failed → PENDING → FAILED');
 
-  const reqFailed = makeStalePendingRequest('req-failed', '0xhash-failed');
+  const reqFailed = makeStalePendingRequest('req-failed', '0xfa11ed11111111111111111111111111111111111111111111111111111111fa');
   await repo.save(reqFailed);
-  vasp.setNextStatus('0xhash-failed', { status: 'failed', revertReason: 'ERC1155: mint to zero address' });
+  vasp.setNextStatus('0xfa11ed11111111111111111111111111111111111111111111111111111111fa', { status: 'failed', revertReason: 'ERC1155: mint to zero address' });
 
   await svc.pollStaleRequests();
 
@@ -172,9 +174,9 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   const vasp2 = new MockVaspTxClient();
   const svc2  = new TxStateMachineService(repo2, vasp2, wallet);
 
-  const reqNotFound = makeStalePendingRequest('req-notfound', '0xhash-notfound');
+  const reqNotFound = makeStalePendingRequest('req-notfound', '0xfa11ed22222222222222222222222222222222222222222222222222222222fa');
   await repo2.save(reqNotFound);
-  vasp2.setNextStatus('0xhash-notfound', { status: 'not_found' });
+  vasp2.setNextStatus('0xfa11ed22222222222222222222222222222222222222222222222222222222fa', { status: 'not_found' });
 
   await svc2.pollStaleRequests();
 
@@ -197,7 +199,7 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   const repo3 = new InMemoryTxRepository();
   const svc3  = new TxStateMachineService(repo3, new MockVaspTxClient(), wallet);
 
-  const reqMined = makeRequest('req-mined', '0xhash-mined', 'MINED');
+  const reqMined = makeRequest('req-mined', '0xfa11ed33333333333333333333333333333333333333333333333333333333fa', 'MINED');
   await repo3.save(reqMined);
 
   await svc3.handleConfirmed('req-mined');  // MINED → CONFIRMED
@@ -209,7 +211,7 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   // PENDING에서 handleConfirmed 호출 시 무시됨을 확인 (방어 로직)
   const repo3b = new InMemoryTxRepository();
   const svc3b  = new TxStateMachineService(repo3b, new MockVaspTxClient(), wallet);
-  const reqPending = makeRequest('req-pending-skip', '0xhash-skip', 'PENDING');
+  const reqPending = makeRequest('req-pending-skip', '0xfa11ed44444444444444444444444444444444444444444444444444444444fa', 'PENDING');
   await repo3b.save(reqPending);
   await svc3b.handleConfirmed('req-pending-skip'); // PENDING은 MINED 아님 → 조용히 무시
   const r3b = await repo3b.findById('req-pending-skip');
@@ -229,7 +231,7 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   const vasp4 = new MockVaspTxClient();
   const svc4  = new TxStateMachineService(repo4, vasp4, wallet);
 
-  const reqTimeout = makeRequest('req-timeout', '0xhash-timeout', 'PENDING');
+  const reqTimeout = makeRequest('req-timeout', '0xfa11ed55555555555555555555555555555555555555555555555555555555fa', 'PENDING');
   await repo4.save(reqTimeout);
 
   await svc4.handleTimeout('req-timeout');
@@ -251,20 +253,20 @@ function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest 
   const vasp5   = new MockVaspTxClient();
   const svc5    = new TxStateMachineService(repo5, vasp5, wallet);
 
-  const iso1 = makeStalePendingRequest('iso-error',  '0xhash-error');
-  const iso2 = makeStalePendingRequest('iso-fail-1', '0xhash-fail-1');
-  const iso3 = makeStalePendingRequest('iso-fail-2', '0xhash-fail-2');
+  const iso1 = makeStalePendingRequest('iso-error',  '0xfa11ed66666666666666666666666666666666666666666666666666666666fa');
+  const iso2 = makeStalePendingRequest('iso-fail-1', '0xfa11ed77777777777777777777777777777777777777777777777777777777fa');
+  const iso3 = makeStalePendingRequest('iso-fail-2', '0xfa11ed88888888888888888888888888888888888888888888888888888888fa');
   await repo5.save(iso1);
   await repo5.save(iso2);
   await repo5.save(iso3);
 
-  vasp5.setNextStatus('0xhash-fail-1', { status: 'failed', revertReason: 'revert A' });
-  vasp5.setNextStatus('0xhash-fail-2', { status: 'failed', revertReason: 'revert B' });
+  vasp5.setNextStatus('0xfa11ed77777777777777777777777777777777777777777777777777777777fa', { status: 'failed', revertReason: 'revert A' });
+  vasp5.setNextStatus('0xfa11ed88888888888888888888888888888888888888888888888888888888fa', { status: 'failed', revertReason: 'revert B' });
 
   // iso-error 건만 getStatus에서 throw
   const origGetStatus = vasp5.getStatus.bind(vasp5);
   vasp5.getStatus = async (txHash: string) => {
-    if (txHash === '0xhash-error') throw new Error('VASP API 타임아웃 시뮬레이션');
+    if (txHash === '0xfa11ed66666666666666666666666666666666666666666666666666666666fa') throw new Error('VASP API 타임아웃 시뮬레이션');
     return origGetStatus(txHash);
   };
 

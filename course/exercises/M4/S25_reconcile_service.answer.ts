@@ -321,8 +321,8 @@ function check(label: string, pass: boolean) {
   // ── [7] reconcileNftHoldings() — 정상 상태 ───────────────────────────
   console.log('\n[검증 7] reconcileNftHoldings() — 정상 상태');
 
-  const wallets7 = new Map([['user-001', '0xABCD']]);
-  const onchainH7 = new Map([['0xABCD', [1001n, 1002n]]]);
+  const wallets7 = new Map([['user-001', '0xabcd000000000000000000000000000000000000']]);
+  const onchainH7 = new Map([['0xabcd000000000000000000000000000000000000', [1001n, 1002n]]]);
   const ledgerH7  = new Map([['user-001', [1001n, 1002n]]]);
 
   const { onchain: oc7, ledger: l7, alerter: a7, alertCalls: ac7 } = createStubs({
@@ -341,8 +341,8 @@ function check(label: string, pass: boolean) {
   // ── [8] reconcileNftHoldings() — LEDGER_ONLY (원장 과잉) ─────────────
   console.log('\n[검증 8] reconcileNftHoldings() — LEDGER_ONLY (원장에만 있음)');
 
-  const wallets8 = new Map([['user-002', '0xEFGH']]);
-  const onchainH8 = new Map([['0xEFGH', [1001n]]]);
+  const wallets8 = new Map([['user-002', '0xef890000000000000000000000000000000000ef']]);
+  const onchainH8 = new Map([['0xef890000000000000000000000000000000000ef', [1001n]]]);
   const ledgerH8  = new Map([['user-002', [1001n, 9999n]]]);
 
   const { onchain: oc8, ledger: l8, alerter: a8, alertCalls: ac8 } = createStubs({
@@ -363,8 +363,8 @@ function check(label: string, pass: boolean) {
   // ── [9] reconcileNftHoldings() — ONCHAIN_ONLY (원장 누락) ────────────
   console.log('\n[검증 9] reconcileNftHoldings() — ONCHAIN_ONLY (원장 누락)');
 
-  const wallets9 = new Map([['user-003', '0xIJKL']]);
-  const onchainH9 = new Map([['0xIJKL', [1001n, 2001n]]]);
+  const wallets9 = new Map([['user-003', '0x194b0000000000000000000000000000000000ab']]);
+  const onchainH9 = new Map([['0x194b0000000000000000000000000000000000ab', [1001n, 2001n]]]);
   const ledgerH9  = new Map([['user-003', [1001n]]]);
 
   const { onchain: oc9, ledger: l9, alerter: a9, alertCalls: ac9 } = createStubs({

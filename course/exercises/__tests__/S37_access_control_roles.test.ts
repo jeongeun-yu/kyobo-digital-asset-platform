@@ -19,11 +19,11 @@ import {
 // ── 테스트 ───────────────────────────────────────────────────────────────────
 
 describe('S37 채점 — 온체인 역할 기반 접근 제어', () => {
-  const ADMIN    = '0xAdmin000000000000000000000000000000000000';
-  const MINTER   = '0xMinter00000000000000000000000000000000000';
-  const ATTACKER = '0xAttacker0000000000000000000000000000000000';
-  const USER1    = '0xUser10000000000000000000000000000000000000';
-  const USER2    = '0xUser20000000000000000000000000000000000000';
+  const ADMIN    = '0xad1111111111111111111111111111111111ad11';
+  const MINTER   = '0xfeed000000000000000000000000000000000001';
+  const ATTACKER = '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0';
+  const USER1    = '0xaaaa111111111111111111111111111111111111';
+  const USER2    = '0xaaaa222222222222222222222222222222222222';
 
   let nft: KyoboNFTSimulator;
   const tokenId1 = encodeTokenId(0x01n, 1n);
@@ -122,7 +122,7 @@ describe('S37 채점 — 온체인 역할 기반 접근 제어', () => {
   });
 
   describe('[6] DEFAULT_ADMIN_ROLE — 역할 부여 및 해제', () => {
-    const NEW_MINTER = '0xNewMinter00000000000000000000000000000000';
+    const NEW_MINTER = '0xfeed000000000000000000000000000000000002';
 
     it('TODO: ATTACKER가 grantRole 시도 → AccessControlUnauthorizedAccount revert', () => {
       expect(() => nft.grantRole(ATTACKER, 'MINTER_ROLE' as Role, ATTACKER))

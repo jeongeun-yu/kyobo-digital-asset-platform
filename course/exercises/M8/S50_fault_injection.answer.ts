@@ -300,7 +300,7 @@ async function expectError(
 
   // [3] VASP API 호출 → 발행
   const issueResult = await issuer1.issueSingleWithRetry({
-    to: '0xWallet001', tokenId: req1.tokenId, amount: req1.amount,
+    to: '0xdead000000000000000000000000000000000001', tokenId: req1.tokenId, amount: req1.amount,
     requestId: req1.id, maxRetries: 5,
   });
   check('발행 성공', issueResult.success);
@@ -308,9 +308,9 @@ async function expectError(
   // [4] 온체인 확인 → CONFIRMED
   await ledger1.updateStatus(req1.id, 'MINED');
   await ledger1.updateStatus(req1.id, 'FINALIZED');
-  const confirmed1 = await ledger1.updateStatus(req1.id, 'CONFIRMED', { onChainTxHash: '0xTxHash001' });
+  const confirmed1 = await ledger1.updateStatus(req1.id, 'CONFIRMED', { onChainTxHash: '0xface000000000000000000000000000000000000000000000000000000000001' });
   check('원장 최종 상태: CONFIRMED', confirmed1.status === 'CONFIRMED');
-  check('온체인 TX 해시 기록', confirmed1.onChainTxHash === '0xTxHash001');
+  check('온체인 TX 해시 기록', confirmed1.onChainTxHash === '0xface000000000000000000000000000000000000000000000000000000000001');
   check('DLQ 적재 없음', dlq1.count() === 0);
 
   // ── [2] 장애 주입 1: VASP 3회 실패 → 4회 성공 ──────────────────────
@@ -326,7 +326,7 @@ async function expectError(
   });
 
   const result2 = await issuer2.issueSingleWithRetry({
-    to: '0xWallet002', tokenId: req2.tokenId, amount: req2.amount,
+    to: '0xdead000000000000000000000000000000000002', tokenId: req2.tokenId, amount: req2.amount,
     requestId: req2.id, maxRetries: 5,
   });
 
@@ -350,7 +350,7 @@ async function expectError(
   });
 
   const result3 = await issuer3.issueSingleWithRetry({
-    to: '0xWallet003', tokenId: req3.tokenId, amount: req3.amount,
+    to: '0xdead000000000000000000000000000000000003', tokenId: req3.tokenId, amount: req3.amount,
     requestId: req3.id, maxRetries: 5,
   });
 
@@ -376,7 +376,7 @@ async function expectError(
   await ledger4.updateStatus(req4.id, 'SUBMITTED', { vaspTxId: 'vasp-tx-004' });
   await ledger4.updateStatus(req4.id, 'MINED');
   await ledger4.updateStatus(req4.id, 'FINALIZED');
-  await ledger4.updateStatus(req4.id, 'CONFIRMED', { onChainTxHash: '0xOriginalTxHash' });
+  await ledger4.updateStatus(req4.id, 'CONFIRMED', { onChainTxHash: '0x04191111111111111111111111111111111111111111111111111111111111ab' });
 
   const beforeReorg = await ledger4.get(req4.id);
   check('Reorg 전 상태: CONFIRMED', beforeReorg?.status === 'CONFIRMED');
@@ -387,16 +387,16 @@ async function expectError(
 
   const reorged = await ledger4.get(req4.id);
   check('Reorg 후 상태: REORGED', reorged?.status === 'REORGED');
-  check('이전 onChainTxHash 유지', reorged?.onChainTxHash === '0xOriginalTxHash');
+  check('이전 onChainTxHash 유지', reorged?.onChainTxHash === '0x04191111111111111111111111111111111111111111111111111111111111ab');
 
   // [재채굴] 새 블록에서 TX 재확인 → 새 TX 해시로 CONFIRMED
   await ledger4.updateStatus(req4.id, 'MINED');
   await ledger4.updateStatus(req4.id, 'FINALIZED');
-  await ledger4.updateStatus(req4.id, 'CONFIRMED', { onChainTxHash: '0xNewTxHash789' });
+  await ledger4.updateStatus(req4.id, 'CONFIRMED', { onChainTxHash: '0x04192222222222222222222222222222222222222222222222222222222222bc' });
 
   const reconfirmed = await ledger4.get(req4.id);
   check('재확인 후 상태: CONFIRMED', reconfirmed?.status === 'CONFIRMED');
-  check('새 TX 해시로 업데이트', reconfirmed?.onChainTxHash === '0xNewTxHash789');
+  check('새 TX 해시로 업데이트', reconfirmed?.onChainTxHash === '0x04192222222222222222222222222222222222222222222222222222222222bc');
 
   // ── [5] 장애 주입 3: Consumer 크래시 → 재시작 → 중복 없음 ──────────
   console.log('\n[검증 5] 장애 주입 3 — Consumer 크래시 후 재시작: 중복 없이 재처리');
@@ -427,11 +427,11 @@ async function expectError(
   });
 
   // 첫 번째 처리
-  const first = await ledger5.confirmIfNotAlready(req5_100.id, '0xTx100a');
+  const first = await ledger5.confirmIfNotAlready(req5_100.id, '0x100a000000000000000000000000000000000000000000000000000000100a00');
   processed5.set('evt-100', (processed5.get('evt-100') ?? 0) + (first ? 1 : 0));
 
   // 두 번째 처리 시도 (크래시 후 재처리) → 이미 CONFIRMED → 무시
-  const second = await ledger5.confirmIfNotAlready(req5_100.id, '0xTx100b');
+  const second = await ledger5.confirmIfNotAlready(req5_100.id, '0x100b000000000000000000000000000000000000000000000000000000100b00');
   processed5.set('evt-100', (processed5.get('evt-100') ?? 0) + (second ? 1 : 0));
 
   check('evt-100: 2번 처리됐지만 원장은 1회만 업데이트', processed5.get('evt-100') === 1);
@@ -448,18 +448,18 @@ async function expectError(
   const req5_101 = await ledger5.createMintRequest({
     userId: 'evt-101-user', tokenId: 5101n, amount: 1n, activityId: 'evt-101',
   });
-  const confirmed101 = await ledger5.confirmIfNotAlready(req5_101.id, '0xTx101');
+  const confirmed101 = await ledger5.confirmIfNotAlready(req5_101.id, '0x1010000000000000000000000000000000000000000000000000000000001010');
   check('evt-101 정상 처리: 1회 업데이트', confirmed101 === true);
 
   // ── [6] 2-of-3 서명 방어: 대형 TX 1-of-3 → 불가 / 2-of-3 → 성공 ──
   console.log('\n[검증 6] Gnosis Safe 2-of-3 서명 방어 — 대형 TX');
 
-  const signers = ['0xSignerA', '0xSignerB', '0xSignerC'];
+  const signers = ['0xa111a000000000000000000000000000000000a1', '0xb111b000000000000000000000000000000000b1', '0xc111c000000000000000000000000000000000c1'];
   const safe    = new SimpleSafe(signers, 2);
 
   // 1-of-3만으로 대형 TX 실행 시도 → GS020
   try {
-    safe.execTransaction([{ signer: '0xSignerA', sig: '0xsig_a' }]);
+    safe.execTransaction([{ signer: '0xa111a000000000000000000000000000000000a1', sig: '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b' }]);
     check('1-of-3 → 실행 불가', false);
   } catch (err) {
     check('1-of-3 → GS020 revert', (err as Error).message.includes('GS020'));
@@ -475,8 +475,8 @@ async function expectError(
 
   // 2-of-3 서명 후 대형 TX 실행 → 성공
   const execResult = safe.execTransaction([
-    { signer: '0xSignerA', sig: '0xsig_a' },
-    { signer: '0xSignerB', sig: '0xsig_b' },
+    { signer: '0xa111a000000000000000000000000000000000a1', sig: '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b' },
+    { signer: '0xb111b000000000000000000000000000000000b1', sig: '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b' },
   ]);
   check('2-of-3 서명 → execTransaction 성공', /^0x/.test(execResult.txHash));
 

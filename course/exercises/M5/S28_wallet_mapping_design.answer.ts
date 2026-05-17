@@ -201,7 +201,7 @@ function check(label: string, pass: boolean) {
 
   // ── [4] KYOBO 방식 → 즉시 verified=true ───────────────────────────────
   console.log('\n[검증 4] KYOBO 방식 → saveMapping() 즉시 verified=true');
-  await service.saveMapping('K-20240002', '0xKyobo0000000000000000000000000000000002', 'KYOBO');
+  await service.saveMapping('K-20240002', '0xb10b0000000000000000000000000000000000b1', 'KYOBO');
   let kyoboAddr: string | undefined;
   let err4: unknown;
   try { kyoboAddr = await service.getWalletAddr('K-20240002'); } catch (e) { err4 = e; }
@@ -210,8 +210,8 @@ function check(label: string, pass: boolean) {
 
   // ── [5] 1:1 강제 — 지갑 교체 시 이전 주소 무효화 ─────────────────────────
   console.log('\n[검증 5] 1:1 강제 — 지갑 교체 (기존 주소 대체)');
-  const OLD_ADDR = '0xOld0000000000000000000000000000000000AA';
-  const NEW_ADDR = '0xNew0000000000000000000000000000000000BB';
+  const OLD_ADDR = '0xc100000000000000000000000000000000000001';
+  const NEW_ADDR = '0xc200000000000000000000000000000000000002';
   await service.saveMapping('K-20240003', OLD_ADDR, 'EXTERNAL');
   await service.markVerified('K-20240003');
   await service.saveMapping('K-20240003', NEW_ADDR, 'EXTERNAL');
@@ -228,7 +228,7 @@ function check(label: string, pass: boolean) {
   // ── [6] DB UNIQUE(user_id) 보장 — userId당 레코드 1개만 존재 ─────────────
   console.log('\n[검증 6] UNIQUE(user_id) — 지갑 교체 후 레코드 수 변화 없음');
   const countBefore = repo.count();
-  await service.saveMapping('K-20240003', '0xAnother000000000000000000000000000000CC', 'EXTERNAL');
+  await service.saveMapping('K-20240003', '0xc300000000000000000000000000000000000003', 'EXTERNAL');
   const countAfter = repo.count();
   check('upsert — 레코드 수 동일 (INSERT가 아닌 UPDATE)',  countBefore === countAfter);
 

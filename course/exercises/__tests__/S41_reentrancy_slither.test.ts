@@ -81,9 +81,9 @@ describe('S41 채점 — 스마트컨트랙트 공격 벡터 + Slither 정적 �
   });
 
   describe('[3] tx.origin vs msg.sender — 피싱 공격 취약점', () => {
-    const owner            = '0xOWNER';
-    const victimEOA        = '0xOWNER';
-    const attackerContract = '0xATTACKER';
+    const owner            = '0x0000000000000000000000000000000000000001';
+    const victimEOA        = '0x0000000000000000000000000000000000000001';
+    const attackerContract = '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0';
 
     it('TODO: tx.origin 체크: 공격자 컨트랙트가 owner 권한으로 통과한다 (취약)', () => {
       const result = checkWithTxOrigin(victimEOA, attackerContract, owner);

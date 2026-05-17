@@ -62,7 +62,7 @@ function buildMocks(overrides: {
   const coreBanking = {
     async getUserAccount(userId: string) {
       if (overrides.noAccount) return null;
-      return { userId, walletAddr: '0xWallet001', status: overrides.accountStatus ?? 'active' as const };
+      return { userId, walletAddr: '0xdead000000000000000000000000000000000001', status: overrides.accountStatus ?? 'active' as const };
     },
     async notifyReward(params: unknown) {
       notifyCalls.push(params);
@@ -84,7 +84,7 @@ const BASE_ORACLE: OracleData = {
   dataType:  'WALK',
   value:     15_000,
   timestamp: Date.now(),
-  signature: '0xOracleSig',
+  signature: '0x0a1c1e5c19000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b',
 };
 
 // ── 채점 테스트 ───────────────────────────────────────────────────────────────
@@ -94,21 +94,21 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
   describe('[1] 정상 발행 E2E', () => {
     it('TODO: 정상 발행 → txHash 반환됨', async () => {
       const mocks = buildMocks();
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract001' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000001' });
       const result = await svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-001', oracleData: BASE_ORACLE });
       expect(result.txHash).toBeTruthy();
     });
 
     it('TODO: 정상 발행 → 컨트랙트 1회 호출됨', async () => {
       const mocks = buildMocks();
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract001' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000001' });
       await svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-001', oracleData: BASE_ORACLE });
       expect(mocks.txCalls.length).toBe(1);
     });
 
     it('TODO: 정상 발행 → CoreBanking.notifyReward() 호출됨 (fire-and-forget)', async () => {
       const mocks = buildMocks();
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract001' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000001' });
       await svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-001', oracleData: BASE_ORACLE });
       await new Promise(r => setTimeout(r, 10));
       expect(mocks.notifyCalls.length).toBe(1);
@@ -118,7 +118,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
   describe('[2] 멱등성 — 동일 activityId 재요청 차단', () => {
     it('TODO: 중복 activityId → Error 발생', async () => {
       const mocks = buildMocks();
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-walk-001', oracleData: BASE_ORACLE });
       await expect(
         svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-walk-001', oracleData: BASE_ORACLE })
@@ -127,7 +127,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: 에러 메시지에 "already processed" 포함', async () => {
       const mocks = buildMocks();
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-dup-001', oracleData: BASE_ORACLE });
       await expect(
         svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-dup-001', oracleData: BASE_ORACLE })
@@ -136,7 +136,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: 중복 요청 시 컨트랙트 추가 호출 없음 (총 1회 유지)', async () => {
       const mocks = buildMocks();
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-idem-001', oracleData: BASE_ORACLE });
       try {
         await svc.issueActivityNFT({ userId: 'K-20240001', activityId: 'act-idem-001', oracleData: BASE_ORACLE });
@@ -148,7 +148,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
   describe('[3] AML flagged=true → Error, 컨트랙트 미호출', () => {
     it('TODO: AML flagged → Error 발생', async () => {
       const mocks = buildMocks({ amlFlagged: true, amlReason: 'OFAC sanction list' });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-AML', activityId: 'act-aml-001', oracleData: BASE_ORACLE })
       ).rejects.toThrow();
@@ -156,7 +156,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: AML 에러 메시지에 "AML" 포함', async () => {
       const mocks = buildMocks({ amlFlagged: true, amlReason: 'OFAC sanction list' });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-AML', activityId: 'act-aml-001', oracleData: BASE_ORACLE })
       ).rejects.toThrow('AML');
@@ -164,7 +164,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: AML 차단 시 컨트랙트 미호출', async () => {
       const mocks = buildMocks({ amlFlagged: true });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       try {
         await svc.issueActivityNFT({ userId: 'K-AML', activityId: 'act-aml-001', oracleData: BASE_ORACLE });
       } catch {}
@@ -175,7 +175,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
   describe('[4] account.status !== active → 발행 차단', () => {
     it('TODO: suspended 계정 → Error 발생', async () => {
       const mocks = buildMocks({ accountStatus: 'suspended' });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-SUSP', activityId: 'act-susp-001', oracleData: BASE_ORACLE })
       ).rejects.toThrow();
@@ -183,7 +183,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: 에러 메시지에 "not active" 포함', async () => {
       const mocks = buildMocks({ accountStatus: 'suspended' });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-SUSP', activityId: 'act-susp-001', oracleData: BASE_ORACLE })
       ).rejects.toThrow('not active');
@@ -191,7 +191,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: suspended 계정 → 컨트랙트 미호출', async () => {
       const mocks = buildMocks({ accountStatus: 'suspended' });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       try {
         await svc.issueActivityNFT({ userId: 'K-SUSP', activityId: 'act-susp-001', oracleData: BASE_ORACLE });
       } catch {}
@@ -200,7 +200,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: closed 계정 → Error 발생', async () => {
       const mocks = buildMocks({ accountStatus: 'closed' });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-CLOSED', activityId: 'act-closed-001', oracleData: BASE_ORACLE })
       ).rejects.toThrow();
@@ -210,7 +210,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
   describe('[5] 계정 없음 → Error', () => {
     it('TODO: 계정 없음 → Error 발생', async () => {
       const mocks = buildMocks({ noAccount: true });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-GHOST', activityId: 'act-ghost-001', oracleData: BASE_ORACLE })
       ).rejects.toThrow();
@@ -218,7 +218,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: 에러 메시지에 "user not found" 포함', async () => {
       const mocks = buildMocks({ noAccount: true });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-GHOST', activityId: 'act-ghost-001', oracleData: BASE_ORACLE })
       ).rejects.toThrow('user not found');
@@ -228,7 +228,7 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
   describe('[6] CoreBanking 알림 실패 → TX 롤백 없음 (fire-and-forget)', () => {
     it('TODO: CoreBanking 실패해도 issueActivityNFT()는 성공 반환', async () => {
       const mocks = buildMocks({ notifyFail: true });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await expect(
         svc.issueActivityNFT({ userId: 'K-NOTIFY-FAIL', activityId: 'act-notify-001', oracleData: BASE_ORACLE })
       ).resolves.toBeDefined();
@@ -236,14 +236,14 @@ describe('S32 채점 — 단건 발행 파이프라인', () => {
 
     it('TODO: CoreBanking 실패해도 txHash 정상 반환됨', async () => {
       const mocks = buildMocks({ notifyFail: true });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       const result = await svc.issueActivityNFT({ userId: 'K-NOTIFY-FAIL', activityId: 'act-notify-001', oracleData: BASE_ORACLE });
       expect(result.txHash).toBeTruthy();
     });
 
     it('TODO: CoreBanking 실패해도 컨트랙트는 1회 실행됨', async () => {
       const mocks = buildMocks({ notifyFail: true });
-      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xNFTContract' });
+      const svc   = new IssuerService({ ...mocks, idempotency: new InMemoryIdempotencyGuard() as any, nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
       await svc.issueActivityNFT({ userId: 'K-NOTIFY-FAIL', activityId: 'act-notify-001', oracleData: BASE_ORACLE });
       expect(mocks.txCalls.length).toBe(1);
     });

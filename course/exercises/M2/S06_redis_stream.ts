@@ -154,8 +154,8 @@ const consumerRedis = {
           fields: {
             eventType:   'NFT_ISSUED',
             // payload는 JSON 직렬화된 문자열 — Redis Streams는 string-string map만 지원
-            payload:     JSON.stringify({ tokenId: '42', owner: '0xKYOBO' }),
-            txHash:      '0xdeadbeef001',
+            payload:     JSON.stringify({ tokenId: '42', owner: '0x4b594f424f000000000000000000000000000000' }),
+            txHash:      '0xdeadbeef001deadbeef001deadbeef001deadbeef001deadbeef001deadbeef0',
             blockNumber: '18500001',
             requestId:   'req-001',
             publishedAt: String(Date.now()),
@@ -232,8 +232,8 @@ class SimpleNFTProcessor implements EventProcessor {
   const event: StreamEvent = {
     streamKey:   'kyobo:events',
     eventType:   'NFT_ISSUED',
-    payload:     { tokenId: '42', owner: '0xKYOBO' },
-    txHash:      '0xdeadbeef001',
+    payload:     { tokenId: '42', owner: '0x4b594f424f000000000000000000000000000000' },
+    txHash:      '0xdeadbeef001deadbeef001deadbeef001deadbeef001deadbeef001deadbeef0',
     blockNumber: 18500001,
     requestId:   'req-001',
   };
@@ -255,7 +255,7 @@ class SimpleNFTProcessor implements EventProcessor {
     streamKey:   'kyobo:events',
     eventType:   'NFT_BURNED',
     payload:     { tokenId: '41', owner: '0x0000' },
-    txHash:      '0xcafebabe001',
+    txHash:      '0xcafebabe001cafebabe001cafebabe001cafebabe001cafebabe001cafebabe0',
     blockNumber: 18500002,
     requestId:   'req-002',
   };

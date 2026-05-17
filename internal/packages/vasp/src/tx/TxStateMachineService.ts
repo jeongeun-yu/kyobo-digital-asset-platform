@@ -49,8 +49,8 @@
  *   getStatus(txHash)     → ConfirmationTracker.trackPending() (블록 직접 조회)
  *   resubmitWithGasBump() → NonceManager.bumpGas() + Broadcaster.broadcast()
  *   pollStaleRequests()   → ConfirmationTracker가 대체 (루프 분리)
- *   교체 방식: VaspTxClient 인터페이스 유지 → Phase3VaspTxClient 구현체 주입
- *              TxStateMachineService 코드 수정 없음
+ *   교체 방식: VaspTxClient 인터페이스 유지 → CustodyVaspTxClient 등 신규 구현체 주입
+ *              (ExternalVaspTxClient 교체, TxStateMachineService 코드 수정 없음)
  *
  * ── 교육생 안내 ──────────────────────────────────────────────────────────────
  * 역할: 참고용 구현체 — 수정하지 말 것

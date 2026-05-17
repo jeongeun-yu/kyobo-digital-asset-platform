@@ -300,10 +300,10 @@ function check(label: string, pass: boolean) {
   // ── [2] updateMintRequestStatus ─────────────────────────────────────
   console.log('\n[검증 2] updateMintRequestStatus — SUBMITTED 전이');
 
-  await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xabc123' });
+  await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000' });
   const submitted = await ledger.getMintRequest(req.requestId);
   check('status = SUBMITTED',         submitted?.status === 'SUBMITTED');
-  check('txHash 설정됨',               submitted?.txHash === '0xabc123');
+  check('txHash 설정됨',               submitted?.txHash === '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000');
 
   await ledger.updateMintRequestStatus(req.requestId, 'MINED', { blockNumber: 12345n });
   const mined = await ledger.getMintRequest(req.requestId);
@@ -318,9 +318,9 @@ function check(label: string, pass: boolean) {
   // ── [3] recordProcessedEvent — ON CONFLICT DO NOTHING ────────────────
   console.log('\n[검증 3] recordProcessedEvent — 멱등성 보장');
 
-  const r1 = await ledger.recordProcessedEvent('0x3f2a', 0, 'NFTIssued', 12345n, { tokenId: 1001 });
-  const r2 = await ledger.recordProcessedEvent('0x3f2a', 0, 'NFTIssued', 12345n, { tokenId: 1001 });  // 중복
-  const r3 = await ledger.recordProcessedEvent('0x3f2a', 1, 'NFTIssued', 12345n, { tokenId: 1002 });  // 다른 logIndex
+  const r1 = await ledger.recordProcessedEvent('0x3f2a000000000000000000000000000000000000000000000000000000003f2a', 0, 'NFTIssued', 12345n, { tokenId: 1001 });
+  const r2 = await ledger.recordProcessedEvent('0x3f2a000000000000000000000000000000000000000000000000000000003f2a', 0, 'NFTIssued', 12345n, { tokenId: 1001 });  // 중복
+  const r3 = await ledger.recordProcessedEvent('0x3f2a000000000000000000000000000000000000000000000000000000003f2a', 1, 'NFTIssued', 12345n, { tokenId: 1002 });  // 다른 logIndex
 
   check('첫 번째 삽입: skipped = false',    r1.skipped === false);
   check('첫 번째 삽입: id 할당됨',           typeof r1.id === 'number');
@@ -350,11 +350,11 @@ function check(label: string, pass: boolean) {
   console.log('\n[검증 5] 전체 쓰기 경로 — REQUESTED → FINALIZED');
 
   const req2 = await ledger.createMintRequest('K-20240003', 'CYCLE-5000');
-  await ledger.updateMintRequestStatus(req2.requestId, 'SUBMITTED', { txHash: '0xdef456' });
+  await ledger.updateMintRequestStatus(req2.requestId, 'SUBMITTED', { txHash: '0xdef4560000000000def4560000000000def4560000000000def4560000000000' });
   await ledger.updateMintRequestStatus(req2.requestId, 'MINED', { blockNumber: 12400n });
 
   // ConsumerGroupWorker 처리
-  const evResult = await ledger.recordProcessedEvent('0xdef456', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
+  const evResult = await ledger.recordProcessedEvent('0xdef4560000000000def4560000000000def4560000000000def4560000000000', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
   if (!evResult.skipped) {
     await ledger.updateMintRequestStatus(req2.requestId, 'CONFIRMED', { tokenId: 2001n });
     await ledger.addHolding('K-20240003', 2001n, 'CYCLE-5000');
@@ -370,7 +370,7 @@ function check(label: string, pass: boolean) {
   check('holdings 등록됨',            finalHoldings.length === 1);
 
   // 재처리 시뮬레이션 (at-least-once)
-  const evDup = await ledger.recordProcessedEvent('0xdef456', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
+  const evDup = await ledger.recordProcessedEvent('0xdef4560000000000def4560000000000def4560000000000def4560000000000', 0, 'NFTIssued', 12400n, { tokenId: 2001 });
   check('재처리 시 skipped = true',   evDup.skipped === true);
 
   // audit_log 전체 기록 확인

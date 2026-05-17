@@ -247,9 +247,9 @@ function check(label: string, pass: boolean) {
   // ── [3] tx.origin vs msg.sender ─────────────────────────────────────
   console.log('\n[검증 3] tx.origin vs msg.sender — 피싱 공격 취약점');
 
-  const owner            = '0xOWNER';
-  const victimEOA        = '0xOWNER';
-  const attackerContract = '0xATTACKER';
+  const owner            = '0xeeee000000000000000000000000000000000001';
+  const victimEOA        = '0xeeee000000000000000000000000000000000001';
+  const attackerContract = '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0';
 
   const txOriginResult  = checkWithTxOrigin(victimEOA, attackerContract, owner);
   const msgSenderResult = checkWithMsgSender(victimEOA, attackerContract, owner);

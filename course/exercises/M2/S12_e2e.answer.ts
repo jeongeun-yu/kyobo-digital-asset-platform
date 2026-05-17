@@ -184,7 +184,7 @@ function check(label: string, pass: boolean) {
   console.log('[검증 1] 올바른 서명 → 202');
   const BODY = JSON.stringify({
     eventType: 'NFT_ISSUED',
-    data:      { tokenId: 'T-1001', to: '0xAlice', blockNumber: 18_500_001 },
+    data:      { tokenId: 'T-1001', to: '0xa11ce00000000000000000000000000000000001', blockNumber: 18_500_001 },
     timestamp: Date.now(),
     requestId: 'req-s12-e2e-001',
   });
@@ -200,7 +200,7 @@ function check(label: string, pass: boolean) {
   // ── [3] Consumer 처리 → 원장 확인 ───────────────────────────────────
   await new Promise(r => setTimeout(r, 100));
   console.log('\n[검증 3] Consumer 처리 후 원장 업데이트');
-  const balance1 = await ledger.getNFTBalance('0xAlice', 'T-1001');
+  const balance1 = await ledger.getNFTBalance('0xa11ce00000000000000000000000000000000001', 'T-1001');
   check(`0xAlice T-1001 잔고: ${balance1} (기대: 1)`, balance1 === 1);
 
   // ── [4] 동일 requestId 재전송 → 멱등성 ───────────────────────────────
@@ -219,7 +219,7 @@ function check(label: string, pass: boolean) {
 
   await new Promise(r => setTimeout(r, 150));
 
-  const balance2 = await ledger.getNFTBalance('0xAlice', 'T-1001');
+  const balance2 = await ledger.getNFTBalance('0xa11ce00000000000000000000000000000000001', 'T-1001');
   check(`0xAlice T-1001 잔고: ${balance2} (기대: 여전히 1)`, balance2 === 1);
 
   // ── [5] 잘못된 서명 → 401 ────────────────────────────────────────────
