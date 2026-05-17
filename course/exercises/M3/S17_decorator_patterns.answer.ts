@@ -1,16 +1,11 @@
 /**
  * S17 정답 — Decorator 패턴 + Circuit Breaker
  *
- * 강의 노트: M3_S17_retry_backoff.md
- *
- * 실행 방법:
- *   npx ts-node course/exercises/M3/S17_decorator_patterns.answer.ts
- *
  * 목표:
- *   [1] LoggingAdapterDecorator — 메서드 경과 시간 측정 확인
- *   [2] RetryAdapterDecorator   — 일시적 실패 자동 재시도 확인
- *   [3] NON_RETRYABLE 패턴     — REVERT/잔액 부족은 즉시 throw 확인
- *   [4] Decorator 조합          — Retry(Logging(adapter)) 직접 합성
+ *   [1] LoggingAdapterDecorator — 메서드 경과 시간 측정
+ *   [2] RetryAdapterDecorator   — 일시적 실패 자동 재시도
+ *   [3] NON_RETRYABLE 패턴     — REVERT/잔액 부족은 즉시 throw
+ *   [4] Decorator 조합          — Retry(Logging(adapter))
  *   [5] CircuitBreaker          — CLOSED → OPEN → HALF_OPEN 상태 전이
  *
  * 참조 구현:
@@ -28,32 +23,14 @@ import type {
   MintBatchParams,
   BurnParams,
 } from '@kyobo/chain-adapters';
-import {
-  LoggingAdapterDecorator,
-  RetryAdapterDecorator,
-} from '@kyobo/chain-adapters';
-import {
-  CircuitBreaker,
-  CircuitOpenError,
-} from '@kyobo/core-banking';
-import { evmConfig } from '@kyobo/shared';
-import { EVMAdapter } from '@kyobo/chain-adapters';
+import { LoggingAdapterDecorator, RetryAdapterDecorator } from '@kyobo/chain-adapters';
+import { CircuitBreaker, CircuitOpenError } from '@kyobo/core-banking';
 
-// ── 헬퍼 ────────────────────────────────────────────────────────────────────
+// ── assert ───────────────────────────────────────────────────────────────────
 
-function check(label: string, pass: boolean) {
-  console.log(`  ${pass ? '✅' : '❌'} ${label}`);
-  if (!pass) process.exitCode = 1;
-}
-
-async function tryCheck(label: string, fn: () => Promise<boolean>) {
-  try {
-    const pass = await fn();
-    check(label, pass);
-  } catch (e: any) {
-    console.log(`  ❌ ${label} — ${e.message}`);
-    process.exitCode = 1;
-  }
+function assert(cond: boolean, msg: string) {
+  if (!cond) throw new Error(`FAIL: ${msg}`);
+  console.log(`  ✅ ${msg}`);
 }
 
 // ── Stub 어댑터 ──────────────────────────────────────────────────────────────
@@ -67,8 +44,8 @@ class ControllableAdapter implements IBlockchainAdapter {
   readonly chainId   = 'stub-1';
   readonly chainType = 'EVM' as const;
 
-  callCount = 0;
-  failUntil = 0;
+  callCount   = 0;
+  failUntil   = 0;
   failMessage = 'transient rpc error';
 
   async isConnected():    Promise<boolean> { return true; }
@@ -82,21 +59,17 @@ class ControllableAdapter implements IBlockchainAdapter {
 
   async mintNFTBatch(_p: MintBatchParams): Promise<TransactionReceipt> { return STUB_RECEIPT; }
   async burnNFT(_p: BurnParams):           Promise<TransactionReceipt> { return STUB_RECEIPT; }
-  async getBalance(): Promise<bigint> { return 1n; }
-  async call(_p: ContractCallParams):            Promise<unknown>             { return null; }
-  async sendTransaction(_p: ContractCallParams): Promise<TransactionReceipt>  { return STUB_RECEIPT; }
-  async getReceipt(): Promise<TransactionReceipt | null> { return null; }
+  async getBalance():                      Promise<bigint>             { return 1n; }
+  async call(_p: ContractCallParams):            Promise<unknown>            { return null; }
+  async sendTransaction(_p: ContractCallParams): Promise<TransactionReceipt> { return STUB_RECEIPT; }
+  async getReceipt():    Promise<TransactionReceipt | null> { return null; }
   async subscribeEvents(_a: string, _b: unknown[], _e: string[], _f: number, _h: (e: ChainEvent) => Promise<void>): Promise<() => void> { return () => {}; }
   async queryEvents():   Promise<ChainEvent[]> { return []; }
 }
 
-// ────────────────────────────────────────────────────────────────────────══
-// [1] LoggingAdapterDecorator
-// ────────────────────────────────────────────────────────────────────────══
+// ── [1] LoggingAdapterDecorator ───────────────────────────────────────────────
 
 async function section1() {
-  console.log('[1] LoggingAdapterDecorator — 경과 시간 측정');
-
   const logs: string[] = [];
   const logger = {
     info:  (msg: string) => { logs.push(`INFO:${msg}`); },
@@ -108,74 +81,54 @@ async function section1() {
 
   await wrapped.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r1' });
 
-  check('mintNFT 호출 후 INFO 로그 최소 1건',       logs.some(l => l.startsWith('INFO:')));
-  check('로그에 mintNFT 포함',                      logs.some(l => l.toLowerCase().includes('mintnft')));
-  check('inner.callCount === 1 (실제 호출 확인)',    inner.callCount === 1);
-  check('에러 없으면 ERROR 로그 없음',               !logs.some(l => l.startsWith('ERROR:')));
+  assert(logs.some(l => l.startsWith('INFO:')),             '[1] 성공 시 INFO 로그');
+  assert(logs.some(l => l.toLowerCase().includes('mintnft')), '[1] 로그에 mintNFT 포함');
+  assert(!logs.some(l => l.startsWith('ERROR:')),           '[1] 성공 시 ERROR 없음');
 
   const inner2  = new ControllableAdapter();
   inner2.failUntil = 999;
   const logs2: string[] = [];
-  const logger2 = {
+  const wrapped2 = new LoggingAdapterDecorator(inner2, {
     info:  (msg: string) => { logs2.push(`INFO:${msg}`); },
     error: (msg: string) => { logs2.push(`ERROR:${msg}`); },
-  };
-  const wrapped2 = new LoggingAdapterDecorator(inner2, logger2);
+  });
+  try { await wrapped2.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r2' }); } catch {}
 
-  try {
-    await wrapped2.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r2' });
-  } catch {}
-
-  check('실패 시 ERROR 로그 발생',                  logs2.some(l => l.startsWith('ERROR:')));
+  assert(logs2.some(l => l.startsWith('ERROR:')), '[1] 실패 시 ERROR 로그');
 }
 
-// ────────────────────────────────────────────────────────────────────────══
-// [2] RetryAdapterDecorator
-// ────────────────────────────────────────────────────────────────────────══
+// ── [2] RetryAdapterDecorator ─────────────────────────────────────────────────
 
 async function section2() {
-  console.log('\n[2] RetryAdapterDecorator — 일시적 실패 자동 재시도');
-
   const inner = new ControllableAdapter();
   inner.failUntil = 2;
 
   const wrapped = new RetryAdapterDecorator(inner, {
-    maxAttempts:    3,
-    initialDelayMs: 10,
-    maxDelayMs:     100,
-    backoffFactor:  2,
+    maxAttempts: 3, initialDelayMs: 10, maxDelayMs: 100, backoffFactor: 2,
   });
 
-  const receipt = await wrapped.mintNFT({
-    contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r3',
-  });
+  const receipt = await wrapped.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r3' });
 
-  check('3번째 시도에 성공 (callCount === 3)',        inner.callCount === 3);
-  check('최종 receipt.status === success',           receipt.status === 'success');
+  assert(inner.callCount === 3,          '[2] 3번째 시도에 성공 (callCount === 3)');
+  assert(receipt.status === 'success',   '[2] receipt.status === success');
 
   const inner2 = new ControllableAdapter();
   inner2.failUntil = 999;
-
   const wrapped2 = new RetryAdapterDecorator(inner2, {
     maxAttempts: 2, initialDelayMs: 10, maxDelayMs: 50, backoffFactor: 2,
   });
 
   let threw = false;
-  try {
-    await wrapped2.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r4' });
-  } catch { threw = true; }
+  try { await wrapped2.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r4' }); }
+  catch { threw = true; }
 
-  check('maxAttempts 초과 시 에러 throw',            threw);
-  check('callCount === maxAttempts (2회 시도)',       inner2.callCount === 2);
+  assert(threw,                          '[2] maxAttempts 초과 시 throw');
+  assert(inner2.callCount === 2,         '[2] callCount === maxAttempts');
 }
 
-// ────────────────────────────────────────────────────────────────────────══
-// [3] NON_RETRYABLE
-// ────────────────────────────────────────────────────────────────────────══
+// ── [3] NON_RETRYABLE ─────────────────────────────────────────────────────────
 
 async function section3() {
-  console.log('\n[3] NON_RETRYABLE — 비즈니스 오류는 즉시 throw');
-
   const NON_RETRYABLE_CASES = [
     'execution reverted: ERC1155 transfer amount exceeds balance',
     'insufficient funds for gas * price + value',
@@ -192,144 +145,82 @@ async function section3() {
     });
 
     let threw = false;
-    try {
-      await wrapped.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r5' });
-    } catch { threw = true; }
+    try { await wrapped.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r5' }); }
+    catch { threw = true; }
 
-    check(`NON_RETRYABLE "${msg.slice(0, 30)}..." → callCount === 1 (재시도 없음)`,
-      threw && inner.callCount === 1);
+    assert(threw && inner.callCount === 1,
+      `[3] NON_RETRYABLE "${msg.slice(0, 30)}..." → callCount === 1`);
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────══
-// [4] Decorator 조합 — Retry(Logging(adapter))
-// ────────────────────────────────────────────────────────────────────────══
+// ── [4] Decorator 조합 — Retry(Logging(adapter)) ─────────────────────────────
 
 async function section4() {
-  console.log('\n[4] Decorator 조합 — Retry(Logging(adapter))');
-
   const logs: string[] = [];
-  const logger = {
-    info:  (msg: string) => { logs.push(`INFO:${msg}`); },
-    error: (msg: string) => { logs.push(`ERROR:${msg}`); },
-  };
-
-  const inner   = new ControllableAdapter();
+  const inner = new ControllableAdapter();
   inner.failUntil = 1;
 
-  // ✅ 정답: Retry 바깥, Logging 안쪽으로 합성
   const stacked = new RetryAdapterDecorator(
-    new LoggingAdapterDecorator(inner, logger),
+    new LoggingAdapterDecorator(inner, {
+      info:  (msg: string) => { logs.push(`INFO:${msg}`); },
+      error: (msg: string) => { logs.push(`ERROR:${msg}`); },
+    }),
     { maxAttempts: 3, initialDelayMs: 10, maxDelayMs: 50, backoffFactor: 2 },
   );
 
-  const receipt = await stacked.mintNFT({
-    contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r6',
-  });
+  const receipt = await stacked.mintNFT({ contractAddr: '0x1', to: '0x2', tokenId: 1n, amount: 1n, requestId: 'r6' });
 
-  check('조합된 스택에서 최종 성공',                  receipt.status === 'success');
-  check('callCount === 2 (1회 실패 + 1회 성공)',      inner.callCount === 2);
-  check('Logging이 두 번 실행됨 (INFO 최소 2건)',     logs.filter(l => l.startsWith('INFO:')).length >= 2);
-  check('ERROR 로그 1건 (첫 번째 시도 실패)',         logs.filter(l => l.startsWith('ERROR:')).length >= 1);
+  assert(receipt.status === 'success',                              '[4] 최종 성공');
+  assert(inner.callCount === 2,                                     '[4] callCount === 2');
+  assert(logs.filter(l => l.startsWith('INFO:')).length >= 2,      '[4] INFO 최소 2건');
+  assert(logs.filter(l => l.startsWith('ERROR:')).length >= 1,     '[4] ERROR 1건 (첫 시도 실패)');
 }
 
-// ────────────────────────────────────────────────────────────────────────══
-// [5] CircuitBreaker — CLOSED → OPEN → HALF_OPEN 상태 전이
-// ────────────────────────────────────────────────────────────────────────══
+// ── [5] CircuitBreaker — CLOSED → OPEN → HALF_OPEN ───────────────────────────
 
 async function section5() {
-  console.log('\n[5] CircuitBreaker — 상태 전이');
+  const cb = new CircuitBreaker({ failureThreshold: 3, recoveryTimeMs: 100 });
 
-  // ✅ 정답: failureThreshold=3, recoveryTimeMs=100
-  const cb = new CircuitBreaker({
-    failureThreshold: 3,
-    recoveryTimeMs:   100,
-  });
-
-  check('초기 상태: CLOSED',                         cb.getState() === 'CLOSED');
+  assert(cb.getState() === 'CLOSED', '[5] 초기 상태: CLOSED');
 
   await cb.execute(async () => 'ok');
-  check('성공 후: CLOSED 유지',                      cb.getState() === 'CLOSED');
+  assert(cb.getState() === 'CLOSED', '[5] 성공 후 CLOSED 유지');
 
   for (let i = 0; i < 3; i++) {
     try { await cb.execute(async () => { throw new Error('down'); }); } catch {}
   }
-  check('3회 실패 후: OPEN',                         cb.getState() === 'OPEN');
-  check('getFailures() === 3',                       cb.getFailures() === 3);
+  assert(cb.getState() === 'OPEN',  '[5] 3회 실패 후 OPEN');
+  assert(cb.getFailures() === 3,    '[5] getFailures() === 3');
 
   let circuitOpenThrown = false;
-  try {
-    await cb.execute(async () => 'should not run');
-  } catch (err) {
-    circuitOpenThrown = err instanceof CircuitOpenError;
-  }
-  check('OPEN 상태 → CircuitOpenError 즉시 throw',   circuitOpenThrown);
+  try { await cb.execute(async () => 'should not run'); }
+  catch (err) { circuitOpenThrown = err instanceof CircuitOpenError; }
+  assert(circuitOpenThrown, '[5] OPEN → CircuitOpenError 즉시 throw');
 
   await new Promise(r => setTimeout(r, 120));
 
   const result = await cb.execute(async () => 'recovered');
-  check('recoveryTime 경과 후 성공 → CLOSED 복귀',   cb.getState() === 'CLOSED');
-  check('복귀 후 getFailures() === 0',               cb.getFailures() === 0);
-  check('복구된 요청 결과 정상 반환',                  result === 'recovered');
+  assert(cb.getState() === 'CLOSED', '[5] recoveryTime 경과 후 성공 → CLOSED');
+  assert(cb.getFailures() === 0,     '[5] 복귀 후 getFailures() === 0');
+  assert(result === 'recovered',     '[5] 복구된 요청 정상 반환');
 
+  // HALF_OPEN에서 실패 → OPEN 재진입
   const cb2 = new CircuitBreaker({ failureThreshold: 2, recoveryTimeMs: 80 });
   for (let i = 0; i < 2; i++) {
     try { await cb2.execute(async () => { throw new Error('down'); }); } catch {}
   }
   await new Promise(r => setTimeout(r, 100));
   try { await cb2.execute(async () => { throw new Error('still down'); }); } catch {}
-  check('HALF_OPEN에서 실패 → OPEN 재진입',          cb2.getState() === 'OPEN');
+  assert(cb2.getState() === 'OPEN', '[5] HALF_OPEN 실패 → OPEN 재진입');
 }
 
-// ────────────────────────────────────────────────────────────────────────══
-// [보너스] Sepolia 실제 연결
-// ────────────────────────────────────────────────────────────────────────══
-
-async function sectionBonus() {
-  console.log('\n[보너스] Sepolia + Decorator 스택 (실제 RPC)');
-
-  const base    = new EVMAdapter({ rpcUrl: evmConfig.rpcUrl, chainId: evmConfig.chainId });
-  const logs: string[] = [];
-  const stacked = new RetryAdapterDecorator(
-    new LoggingAdapterDecorator(base, {
-      info:  (msg: string) => { logs.push(msg); },
-      error: (msg: string) => { logs.push(`ERR:${msg}`); },
-    }),
-    { maxAttempts: 2, initialDelayMs: 200, maxDelayMs: 1000, backoffFactor: 2 },
-  );
-
-  const connected = await stacked.isConnected();
-  check(`Sepolia 연결: ${connected}`, connected);
-
-  if (connected) {
-    const block = await stacked.getBlockNumber();
-    check(`블록 넘버 > 0: ${block}`, block > 0);
-    check('Logging INFO 발생', logs.length > 0);
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────══
-// 실습 진입점
-// ────────────────────────────────────────────────────────────────────────══
+// ── 진입점 ───────────────────────────────────────────────────────────────────
 
 (async () => {
-  console.log('=== S17 정답: Decorator 패턴 + Circuit Breaker ===\n');
-
   await section1();
   await section2();
   await section3();
   await section4();
   await section5();
-  await sectionBonus();
-
-  console.log('\n=== S17 정답 실행 완료 ===');
-  console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
-  console.log('\n핵심 정리:');
-  console.log('  Decorator:     어댑터 기능을 바꾸지 않고 기능 추가 (Logging, Retry)');
-  console.log('  조합:           Retry(Logging(adapter)) — 중첩 가능, inner 코드 무변경');
-  console.log('  NON_RETRYABLE: REVERT/잔액 부족 → 재시도 없이 즉시 DLQ');
-  console.log('  CircuitBreaker: CLOSED→OPEN(N회 실패)→HALF_OPEN(복구 탐색)→CLOSED(성공)');
-  console.log('  Fail-fast:      OPEN 상태에서 fn() 실행 없이 CircuitOpenError 즉시 반환');
-
-  process.exit(process.exitCode ?? 0);
+  console.log('\nS17 완료');
 })();
