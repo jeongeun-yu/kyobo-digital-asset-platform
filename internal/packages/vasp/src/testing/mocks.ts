@@ -47,6 +47,14 @@ export class InMemoryLedger {
     return this.store.get(id) ?? null;
   }
 
+  async reverseMintCredit(_requestId: string): Promise<void> {
+    // TODO: Phase 3 — 원장 역분개 구현 필요 (CONFIRMED → REORGED 전이 시 호출)
+  }
+
+  async notifyUserCreditReversed(_requestId: string): Promise<void> {
+    // TODO: 설계 숙제 — 사용자 롤백 통보 방식 및 보상 플로우 설계 필요
+  }
+
   async updateMintRequest(
     id: string,
     patch: { status: string; txHash?: string; errorMsg?: string; [key: string]: unknown },
