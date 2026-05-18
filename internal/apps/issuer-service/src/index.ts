@@ -118,7 +118,7 @@ async function bootstrap() {
     [{
       addr:       process.env.NFT_CONTRACT_ADDR!,
       abi:        NFTIssuerABI,
-      eventNames: ['Issued', 'Revoked'],
+      eventNames: ['Issued'],
     }],
     {
       // Phase 2: Redis/DB 기반 스테이트 스토어로 교체 (재시작 내성)

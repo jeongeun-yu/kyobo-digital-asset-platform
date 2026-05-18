@@ -34,7 +34,7 @@ export const DOMAIN_TYPEHASH = ethers.keccak256(
 // 테스트 파라미터
 export const SAFE_ADDRESS  = '0x1234567890123456789012345678901234567890';
 export const CHAIN_ID      = 31337; // hardhat local
-export const KYOBO_NFT     = '0xKyoboNFTContractAddress0000000000000000';
+export const KYOBO_NFT     = '0xc0de000000000000000000000000000000000001';
 
 // ─── EIP-712 계산 함수 ────────────────────────────────────────────────────────
 

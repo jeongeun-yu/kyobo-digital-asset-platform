@@ -187,7 +187,7 @@ export class AdminController {
       actor: ctx.user.id,
       action: 'CONTRACT_PAUSED',
       resourceType: 'CONTRACT',
-      resourceId: '0xKyoboNFT',
+      resourceId: '0xc0de000000000000000000000000000000000001',
       afterState: { paused: true, reason },
     });
 
@@ -204,7 +204,7 @@ export class AdminController {
       actor: ctx.user.id,
       action: 'CONTRACT_UNPAUSED',
       resourceType: 'CONTRACT',
-      resourceId: '0xKyoboNFT',
+      resourceId: '0xc0de000000000000000000000000000000000001',
       afterState: { paused: false },
     });
 

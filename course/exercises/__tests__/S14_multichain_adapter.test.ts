@@ -24,7 +24,7 @@ import { ChainAdapterFactory, UnsupportedChainError } from '@kyobo/chain-adapter
 
 // ── Stub 어댑터 ───────────────────────────────────────────────────────────────
 const STUB_RECEIPT: TransactionReceipt = {
-  txHash: '0xstub', blockNumber: 0, blockHash: '0xstub-block',
+  txHash: '0x5700b000000000000000000000000000000000000000000000000000005700b0', blockNumber: 0, blockHash: '0x5700b10b10c0000000000000000000000000000000000000000000000005700b0',
   status: 'success', timestamp: Date.now(),
 };
 
@@ -33,7 +33,7 @@ class StubEVMAdapter implements IBlockchainAdapter {
   readonly chainType = 'EVM' as const;
   async isConnected()                                        { return true; }
   async getBlockNumber()                                     { return 1; }
-  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0xevm-mint', gasUsed: 47704n }; }
+  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0xe0410000000000000000000000000000000000000000000000000000e0410000', gasUsed: 47704n }; }
   async mintNFTBatch(_p: MintBatchParams)                    { return STUB_RECEIPT; }
   async burnNFT(_p: BurnParams)                              { return STUB_RECEIPT; }
   async getBalance()                                         { return 0n; }
@@ -49,7 +49,7 @@ class StubXRPLAdapter implements IBlockchainAdapter {
   readonly chainType = 'XRPL' as const;
   async isConnected()                                        { return false; }
   async getBlockNumber()                                     { return 0; }
-  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0xxrpl-mint' }; }
+  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0x04100000000000000000000000000000000000000000000000000000041000ab' }; }
   async mintNFTBatch(_p: MintBatchParams)                    { return STUB_RECEIPT; }
   async burnNFT(_p: BurnParams)                              { return STUB_RECEIPT; }
   async getBalance()                                         { return 0n; }
@@ -65,7 +65,7 @@ class StubCircleAdapter implements IBlockchainAdapter {
   readonly chainType = 'BFT' as const;
   async isConnected()                                        { return false; }
   async getBlockNumber()                                     { return 0; }
-  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0xcircle-mint' }; }
+  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0xc14c1e0000000000000000000000000000000000000000000000000000c14c1e' }; }
   async mintNFTBatch(_p: MintBatchParams)                    { return STUB_RECEIPT; }
   async burnNFT(_p: BurnParams)                              { return STUB_RECEIPT; }
   async getBalance()                                         { return 0n; }
@@ -81,7 +81,7 @@ class StubUTXOAdapter implements IBlockchainAdapter {
   readonly chainType = 'UTXO' as const;
   async isConnected()                                        { return false; }
   async getBlockNumber()                                     { return 0; }
-  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0xutxo-mint' }; }
+  async mintNFT(_p: MintParams): Promise<TransactionReceipt>{ return { ...STUB_RECEIPT, txHash: '0x070000000000000000000000000000000000000000000000000000000000007a' }; }
   async mintNFTBatch(_p: MintBatchParams)                    { return STUB_RECEIPT; }
   async burnNFT(_p: BurnParams)                              { return STUB_RECEIPT; }
   async getBalance()                                         { return 0n; }
@@ -170,7 +170,7 @@ describe('S14 채점 — IBlockchainAdapter 설계', () => {
     });
 
     it('gasUsed 가 없으면 "N/A"를 반환한다', () => {
-      const receipt: TransactionReceipt = { txHash: '0xcircle', blockNumber: 0, blockHash: '0xblock', status: 'success', timestamp: Date.now() };
+      const receipt: TransactionReceipt = { txHash: '0xc14c1e0000000000000000000000000000000000000000000000000000c14c1e', blockNumber: 0, blockHash: '0xb10c0000000000000000000000000000000000000000000000000000b10c0000', status: 'success', timestamp: Date.now() };
       expect(formatGas(receipt)).toBe('N/A');
     });
 
@@ -219,14 +219,14 @@ describe('S14 채점 — IBlockchainAdapter 설계', () => {
   describe('[4] IssuerService — mintNFT 결과 반환', () => {
     it('EVM 어댑터로 issue() 호출 → receipt 반환', async () => {
       const svc     = new IssuerService(new StubEVMAdapter());
-      const receipt = await svc.issue('0xAlice', 1n);
+      const receipt = await svc.issue('0xa11ce00000000000000000000000000000000001', 1n);
       expect(receipt).toBeDefined();
       expect(receipt.txHash).toBeTruthy();
     });
 
     it('Circle 어댑터로 issue() 호출 → receipt 반환 (어댑터 교체 검증)', async () => {
       const svc     = new IssuerService(new StubCircleAdapter());
-      const receipt = await svc.issue('0xAlice', 1n);
+      const receipt = await svc.issue('0xa11ce00000000000000000000000000000000001', 1n);
       expect(receipt).toBeDefined();
       expect(receipt.status).toBe('success');
     });
@@ -237,7 +237,7 @@ describe('S14 채점 — IBlockchainAdapter 설계', () => {
       ];
       for (const adapter of adapters) {
         const svc     = new IssuerService(adapter);
-        const receipt = await svc.issue('0xTest', 1n);
+        const receipt = await svc.issue('0xde5700000000000000000000000000000000005e', 1n);
         expect(receipt.txHash).toBeTruthy();
       }
     });

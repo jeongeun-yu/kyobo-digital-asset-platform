@@ -133,14 +133,14 @@ describe('S28 채점 — 지갑 매핑 설계', () => {
     it('TODO: KYOBO saveMapping 후 markVerified 없이 발행 가능', async () => {
       const repo = new TestWalletRepo();
       const svc  = new WalletMappingService(repo as any);
-      await svc.saveMapping('K-20240002', '0xKyobo0000000000000000000000000000000002', 'KYOBO');
+      await svc.saveMapping('K-20240002', '0xb10c0000000000000000000000000000000000b2', 'KYOBO');
       await expect(svc.getWalletAddr('K-20240002')).resolves.toBeTruthy();
     });
 
     it('TODO: KYOBO 지갑 주소가 0x로 시작함', async () => {
       const repo = new TestWalletRepo();
       const svc  = new WalletMappingService(repo as any);
-      const ADDR = '0xKyobo0000000000000000000000000000000002';
+      const ADDR = '0xb10c0000000000000000000000000000000000b2';
       await svc.saveMapping('K-20240002', ADDR, 'KYOBO');
       const addr = await svc.getWalletAddr('K-20240002');
       expect(addr.startsWith('0x')).toBe(true);
@@ -151,8 +151,8 @@ describe('S28 채점 — 지갑 매핑 설계', () => {
     it('TODO: 지갑 교체 후 새 주소 반환', async () => {
       const repo     = new TestWalletRepo();
       const svc      = new WalletMappingService(repo as any);
-      const OLD_ADDR = '0xOld0000000000000000000000000000000000AA';
-      const NEW_ADDR = '0xNew0000000000000000000000000000000000BB';
+      const OLD_ADDR = '0x01d000000000000000000000000000000000000a';
+      const NEW_ADDR = '0x0e0000000000000000000000000000000000b000';
       await svc.saveMapping('K-20240003', OLD_ADDR, 'EXTERNAL');
       await svc.markVerified('K-20240003');
       await svc.saveMapping('K-20240003', NEW_ADDR, 'EXTERNAL');
@@ -164,9 +164,9 @@ describe('S28 채점 — 지갑 매핑 설계', () => {
     it('TODO: upsert — 동일 userId 재저장 시 레코드 수 변화 없음', async () => {
       const repo = new TestWalletRepo();
       const svc  = new WalletMappingService(repo as any);
-      await svc.saveMapping('K-20240003', '0xAddr0000000000000000000000000000000000AA', 'EXTERNAL');
+      await svc.saveMapping('K-20240003', '0xadd0000000000000000000000000000000000aa', 'EXTERNAL');
       const before = repo.count();
-      await svc.saveMapping('K-20240003', '0xAddr0000000000000000000000000000000000BB', 'EXTERNAL');
+      await svc.saveMapping('K-20240003', '0xadd0000000000000000000000000000000000bb', 'EXTERNAL');
       const after = repo.count();
       expect(before).toBe(after);
     });
@@ -176,8 +176,8 @@ describe('S28 채점 — 지갑 매핑 설계', () => {
     it('TODO: 새 주소로 역방향 조회 → userId 반환', async () => {
       const repo     = new TestWalletRepo();
       const svc      = new WalletMappingService(repo as any);
-      const NEW_ADDR = '0xNew0000000000000000000000000000000000BB';
-      await svc.saveMapping('K-20240003', '0xOld0000000000000000000000000000000000AA', 'EXTERNAL');
+      const NEW_ADDR = '0x0e0000000000000000000000000000000000b000';
+      await svc.saveMapping('K-20240003', '0x01d000000000000000000000000000000000000a', 'EXTERNAL');
       await svc.saveMapping('K-20240003', NEW_ADDR, 'EXTERNAL');
       const userId = await svc.getUserIdByAddr(NEW_ADDR);
       expect(userId).toBe('K-20240003');
@@ -186,8 +186,8 @@ describe('S28 채점 — 지갑 매핑 설계', () => {
     it('TODO: 이전 주소 역방향 조회 → null', async () => {
       const repo     = new TestWalletRepo();
       const svc      = new WalletMappingService(repo as any);
-      const OLD_ADDR = '0xOld0000000000000000000000000000000000AA';
-      const NEW_ADDR = '0xNew0000000000000000000000000000000000BB';
+      const OLD_ADDR = '0x01d000000000000000000000000000000000000a';
+      const NEW_ADDR = '0x0e0000000000000000000000000000000000b000';
       await svc.saveMapping('K-20240003', OLD_ADDR, 'EXTERNAL');
       await svc.saveMapping('K-20240003', NEW_ADDR, 'EXTERNAL');
       const oldOwner = await svc.getUserIdByAddr(OLD_ADDR);

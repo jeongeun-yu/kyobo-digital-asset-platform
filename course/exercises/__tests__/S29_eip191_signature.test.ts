@@ -40,7 +40,7 @@ class TestWalletRepo {
 }
 
 const WALLET_ADDR = '0xAbCd1234EF5678901234567890abcdef01234567';
-const VALID_SIG   = '0xValidSignatureForKyoboWallet';
+const VALID_SIG   = '0xda1100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b';
 
 function newService(expectedAddr = WALLET_ADDR, validSig = VALID_SIG) {
   return new WalletMappingService(
@@ -78,7 +78,7 @@ describe('S29 채점 — EIP-191 서명 기반 지갑 소유권 증명', () => {
       const svc   = newService();
       const nonce = await svc.issueNonce('user2');
       const result = await svc.verifyOwnership({
-        userId: 'user2', walletAddr: WALLET_ADDR, signature: '0xInvalidSignature', nonce,
+        userId: 'user2', walletAddr: WALLET_ADDR, signature: '0xba0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b', nonce,
       });
       expect(result).toBe(false);
     });
@@ -86,7 +86,7 @@ describe('S29 채점 — EIP-191 서명 기반 지갑 소유권 증명', () => {
     it('TODO: 잘못된 서명 후에도 nonce가 유지됨 (재시도 허용)', async () => {
       const svc   = newService();
       const nonce = await svc.issueNonce('user2');
-      await svc.verifyOwnership({ userId: 'user2', walletAddr: WALLET_ADDR, signature: '0xInvalidSig', nonce });
+      await svc.verifyOwnership({ userId: 'user2', walletAddr: WALLET_ADDR, signature: '0xba0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b', nonce });
       // 올바른 서명으로 재시도
       const retry = await svc.verifyOwnership({ userId: 'user2', walletAddr: WALLET_ADDR, signature: VALID_SIG, nonce });
       expect(retry).toBe(true);

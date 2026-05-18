@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   ICoreBankingAdapter,
   UserAccount,
   RewardNotification,
@@ -7,35 +7,35 @@
 import { InternalGatewayClient } from './InternalGatewayClient';
 
 /**
- * KyoboCoreBankingAdapter ??ICoreBankingAdapter 援ы쁽泥?
+ * KyoboCoreBankingAdapter — ICoreBankingAdapter 구현체
  *
- * 紐⑤뱺 ?몄텧? internal/internal-ledger (Java Spring Boot)瑜?寃쎌쑀?쒕떎.
- * issuer-service(?대?留???Core Banking ?덇굅???쒖뒪?쒖뿉 吏곸젒 ?묒냽?섏? ?딅뒗??
+ * 모든 호출을 internal/internal-ledger (Java Spring Boot)로 위임합니다.
+ * issuer-service(내부망)와 Core Banking 원장 시스템에 직접 접속하지 않습니다.
  *
- * ?몄텧 ?먮쫫:
- *   issuer-service(?대?留?
- *     ??KyoboCoreBankingAdapter
- *       ??InternalGatewayClient (HTTP)
- *         ??internal/internal-ledger (:8080)
- *           ??Core Banking WAS (?덇굅??
+ * 호출 경로:
+ *   issuer-service(내부망)
+ *     → KyoboCoreBankingAdapter
+ *       → InternalGatewayClient (HTTP)
+ *         → internal/internal-ledger (:8080)
+ *           → Core Banking WAS (원장)
  */
 export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
   constructor(private readonly gateway: InternalGatewayClient) {}
 
-  // ?? ?ъ슜?먃룰퀎????????????????????????????????????????????????????????????????
+  // ── 사용자 계정 ──────────────────────────────────────────────────────────────
 
   async getUserAccount(userId: string): Promise<UserAccount | null> {
     const resp = await this.gateway.getUserAccount(userId);
     if (!resp) return null;
     return {
       userId:     resp.userId,
-      accountId:  resp.userId,         // 援먮낫DTS API ?ㅽ럺 ?뺤젙 ??蹂꾨룄 accountId ?꾨뱶濡?援먯껜
+      accountId:  resp.userId,         // 원장 DTS API 스펙 확정 후 별도 accountId 필드로 교체
       walletAddr: resp.walletAddress ?? '',
       status:     resp.isActive ? 'active' : 'suspended',
     };
   }
 
-  // ?? 由ъ썙???뚮┝ ???????????????????????????????????????????????????????????????
+  // ── 리워드 알림 ──────────────────────────────────────────────────────────────
 
   async notifyReward(notification: RewardNotification): Promise<void> {
     await this.gateway.notifyReward({
@@ -48,17 +48,17 @@ export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
     });
   }
 
-  // ?? Phase 2 stub ??????????????????????????????????????????????????????????????
+  // ── Phase 2 stub ─────────────────────────────────────────────────────────────
 
   async syncBalance(req: BalanceSyncRequest): Promise<{ confirmed: boolean }> {
-    // Phase 2: ?먰솕 ???ㅽ뀒?대툝肄붿씤 ?붿븸 ?숆린??
-    // Java Gateway /api/internal/balance/sync ?붾뱶?ъ씤???ㅽ럺 ?뺤젙 ?꾧퉴吏
-    // confirmed: false 諛섑솚 ???몄텧?먭? pending ?곹깭濡?泥섎━.
+    // Phase 2: 실시간 온체인 스테이블코인 발행 붙을 때 구현 예정
+    // Java Gateway /api/internal/balance/sync 엔드포인트 스펙 확정 대기중
+    // confirmed: false 반환 → 호출자는 pending 상태로 처리
     console.warn(`[KyoboCoreBankingAdapter] syncBalance degraded (Phase 2 endpoint pending): txHash=${req.txHash}`);
     return { confirmed: false };
   }
 
-  // ?? 媛먯궗쨌?먯옣 (Java ?곴뎄 ??? ?????????????????????????????????????????????????
+  // ── 감사/기록 (Java 저장) ────────────────────────────────────────────────────
 
   async recordTransaction(tx: {
     txHash:    string;
@@ -87,7 +87,7 @@ export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
     onChainTx:    string;
   }): Promise<void> {
     await this.gateway.recordNftHolding(params.userId, {
-      tokenId:      Number(params.tokenId),  // bigint ??number (ERC-1155 tokenId 踰붿쐞 ?덉쟾)
+      tokenId:      Number(params.tokenId),  // bigint → number (ERC-1155 tokenId 범위 안전)
       contractAddr: params.contractAddr,
       chainId:      params.chainId,
       acquiredAt:   params.acquiredAt.toISOString(),

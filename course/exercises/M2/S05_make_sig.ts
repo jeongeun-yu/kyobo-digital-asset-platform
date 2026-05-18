@@ -22,7 +22,7 @@ export function computeHmac(payload: string, secret: string): string {
 
 const payload = JSON.stringify({
   eventType: 'NFT_ISSUED',
-  data:      { tokenId: '42', owner: '0xABCD' },
+  data:      { tokenId: '42', owner: '0xabcd000000000000000000000000000000000000' },
   timestamp: Date.now(),
   requestId: 'test-001',
 });

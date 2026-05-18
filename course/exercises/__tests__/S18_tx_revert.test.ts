@@ -40,13 +40,15 @@ class InMemoryTxRepository implements TxRepository {
 
 class MockVaspTxClient implements VaspTxClient {
   async submitMint(p: { to: string; tokenId: bigint; amount: bigint; requestId: string }) {
-    return { txHash: `0xmock-${p.requestId.slice(0, 8)}` };
+    const raw = Buffer.from(p.requestId).toString('hex');
+    return { txHash: `0x${raw.repeat(Math.ceil(64 / raw.length)).slice(0, 64)}` };
   }
   async getStatus(_txHash: string) {
     return { status: 'pending' as const };
   }
   async resubmitWithGasBump(_txHash: string, _pct: number) {
-    return { txHash: '0xbumped' };
+    const t = Date.now().toString(16);
+    return { txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 }
 
@@ -79,9 +81,11 @@ function makeLedger(req: MockMintRequest) {
 }
 
 function makeVaspClient(opts: { resubmitTxHash?: string } = {}) {
+  const t = Date.now().toString(16);
+  const defaultHash = `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}`;
   return {
     async resyncNonce() {},
-    async resubmit() { return { txHash: opts.resubmitTxHash ?? '0xresubmit' }; },
+    async resubmit() { return { txHash: opts.resubmitTxHash ?? defaultHash }; },
   };
 }
 
@@ -100,7 +104,7 @@ function makeNotifier() {
 const BASE_SUBMITTED: MockMintRequest = {
   id:     'req-s18-base',
   status: 'SUBMITTED',
-  txHash: '0xabc',
+  txHash: '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000',
 };
 
 // ── reason 분류 함수 (S18 실습 목표 3 채점) ───────────────────────────────────
@@ -137,7 +141,7 @@ describe('S18 채점 — TX REVERT 원인과 안전한 복구 설계', () => {
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-      const result = await svc.handleTxRevert('req-18-a1', '0xabc', 'execution reverted: Contract is paused');
+      const result = await svc.handleTxRevert('req-18-a1', '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000', 'execution reverted: Contract is paused');
       expect(result.action).toBe('FAILED');
     });
 
@@ -146,7 +150,7 @@ describe('S18 채점 — TX REVERT 원인과 안전한 복구 설계', () => {
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-      await svc.handleTxRevert('req-18-a2', '0xabc', 'execution reverted: Contract is paused');
+      await svc.handleTxRevert('req-18-a2', '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000', 'execution reverted: Contract is paused');
       expect(ledger.store.status).toBe('FAILED');
     });
 
@@ -155,7 +159,7 @@ describe('S18 채점 — TX REVERT 원인과 안전한 복구 설계', () => {
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-      await svc.handleTxRevert('req-18-a3', '0xabc', 'execution reverted: Contract is paused');
+      await svc.handleTxRevert('req-18-a3', '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000', 'execution reverted: Contract is paused');
       expect(ledger.store.errorMsg).toBeTruthy();
       expect(ledger.store.errorMsg).toContain('paused');
     });
@@ -165,7 +169,7 @@ describe('S18 채점 — TX REVERT 원인과 안전한 복구 설계', () => {
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-      await svc.handleTxRevert('req-18-a4', '0xabc', 'execution reverted: Caller is not minter');
+      await svc.handleTxRevert('req-18-a4', '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000', 'execution reverted: Caller is not minter');
       const txFailedEvent = notifier.sentEvents.find(e => e.type === 'TX_FAILED');
       expect(txFailedEvent).toBeDefined();
     });
@@ -175,7 +179,7 @@ describe('S18 채점 — TX REVERT 원인과 안전한 복구 설계', () => {
       const notifier = makeNotifier();
       const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-      await svc.handleTxRevert('req-18-a5', '0xabc', 'execution reverted: Insufficient balance');
+      await svc.handleTxRevert('req-18-a5', '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000', 'execution reverted: Insufficient balance');
       const txFailedEvent = notifier.sentEvents.find(e => e.type === 'TX_FAILED');
       expect(txFailedEvent?.requestId).toBe('req-18-a5');
     });
@@ -260,7 +264,7 @@ describe('S18 채점 — TX REVERT 원인과 안전한 복구 설계', () => {
       tokenId:    1001n,
       amount:     1n,
       status,
-      txHash:     '0xabc',
+      txHash:     '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000',
       retryCount: 0,
       createdAt:  new Date(),
       updatedAt:  new Date(),

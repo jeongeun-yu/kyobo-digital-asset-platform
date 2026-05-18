@@ -32,7 +32,7 @@ function makeVaspClient(opts: { resubmitTxHash?: string } = {}) {
   return {
     nonceSynced: false,
     async resyncNonce() { this.nonceSynced = true; },
-    async resubmit()   { return { txHash: opts.resubmitTxHash ?? '0xresubmit' }; },
+    async resubmit()   { return { txHash: opts.resubmitTxHash ?? '0xdddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444eeee5555' }; },
   };
 }
 
@@ -44,7 +44,7 @@ function makeNotifier() {
 const BASE_REQ: MockMintRequest = {
   id:     'req-001',
   status: 'SUBMITTED',
-  txHash: '0xoriginal',
+  txHash: '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333',
 };
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ describe('VaspRecoveryService.handleTxRevert()', () => {
     const notifier = makeNotifier();
     const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-    const result = await svc.handleTxRevert('req-001', '0xoriginal', 'execution reverted');
+    const result = await svc.handleTxRevert('req-001', '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333', 'execution reverted');
     expect(result.action).toBe('FAILED');
     expect(result.requestId).toBe('req-001');
   });
@@ -64,7 +64,7 @@ describe('VaspRecoveryService.handleTxRevert()', () => {
     const ledger = makeLedger(BASE_REQ);
     const svc    = new VaspRecoveryService(ledger as any, makeVaspClient(), makeNotifier());
 
-    await svc.handleTxRevert('req-001', '0xoriginal', 'REVERT');
+    await svc.handleTxRevert('req-001', '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333', 'REVERT');
     expect(ledger.store.status).toBe('FAILED');
   });
 
@@ -73,7 +73,7 @@ describe('VaspRecoveryService.handleTxRevert()', () => {
     const notifier = makeNotifier();
     const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-    await svc.handleTxRevert('req-001', '0xoriginal', 'REVERT');
+    await svc.handleTxRevert('req-001', '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333', 'REVERT');
     expect(notifier.events).toHaveLength(1);
     const ev = notifier.events[0] as any;
     expect(ev.type).toBe('TX_FAILED');
@@ -92,7 +92,7 @@ describe('VaspRecoveryService.handleTxTimeout()', () => {
     const ledger = makeLedger(BASE_REQ);
     const svc    = new VaspRecoveryService(ledger as any, makeVaspClient(), makeNotifier());
 
-    const result = await svc.handleTxTimeout('req-001', '0xoriginal');
+    const result = await svc.handleTxTimeout('req-001', '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333');
     expect(result.action).toBe('POLLING');
   });
 
@@ -101,7 +101,7 @@ describe('VaspRecoveryService.handleTxTimeout()', () => {
     const notifier = makeNotifier();
     const svc      = new VaspRecoveryService(ledger as any, makeVaspClient(), notifier);
 
-    await svc.handleTxTimeout('req-001', '0xoriginal');
+    await svc.handleTxTimeout('req-001', '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333');
     const ev = notifier.events[0] as any;
     expect(ev.type).toBe('TX_TIMEOUT_ALERT');
   });
@@ -110,12 +110,12 @@ describe('VaspRecoveryService.handleTxTimeout()', () => {
 describe('VaspRecoveryService.handleNonceConflict()', () => {
   it('action: RESUBMITTED + newTxHash 반환', async () => {
     const ledger    = makeLedger(BASE_REQ);
-    const vaspClient = makeVaspClient({ resubmitTxHash: '0xnew-nonce' });
+    const vaspClient = makeVaspClient({ resubmitTxHash: '0xbbbb2222cccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333' });
     const svc        = new VaspRecoveryService(ledger as any, vaspClient, makeNotifier());
 
     const result = await svc.handleNonceConflict('req-001');
     expect(result.action).toBe('RESUBMITTED');
-    expect(result.newTxHash).toBe('0xnew-nonce');
+    expect(result.newTxHash).toBe('0xbbbb2222cccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333');
   });
 
   it('resyncNonce가 호출됨', async () => {
@@ -129,24 +129,24 @@ describe('VaspRecoveryService.handleNonceConflict()', () => {
 
   it('ledger status → SUBMITTED + 새 txHash 업데이트', async () => {
     const ledger     = makeLedger(BASE_REQ);
-    const vaspClient = makeVaspClient({ resubmitTxHash: '0xnew-nonce' });
+    const vaspClient = makeVaspClient({ resubmitTxHash: '0xbbbb2222cccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333' });
     const svc        = new VaspRecoveryService(ledger as any, vaspClient, makeNotifier());
 
     await svc.handleNonceConflict('req-001');
     expect(ledger.store.status).toBe('SUBMITTED');
-    expect(ledger.store.txHash).toBe('0xnew-nonce');
+    expect(ledger.store.txHash).toBe('0xbbbb2222cccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333');
   });
 });
 
 describe('VaspRecoveryService.handleReorg()', () => {
   it('MINED 상태 → REORGED 전이 후 재제출 성공 시 RESUBMITTED', async () => {
-    const req    = { ...BASE_REQ, status: 'MINED', txHash: '0xmined' };
+    const req    = { ...BASE_REQ, status: 'MINED', txHash: '0xcccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444' };
     const ledger = makeLedger(req);
-    const svc    = new VaspRecoveryService(ledger as any, makeVaspClient({ resubmitTxHash: '0xafter-reorg' }), makeNotifier());
+    const svc    = new VaspRecoveryService(ledger as any, makeVaspClient({ resubmitTxHash: '0xdddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444eeee5555' }), makeNotifier());
 
-    const result = await svc.handleReorg('req-001', '0xmined', 18_500_100);
+    const result = await svc.handleReorg('req-001', '0xcccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444', 18_500_100);
     expect(result.action).toBe('RESUBMITTED');
-    expect(result.newTxHash).toBe('0xafter-reorg');
+    expect(result.newTxHash).toBe('0xdddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444eeee5555');
   });
 
   it('MINED 상태가 아닌 경우 → Error throw', async () => {
@@ -158,7 +158,7 @@ describe('VaspRecoveryService.handleReorg()', () => {
   });
 
   it('재제출 실패 → action: FAILED + REORG_RESUBMIT_FAILED 알림', async () => {
-    const req      = { ...BASE_REQ, status: 'MINED', txHash: '0xmined' };
+    const req      = { ...BASE_REQ, status: 'MINED', txHash: '0xcccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444' };
     const ledger   = makeLedger(req);
     const vaspClient = {
       async resyncNonce() {},
@@ -171,7 +171,7 @@ describe('VaspRecoveryService.handleReorg()', () => {
     };
     const svc = new VaspRecoveryService(ledger as any, vaspClient, notifier, policy);
 
-    const result = await svc.handleReorg('req-001', '0xmined', 100);
+    const result = await svc.handleReorg('req-001', '0xcccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444', 100);
     expect(result.action).toBe('FAILED');
     const ev = notifier.events.find((e: any) => e.type === 'REORG_RESUBMIT_FAILED');
     expect(ev).toBeDefined();

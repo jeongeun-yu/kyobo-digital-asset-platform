@@ -29,11 +29,11 @@ describe('S36 채점 — UUPS 프록시 패턴과 Storage Collision', () => {
     beforeEach(() => {
       proxy = new ProxySimulator();
       proxy.setImplementation(1);
-      proxy.call('initialize', '0xAdmin');
+      proxy.call('initialize', '0xad1111111111111111111111111111111111ad11');
     });
 
     it('TODO: initialize() → Proxy storage[0]에 admin 저장', () => {
-      expect(proxy.proxyStorage[0]).toBe('0xAdmin');
+      expect(proxy.proxyStorage[0]).toBe('0xad1111111111111111111111111111111111ad11');
     });
 
     it('TODO: Proxy storage[1]에 _paused=false 저장', () => {
@@ -41,7 +41,7 @@ describe('S36 채점 — UUPS 프록시 패턴과 Storage Collision', () => {
     });
 
     it('TODO: getAdmin()이 Proxy storage에서 admin을 읽는다', () => {
-      expect(proxy.call('getAdmin')).toBe('0xAdmin');
+      expect(proxy.call('getAdmin')).toBe('0xad1111111111111111111111111111111111ad11');
     });
   });
 
@@ -51,13 +51,13 @@ describe('S36 채점 — UUPS 프록시 패턴과 Storage Collision', () => {
     beforeEach(() => {
       proxy = new ProxySimulator();
       proxy.setImplementation(1);
-      proxy.call('initialize', '0xAdmin');
+      proxy.call('initialize', '0xad1111111111111111111111111111111111ad11');
       proxy.setImplementation(2);
       proxy.call('initializeV2', 'https://api.kyobo.com/');
     });
 
     it('TODO: v2 업그레이드 후 admin 데이터 유지', () => {
-      expect(proxy.call('getAdmin')).toBe('0xAdmin');
+      expect(proxy.call('getAdmin')).toBe('0xad1111111111111111111111111111111111ad11');
     });
 
     it('TODO: v2 업그레이드 후 paused 상태 유지', () => {
@@ -73,16 +73,16 @@ describe('S36 채점 — UUPS 프록시 패턴과 Storage Collision', () => {
     it('TODO: BAD v2는 slot 0(원래 admin)을 newFeature로 잘못 해석한다', () => {
       const proxy = new ProxySimulator();
       proxy.setImplementation(1);
-      proxy.call('initialize', '0xAdmin');
+      proxy.call('initialize', '0xad1111111111111111111111111111111111ad11');
 
       const badImpl = new ImplementationV2_BAD(proxy.proxyStorage);
-      expect(badImpl.getNewFeature()).toBe('0xAdmin'); // admin 주소가 newFeature 자리에
+      expect(badImpl.getNewFeature()).toBe('0xad1111111111111111111111111111111111ad11'); // admin 주소가 newFeature 자리에
     });
 
     it('TODO: BAD v2는 slot 1(원래 _paused=false)을 admin으로 잘못 해석한다', () => {
       const proxy = new ProxySimulator();
       proxy.setImplementation(1);
-      proxy.call('initialize', '0xAdmin');
+      proxy.call('initialize', '0xad1111111111111111111111111111111111ad11');
 
       const badImpl = new ImplementationV2_BAD(proxy.proxyStorage);
       expect(badImpl.getAdmin()).toBe(false); // boolean이 admin 자리에
@@ -91,7 +91,7 @@ describe('S36 채점 — UUPS 프록시 패턴과 Storage Collision', () => {
     it('TODO: BAD v2 업그레이드 후 getAdmin()이 string을 반환하지 않는다', () => {
       const proxy = new ProxySimulator();
       proxy.setImplementation(1);
-      proxy.call('initialize', '0xAdmin');
+      proxy.call('initialize', '0xad1111111111111111111111111111111111ad11');
 
       const badImpl = new ImplementationV2_BAD(proxy.proxyStorage);
       expect(typeof badImpl.getAdmin()).not.toBe('string');
@@ -101,27 +101,27 @@ describe('S36 채점 — UUPS 프록시 패턴과 Storage Collision', () => {
   describe('[4] initializer 없는 취약 컨트랙트 — 재호출 공격', () => {
     it('TODO: 공격자가 initialize를 재호출하여 admin을 탈취할 수 있다', () => {
       const vulnerable = new VulnerableImpl();
-      vulnerable.initialize('0xDeployer');
-      expect(vulnerable.getAdmin()).toBe('0xDeployer');
+      vulnerable.initialize('0xde910000000000000000000000000000000000de');
+      expect(vulnerable.getAdmin()).toBe('0xde910000000000000000000000000000000000de');
 
-      vulnerable.initialize('0xAttacker'); // 재호출 성공 → 취약
-      expect(vulnerable.getAdmin()).toBe('0xAttacker');
+      vulnerable.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0'); // 재호출 성공 → 취약
+      expect(vulnerable.getAdmin()).toBe('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0');
     });
   });
 
   describe('[5] 안전한 initializer modifier — 한 번만 실행 보장', () => {
     it('TODO: 초기 initialize 성공 후 재호출 시 InvalidInitialization 예외 발생', () => {
       const safe = new SafeImpl();
-      safe.initialize('0xDeployer');
+      safe.initialize('0xde910000000000000000000000000000000000de');
 
-      expect(() => safe.initialize('0xAttacker')).toThrow('InvalidInitialization');
+      expect(() => safe.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0')).toThrow('InvalidInitialization');
     });
 
     it('TODO: 재호출 시도 후에도 admin은 0xDeployer 유지', () => {
       const safe = new SafeImpl();
-      safe.initialize('0xDeployer');
-      try { safe.initialize('0xAttacker'); } catch { /* expected */ }
-      expect(safe.getAdmin()).toBe('0xDeployer');
+      safe.initialize('0xde910000000000000000000000000000000000de');
+      try { safe.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0'); } catch { /* expected */ }
+      expect(safe.getAdmin()).toBe('0xde910000000000000000000000000000000000de');
     });
   });
 

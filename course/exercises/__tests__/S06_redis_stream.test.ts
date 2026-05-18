@@ -38,7 +38,7 @@ function makeMsg(eventType = 'NFT_ISSUED'): StreamMessage {
     id: `${Date.now()}-0`,
     fields: {
       eventType,
-      payload:     JSON.stringify({ tokenId: '42', owner: '0xKYOBO' }),
+      payload:     JSON.stringify({ tokenId: '42', owner: '0xb10b0000000000000000000000000000000000b1' }),
       requestId:   'req-s07-001',
       publishedAt: String(Date.now()),
       _retryCount: '0',

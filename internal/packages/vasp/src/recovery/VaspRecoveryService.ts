@@ -19,7 +19,30 @@
  *                    vaspClient.resubmit()    → Broadcaster.broadcast()
  */
 
-import type { LedgerService, MintStatus } from '@kyobo/core-banking';
+import type { MintStatus } from '@kyobo/core-banking';
+import { MintRequestNotFoundError } from '../tx/TxStateMachineService';
+
+interface LedgerService {
+  getMintRequest(id: string): Promise<{ status: string; txHash?: string; errorMsg?: string; [k: string]: unknown } | null>;
+  updateMintRequest(id: string, patch: { status: MintStatus; txHash?: string; errorMsg?: string }): Promise<unknown>;
+  /**
+   * CONFIRMED → REORGED 전이 시 호출.
+   * 이미 원장에 반영된 credit을 역분개(debit)한다.
+   * TODO: Phase 3 — 실제 원장 역분개 로직 구현 필요.
+   */
+  reverseMintCredit(requestId: string): Promise<void>;
+
+  /**
+   * reverseMintCredit 이후 호출.
+   * 사용자에게 credit 취소를 통보하고 보상 플로우를 트리거한다.
+   * TODO: 설계 숙제 —
+   *   1. 사용자에게 어떤 방식으로 롤백을 알릴 것인가 (push? polling? 이메일?)
+   *   2. 자동 재시도(resubmit)가 성공하면 롤백 통보를 취소할 수 있는가,
+   *      아니면 항상 통보 후 재확인을 받아야 하는가.
+   *   3. 재시도 실패(FAILED) 확정 시 보상(compensation) 플로우는 어디서 트리거하는가.
+   */
+  notifyUserCreditReversed(requestId: string): Promise<void>;
+}
 
 export type FailureReason = 'REVERT' | 'OUT_OF_GAS' | 'NONCE_TOO_LOW' | 'TIMEOUT' | 'NETWORK_ERROR';
 
@@ -68,7 +91,10 @@ export class VaspRecoveryService {
 
   async handleTxRevert(requestId: string, txHash: string, reason: string): Promise<RecoveryResult> {
     const req = await this.ledger.getMintRequest(requestId);
-    if (!req) throw new Error(`MintRequest not found: ${requestId}`);
+    if (!req) throw new MintRequestNotFoundError(requestId);
+    if ((req as { status: string }).status !== 'SUBMITTED') {
+      throw new InvalidStateTransitionError((req as { status: string }).status, 'FAILED');
+    }
 
     await this.ledger.updateMintRequest(requestId, { status: 'FAILED', txHash, errorMsg: reason });
     await this.notifier.send({ type: 'TX_FAILED', requestId, txHash, reason });
@@ -97,7 +123,7 @@ export class VaspRecoveryService {
     detectedAtBlock: number,
   ): Promise<RecoveryResult> {
     const req = await this.ledger.getMintRequest(requestId);
-    if (!req) throw new Error(`MintRequest not found: ${requestId}`);
+    if (!req) throw new MintRequestNotFoundError(requestId);
     if (req.status !== 'MINED') {
       throw new Error(`REORG only valid from MINED status, current: ${req.status}`);
     }
@@ -147,6 +173,15 @@ export class VaspRecoveryService {
       }
     }
     throw lastError;
+  }
+}
+
+// ── Errors ────────────────────────────────────────────────────
+
+export class InvalidStateTransitionError extends Error {
+  constructor(from: string, to: string) {
+    super(`Invalid state transition: ${from} → ${to}`);
+    this.name = 'InvalidStateTransitionError';
   }
 }
 

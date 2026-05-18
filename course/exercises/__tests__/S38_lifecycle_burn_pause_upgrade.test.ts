@@ -19,10 +19,10 @@ import {
 // ── 테스트 ───────────────────────────────────────────────────────────────────
 
 describe('S38 채점 — 컨트랙트 생명주기 · 소각·일시정지·업그레이드', () => {
-  const ADMIN    = '0xAdmin';
-  const MINTER   = '0xMinter';
-  const ATTACKER = '0xAttacker';
-  const USER     = '0xUser';
+  const ADMIN    = '0xad1111111111111111111111111111111111ad11';
+  const MINTER   = '0xb1111111111111111111111111111111111111b1';
+  const ATTACKER = '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0';
+  const USER     = '0xaaaa111111111111111111111111111111111111';
   const tokenId  = encodeTokenId(1n, 1n);
 
   describe('[1] ACTIVE ↔ PAUSED 상태 전이', () => {
@@ -147,19 +147,19 @@ describe('S38 채점 — 컨트랙트 생명주기 · 소각·일시정지·업�
   describe('[6] 업그레이드 권한 (UPGRADER_ROLE)', () => {
     it('TODO: UPGRADER_ROLE 없는 주소 업그레이드 시도 → AccessControlUnauthorizedAccount', () => {
       const nft = new KyoboNFTLifecycle(ADMIN);
-      expect(() => nft.authorizeUpgrade(ATTACKER, '0xNewImpl'))
+      expect(() => nft.authorizeUpgrade(ATTACKER, '0x1e91000000000000000000000000000001e91000'))
         .toThrow('AccessControlUnauthorizedAccount');
     });
 
     it('TODO: UPGRADER_ROLE 없는 주소 업그레이드 시도 후 state = ACTIVE 유지', () => {
       const nft = new KyoboNFTLifecycle(ADMIN);
-      try { nft.authorizeUpgrade(ATTACKER, '0xNewImpl'); } catch { /* expected */ }
+      try { nft.authorizeUpgrade(ATTACKER, '0x1e91000000000000000000000000000001e91000'); } catch { /* expected */ }
       expect(nft.getState()).toBe('ACTIVE');
     });
 
     it('TODO: ADMIN(UPGRADER_ROLE 보유)은 upgrade 완료 → state = UPGRADED', () => {
       const nft = new KyoboNFTLifecycle(ADMIN);
-      nft.authorizeUpgrade(ADMIN, '0xNewImpl');
+      nft.authorizeUpgrade(ADMIN, '0x1e91000000000000000000000000000001e91000');
       expect(nft.getState()).toBe('UPGRADED');
     });
   });

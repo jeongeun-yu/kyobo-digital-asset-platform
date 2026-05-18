@@ -49,8 +49,8 @@
  *   getStatus(txHash)     → ConfirmationTracker.trackPending() (블록 직접 조회)
  *   resubmitWithGasBump() → NonceManager.bumpGas() + Broadcaster.broadcast()
  *   pollStaleRequests()   → ConfirmationTracker가 대체 (루프 분리)
- *   교체 방식: VaspTxClient 인터페이스 유지 → Phase3VaspTxClient 구현체 주입
- *              TxStateMachineService 코드 수정 없음
+ *   교체 방식: VaspTxClient 인터페이스 유지 → CustodyVaspTxClient 등 신규 구현체 주입
+ *              (ExternalVaspTxClient 교체, TxStateMachineService 코드 수정 없음)
  *
  * ── 교육생 안내 ──────────────────────────────────────────────────────────────
  * 역할: 참고용 구현체 — 수정하지 말 것
@@ -147,6 +147,19 @@ export interface VaspTxClient {
 export interface WalletResolver {
   getWalletAddr(userId: string): Promise<string>;
 }
+
+// ── 유효 전이 규칙 ────────────────────────────────────────────────────────
+
+export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
+  REQUESTED: ['SUBMITTED', 'FAILED'],
+  SUBMITTED: ['PENDING',   'MINED', 'FAILED'],
+  PENDING:   ['MINED',     'FAILED'],
+  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
+  CONFIRMED: ['FINALIZED'],
+  FINALIZED: [],   // 종단 — PoS 절대 불변
+  FAILED:    [],   // 종단
+  REORGED:   ['MINED', 'FAILED'],
+};
 
 // ── 서비스 ────────────────────────────────────────────────────────────────
 
@@ -276,6 +289,7 @@ export class TxStateMachineService extends EventEmitter {
    */
   async handleFailed(requestId: string, reason: string): Promise<void> {
     const req = await this._getOrThrow(requestId);
+    if (req.status === 'FAILED') return;
     await this._transition(req, 'FAILED', { failReason: reason });
   }
 
@@ -299,7 +313,8 @@ export class TxStateMachineService extends EventEmitter {
       req.txHash,
       TxStateMachineService.GAS_BUMP_PERCENT,
     );
-    await this._transition(req, 'PENDING', { txHash: newTxHash, retryCount: req.retryCount + 1 });
+    // Gas bump: 상태 유지(PENDING), txHash·retryCount만 갱신 — 상태 전이 아님
+    await this.repo.updateStatus(req.id, 'PENDING', { txHash: newTxHash, retryCount: req.retryCount + 1 });
   }
 
   // ── REORG 처리 (S20) ───────────────────────────────────────────────────
@@ -402,6 +417,9 @@ export class TxStateMachineService extends EventEmitter {
     extra?: Partial<MintRequest>,
   ): Promise<void> {
     const from = req.status;
+    if (!VALID_TRANSITIONS[from].includes(to)) {
+      throw new InvalidStatusTransitionError(from, to);
+    }
     await this.repo.updateStatus(req.id, to, extra);
     const updated: MintRequest = { ...req, status: to, ...extra, updatedAt: new Date() };
     this.emit('transition', { requestId: req.id, from, to, req: updated } satisfies TxTransitionEvent);

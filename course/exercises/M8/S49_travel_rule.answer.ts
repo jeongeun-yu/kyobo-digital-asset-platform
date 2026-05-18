@@ -332,7 +332,7 @@ export const validTravelRule: TravelRuleData = {
   console.log('\n[보너스] VASP API 요청 포맷 — travelRuleData 포함 시뮬레이션');
 
   const vaspRequest = {
-    to: '0xUserWallet000000000000000000000000000000',
+    to: '0xface000000000000000000000000000000000001',
     tokenId: 'TOKEN-001',
     amount: 1_500_000,
     travelRuleData: {

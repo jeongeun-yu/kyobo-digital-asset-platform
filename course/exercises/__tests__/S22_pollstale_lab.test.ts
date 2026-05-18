@@ -44,13 +44,15 @@ class MockVaspTxClient implements VaspTxClient {
   }
 
   async submitMint(params: { to: string; tokenId: bigint; amount: bigint; requestId: string }) {
-    return { txHash: `0xmock-${params.requestId.slice(0, 8)}` };
+    const raw = Buffer.from(params.requestId).toString('hex');
+    return { txHash: `0x${raw.repeat(Math.ceil(64 / raw.length)).slice(0, 64)}` };
   }
   async getStatus(txHash: string): Promise<VaspStatusResult> {
     return this.statusMap.get(txHash) ?? { status: 'pending' };
   }
   async resubmitWithGasBump(txHash: string, pct: number) {
-    const newHash = `${txHash}-bumped`;
+    const t = Date.now().toString(16);
+    const newHash = `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}`;
     this.gasBumpLog.push(`${txHash} → ${newHash} (+${pct}%)`);
     return { txHash: newHash };
   }
@@ -92,7 +94,7 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const repo = new InMemoryTxRepository();
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
-      await repo.save(makeRequest('req-timeout-1', '0xhash-timeout-1', 'PENDING'));
+      await repo.save(makeRequest('req-timeout-1', '0xfa11ed55555555555555555555555555555555555555555555555555555551fa', 'PENDING'));
       await svc.handleTimeout('req-timeout-1');
       const r = await repo.findById('req-timeout-1');
       expect(r?.status).toBe('PENDING');
@@ -102,7 +104,7 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const repo = new InMemoryTxRepository();
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
-      await repo.save(makeRequest('req-timeout-2', '0xhash-timeout-2', 'PENDING'));
+      await repo.save(makeRequest('req-timeout-2', '0xfa11ed55555555555555555555555555555555555555555555555555555552fa', 'PENDING'));
       await svc.handleTimeout('req-timeout-2');
       const r = await repo.findById('req-timeout-2');
       expect((r?.retryCount ?? 0)).toBeGreaterThanOrEqual(1);
@@ -112,7 +114,7 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const repo = new InMemoryTxRepository();
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
-      await repo.save(makeRequest('req-timeout-3', '0xhash-timeout-3', 'PENDING'));
+      await repo.save(makeRequest('req-timeout-3', '0xfa11ed55555555555555555555555555555555555555555555555555555553fa', 'PENDING'));
       await svc.handleTimeout('req-timeout-3');
       expect(vasp.getGasBumpLog()).toHaveLength(1);
     });
@@ -122,7 +124,7 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
     it('MINED → handleConfirmed → CONFIRMED', async () => {
       const repo = new InMemoryTxRepository();
       const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
-      await repo.save(makeRequest('req-mined-1', '0xhash-mined-1', 'MINED'));
+      await repo.save(makeRequest('req-mined-1', '0xfa11ed33333333333333333333333333333333333333333333333333333331fa', 'MINED'));
       await svc.handleConfirmed('req-mined-1');
       const r = await repo.findById('req-mined-1');
       expect(r?.status).toBe('CONFIRMED');
@@ -131,7 +133,7 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
     it('CONFIRMED → handleFinalized → FINALIZED', async () => {
       const repo = new InMemoryTxRepository();
       const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
-      await repo.save(makeRequest('req-confirmed-1', '0xhash-confirmed-1', 'CONFIRMED'));
+      await repo.save(makeRequest('req-confirmed-1', '0xfa11ed33333333333333333333333333333333333333333333333333333332fa', 'CONFIRMED'));
       await svc.handleFinalized('req-confirmed-1');
       const r = await repo.findById('req-confirmed-1');
       expect(r?.status).toBe('FINALIZED');
@@ -140,7 +142,7 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
     it('handleConfirmed + handleFinalized 순서 → FINALIZED (전체 경로)', async () => {
       const repo = new InMemoryTxRepository();
       const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
-      await repo.save(makeRequest('req-mined-full', '0xhash-mined-full', 'MINED'));
+      await repo.save(makeRequest('req-mined-full', '0xfa11ed33333333333333333333333333333333333333333333333333333333fa', 'MINED'));
       await svc.handleConfirmed('req-mined-full');
       await svc.handleFinalized('req-mined-full');
       const r = await repo.findById('req-mined-full');
@@ -150,7 +152,7 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
     it('PENDING 에서 handleConfirmed 호출 → 상태 변화 없음 (방어 로직)', async () => {
       const repo = new InMemoryTxRepository();
       const svc  = new TxStateMachineService(repo, new MockVaspTxClient(), wallet);
-      await repo.save(makeRequest('req-pending-skip', '0xhash-skip', 'PENDING'));
+      await repo.save(makeRequest('req-pending-skip', '0xfa11ed44444444444444444444444444444444444444444444444444444444fa', 'PENDING'));
       await svc.handleConfirmed('req-pending-skip');
       const r = await repo.findById('req-pending-skip');
       expect(r?.status).toBe('PENDING');
@@ -162,8 +164,8 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const repo = new InMemoryTxRepository();
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
-      await repo.save(makeStalePendingRequest('req-s22-failed', '0xhash-s22-failed'));
-      vasp.setNextStatus('0xhash-s22-failed', { status: 'failed', revertReason: 'ERC1155: mint to zero address' });
+      await repo.save(makeStalePendingRequest('req-s22-failed', '0xfa11ed11111111111111111111111111111111111111111111111111111111fa'));
+      vasp.setNextStatus('0xfa11ed11111111111111111111111111111111111111111111111111111111fa', { status: 'failed', revertReason: 'ERC1155: mint to zero address' });
       await svc.pollStaleRequests();
       const r = await repo.findById('req-s22-failed');
       expect(r?.status).toBe('FAILED');
@@ -173,8 +175,8 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const repo = new InMemoryTxRepository();
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
-      await repo.save(makeStalePendingRequest('req-s22-failed-2', '0xhash-s22-failed-2'));
-      vasp.setNextStatus('0xhash-s22-failed-2', { status: 'failed', revertReason: 'some reason' });
+      await repo.save(makeStalePendingRequest('req-s22-failed-2', '0xfa11ed22222222222222222222222222222222222222222222222222222222fa'));
+      vasp.setNextStatus('0xfa11ed22222222222222222222222222222222222222222222222222222222fa', { status: 'failed', revertReason: 'some reason' });
       await svc.pollStaleRequests();
       const r = await repo.findById('req-s22-failed-2');
       expect(r?.failReason).toBeTruthy();
@@ -186,8 +188,8 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const repo = new InMemoryTxRepository();
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
-      await repo.save(makeStalePendingRequest('req-s22-nf', '0xhash-s22-nf'));
-      vasp.setNextStatus('0xhash-s22-nf', { status: 'not_found' });
+      await repo.save(makeStalePendingRequest('req-s22-nf', '0xfa11ed99999999999999999999999999999999999999999999999999999999fa'));
+      vasp.setNextStatus('0xfa11ed99999999999999999999999999999999999999999999999999999999fa', { status: 'not_found' });
       await svc.pollStaleRequests();
       const r = await repo.findById('req-s22-nf');
       expect(r?.status).toBe('FAILED');
@@ -197,8 +199,8 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const repo = new InMemoryTxRepository();
       const vasp = new MockVaspTxClient();
       const svc  = new TxStateMachineService(repo, vasp, wallet);
-      await repo.save(makeStalePendingRequest('req-s22-nf-2', '0xhash-s22-nf-2'));
-      vasp.setNextStatus('0xhash-s22-nf-2', { status: 'not_found' });
+      await repo.save(makeStalePendingRequest('req-s22-nf-2', '0xfa11ed99999999999999999999999999999999999999999999999999999998fa'));
+      vasp.setNextStatus('0xfa11ed99999999999999999999999999999999999999999999999999999998fa', { status: 'not_found' });
       await svc.pollStaleRequests();
       const r = await repo.findById('req-s22-nf-2');
       expect(r?.failReason?.toLowerCase()).toContain('not found');
@@ -211,16 +213,16 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const vasp  = new MockVaspTxClient();
       const svc   = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeStalePendingRequest('iso-error',  '0xhash-iso-error'));
-      await repo.save(makeStalePendingRequest('iso-fail-1', '0xhash-iso-fail-1'));
-      await repo.save(makeStalePendingRequest('iso-fail-2', '0xhash-iso-fail-2'));
+      await repo.save(makeStalePendingRequest('iso-error',  '0xfa11ed66666666666666666666666666666666666666666666666666666666fa'));
+      await repo.save(makeStalePendingRequest('iso-fail-1', '0xfa11ed77777777777777777777777777777777777777777777777777777777fa'));
+      await repo.save(makeStalePendingRequest('iso-fail-2', '0xfa11ed88888888888888888888888888888888888888888888888888888888fa'));
 
-      vasp.setNextStatus('0xhash-iso-fail-1', { status: 'failed', revertReason: 'revert A' });
-      vasp.setNextStatus('0xhash-iso-fail-2', { status: 'failed', revertReason: 'revert B' });
+      vasp.setNextStatus('0xfa11ed77777777777777777777777777777777777777777777777777777777fa', { status: 'failed', revertReason: 'revert A' });
+      vasp.setNextStatus('0xfa11ed88888888888888888888888888888888888888888888888888888888fa', { status: 'failed', revertReason: 'revert B' });
 
       const origGetStatus = vasp.getStatus.bind(vasp);
       vasp.getStatus = async (txHash: string) => {
-        if (txHash === '0xhash-iso-error') throw new Error('VASP API 타임아웃 시뮬레이션');
+        if (txHash === '0xfa11ed66666666666666666666666666666666666666666666666666666666fa') throw new Error('VASP API 타임아웃 시뮬레이션');
         return origGetStatus(txHash);
       };
 
@@ -232,16 +234,16 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
       const vasp  = new MockVaspTxClient();
       const svc   = new TxStateMachineService(repo, vasp, wallet);
 
-      await repo.save(makeStalePendingRequest('iso-b-error',  '0xhash-b-error'));
-      await repo.save(makeStalePendingRequest('iso-b-fail-1', '0xhash-b-fail-1'));
-      await repo.save(makeStalePendingRequest('iso-b-fail-2', '0xhash-b-fail-2'));
+      await repo.save(makeStalePendingRequest('iso-b-error',  '0xfa11ed66666666666666666666666666666666666666666666666666666661fa'));
+      await repo.save(makeStalePendingRequest('iso-b-fail-1', '0xfa11ed77777777777777777777777777777777777777777777777777777771fa'));
+      await repo.save(makeStalePendingRequest('iso-b-fail-2', '0xfa11ed88888888888888888888888888888888888888888888888888888881fa'));
 
-      vasp.setNextStatus('0xhash-b-fail-1', { status: 'failed', revertReason: 'revert A' });
-      vasp.setNextStatus('0xhash-b-fail-2', { status: 'failed', revertReason: 'revert B' });
+      vasp.setNextStatus('0xfa11ed77777777777777777777777777777777777777777777777777777771fa', { status: 'failed', revertReason: 'revert A' });
+      vasp.setNextStatus('0xfa11ed88888888888888888888888888888888888888888888888888888881fa', { status: 'failed', revertReason: 'revert B' });
 
       const origGetStatus = vasp.getStatus.bind(vasp);
       vasp.getStatus = async (txHash: string) => {
-        if (txHash === '0xhash-b-error') throw new Error('timeout');
+        if (txHash === '0xfa11ed66666666666666666666666666666666666666666666666666666661fa') throw new Error('timeout');
         return origGetStatus(txHash);
       };
 

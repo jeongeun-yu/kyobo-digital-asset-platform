@@ -47,16 +47,16 @@ describe('S23 채점 — Ledger 데이터 모델', () => {
     it('TODO: updateMintRequestStatus로 SUBMITTED 전이 후 txHash가 설정되어야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('K-20240001', 'WALK-10000');
-      await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xabc123' });
+      await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000' });
       const updated = await ledger.getMintRequest(req.requestId);
       expect(updated?.status).toBe('SUBMITTED');
-      expect(updated?.txHash).toBe('0xabc123');
+      expect(updated?.txHash).toBe('0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000');
     });
 
     it('TODO: MINED 전이 후 blockNumber가 bigint로 저장되어야 한다', async () => {
       const ledger = new LedgerService();
       const req = await ledger.createMintRequest('user-1', 'WALK-10000');
-      await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xabc' });
+      await ledger.updateMintRequestStatus(req.requestId, 'SUBMITTED', { txHash: '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000' });
       await ledger.updateMintRequestStatus(req.requestId, 'MINED', { blockNumber: 12345n });
       const mined = await ledger.getMintRequest(req.requestId);
       expect(mined?.blockNumber).toBe(12345n);

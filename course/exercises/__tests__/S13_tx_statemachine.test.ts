@@ -32,10 +32,14 @@ class InMemoryTxRepository implements TxRepository {
 
 class MockVaspTxClient implements VaspTxClient {
   async submitMint(p: { to: string; tokenId: bigint; amount: bigint; requestId: string }) {
-    return { txHash: `0xmock-${p.requestId.slice(0, 8)}` };
+    const raw = Buffer.from(p.requestId).toString('hex');
+    return { txHash: `0x${raw.repeat(Math.ceil(64 / raw.length)).slice(0, 64)}` };
   }
   async getStatus(_txHash: string) { return { status: 'pending' as const }; }
-  async resubmitWithGasBump(_txHash: string, _pct: number) { return { txHash: '0xbump' }; }
+  async resubmitWithGasBump(_txHash: string, _pct: number) {
+    const t = Date.now().toString(16);
+    return { txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
+  }
 }
 
 class MockWalletResolver implements WalletResolver {

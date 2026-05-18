@@ -231,10 +231,10 @@ function expectThrows(label: string, fn: () => void, errorSubstring?: string): v
 (async () => {
   console.log('=== S38: 컨트랙트 생명주기 — 소각·일시정지·업그레이드 ===\n');
 
-  const ADMIN    = '0xAdmin';
-  const MINTER   = '0xMinter';
-  const ATTACKER = '0xAttacker';
-  const USER     = '0xUser';
+  const ADMIN    = '0xad1111111111111111111111111111111111ad11';
+  const MINTER   = '0xb1111111111111111111111111111111111111b1';
+  const ATTACKER = '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0';
+  const USER     = '0xaaaa111111111111111111111111111111111111';
 
   const tokenId = encodeTokenId(1n, 1n);
 
@@ -321,13 +321,13 @@ function expectThrows(label: string, fn: () => void, errorSubstring?: string): v
   const nft6 = new KyoboNFTLifecycle(ADMIN);
   expectThrows(
     'ATTACKER가 upgradeToAndCall 시도 → AccessControlUnauthorizedAccount',
-    () => nft6.authorizeUpgrade(ATTACKER, '0xNewImpl'),
+    () => nft6.authorizeUpgrade(ATTACKER, '0x1e91000000000000000000000000000001e91000'),
     'AccessControlUnauthorizedAccount',
   );
   check('ATTACKER upgrade 시도 후 state = ACTIVE 유지', nft6.getState() === 'ACTIVE');
 
   // UPGRADER_ROLE 보유자(ADMIN)는 업그레이드 가능
-  nft6.authorizeUpgrade(ADMIN, '0xNewImpl');
+  nft6.authorizeUpgrade(ADMIN, '0x1e91000000000000000000000000000001e91000');
   check('ADMIN이 upgrade 완료 → state = UPGRADED', nft6.getState() === 'UPGRADED');
 
   // ── [7] 생명주기 전체 흐름 확인 ──────────────────────────────────────
@@ -342,13 +342,13 @@ function expectThrows(label: string, fn: () => void, errorSubstring?: string): v
   nft7.unpause(ADMIN);
   check('unpause() → ACTIVE 복귀', nft7.getState() === 'ACTIVE');
 
-  nft7.authorizeUpgrade(ADMIN, '0xV2');
+  nft7.authorizeUpgrade(ADMIN, '0x0200000000000000000000000000000000000200');
   check('authorizeUpgrade() → UPGRADED', nft7.getState() === 'UPGRADED');
 
   // ── [8] Pause 권한 단일점 위험 시뮬레이션 ────────────────────────────
   console.log('\n[검증 8] Pause 권한 단일점 위험 — 멀티시그 필요성 확인');
 
-  const LOST_KEY = '0xLostKey';
+  const LOST_KEY = '0x10571111111111111111111111111111111110a0';
   const nft8 = new KyoboNFTLifecycle(LOST_KEY);  // 유일한 PAUSER가 키 분실
 
   expectThrows(

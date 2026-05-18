@@ -68,40 +68,40 @@ describe('S44 채점 — 업그레이드 거버넌스 + Storage Collision + M7 �
   describe('[2] reinitializer(2) — 이중 초기화 방지', () => {
     it('TODO: Implementation 직접 접근 시 initialize → revert (version=255)', () => {
       const implDirect = new InitializerGuard();
-      const result = implDirect.initialize('0xADMIN');
+      const result = implDirect.initialize('0xad1111111111111111111111111111111111ad11');
       expect(result.success).toBe(false);
     });
 
     it('TODO: Proxy를 통한 v1 initialize 성공', () => {
       const proxyInst = InitializerGuard.createViaProxy();
-      const result = proxyInst.initialize('0xADMIN');
+      const result = proxyInst.initialize('0xad1111111111111111111111111111111111ad11');
       expect(result.success).toBe(true);
     });
 
     it('TODO: Proxy v1 initialize 후 버전이 1이다', () => {
       const proxyInst = InitializerGuard.createViaProxy();
-      proxyInst.initialize('0xADMIN');
+      proxyInst.initialize('0xad1111111111111111111111111111111111ad11');
       expect(proxyInst.getInitializedVersion()).toBe(1);
     });
 
     it('TODO: v1 initialize 재호출 → InvalidInitialization 반환', () => {
       const proxyInst = InitializerGuard.createViaProxy();
-      proxyInst.initialize('0xADMIN');
-      const result = proxyInst.initialize('0xATTACK');
+      proxyInst.initialize('0xad1111111111111111111111111111111111ad11');
+      const result = proxyInst.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0');
       expect(result.success).toBe(false);
       expect(result.error).toContain('InvalidInitialization');
     });
 
     it('TODO: v2 initializeV2 성공 후 버전이 2이다', () => {
       const proxyInst = InitializerGuard.createViaProxy();
-      proxyInst.initialize('0xADMIN');
+      proxyInst.initialize('0xad1111111111111111111111111111111111ad11');
       proxyInst.initializeV2('https://api.kyobo.com/v2/', 5000);
       expect(proxyInst.getInitializedVersion()).toBe(2);
     });
 
     it('TODO: v2 initializeV2 재호출 → InvalidInitialization 반환', () => {
       const proxyInst = InitializerGuard.createViaProxy();
-      proxyInst.initialize('0xADMIN');
+      proxyInst.initialize('0xad1111111111111111111111111111111111ad11');
       proxyInst.initializeV2('https://api.kyobo.com/v2/', 5000);
       const result = proxyInst.initializeV2('https://evil.com/', 0);
       expect(result.success).toBe(false);
@@ -116,13 +116,13 @@ describe('S44 채점 — 업그레이드 거버넌스 + Storage Collision + M7 �
     });
 
     it('TODO: TX 제안 후 서명 0건, 미실행 상태이다', () => {
-      const tx = safe.proposeTx('TX-001', '0xNEW_IMPL_V2', 'KyoboNFT v1 → v2 업그레이드');
+      const tx = safe.proposeTx('TX-001', '0x1mp1000000000000000000000000000000000002', 'KyoboNFT v1 → v2 업그레이드');
       expect(tx.signatures.size).toBe(0);
       expect(tx.executed).toBe(false);
     });
 
     it('TODO: 서명 1건 → threshold(2) 미달 → 실행 안 됨', () => {
-      safe.proposeTx('TX-001', '0xNEW_IMPL_V2', '업그레이드');
+      safe.proposeTx('TX-001', '0x1mp1000000000000000000000000000000000002', '업그레이드');
       safe.sign('TX-001', 'VASP');
       const tx = safe.getPendingTx('TX-001');
       expect(tx?.signatures.size).toBe(1);
@@ -130,7 +130,7 @@ describe('S44 채점 — 업그레이드 거버넌스 + Storage Collision + M7 �
     });
 
     it('TODO: 서명 2건 → threshold 도달 → 자동 실행된다', () => {
-      safe.proposeTx('TX-001', '0xNEW_IMPL_V2', '업그레이드');
+      safe.proposeTx('TX-001', '0x1mp1000000000000000000000000000000000002', '업그레이드');
       safe.sign('TX-001', 'VASP');
       safe.sign('TX-001', 'KYOBO_IT');
       const tx = safe.getPendingTx('TX-001');
@@ -138,28 +138,28 @@ describe('S44 채점 — 업그레이드 거버넌스 + Storage Collision + M7 �
     });
 
     it('TODO: 업그레이드 이력 1건이 기록된다', () => {
-      safe.proposeTx('TX-001', '0xNEW_IMPL_V2', '업그레이드');
+      safe.proposeTx('TX-001', '0x1mp1000000000000000000000000000000000002', '업그레이드');
       safe.sign('TX-001', 'VASP');
       safe.sign('TX-001', 'KYOBO_IT');
       expect(safe.upgradeHistory).toHaveLength(1);
     });
 
     it('TODO: 실행된 Implementation 주소가 정확하다', () => {
-      safe.proposeTx('TX-001', '0xNEW_IMPL_V2', '업그레이드');
+      safe.proposeTx('TX-001', '0x1mp1000000000000000000000000000000000002', '업그레이드');
       safe.sign('TX-001', 'VASP');
       safe.sign('TX-001', 'KYOBO_IT');
-      expect(safe.upgradeHistory[0]?.newImpl).toBe('0xNEW_IMPL_V2');
+      expect(safe.upgradeHistory[0]?.newImpl).toBe('0x1mp1000000000000000000000000000000000002');
     });
 
     it('TODO: 이미 실행된 TX에 재서명 → already executed 에러', () => {
-      safe.proposeTx('TX-001', '0xNEW_IMPL_V2', '업그레이드');
+      safe.proposeTx('TX-001', '0x1mp1000000000000000000000000000000000002', '업그레이드');
       safe.sign('TX-001', 'VASP');
       safe.sign('TX-001', 'KYOBO_IT');
       expect(() => safe.sign('TX-001', 'COMPLIANCE')).toThrow('already executed');
     });
 
     it('TODO: 개발자 단독 실행 불가: 1-of-3 상태 → 미실행', () => {
-      safe.proposeTx('TX-002', '0xNEW_IMPL_V3', 'v3 업그레이드');
+      safe.proposeTx('TX-002', '0x1mp1000000000000000000000000000000000003', 'v3 업그레이드');
       safe.sign('TX-002', 'VASP');
       const tx2 = safe.getPendingTx('TX-002');
       expect(tx2?.signatures.size).toBe(1);

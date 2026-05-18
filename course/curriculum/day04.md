@@ -22,7 +22,7 @@ REQUESTED → SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED
 - `MINED→CONFIRMED`: 충분한 블록 확인 → 원장 업데이트
 - `CONFIRMED→FINALIZED`: PoS 2/3+ validator 동의 — 종단 상태 (절대 불변, 약 12분)
 - `MINED→FAILED`: REVERT 발생
-- `MINED→REORGED`: CONFIRMED 이전 REORG 발생 (CONFIRMED 이후 REORG 불가)
+- `MINED→REORGED`: MINED 구간에서 REORG 발생 (FINALIZED 이후 REORG 불가)
 
 **상태머신 없이 단순 HTTP 호출만 하면:**
 - 네트워크 에러 재시도 → 중복 발행

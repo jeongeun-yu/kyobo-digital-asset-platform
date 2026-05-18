@@ -202,7 +202,7 @@ function check(label: string, pass: boolean) {
   console.log('=== S29: EIP-191 서명 기반 지갑 소유권 증명 ===\n');
 
   const WALLET_ADDR = '0xAbCd1234EF5678901234567890abcdef01234567';
-  const VALID_SIG   = '0xValidSignatureForKyoboWallet';
+  const VALID_SIG   = '0xa1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b21c';
 
   const mockVerifier = createMockVerifier(WALLET_ADDR, VALID_SIG);
 
@@ -233,7 +233,7 @@ function check(label: string, pass: boolean) {
   const result2 = await svc2.verifyOwnership({
     userId:     'user2',
     walletAddr: WALLET_ADDR,
-    signature:  '0xInvalidSignature',
+    signature:  '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef1b',
     nonce:      nonce2,
   });
   check('잘못된 서명 → false',                     result2 === false);
@@ -296,7 +296,7 @@ function check(label: string, pass: boolean) {
   console.log('\n[검증 7] 지갑 교체 — 재등록 후 최신 주소만 유지');
   const repo7       = new InMemoryWalletRepo();
   const nonceRepo7  = new InMemoryNonceRepo();
-  const NEW_ADDR    = '0xNewWallet00000000000000000000000000000BB';
+  const NEW_ADDR    = '0xc400000000000000000000000000000000000004';
   const svc7        = new WalletMappingService(nonceRepo7, repo7, createMockVerifier(NEW_ADDR, VALID_SIG));
 
   const nonce7a = await svc7.issueNonce('user7');

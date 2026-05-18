@@ -31,4 +31,14 @@ export { TravelRuleRequiredError, PendingTxNotFoundError, DuplicateSignatureErro
 export { WhitelistAddressService } from './governance/WhitelistAddressService';
 
 // ── 복구 ──────────────────────────────────────────────────────────────────────
-export { VaspRecoveryService }  from './recovery/VaspRecoveryService';
+export { VaspRecoveryService, InvalidStateTransitionError } from './recovery/VaspRecoveryService';
+export type { RecoveryResult }  from './recovery/VaspRecoveryService';
+
+// ── 실습용 테스트 헬퍼 ────────────────────────────────────────────────────────
+export {
+  InMemoryLedger,
+  MockVaspClient,
+  MockNotifier,
+  InMemoryTxRepository,
+  MockWalletResolver,
+} from './testing/mocks';

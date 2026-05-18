@@ -52,7 +52,7 @@ describe('S26 채점 — SHA-256 체인 감사 로그', () => {
     it('TODO: 정상 삽입된 레코드의 verifyIntegrity는 valid=true이어야 한다', async () => {
       const auditLog = new AuditLogService();
       const id1 = await auditLog.log({ actor: 'system:IssuerService', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-001', afterState: { status: 'REQUESTED', userId: 'K-20240001' } });
-      const id2 = await auditLog.log({ actor: 'system', action: 'STATUS_SUBMITTED', resourceType: 'MintRequest', resourceId: 'req-001', beforeState: { status: 'REQUESTED' }, afterState: { status: 'SUBMITTED', txHash: '0xabc' } });
+      const id2 = await auditLog.log({ actor: 'system', action: 'STATUS_SUBMITTED', resourceType: 'MintRequest', resourceId: 'req-001', beforeState: { status: 'REQUESTED' }, afterState: { status: 'SUBMITTED', txHash: '0xabcabc0000000000abcabc0000000000abcabc0000000000abcabc0000000000' } });
       const id3 = await auditLog.log({ actor: 'system', action: 'STATUS_CONFIRMED', resourceType: 'MintRequest', resourceId: 'req-001', afterState: { status: 'CONFIRMED', tokenId: 1001 } });
       const v1 = await auditLog.verifyIntegrity(id1);
       const v2 = await auditLog.verifyIntegrity(id2);

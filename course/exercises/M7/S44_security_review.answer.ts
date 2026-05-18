@@ -55,7 +55,7 @@ export type StorageLayout = StorageSlot[];
 
 export function buildStorageV1(): StorageLayout {
   return [
-    { index: 0, varName: '_balances',  value: new Map([['0xUSER', 100]]) },
+    { index: 0, varName: '_balances',  value: new Map([['0xaaaa111111111111111111111111111111111111', 100]]) },
     { index: 1, varName: '_baseURI',   value: 'https://api.kyobo.com/nft/' },
     { index: 2, varName: '_paused',    value: false },
   ];
@@ -394,19 +394,19 @@ function check(label: string, pass: boolean) {
 
   // Implementation 직접 접근 차단 (constructor _disableInitializers)
   const implDirect = new InitializerGuard();
-  const directInit = implDirect.initialize('0xADMIN');
+  const directInit = implDirect.initialize('0xad1111111111111111111111111111111111ad11');
   check('Implementation 직접 접근: initialize → revert (version=255)',
     directInit.success === false,
   );
 
   // Proxy를 통한 정상 초기화
   const proxyInst = InitializerGuard.createViaProxy();
-  const v1Init = proxyInst.initialize('0xADMIN');
+  const v1Init = proxyInst.initialize('0xad1111111111111111111111111111111111ad11');
   check('Proxy v1 initialize: 성공',               v1Init.success === true);
   check('초기화 버전: 1',                           proxyInst.getInitializedVersion() === 1);
 
   // v1 initialize 재호출 → revert
-  const v1Reinit = proxyInst.initialize('0xATTACK');
+  const v1Reinit = proxyInst.initialize('0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0');
   check('v1 initialize 재호출 → InvalidInitialization', v1Reinit.success === false);
 
   // v2 initializeV2 호출
@@ -424,7 +424,7 @@ function check(label: string, pass: boolean) {
   const safe = new GnosisSafeSimulator();
 
   // 1단계: 업그레이드 트랜잭션 제안
-  const tx = safe.proposeTx('TX-001', '0xNEW_IMPL_V2', 'KyoboNFT v1 → v2 업그레이드');
+  const tx = safe.proposeTx('TX-001', '0x1mp1000000000000000000000000000000000002', 'KyoboNFT v1 → v2 업그레이드');
   check('TX 제안 완료: 서명 0건, 미실행',
     tx.signatures.size === 0 && !tx.executed,
   );
@@ -446,7 +446,7 @@ function check(label: string, pass: boolean) {
     safe.upgradeHistory.length === 1,
   );
   check('실행된 Implementation 주소 정확',
-    safe.upgradeHistory[0]?.newImpl === '0xNEW_IMPL_V2',
+    safe.upgradeHistory[0]?.newImpl === '0x1mp1000000000000000000000000000000000002',
   );
 
   // 단독 실행 불가 검증: 이미 실행된 TX에 3번째 서명 → executed 이미 true
@@ -458,7 +458,7 @@ function check(label: string, pass: boolean) {
   }
 
   // 개발자 단독 실행 불가: 새 TX에 서명자 1명만 있으면 미실행
-  safe.proposeTx('TX-002', '0xNEW_IMPL_V3', 'KyoboNFT v2 → v3');
+  safe.proposeTx('TX-002', '0x1mp1000000000000000000000000000000000003', 'KyoboNFT v2 → v3');
   safe.sign('TX-002', 'VASP'); // 1명만 서명
   const tx2 = safe.getPendingTx('TX-002');
   check('개발자 단독 실행 불가: 1-of-3 상태 → 실행 안 됨',

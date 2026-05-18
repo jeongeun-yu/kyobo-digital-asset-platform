@@ -70,14 +70,14 @@ export class MintRequestNotFoundError extends Error {
 // 실습 1: VALID_TRANSITIONS 맵을 완성하라
 //
 // 전이 다이어그램:
-//   REQUESTED → SUBMITTED → MINED → FINALIZED → CONFIRMED (종단)
+//   REQUESTED → SUBMITTED → MINED → CONFIRMED → FINALIZED (종단)
 //                  ↓          ↓ ↗ (복귀)
 //               FAILED    REORGED → MINED / FAILED
 //
 // 힌트:
-//   · 종단 상태(CONFIRMED, FAILED)는 빈 배열 []
+//   · 종단 상태(FINALIZED, FAILED)는 빈 배열 []
 //   · SUBMITTED → PENDING 없음 (M3 TxStateMachine과 다름!)
-//   · REORGED 이후 MINED 복귀 가능, CONFIRMED 직접 불가
+//   · REORGED 이후 MINED 복귀 가능, FINALIZED 직접 불가
 // ────────────────────────────────────────────────────────────────────────
 
 export class LedgerService {
@@ -85,9 +85,9 @@ export class LedgerService {
   private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
     REQUESTED: [], // TODO: ['SUBMITTED', 'FAILED']
     SUBMITTED: [], // TODO: ['MINED', 'FAILED']
-    MINED:     [], // TODO: ['FINALIZED', 'REORGED', 'FAILED']
-    FINALIZED: [], // TODO: ['CONFIRMED']
-    CONFIRMED: [], // 종단 — 원장 업데이트 완료
+    MINED:     [], // TODO: ['CONFIRMED', 'REORGED', 'FAILED']
+    CONFIRMED: [], // TODO: ['FINALIZED']
+    FINALIZED: [], // 종단 — PoS 절대 불변
     FAILED:    [], // 종단 — 재발행하려면 새 요청 필요
     REORGED:   [], // TODO: ['MINED', 'FAILED']
   };
@@ -235,9 +235,9 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   const ledger = new LedgerService();
   const req = await ledger.createMintRequest('user-1', 'WALK-10000');
 
-  const sub = await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc123' });
+  const sub = await ledger.updateMintRequest(req.requestId, { status: 'SUBMITTED', txHash: '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000' });
   check('REQUESTED → SUBMITTED 성공',  sub.status === 'SUBMITTED');
-  check('txHash 설정됨',               sub.txHash === '0xabc123');
+  check('txHash 설정됨',               sub.txHash === '0xabc1230000000000abc1230000000000abc1230000000000abc1230000000000');
 
   const mined = await ledger.updateMintRequest(req.requestId, { status: 'MINED', blockNumber: 12345n });
   check('SUBMITTED → MINED 성공',      mined.status === 'MINED');
@@ -249,10 +249,10 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   console.log('\n[검증 2] 역전이 차단 — InvalidStateTransitionError');
 
   const confirmedReq = await ledger.createMintRequest('user-conf', 'WALK');
-  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'SUBMITTED', txHash: '0xconf' });
+  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'SUBMITTED', txHash: '0xc04f000000000000000000000000000000000000000000000000000000c04f00' });
   await ledger.updateMintRequest(confirmedReq.requestId, { status: 'MINED' });
   await ledger.updateMintRequest(confirmedReq.requestId, { status: 'FINALIZED' });
-  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'CONFIRMED', tokenId: 9001n, txHash: '0xconf' });
+  await ledger.updateMintRequest(confirmedReq.requestId, { status: 'CONFIRMED', tokenId: 9001n, txHash: '0xc04f000000000000000000000000000000000000000000000000000000c04f00' });
 
   await expectRejects(
     'CONFIRMED → SUBMITTED',
@@ -270,7 +270,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   );
 
   const minedReq = await ledger.createMintRequest('user-mined', 'WALK');
-  await ledger.updateMintRequest(minedReq.requestId, { status: 'SUBMITTED', txHash: '0xmined' });
+  await ledger.updateMintRequest(minedReq.requestId, { status: 'SUBMITTED', txHash: '0x10ded000000000000000000000000000000000000000000000000000010ded00' });
   await ledger.updateMintRequest(minedReq.requestId, { status: 'MINED' });
 
   await expectRejects(
@@ -289,7 +289,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
     ledger.updateMintRequest(req2.requestId, { status: 'SUBMITTED' }),
   );
 
-  await ledger.updateMintRequest(req2.requestId, { status: 'SUBMITTED', txHash: '0xvalid' });
+  await ledger.updateMintRequest(req2.requestId, { status: 'SUBMITTED', txHash: '0xa11d000000000000000000000000000000000000000000000000000000a11d00' });
   await ledger.updateMintRequest(req2.requestId, { status: 'MINED' });
   await ledger.updateMintRequest(req2.requestId, { status: 'FINALIZED' });
 
@@ -301,9 +301,9 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   // ── [4] 멱등성 — 동일 (txHash, logIndex) 2회 처리 ────────────────────
   console.log('\n[검증 4] 멱등성 — recordProcessedEvent');
 
-  const r1 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
-  const r2 = await ledger.recordProcessedEvent('0xabc', 0, 'NFTIssued', 100n, {});
-  const r3 = await ledger.recordProcessedEvent('0xabc', 1, 'NFTIssued', 100n, {});
+  const r1 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
+  const r2 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 0, 'NFTIssued', 100n, {});
+  const r3 = await ledger.recordProcessedEvent('0xabc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0abc0', 1, 'NFTIssued', 100n, {});
 
   check('첫 번째 처리: skipped = false', r1.skipped === false);
   check('중복 처리: skipped = true',     r2.skipped === true);
@@ -316,11 +316,11 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
 
   const ledger2 = new LedgerService();
   const rq = await ledger2.createMintRequest('user-evt', 'CYCLE-5000');
-  await ledger2.updateMintRequest(rq.requestId, { status: 'SUBMITTED', txHash: '0xevt' });
+  await ledger2.updateMintRequest(rq.requestId, { status: 'SUBMITTED', txHash: '0xe0e7000000000000000000000000000000000000000000000000000000e0e700' });
   await ledger2.updateMintRequest(rq.requestId, { status: 'MINED' });
   await ledger2.updateMintRequest(rq.requestId, { status: 'FINALIZED' });
 
-  const evt = { txHash: '0xevt', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: rq.requestId };
+  const evt = { txHash: '0xe0e7000000000000000000000000000000000000000000000000000000e0e700', logIndex: 0, blockNumber: 12500n, tokenId: 3001n, userId: 'user-evt', policyId: 'CYCLE-5000', requestId: rq.requestId };
 
   const result1 = await handleNFTIssued(ledger2, evt);
   check('첫 번째 처리: processed = true',  result1.processed === true);
@@ -344,7 +344,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
 
   const ledger3 = new LedgerService();
   const rq2 = await ledger3.createMintRequest('user-reorg', 'WALK-10000');
-  await ledger3.updateMintRequest(rq2.requestId, { status: 'SUBMITTED', txHash: '0xreorg' });
+  await ledger3.updateMintRequest(rq2.requestId, { status: 'SUBMITTED', txHash: '0x4e049000000000000000000000000000000000000000000000000000004e04900' });
   await ledger3.updateMintRequest(rq2.requestId, { status: 'MINED' });
   await ledger3.updateMintRequest(rq2.requestId, { status: 'REORGED' });
 
@@ -358,7 +358,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
     'REORGED 상태에서 CONFIRMED 직접 전이 차단',
     (async () => {
       const rq3 = await ledger3.createMintRequest('user-reorg2', 'WALK');
-      await ledger3.updateMintRequest(rq3.requestId, { status: 'SUBMITTED', txHash: '0xr2' });
+      await ledger3.updateMintRequest(rq3.requestId, { status: 'SUBMITTED', txHash: '0x4e049200000000000000000000000000000000000000000000000000004e04920' });
       await ledger3.updateMintRequest(rq3.requestId, { status: 'MINED' });
       await ledger3.updateMintRequest(rq3.requestId, { status: 'REORGED' });
       await ledger3.updateMintRequest(rq3.requestId, { status: 'CONFIRMED', tokenId: 1n });
@@ -380,7 +380,7 @@ async function expectRejects(label: string, promise: Promise<unknown>, errorType
   console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
   console.log('\n핵심 정리:');
   console.log('  1. VALID_TRANSITIONS: 허용 전이만 명시 — 역전이/동일 상태 전이 자동 차단');
-  console.log('  2. 종단 상태(CONFIRMED, FAILED): [] → 어떤 전이도 차단');
+  console.log('  2. 종단 상태(FINALIZED, FAILED): [] → 어떤 전이도 차단');
   console.log('  3. 필드 유효성 가드: 상태 전이 가드와 독립 — 좀비 레코드 방지');
   console.log('  4. recordProcessedEvent가 이벤트 핸들러의 첫 번째 줄이어야 하는 이유: 선점 효과');
   console.log('  5. TxStateMachineService(M3)와 LedgerService(M4)가 각자 독립적으로 가드를 가져야 하는 이유: 두 레이어가 직렬로 작동하므로');

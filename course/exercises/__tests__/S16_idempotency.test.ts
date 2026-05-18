@@ -39,7 +39,8 @@ class VaspMockClient implements VaspTxClient {
     if (this.submitted.has(params.requestId)) {
       return { txHash: this.submitted.get(params.requestId)! };
     }
-    const txHash = `0xMOCK_${(++this.counter).toString().padStart(4, '0')}_${Date.now().toString(16)}`;
+    const base = `${(++this.counter).toString(16)}${Date.now().toString(16)}`;
+    const txHash = `0x${base.repeat(Math.ceil(64 / base.length)).slice(0, 64)}`;
     this.submitted.set(params.requestId, txHash);
     this.txStatus.set(txHash, { status: 'pending' });
     return { txHash };
@@ -50,7 +51,8 @@ class VaspMockClient implements VaspTxClient {
   }
 
   async resubmitWithGasBump(_txHash: string, _pct: number) {
-    return { txHash: `0xBUMP_${Date.now().toString(16)}` };
+    const t = Date.now().toString(16);
+    return { txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` };
   }
 }
 
@@ -69,27 +71,27 @@ describe('S16 채점 — Idempotency (requestId 기반)', () => {
     beforeEach(() => { vasp = new VaspMockClient(); });
 
     it('같은 requestId로 두 번 호출 → 동일한 txHash 반환', async () => {
-      const r1 = await vasp.submitMint({ to: '0xAlice', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid' });
-      const r2 = await vasp.submitMint({ to: '0xAlice', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid' });
+      const r1 = await vasp.submitMint({ to: '0xa11ce00000000000000000000000000000000001', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid' });
+      const r2 = await vasp.submitMint({ to: '0xa11ce00000000000000000000000000000000001', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid' });
       expect(r1.txHash).toBe(r2.txHash);
     });
 
     it('같은 requestId로 세 번 호출 → 모두 동일한 txHash', async () => {
-      const r1 = await vasp.submitMint({ to: '0xAlice', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid-2' });
-      const r2 = await vasp.submitMint({ to: '0xAlice', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid-2' });
-      const r3 = await vasp.submitMint({ to: '0xAlice', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid-2' });
+      const r1 = await vasp.submitMint({ to: '0xa11ce00000000000000000000000000000000001', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid-2' });
+      const r2 = await vasp.submitMint({ to: '0xa11ce00000000000000000000000000000000001', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid-2' });
+      const r3 = await vasp.submitMint({ to: '0xa11ce00000000000000000000000000000000001', tokenId: 1001n, amount: 1n, requestId: 'fixed-uuid-2' });
       expect(r1.txHash).toBe(r2.txHash);
       expect(r1.txHash).toBe(r3.txHash);
     });
 
     it('다른 requestId → 다른 txHash', async () => {
-      const r1 = await vasp.submitMint({ to: '0xAlice', tokenId: 1001n, amount: 1n, requestId: 'uuid-A' });
-      const r2 = await vasp.submitMint({ to: '0xBob',   tokenId: 1002n, amount: 1n, requestId: 'uuid-B' });
+      const r1 = await vasp.submitMint({ to: '0xa11ce00000000000000000000000000000000001', tokenId: 1001n, amount: 1n, requestId: 'uuid-A' });
+      const r2 = await vasp.submitMint({ to: '0xb0b0000000000000000000000000000000000002',   tokenId: 1002n, amount: 1n, requestId: 'uuid-B' });
       expect(r1.txHash).not.toBe(r2.txHash);
     });
 
     it('txHash 는 비어있지 않은 문자열이다', async () => {
-      const r = await vasp.submitMint({ to: '0xAlice', tokenId: 1n, amount: 1n, requestId: 'uuid-check' });
+      const r = await vasp.submitMint({ to: '0xa11ce00000000000000000000000000000000001', tokenId: 1n, amount: 1n, requestId: 'uuid-check' });
       expect(typeof r.txHash).toBe('string');
       expect(r.txHash.length).toBeGreaterThan(0);
     });
@@ -156,7 +158,7 @@ describe('S16 채점 — Idempotency (requestId 기반)', () => {
       const now  = new Date();
       await repo.save({
         id: 'req-confirmed-s16', userId: 'u1', tokenId: 1n, amount: 1n,
-        status: 'CONFIRMED', retryCount: 0, createdAt: now, updatedAt: now, txHash: '0xconfirmed',
+        status: 'CONFIRMED', retryCount: 0, createdAt: now, updatedAt: now, txHash: '0xc0f1f1ed000000000000000000000000000000000000000000000000c0f1f1ed',
       });
       await expect(svc.handleMined('req-confirmed-s16', 9999)).resolves.toBeUndefined();
     });
@@ -167,7 +169,7 @@ describe('S16 채점 — Idempotency (requestId 기반)', () => {
       const now  = new Date();
       await repo.save({
         id: 'req-confirmed-check', userId: 'u1', tokenId: 1n, amount: 1n,
-        status: 'CONFIRMED', retryCount: 0, createdAt: now, updatedAt: now, txHash: '0xconfirmed',
+        status: 'CONFIRMED', retryCount: 0, createdAt: now, updatedAt: now, txHash: '0xc0f1f1ed000000000000000000000000000000000000000000000000c0f1f1ed',
       });
       await svc.handleMined('req-confirmed-check', 9999);
       const after = await repo.findById('req-confirmed-check');

@@ -1,39 +1,39 @@
-﻿/**
- * InternalGatewayClient ??issuer-service ??internal/internal-ledger (Java) HTTP ?대씪?댁뼵??
+/**
+ * InternalGatewayClient — issuer-service → internal/internal-ledger (Java) HTTP 클라이언트
  *
- * ???대씪?댁뼵?멸? ?몄텧?섎뒗 ?붾뱶?ъ씤??
- *   GET  /api/internal/users/{userId}              ???ъ슜??怨꾩젙쨌吏媛뫢텸YC 議고쉶
- *   POST /api/internal/users/{userId}/nft-holdings ??NFT 蹂댁쑀 ?꾪솴 ?곴뎄 湲곕줉
- *   POST /api/internal/audit-log                   ??媛먯궗 濡쒓렇 append-only 湲곕줉
- *   POST /api/internal/rewards/notify              ??Core Banking 由ъ썙???뚮┝
- *   GET  /api/internal/health                      ???ъ뒪泥댄겕
+ * 이 클라이언트가 호출하는 엔드포인트:
+ *   GET  /api/internal/users/{userId}              — 사용자 계정/지갑주소/KYC 조회
+ *   POST /api/internal/users/{userId}/nft-holdings — NFT 보유 이력 온체인 기록
+ *   POST /api/internal/audit-log                   — 감사 로그 append-only 기록
+ *   POST /api/internal/rewards/notify              — Core Banking 리워드 알림
+ *   GET  /api/internal/health                      — 헬스체크
  *
- * ?몄쬆: X-Internal-Secret ?ㅻ뜑 (?대?留?怨듭쑀 ?쒗겕由? KMS?먯꽌 二쇱엯)
- * ?ν썑: mTLS濡??꾪솚 ?덉젙 (Phase 2 蹂댁븞 媛뺥솕)
+ * 인증: X-Internal-Secret 헤더 (하드코딩 금지, KMS에서 주입)
+ * 향후: mTLS로 교체 예정 (Phase 2 마일스톤 완료시)
  *
- * Node.js 18+ built-in fetch ?ъ슜. undici 異붽? ?ㅼ튂 遺덊븘??
+ * Node.js 18+ built-in fetch 사용. undici 의존성 없음
  *
- * Circuit Breaker ?듯빀:
- *   5???곗냽 ?ㅽ뙣 ??OPEN ??30珥?李⑤떒 ??HALF_OPEN 蹂듦뎄 ?먯깋.
- *   health() ?붾뱶?ъ씤?몃줈 ?섎룞 蹂듦뎄 ?뺤씤 媛??
+ * Circuit Breaker 적용:
+ *   5회 연속 실패 → OPEN → 30초 쿨다운 → HALF_OPEN 전이.
+ *   health() 엔드포인트로 자동 복구 확인 가능.
  */
 
 import { CircuitBreaker } from './CircuitBreaker';
 export { CircuitOpenError } from './CircuitBreaker';
 
-// ?? Java DTO mirror types ?????????????????????????????????????????????????????
+// ── Java DTO mirror types ─────────────────────────────────────────────────────
 
 /** mirrors Java: UserAccountResponse record */
 export interface GatewayUserAccountResponse {
   userId:      string;
-  walletAddress: string | null;   // 吏媛?誘몄뿰????null
+  walletAddress: string | null;   // 지갑 미연동시 null
   kycLevel:    'NONE' | 'BASIC' | 'ENHANCED' | 'INVESTOR';
   isActive:    boolean;
 }
 
 /** mirrors Java: NftHoldingRequest record */
 export interface GatewayNftHoldingRequest {
-  tokenId:      number;   // Java Long ??TS number (NFT tokenId 踰붿쐞?먯꽌 ?덉쟾)
+  tokenId:      number;   // Java Long → TS number (NFT tokenId 범위에서 안전)
   contractAddr: string;
   chainId:      number;
   acquiredAt:   string;   // ISO-8601 (Java Instant)
@@ -60,7 +60,7 @@ export interface GatewayRewardNotificationRequest {
   metadata?:  Record<string, unknown>;
 }
 
-// ?? Client ????????????????????????????????????????????????????????????????????
+// ── Client ────────────────────────────────────────────────────────────────────
 
 export class InternalGatewayClient {
   private readonly baseUrl: string;
@@ -68,11 +68,11 @@ export class InternalGatewayClient {
   private readonly cb:      CircuitBreaker;
 
   constructor(config: {
-    /** e.g. "http://internal-ledger:8080" ???대?留??몄뒪??*/
+    /** e.g. "http://internal-ledger:8080" 내부망 도메인 */
     baseUrl: string;
-    /** X-Internal-Secret 媛????섍꼍蹂??INTERNAL_GATEWAY_SECRET?먯꽌 二쇱엯 */
+    /** X-Internal-Secret 값 — 반드시 환경변수 INTERNAL_GATEWAY_SECRET에서 주입 */
     secret: string;
-    /** Circuit breaker ?ㅼ젙 (湲곕낯: 5???ㅽ뙣 ??30珥?李⑤떒) */
+    /** Circuit breaker 설정 (기본: 5회 실패 → 30초 쿨다운) */
     circuitBreaker?: { failureThreshold?: number; recoveryTimeMs?: number };
   }) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
@@ -113,11 +113,11 @@ export class InternalGatewayClient {
     });
   }
 
-  // ?? Endpoints ??????????????????????????????????????????????????????????????
+  // ── Endpoints ────────────────────────────────────────────────────────────────
 
   /**
-   * ?ъ슜??怨꾩젙쨌吏媛?二쇱냼쨌KYC ?덈꺼 議고쉶
-   * ??NFT 諛쒗뻾 ??援먮낫 Core Banking?먯꽌 ?ъ슜???좏슚???뺤씤 ???몄텧
+   * 사용자 계정/지갑주소/KYC 상태 조회
+   * NFT 발행 전 Core Banking에서 사용자 유효성 확인 후 호출
    * Returns null if user not found (404)
    */
   async getUserAccount(userId: string): Promise<GatewayUserAccountResponse | null> {
@@ -133,8 +133,8 @@ export class InternalGatewayClient {
   }
 
   /**
-   * NFT 蹂댁쑀 ?꾪솴 ?곴뎄 湲곕줉
-   * ??on-chain Transfer ?대깽???뺤젙 ???몄텧 (Java Oracle DB?????
+   * NFT 보유 이력 온체인 기록
+   * on-chain Transfer 이벤트 수신 후 호출 (Java Oracle DB에 저장)
    */
   async recordNftHolding(
     userId: string,
@@ -148,24 +148,24 @@ export class InternalGatewayClient {
   }
 
   /**
-   * 媛먯궗 濡쒓렇 append-only 湲곕줉
-   * ??issuer-service??紐⑤뱺 ?곹깭 蹂寃????몄텧 (ISMS-P ?붽굔)
-   * Java 履쎌뿉??SHA-256 泥댁씤?쇰줈 蹂議?媛먯?
+   * 감사 로그 append-only 기록
+   * issuer-service의 모든 상태 변경시 호출 (ISMS-P 요건)
+   * Java 측에서 SHA-256 체인으로 변조 감지
    */
   async recordAuditLog(req: GatewayAuditLogRequest): Promise<void> {
     await this.request<void>('POST', '/api/internal/audit-log', req);
   }
 
   /**
-   * Core Banking 由ъ썙???뚮┝
-   * ??NFT 諛쒗뻾 ?꾨즺 ???ъ씤???쒗깮 吏湲??몃━嫄?
+   * Core Banking 리워드 알림
+   * NFT 발행 완료 후 사용자에게 알림 발송 요청
    */
   async notifyReward(req: GatewayRewardNotificationRequest): Promise<void> {
     await this.request<void>('POST', '/api/internal/rewards/notify', req);
   }
 
   /**
-   * ?ъ뒪泥댄겕 ???쒕퉬??湲곕룞 ?? ?먮뒗 circuit breaker 蹂듦뎄 ?뺤씤 ???몄텧
+   * 헬스체크 — 연결 확인 또는 circuit breaker 상태 확인 시 호출
    */
   async health(): Promise<boolean> {
     try {
@@ -179,7 +179,7 @@ export class InternalGatewayClient {
   }
 }
 
-// ?? Error ?????????????????????????????????????????????????????????????????????
+// ── Error ─────────────────────────────────────────────────────────────────────
 
 export class InternalGatewayError extends Error {
   constructor(
@@ -188,7 +188,7 @@ export class InternalGatewayError extends Error {
     public readonly status: number,
     public readonly body: string,
   ) {
-    super(`InternalGateway ${method} ${path} ??HTTP ${status}: ${body}`);
+    super(`InternalGateway ${method} ${path} → HTTP ${status}: ${body}`);
     this.name = 'InternalGatewayError';
   }
 }

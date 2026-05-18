@@ -26,7 +26,7 @@ import { evmConfig, xrplConfig, circleConfig, utxoConfig, contractConfig } from 
 // ── stub 어댑터 (참조 구현) ──────────────────────────────────────────────────
 
 const STUB_RECEIPT: TransactionReceipt = {
-  txHash: '0xstub', blockNumber: 0, blockHash: '0xstub-block',
+  txHash: '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333', blockNumber: 0, blockHash: '0xbbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333aaaa0000',
   status: 'success', timestamp: Date.now(),
 };
 
@@ -36,7 +36,7 @@ class CircleAdapter implements IBlockchainAdapter {
   constructor(_c: { apiKey: string }) {}
   async isConnected(): Promise<boolean>   { return false; }
   async getBlockNumber(): Promise<number> { return 0; }
-  async mintNFT(_p: MintParams): Promise<TransactionReceipt>         { return { ...STUB_RECEIPT, txHash: `0xcircle-${Date.now().toString(16)}` }; }
+  async mintNFT(_p: MintParams): Promise<TransactionReceipt>         { const t = Date.now().toString(16); return { ...STUB_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` }; }
   async mintNFTBatch(_p: MintBatchParams): Promise<TransactionReceipt> { return { ...STUB_RECEIPT }; }
   async burnNFT(_p: BurnParams): Promise<TransactionReceipt>         { return { ...STUB_RECEIPT }; }
   async getBalance(_a: string, _o: string, _t: bigint): Promise<bigint> { return 0n; }
@@ -53,7 +53,7 @@ class UTXOAdapter implements IBlockchainAdapter {
   constructor(_c: { rpcUrl: string }) {}
   async isConnected(): Promise<boolean>   { return false; }
   async getBlockNumber(): Promise<number> { return 0; }
-  async mintNFT(_p: MintParams): Promise<TransactionReceipt>         { return { ...STUB_RECEIPT, txHash: `0xutxo-${Date.now().toString(16)}` }; }
+  async mintNFT(_p: MintParams): Promise<TransactionReceipt>         { const t = Date.now().toString(16); return { ...STUB_RECEIPT, txHash: `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}` }; }
   async mintNFTBatch(_p: MintBatchParams): Promise<TransactionReceipt> { return { ...STUB_RECEIPT }; }
   async burnNFT(_p: BurnParams): Promise<TransactionReceipt>         { return { ...STUB_RECEIPT }; }
   async getBalance(_a: string, _o: string, _t: bigint): Promise<bigint> { return 0n; }
@@ -210,11 +210,11 @@ class IssuerService {
   // ── [2] formatGas ─────────────────────────────────────────────────────────
   console.log('\n[2] formatGas — gasUsed optional 처리');
   const evmReceipt: TransactionReceipt = {
-    txHash: '0xevm', blockNumber: 1, blockHash: '0xblock',
+    txHash: '0xeee0000000000000000000000000000000000000000000000000000000000eee', blockNumber: 1, blockHash: '0xb10c0000000000000000000000000000000000000000000000000000000b10c0',
     status: 'success', gasUsed: 47704n, timestamp: Date.now(),
   };
   const circleReceipt: TransactionReceipt = {
-    txHash: '0xcircle', blockNumber: 0, blockHash: '0xblock',
+    txHash: '0xc1c1e000000000000000000000000000000000000000000000000000000c1c1e', blockNumber: 0, blockHash: '0xb10c0000000000000000000000000000000000000000000000000000000b10c0',
     status: 'success', timestamp: Date.now(),
   };
   await tryCheck('EVM receipt   → gasUsed 숫자', async () => formatGas(evmReceipt) === '47704');

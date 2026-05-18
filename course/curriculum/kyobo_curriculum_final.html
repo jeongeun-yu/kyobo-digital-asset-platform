@@ -213,9 +213,9 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
   <p class="hero-sub">선행 과정(온라인 37h) 수료 기준 시작 · 대상: IT담당 14명 · On-site 강의 + 개발 실습 병행</p>
   <div class="hero-stats">
     <div><div class="stat-num">8</div><div class="stat-label">모듈</div></div>
-    <div><div class="stat-num">58</div><div class="stat-label">세션</div></div>
-    <div><div class="stat-num">58h</div><div class="stat-label">총 학습</div></div>
-    <div><div class="stat-num">4세션/일</div><div class="stat-label">× 15일</div></div>
+    <div><div class="stat-num">50</div><div class="stat-label">세션</div></div>
+    <div><div class="stat-num">50h</div><div class="stat-label">총 학습</div></div>
+    <div><div class="stat-num">4세션/일</div><div class="stat-label">× 13일</div></div>
   </div>
 </div></div>
 
@@ -242,8 +242,9 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
   <tbody>
     <tr><td style="color:#818cf8;font-weight:800">M1</td><td style="color:#94a3b8">전체 아키텍처 프리뷰 + 환경 셋업</td><td style="color:#475569">S1~S4</td><td style="color:#64748b;font-size:11px">아키텍처 워크스루 · 스켈레톤 파악 · Hardhat fork</td><td><span class="out g">개발환경</span></td></tr>
     <tr><td style="color:#34d399;font-weight:800">M2</td><td style="color:#94a3b8">DMZ 이벤트 파이프라인</td><td style="color:#475569">S5~S12</td><td style="color:#64748b;font-size:11px">202 패턴 · Consumer Group · DLQ · Finalized</td><td><span class="out g">DMZ 파이프라인</span></td></tr>
-    <tr><td style="color:#f87171;font-weight:800">M3</td><td style="color:#94a3b8">VASP 추상화 + TX 상태머신</td><td style="color:#475569">S13~S22</td><td style="color:#64748b;font-size:11px">TX 상태머신 · Idempotency · REVERT/TIMEOUT/REORG · 멀티체인 추상화</td><td><span class="out g">VASP 연동</span></td></tr>
+    <tr><td style="color:#f87171;font-weight:800">M3</td><td style="color:#94a3b8">TX 상태머신</td><td style="color:#475569">S13, S16~S19</td><td style="color:#64748b;font-size:11px">TX 상태머신 · Idempotency · REVERT/TIMEOUT/REORG 복구 전략</td><td><span class="out g">TX 상태머신</span></td></tr>
     <tr><td style="color:#fbbf24;font-weight:800">M4</td><td style="color:#94a3b8">내부 원장 + 감사 로그</td><td style="color:#475569">S23~S26</td><td style="color:#64748b;font-size:11px">전이 가드 · 멱등키 · SHA-256 체인 · Reconcile</td><td><span class="out g">원장+감사로그</span></td></tr>
+    <tr><td style="color:#f87171;font-weight:800">M3b</td><td style="color:#94a3b8">VASP 추상화 <span style="color:#ef444460;font-size:11px">(VASP 확정 후)</span></td><td style="color:#475569">S14, S15, S20~S22</td><td style="color:#64748b;font-size:11px">IBlockchainAdapter · 멀티체인 전환 · 복구 핸들러 구현 · VASP 이중 채널</td><td><span class="out g">VASP 연동</span></td></tr>
     <tr><td style="color:#60a5fa;font-weight:800">M5</td><td style="color:#94a3b8">비즈니스 로직 레이어</td><td style="color:#475569">S27~S34</td><td style="color:#64748b;font-size:11px">지갑 매핑 · 조건 판단 → 단건 요청 → 벌크 오케스트레이션</td><td><span class="out g">비즈니스 로직</span></td></tr>
     <tr><td style="color:#a78bfa;font-weight:800">M6</td><td style="color:#94a3b8">ERC-1155 NFT 컨트랙트 완전 구현</td><td style="color:#475569">S35~S40</td><td style="color:#64748b;font-size:11px">UUPS+AccessControl · tokenId · mintBatch · Sepolia 배포</td><td><span class="out g">KyoboNFT.sol</span></td></tr>
     <tr><td style="color:#2dd4bf;font-weight:800">M7</td><td style="color:#94a3b8">보안 감사 + 업그레이드 운영</td><td style="color:#475569">S41~S44</td><td style="color:#64748b;font-size:11px">Slither HIGH/MEDIUM 제거 · Storage layout · v2 업그레이드</td><td><span class="out g">감사 통과 v2</span></td></tr>
@@ -251,7 +252,7 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
   </tbody>
 </table>
 
-<div class="sec-title">세션별 상세 (58세션 × 1시간)</div>
+<div class="sec-title">세션별 상세 (50세션 × 1시간)</div>
 
 <div class="chap"><span class="chap-num">Chapter 1</span><span class="chap-title">전체 아키텍처 프리뷰 + 환경 셋업</span><div class="chap-line"></div><span class="chap-badge">M1 · 4h</span></div>
 <!-- ══ M1 ══ -->
@@ -328,10 +329,10 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
   </div>
 </div>
 
-<div class="chap"><span class="chap-num">Chapter 2</span><span class="chap-title">오프체인 핵심 — DMZ 파이프라인 + VASP</span><div class="chap-line"></div><span class="chap-badge">M2~M3 · 18h</span></div>
+<div class="chap"><span class="chap-num">Chapter 2</span><span class="chap-title">오프체인 핵심 — DMZ 파이프라인 + TX 상태머신</span><div class="chap-line"></div><span class="chap-badge">M2~M3 · 13h</span></div>
 <!-- ══ M2 ══ -->
 <div class="mod m2">
-  <div class="mod-hd"><div class="mn">M2</div><div><div class="mt">DMZ 이벤트 파이프라인</div><div class="mm">10세션 · S5~S12, S51~S52 · 10시간</div></div><div class="mb-badge"><span class="out g">Webhook → Queue → Consumer E2E</span></div></div>
+  <div class="mod-hd"><div class="mn">M2</div><div><div class="mt">DMZ 이벤트 파이프라인</div><div class="mm">8세션 · S5~S12 · 8시간</div></div><div class="mb-badge"><span class="out g">Webhook → Queue → Consumer E2E</span></div></div>
   <div class="mod-body">
 
     <div class="sess">
@@ -462,56 +463,19 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
         <div class="sb" style="grid-column:1/-1"><div class="lbl chk">M7 완료 기준</div><div class="cr"><span class="ci">Consumer 장애 → 재시작 후 자동 재수신</span><span class="ci">3회 실패 → DLQ + 알림</span><span class="ci">NFT 발행 → 원장 업데이트 E2E 동작</span></div></div>
       </div>
 
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S51</span><span class="st ops">DLQ 운영 절차 — 재큐잉 판단 기준과 드랍 정책 설계</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">25분</div><ul class="il">
-          <li>재큐잉 vs 드랍 판단 기준 — 메시지 내용·실패 원인·비즈니스 임팩트 기준으로 결정. 무조건 재큐잉은 폭발 위험</li>
-          <li>드랍 조건 — 파싱 불가 메시지 / 이미 원장에 반영된 이벤트 / TTL 초과 이벤트</li>
-          <li>재큐잉 절차 — Admin API 또는 CLI로 DLQ 메시지 조회 → 원인 확인 → 큐 재적재 명령</li>
-          <li>운영 알림 설계 — DLQ 적재 즉시 알림 채널(Slack·Email) + 임계값 기반 에스컬레이션</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">30분</div><ul class="il">
-          <li>DLQ 메시지 조회 CLI 작성 — 전체 목록, 원인별 필터</li>
-          <li>수동 재큐잉 명령 구현 — messageId 지정 재적재</li>
-          <li>드랍 명령 구현 — 확인 프롬프트 + 감사 로그 기록</li>
-          <li>알림 트리거 테스트 — DLQ 적재 → Slack 웹훅 발송 확인</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">DLQ 조회·재큐잉·드랍 CLI 동작</span><span class="ci">드랍 시 감사 로그 기록 확인</span><span class="ci">알림 트리거 동작 확인</span></div></div>
-      </div>
-    </div>
-
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S52</span><span class="st ops">Consumer 장애 Runbook — 유형별 대응 절차와 모니터링 설계</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">30분</div><ul class="il">
-          <li>Consumer 장애 유형 분류 — ① 프로세스 크래시 ② 처리 속도 저하(Lag 증가) ③ 멱등성 실패 반복 ④ Redis 연결 끊김</li>
-          <li>크래시: PM2 자동 재시작 확인 → PEL 재수신 → 중복 없음 확인</li>
-          <li>Lag 증가: Consumer 인스턴스 수평 확장 → 원인 쿼리(DB 슬로우·외부 API 지연) 파악</li>
-          <li>모니터링 지표 설계 — Consumer Lag, 처리 속도(msg/s), PEL 크기, 에러율</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">25분</div><ul class="il">
-          <li>Consumer Lag 모니터링 엔드포인트 구현 — <span class="c">GET /admin/queue/stats</span></li>
-          <li>Lag 임계값 알림 트리거 — 100건 초과 시 경보</li>
-          <li>Runbook 문서 작성 — 장애 유형별 체크리스트 형식</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">/admin/queue/stats Lag 조회 동작</span><span class="ci">Lag 임계값 알림 동작</span><span class="ci">Runbook 문서 완성</span></div></div>
-      </div>
-    </div>
-
   </div>
 </div>
 
 <!-- ══ M3 ══ -->
 <div class="mod m3">
-  <div class="mod-hd"><div class="mn">M3</div><div><div class="mt">VASP 추상화 + TX 상태머신</div><div class="mm">11세션 · S13~S22, S53 · 11시간</div></div><div class="mb-badge"><span class="out g">VASP 연동 + 복구 + 멀티체인 추상화</span></div></div>
+  <div class="mod-hd"><div class="mn">M3</div><div><div class="mt">TX 상태머신</div><div class="mm">5세션 · S13, S16~S19 · 5시간</div></div><div class="mb-badge"><span class="out g">TX 상태머신 · 복구 전략 · 멱등성</span></div></div>
   <div class="mod-body">
 
     <div class="sess">
       <div class="sess-hd"><span class="sn">S13</span><span class="st">비동기 트랜잭션의 상태 관리와 전이 규칙 설계</span><span class="stm">1h</span></div>
       <div class="sess-body">
         <div class="sb"><div class="lbl lec">강의 25분</div><ul class="il">
-          <li>TX 상태머신 — <span class="c">REQUESTED→SUBMITTED→PENDING→MINED→CONFIRMED/FAILED/REORGED</span>. 각 전이 조건</li>
+          <li>TX 상태머신 — <span class="c">REQUESTED→SUBMITTED→PENDING→MINED→CONFIRMED→FINALIZED</span> (MINED에서 REORGED·FAILED 분기). 각 전이 조건</li>
           <li>상태머신 없이 단순 HTTP 호출만 하면 — 중복 발행, 유실, 재시도 폭발 시나리오</li>
           <li>유효 전이 가드 원칙 — 허용되지 않은 전이는 예외 + DB 롤백. 상태 불일치 방지</li>
         </ul></div>
@@ -525,35 +489,6 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
     </div>
 
 
-        <div class="sess">
-      <div class="sess-hd"><span class="sn">S14</span><span class="st">멀티체인 추상화 레이어 — IBlockchainAdapter 설계와 체인 패러다임 비교</span><span class="stm">1h</span></div>
-      <div class="sess-body">
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">강의 55분</div><ul class="il">
-          <li>EVM 고착화 리스크 — gas·Nonce·event log·ABI decode 등 EVM 전용 가정이 코드 전반에 묶인 지점. XRPL·ARC 전환 시 교체 범위 예측</li>
-          <li>IBlockchainAdapter 설계 원칙 — 발행·소각·잔액 조회·TX 검증·이벤트 구독을 체인 무관하게 추상화. IVaspAdapter와 동일한 Strategy Pattern 적용</li>
-          <li>EVM vs XRPL 패러다임 비교 — XRPL: 스마트컨트랙트 없음 / XLS-20 NFT(Offer 기반 전송) / gas 없음(reserve·fee 체계) / Account 모델 완전히 다름. EVM과 1:1 매핑 불가한 개념 식별</li>
-          <li>Circle ARC 개요 — 프로그래머블 월렛 기반, 서버 측 키 관리, Account Abstraction 연계. 서명 흐름이 EOA와 다른 이유</li>
-          <li>멀티체인 전환 전략 — VASP가 체인 구현체 선택, 어댑터 주입. <span class="w">비즈니스 로직·원장·감사 로그는 체인 무관하게 유지</span> — 이것이 추상화 레이어 설계의 핵심 목적</li>
-          <li>당사 적용 로드맵 — Phase 1: EVM(현재) → Phase 2: XRPL 병행(국내 규제 대응) → Phase 3: Circle ARC(글로벌 확장)</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">EVM·XRPL·Circle ARC 패러다임 핵심 차이 설명 가능</span><span class="ci">IBlockchainAdapter 설계 원칙 설명</span><span class="ci">당사 멀티체인 적용 순서 근거 제시</span></div></div>
-      </div>
-    </div>
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S15</span><span class="st">IBlockchainAdapter EVM 구현과 멀티체인 전환 시뮬레이션</span><span class="stm">1h</span></div>
-      <div class="sess-body">
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">개요 10분</div><ul class="il">
-          <li>IBlockchainAdapter 인터페이스 재확인 / EVM·XRPL·ARC 어댑터 구조 재확인</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lab">실습 50분</div><ul class="il">
-          <li>IBlockchainAdapter 인터페이스 정의 — 체인 공통 작업 추상화 (발행·소각·잔액 조회·이벤트 구독)</li>
-          <li>EVM 어댑터 구현 — 기존 VASP 연동 코드를 어댑터 인터페이스로 이관</li>
-          <li>XRPL·Circle ARC Mock 어댑터 스텁 작성 — 인터페이스 충족 확인</li>
-          <li>체인 교체 테스트 — EVM → XRPL Mock 전환 후 비즈니스 로직·원장 코드 변경 없이 동작 확인</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">EVM 어댑터 구현 + 인터페이스 통과</span><span class="ci">XRPL Mock 교체 후 상위 레이어 코드 무변경 확인</span><span class="ci">어댑터 교체만으로 체인 전환 가능함 설명</span></div></div>
-      </div>
-    </div>
     <div class="sess">
       <div class="sess-hd"><span class="sn">S16</span><span class="st">분산 시스템에서의 멱등성 보장 원칙</span><span class="stm">1h</span></div>
       <div class="sess-body">
@@ -612,74 +547,11 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
           <li>Nonce 관리 원칙 — 각 주소 TX는 Nonce 순서대로 처리. Nonce 갭 발생 시 전체 큐 정지</li>
           <li>Gas Bump 전략 — 동일 Nonce로 가스 1.2배 범프 재전송. Replace-by-Fee로 기존 TX 자동 대체</li>
           <li>REORG 발생 원리 — PoS 네트워크에서도 단기 fork 발생. 두 블록 동시 제안 → 체인 하나 폐기 → 폐기된 쪽 TX 소실</li>
-          <li>CONFIRMED vs FINALIZED — CONFIRMED: 아직 reorg 가능. <span class="c">Finalized</span>: 2/3+ validator 동의 → 절대 불변</li>
-          <li>REORGED 전이 설계 — CONFIRMED TX가 reorg로 사라짐 → <span class="c">REORGED</span> 전이 → Finalized 이후 VASP 재조회 → 최종 상태 결정</li>
+          <li>CONFIRMED vs FINALIZED — CONFIRMED: 충분한 블록 확인, FINALIZED 전 단계 (MINED 구간에서만 REORG 가능). <span class="c">FINALIZED</span>: 2/3+ validator 동의 → 절대 불변</li>
+          <li>REORGED 전이 설계 — MINED TX가 reorg로 사라짐 → <span class="c">REORGED</span> 전이 → FINALIZED 이후 VASP 재조회 → 최종 상태 결정</li>
           <li>3종 복구 전략 요약 — REVERT: 즉시 FAILED + reason 저장 / TIMEOUT: gas bump 재전송 / REORG: 5블록 대기 후 재확인</li>
         </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">TIMEOUT/REORG 발생 원인 설명 가능</span><span class="ci">CONFIRMED vs FINALIZED 차이 설명</span><span class="ci">3종 복구 전략 각각 서술 가능</span></div></div>
-      </div>
-    </div>
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S20</span><span class="st">TX TIMEOUT·REORG 복구 핸들러 구현</span><span class="stm">1h</span></div>
-      <div class="sess-body">
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">개요 10분</div><ul class="il">
-          <li>TIMEOUT → gas bump 흐름 재확인 / REORG → REORGED 전이 → Finalized 재조회 흐름 재확인</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lab">실습 50분</div><ul class="il">
-          <li><span class="c">handleTxTimeout(requestId)</span> — 가스 범프 재전송 (동일 요청 식별자 유지)</li>
-          <li><span class="c">handleReorg(requestId)</span> — <span class="c">REORGED</span> 전이 + 5블록 대기 + VASP 상태 재조회 + Finalized 여부 확인</li>
-          <li>REORG 시뮬레이션 테스트 — CONFIRMED 후 REORGED 신호 → 재처리 후 CONFIRMED 복귀 확인</li>
-          <li>TIMEOUT 시뮬레이션 — Mock에서 3블록 미채굴 → gas bump 후 성공 응답 → CONFIRMED 전이</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">TIMEOUT → gas bump 재전송 동작</span><span class="ci">REORG 시뮬레이션 → 재처리 후 CONFIRMED</span></div></div>
-      </div>
-    </div>
-
-
-        <div class="sess">
-      <div class="sess-hd"><span class="sn">S21</span><span class="st">VASP 이중 채널 동기화 아키텍처 설계 원리</span><span class="stm">1h</span></div>
-      <div class="sess-body">
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">강의 55분</div><ul class="il">
-          <li>단일 콜백 방식의 취약점 — 콜백 1회 유실 시 상태 갱신 불가. VASP 재전송 보장 없는 경우 영구 PENDING</li>
-          <li>이중 채널 필요성 — [A] 콜백(빠름, 유실 가능) + [B] 폴링(느림, 확실). 두 채널이 상호 보완</li>
-          <li>30분 타임아웃 기준 근거 — VASP SLA 기준 정상 처리 시간(평균 2~10분) + 안전 여유. 너무 짧으면 오탐, 너무 길면 감지 지연</li>
-          <li>폴링 대상 선별 원칙 — PENDING 상태 + 생성 30분 초과 건만. 전체 조회 시 DB 부하 문제</li>
-          <li>콜백 누락 경로 전체 분석 — 네트워크 유실 / VASP 재전송 정책 없음 / WebhookReceiver 처리 실패 / Consumer 장애</li>
-          <li>pollStaleRequests 알고리즘 설계 — PENDING 30분 초과 목록 조회 → VASP API 직접 조회 → 결과별 전이 적용</li>
-          <li>이중 채널 실제 운영 — 콜백이 처리되면 폴링은 멱등성에 의해 무시. 추가 비용 없음</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">이중 채널 필요성 설명 가능</span><span class="ci">콜백 누락 시나리오 3가지 나열</span><span class="ci">pollStaleRequests 알고리즘 설계 설명</span></div></div>
-      </div>
-    </div>
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S22</span><span class="st">폴링 기반 상태 보정과 3종 복구 전략 통합 검증</span><span class="stm">1h</span></div>
-      <div class="sess-body">
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">개요 10분</div><ul class="il">
-          <li>이중 채널 아키텍처 재확인 + pollStaleRequests 알고리즘 흐름 재확인</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl lab">실습 50분</div><ul class="il">
-          <li><span class="c">pollStaleRequests()</span> — 30분 초과 PENDING 목록 조회 → VASP 상태 직접 조회 → 결과 반영</li>
-          <li>3종 통합 테스트 — REVERT / TIMEOUT / REORG 각각 Mock 시뮬레이션 → 복구 흐름 전부 검증</li>
-          <li>콜백 차단 테스트 — WebhookReceiver 응답 막기 → 30분 폴링에서 자동 처리 확인</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">M4 완료 기준</div><div class="cr"><span class="ci">3종 복구 통합 테스트 전부 통과</span><span class="ci">콜백 차단 후 폴링 동작 확인</span><span class="ci">동일 requestId 재전송 → 중복 없음</span></div></div>
-      </div>
-
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S53</span><span class="st ops">VASP SLA 운영 — 월렛원 장애 에스컬레이션과 TX Stuck 모니터링</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">30분</div><ul class="il">
-          <li>VASP SLA 구조 이해 — 가용성(99.9%), 응답시간(p99), 장애 복구 목표(RTO/RPO). 계약서에서 확인해야 할 항목</li>
-          <li>TX Stuck 모니터링 설계 — PENDING 30분 초과 건 실시간 집계. 임계값 기준 알림</li>
-          <li>월렛원 장애 에스컬레이션 절차 — L1(자동 재시도) → L2(담당자 알림) → L3(월렛원 기술지원 접수) → L4(경영진 보고)</li>
-          <li>회로 차단 운영 — Circuit Breaker 열림 상태 시 운영자 개입 절차, 수동 닫기 조건</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">25분</div><ul class="il">
-          <li>TX Stuck 모니터링 엔드포인트 — <span class="c">GET /admin/vasp/stuck</span> (30분 초과 PENDING 목록)</li>
-          <li>VASP 헬스체크 엔드포인트 — <span class="c">GET /admin/vasp/health</span> (응답시간·가용성 집계)</li>
-          <li>에스컬레이션 알림 트리거 — Stuck 건수 임계값 초과 시 채널별 알림 발송</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">Stuck TX 조회 엔드포인트 동작</span><span class="ci">VASP 헬스체크 응답 확인</span><span class="ci">에스컬레이션 알림 트리거 동작</span></div></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">M3 완료 기준</div><div class="cr"><span class="ci">VALID_TRANSITIONS 맵 구현 + 전이 예외 테스트</span><span class="ci">동일 requestId 재전송 → 중복 발행 없음</span><span class="ci">5회 재시도 후 FAILED 전이</span><span class="ci">REVERT → FAILED + reason 저장</span><span class="ci">TIMEOUT/REORG 발생 원인 + 복구 전략 설명 가능</span></div></div>
       </div>
     </div>
 
@@ -689,7 +561,7 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
 <div class="chap"><span class="chap-num">Chapter 3</span><span class="chap-title">오프체인 서비스 — 원장 + 비즈니스 로직</span><div class="chap-line"></div><span class="chap-badge">M4~M5 · 12h</span></div>
 <!-- ══ M4 ══ -->
 <div class="mod m4">
-  <div class="mod-hd"><div class="mn">M4</div><div><div class="mt">내부 원장 + 감사 로그</div><div class="mm">6세션 · S23~S26, S54~S55 · 6시간</div></div><div class="mb-badge"><span class="out g">LedgerService + AuditLogService</span></div></div>
+  <div class="mod-hd"><div class="mn">M4</div><div><div class="mt">내부 원장 + 감사 로그</div><div class="mm">4세션 · S23~S26 · 4시간</div></div><div class="mb-badge"><span class="out g">LedgerService + AuditLogService</span></div></div>
   <div class="mod-body">
 
     <div class="sess">
@@ -759,41 +631,6 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
         </ul></div>
         <div class="sb" style="grid-column:1/-1"><div class="lbl chk">M6 완료 기준</div><div class="cr"><span class="ci">감사 로그 중간 삭제 → checksum 불일치 감지</span><span class="ci">afterState 수정 → 감지</span><span class="ci">chain integrity 검증 통과</span></div></div>
       </div>
-
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S54</span><span class="st ops">Reconcile 운영 — 스케줄링·불일치 알림·에스컬레이션 절차</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">25분</div><ul class="il">
-          <li>Reconcile 스케줄링 설계 — 주기(매시간·매일 새벽) 결정 기준. 온체인 조회 비용 vs 불일치 감지 지연 트레이드오프</li>
-          <li>불일치 알림 설계 — 1건: 담당자 알림 / 10건 이상: 긴급 에스컬레이션</li>
-          <li>에스컬레이션 절차 — 불일치 원인 분류(Consumer 누락·REORG 미처리·수동 DB 조작) → 원인별 대응</li>
-          <li>⚠️ 역방향 수정 절대 금지 — 원장→온체인 수정 코드 실행 불가. 항상 온체인 기준으로 원장 보정</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">30분</div><ul class="il">
-          <li>Reconcile 스케줄러 구현 — cron 기반 주기 실행, 결과 감사 로그 기록</li>
-          <li>불일치 알림 트리거 — 임계값 초과 시 채널 알림 발송</li>
-          <li>운영 대시보드 엔드포인트 — <span class="c">GET /admin/reconcile/history</span> (최근 실행 결과 목록)</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">Reconcile 스케줄러 주기 실행 확인</span><span class="ci">불일치 → 알림 트리거 동작</span><span class="ci">실행 이력 조회 동작</span></div></div>
-      </div>
-    </div>
-
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S55</span><span class="st ops">감사 로그 규제 대응 — 5년 보관 운영과 감독원 조회 절차</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">30분</div><ul class="il">
-          <li>규제 보관 요건 — 전금법·가상자산법 기준 5년 보관 의무. 보관 매체·접근 제어 요건</li>
-          <li>장기 보관 아키텍처 — Hot(최근 1년) / Warm(1~3년, 압축 아카이브) / Cold(3~5년, 오프라인 스토리지)</li>
-          <li>감독원 조회 대응 절차 — 조회 요청 접수 → 기간·대상 확정 → 감사 로그 추출 → 무결성 검증 → 제출</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">25분</div><ul class="il">
-          <li>감사 로그 추출 API — <span class="c">GET /admin/audit/export?from=&amp;to=&amp;userId=</span> (CSV/JSON)</li>
-          <li>추출 데이터 무결성 검증 — 추출 범위 checksum 재계산 + 원본 대조</li>
-          <li>보관 정책 문서 작성 — Hot/Warm/Cold 기준, 삭제 절차 체크리스트</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">기간·대상 기준 감사 로그 추출 동작</span><span class="ci">추출 데이터 checksum 검증 통과</span><span class="ci">보관 정책 문서 완성</span></div></div>
-      </div>
-    </div>
 
   </div>
 </div>
@@ -933,10 +770,109 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
   </div>
 </div>
 
+<div class="chap"><span class="chap-num">Chapter 3b</span><span class="chap-title">VASP 추상화 — VASP 확정 후 진행</span><div class="chap-line"></div><span class="chap-badge">M3b · 5h</span></div>
+<!-- ══ M3b ══ -->
+<div class="mod m3">
+  <div class="mod-hd" style="border-color:#5a1010;position:relative;">
+    <div class="mn">M3b</div>
+    <div>
+      <div class="mt">VASP 추상화 + TX 복구 구현</div>
+      <div class="mm">5세션 · S14, S15, S20~S22 · 5시간</div>
+    </div>
+    <div class="mb-badge">
+      <span class="out g">VASP 연동 + 멀티체인 추상화</span>
+      <span style="display:inline-block;margin-left:8px;background:#3d1515;color:#f87171;border:1px solid #7f1d1d;font-size:11px;font-weight:700;padding:2px 9px;border-radius:4px;">⏸ VASP 확정 후 진행</span>
+    </div>
+  </div>
+  <div class="mod-body">
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S14</span><span class="st">멀티체인 추상화 레이어 — IBlockchainAdapter 설계와 체인 패러다임 비교</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">강의 55분</div><ul class="il">
+          <li>EVM 고착화 리스크 — gas·Nonce·event log·ABI decode 등 EVM 전용 가정이 코드 전반에 묶인 지점. XRPL·ARC 전환 시 교체 범위 예측</li>
+          <li>IBlockchainAdapter 설계 원칙 — 발행·소각·잔액 조회·TX 검증·이벤트 구독을 체인 무관하게 추상화. IVaspAdapter와 동일한 Strategy Pattern 적용</li>
+          <li>EVM vs XRPL 패러다임 비교 — XRPL: 스마트컨트랙트 없음 / XLS-20 NFT(Offer 기반 전송) / gas 없음(reserve·fee 체계) / Account 모델 완전히 다름. EVM과 1:1 매핑 불가한 개념 식별</li>
+          <li>Circle ARC 개요 — 프로그래머블 월렛 기반, 서버 측 키 관리, Account Abstraction 연계. 서명 흐름이 EOA와 다른 이유</li>
+          <li>멀티체인 전환 전략 — VASP가 체인 구현체 선택, 어댑터 주입. <span class="w">비즈니스 로직·원장·감사 로그는 체인 무관하게 유지</span> — 이것이 추상화 레이어 설계의 핵심 목적</li>
+          <li>당사 적용 로드맵 — Phase 1: EVM(현재) → Phase 2: XRPL 병행(국내 규제 대응) → Phase 3: Circle ARC(글로벌 확장)</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">EVM·XRPL·Circle ARC 패러다임 핵심 차이 설명 가능</span><span class="ci">IBlockchainAdapter 설계 원칙 설명</span><span class="ci">당사 멀티체인 적용 순서 근거 제시</span></div></div>
+      </div>
+    </div>
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S15</span><span class="st">IBlockchainAdapter EVM 구현과 멀티체인 전환 시뮬레이션</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">개요 10분</div><ul class="il">
+          <li>IBlockchainAdapter 인터페이스 재확인 / EVM·XRPL·ARC 어댑터 구조 재확인</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lab">실습 50분</div><ul class="il">
+          <li>IBlockchainAdapter 인터페이스 정의 — 체인 공통 작업 추상화 (발행·소각·잔액 조회·이벤트 구독)</li>
+          <li>EVM 어댑터 구현 — 기존 VASP 연동 코드를 어댑터 인터페이스로 이관</li>
+          <li>XRPL·Circle ARC Mock 어댑터 스텁 작성 — 인터페이스 충족 확인</li>
+          <li>체인 교체 테스트 — EVM → XRPL Mock 전환 후 비즈니스 로직·원장 코드 변경 없이 동작 확인</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">EVM 어댑터 구현 + 인터페이스 통과</span><span class="ci">XRPL Mock 교체 후 상위 레이어 코드 무변경 확인</span><span class="ci">어댑터 교체만으로 체인 전환 가능함 설명</span></div></div>
+      </div>
+    </div>
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S20</span><span class="st">TX TIMEOUT·REORG 복구 핸들러 구현</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">개요 10분</div><ul class="il">
+          <li>TIMEOUT → gas bump 흐름 재확인 / REORG → REORGED 전이 → Finalized 재조회 흐름 재확인</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lab">실습 50분</div><ul class="il">
+          <li><span class="c">handleTxTimeout(requestId)</span> — 가스 범프 재전송 (동일 요청 식별자 유지)</li>
+          <li><span class="c">handleReorg(requestId)</span> — <span class="c">REORGED</span> 전이 + 5블록 대기 + VASP 상태 재조회 + Finalized 여부 확인</li>
+          <li>REORG 시뮬레이션 테스트 — CONFIRMED 후 REORGED 신호 → 재처리 후 CONFIRMED 복귀 확인</li>
+          <li>TIMEOUT 시뮬레이션 — Mock에서 3블록 미채굴 → gas bump 후 성공 응답 → CONFIRMED 전이</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">TIMEOUT → gas bump 재전송 동작</span><span class="ci">REORG 시뮬레이션 → 재처리 후 CONFIRMED</span></div></div>
+      </div>
+    </div>
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S21</span><span class="st">VASP 이중 채널 동기화 아키텍처 설계 원리</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">강의 55분</div><ul class="il">
+          <li>단일 콜백 방식의 취약점 — 콜백 1회 유실 시 상태 갱신 불가. VASP 재전송 보장 없는 경우 영구 PENDING</li>
+          <li>이중 채널 필요성 — [A] 콜백(빠름, 유실 가능) + [B] 폴링(느림, 확실). 두 채널이 상호 보완</li>
+          <li>30분 타임아웃 기준 근거 — VASP SLA 기준 정상 처리 시간(평균 2~10분) + 안전 여유. 너무 짧으면 오탐, 너무 길면 감지 지연</li>
+          <li>폴링 대상 선별 원칙 — PENDING 상태 + 생성 30분 초과 건만. 전체 조회 시 DB 부하 문제</li>
+          <li>콜백 누락 경로 전체 분석 — 네트워크 유실 / VASP 재전송 정책 없음 / WebhookReceiver 처리 실패 / Consumer 장애</li>
+          <li>pollStaleRequests 알고리즘 설계 — PENDING 30분 초과 목록 조회 → VASP API 직접 조회 → 결과별 전이 적용</li>
+          <li>이중 채널 실제 운영 — 콜백이 처리되면 폴링은 멱등성에 의해 무시. 추가 비용 없음</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">이중 채널 필요성 설명 가능</span><span class="ci">콜백 누락 시나리오 3가지 나열</span><span class="ci">pollStaleRequests 알고리즘 설계 설명</span></div></div>
+      </div>
+    </div>
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S22</span><span class="st">폴링 기반 상태 보정과 3종 복구 전략 통합 검증</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lec">개요 10분</div><ul class="il">
+          <li>이중 채널 아키텍처 재확인 + pollStaleRequests 알고리즘 흐름 재확인</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl lab">실습 50분</div><ul class="il">
+          <li><span class="c">pollStaleRequests()</span> — 30분 초과 PENDING 목록 조회 → VASP 상태 직접 조회 → 결과 반영</li>
+          <li>3종 통합 테스트 — REVERT / TIMEOUT / REORG 각각 Mock 시뮬레이션 → 복구 흐름 전부 검증</li>
+          <li>콜백 차단 테스트 — WebhookReceiver 응답 막기 → 30분 폴링에서 자동 처리 확인</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">3종 복구 통합 테스트 전부 통과</span><span class="ci">콜백 차단 후 폴링 동작 확인</span><span class="ci">동일 requestId 재전송 → 중복 없음</span></div></div>
+      </div>
+    </div>
+
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">M3b 완료 기준</div><div class="cr"><span class="ci">EVM 어댑터 구현 + 체인 교체 시 상위 레이어 무변경</span><span class="ci">3종 복구 통합 테스트 전부 통과</span><span class="ci">콜백 차단 후 폴링 자동 처리 확인</span></div></div>
+
+  </div>
+</div>
+
 <div class="chap"><span class="chap-num">Chapter 4</span><span class="chap-title">온체인 — 컨트랙트 + 보안</span><div class="chap-line"></div><span class="chap-badge">M6~M7 · 10h</span></div>
 <!-- ══ M6 ══ -->
 <div class="mod m6">
-  <div class="mod-hd"><div class="mn">M6</div><div><div class="mt">ERC-1155 NFT 컨트랙트 완전 구현</div><div class="mm">7세션 · S35~S40, S56 · 7시간</div></div><div class="mb-badge"><span class="out g">KyoboNFT.sol Sepolia 배포</span></div></div>
+  <div class="mod-hd"><div class="mn">M6</div><div><div class="mt">ERC-1155 NFT 컨트랙트 완전 구현</div><div class="mm">6세션 · S35~S40 · 6시간</div></div><div class="mb-badge"><span class="out g">KyoboNFT.sol Sepolia 배포</span></div></div>
   <div class="mod-body">
 
     <div class="sess">
@@ -1041,24 +977,6 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
         <div class="sb" style="grid-column:1/-1"><div class="lbl chk">M2 완료 기준</div><div class="cr"><span class="ci">Sepolia 배포 + Etherscan 검증</span><span class="ci">v2 업그레이드 후 기존 tokenId 보존</span><span class="ci">Storage layout 충돌 없음</span></div></div>
       </div>
 
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S56</span><span class="st ops">배포/롤백 파이프라인 — 무중단 배포와 롤백 판단 기준</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">25분</div><ul class="il">
-          <li>배포 파이프라인 설계 — 코드 변경 → CI 빌드·테스트 → 스테이징 배포 → 검증 → 프로덕션 배포 단계별 게이트</li>
-          <li>무중단 배포 전략 — Blue/Green 또는 Rolling Update. 컨트랙트 배포는 Blue/Green 필수(rollback 불가)</li>
-          <li>롤백 판단 기준 — 배포 후 에러율 임계값(5분 내 1% 초과), P99 응답시간 급증, DLQ 적재 급증</li>
-          <li>⚠️ 컨트랙트 롤백 불가 원칙 — Proxy upgrade는 신중하게. 백엔드 롤백으로 대응 가능한 범위 사전 정의</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">30분</div><ul class="il">
-          <li>배포 체크리스트 문서 작성 — 배포 전/후 확인 항목</li>
-          <li>헬스체크 엔드포인트 구현 — <span class="c">GET /health</span> (DB·Redis·VASP 연결 상태 포함)</li>
-          <li>롤백 트리거 모니터링 — 에러율·응답시간 지표 수집 + 임계값 알림</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">헬스체크 엔드포인트 전체 지표 반환</span><span class="ci">에러율 임계값 알림 동작</span><span class="ci">배포 체크리스트 문서 완성</span></div></div>
-      </div>
-    </div>
-
   </div>
 </div>
 
@@ -1139,7 +1057,7 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
 <div class="chap"><span class="chap-num">Chapter 5</span><span class="chap-title">키 거버넌스 + Phase 1 통합</span><div class="chap-line"></div><span class="chap-badge">M8 · 6h</span></div>
 <!-- ══ M8 ══ -->
 <div class="mod m8">
-  <div class="mod-hd"><div class="mn">M8</div><div><div class="mt">키 거버넌스 + Phase 1 통합 + 프로토타입 완성</div><div class="mm">8세션 · S45~S50, S57~S58 · 8시간</div></div><div class="mb-badge"><span class="out gold">Phase 1 Prototype 완성</span></div></div>
+  <div class="mod-hd"><div class="mn">M8</div><div><div class="mt">키 거버넌스 + Phase 1 통합 + 프로토타입 완성</div><div class="mm">6세션 · S45~S50 · 6시간</div></div><div class="mb-badge"><span class="out gold">Phase 1 Prototype 완성</span></div></div>
   <div class="mod-body">
 
     <div class="sess">
@@ -1253,53 +1171,11 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
         </div>
       </div>
 
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S57</span><span class="st ops">컨트랙트 업그레이드 거버넌스 운영 — Safe 제안·승인·실행 실전 절차</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">25분</div><ul class="il">
-          <li>업그레이드 거버넌스 전체 절차 — 코드 변경 → 내부 검토 → 테스트넷 검증 → Safe 제안 → 서명 수집(2-of-3) → 프로덕션 실행</li>
-          <li>서명자 역할 운영 — VASP(기술 실행) / 당사IT(운영 승인) / 준법감시(컴플라이언스). 서명자 부재 시 대리 지정 절차</li>
-          <li>업그레이드 전 필수 체크리스트 — Storage layout 충돌 검증, reinitializer 버전 확인, 테스트넷 동작 확인, 롤백 불가 인지</li>
-          <li>업그레이드 후 검증 절차 — 기존 tokenId 보존 확인, 신규 기능 동작 확인, 감사 로그 기록</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">30분</div><ul class="il">
-          <li>업그레이드 제안 생성 스크립트 — Safe API로 SafeTx 제안 + DB 저장</li>
-          <li>서명 수집 확인 API — <span class="c">GET /admin/governance/proposals</span> (진행 중 제안 목록, 서명 현황)</li>
-          <li>업그레이드 체크리스트 문서 작성</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">Safe 제안 생성 → 서명 수집 → 실행 전체 흐름 동작</span><span class="ci">진행 중 제안 조회 API 동작</span><span class="ci">업그레이드 체크리스트 문서 완성</span></div></div>
-      </div>
-    </div>
-
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S58</span><span class="st ops">전체 모니터링 대시보드 — Phase 1 운영 통합 뷰 설계와 구축</span><span class="stm">1h</span><span class="ops-badge">운영</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">20분</div><ul class="il">
-          <li>Phase 1 운영 핵심 지표 — TX 상태 분포(PENDING/CONFIRMED/FAILED), DLQ 적재량, Consumer Lag, VASP 가용성, Reconcile 불일치, 감사 로그 무결성</li>
-          <li>알림 우선순위 — P1(즉시): DLQ 급증·VASP 장애·Reconcile 10건+ / P2(1시간 내): Consumer Lag·TX Stuck / P3(일간): 통계 리포트</li>
-          <li>운영 교대 절차 — 인수인계 체크리스트, 야간 장애 대응 체계</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">35분</div><ul class="il">
-          <li>통합 대시보드 API 구현 — <span class="c">GET /admin/dashboard</span> (전체 지표 단일 응답)</li>
-          <li>지표별 임계값 설정 파일 구성 — 환경변수 기반 임계값 관리</li>
-          <li>운영 Runbook 최종본 작성 — 전 세션 Runbook 통합·정리</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk" style="color:#f87171">Phase 1 최종 완료 기준 — 개발 + 운영 체계 완전 인수인계 가능 상태</div>
-          <div class="cr" style="margin-top:8px">
-            <span class="ci">통합 대시보드 전체 지표 반환</span>
-            <span class="ci">지표별 임계값 알림 동작</span>
-            <span class="ci">운영 Runbook 최종본 완성</span>
-            <span class="ci">Phase 1 개발 + 운영 체계 완전 인수인계 가능</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
   </div>
 </div>
 
 
 </div>
-<div class="footer">교보생명 디지털 자산 관리 시스템 구현 실무 — Phase 1 최종 커리큘럼 v2 · 8모듈 · 58세션 × 1시간 · 총 58시간 · 4세션/일 × 15일</div>
+<div class="footer">교보생명 디지털 자산 관리 시스템 구현 실무 — Phase 1 최종 커리큘럼 v2 · 8모듈 · 50세션 × 1시간 · 총 50시간 · 4세션/일 × 13일</div>
 </body>
 </html>

@@ -91,7 +91,7 @@ const SAMPLE_MSG: StreamMessage = {
   id: `${Date.now()}-0`,
   fields: {
     eventType:   'NFT_ISSUED',
-    payload:     JSON.stringify({ tokenId: 'T-001', owner: '0xKYOBO' }),
+    payload:     JSON.stringify({ tokenId: 'T-001', owner: '0x4b594f424f0000000000000000000000000000000' }),
     requestId:   'req-dup-001',
     publishedAt: String(Date.now()),
     _retryCount: '0',

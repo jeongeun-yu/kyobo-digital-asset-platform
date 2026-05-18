@@ -42,8 +42,8 @@
     "exercise:s11:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M2/S11_dlq.answer.ts",
     "exercise:s12": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M2/S12_e2e.ts",
     "exercise:s12:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M2/S12_e2e.answer.ts",
-    "exercise:s13": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S13_tx_statemachine.ts",
-    "exercise:s13:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S13_tx_statemachine.answer.ts",
+    "exercise:s13": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S13_tx_statemachine.ts",
+    "exercise:s13:answer": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S13_tx_statemachine.answer.ts",
     "exercise:s14": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S14_multichain_adapter.ts",
     "exercise:s14:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S14_multichain_adapter.answer.ts",
     "exercise:s15": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S15_evm_lab.ts",
@@ -52,6 +52,9 @@
     "exercise:s16:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S16_idempotency.answer.ts",
     "exercise:s17": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S17_decorator_patterns.ts",
     "exercise:s17:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S17_decorator_patterns.answer.ts",
+    "exercise:s18": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S18_tx_revert.ts",
+    "exercise:s18:answer": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S18_tx_revert.answer.ts",
+    "exercise:s19": "npx ts-node -r tsconfig-paths/register --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S19_timeout_reorg_handler.ts",
     "exercise:s22": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S22_pollstale_lab.ts",
     "exercise:s22:answer": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M3/S22_pollstale_lab.answer.ts",
     "exercise:s23": "npx ts-node --project internal/packages/event-engine/tsconfig.json course/exercises/M4/S23_ledger_data_model.ts",
@@ -112,6 +115,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "ioredis": "^5.10.1",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.4.0"
   }
 }

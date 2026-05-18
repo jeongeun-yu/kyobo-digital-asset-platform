@@ -87,7 +87,7 @@ export class EVMAdapter implements IBlockchainAdapter {
    */
   async mintNFT(params: MintParams): Promise<TransactionReceipt> {
     // M4 S17 실습: sendTransaction으로 컨트랙트 mint 호출
-    //   TX 상태머신: SUBMITTED → (여기서) → CONFIRMED / FAILED
+    //   TX 상태머신: SUBMITTED → (여기서) → MINED → CONFIRMED → FINALIZED / FAILED
     return this.sendTransaction({
       contractAddr: params.contractAddr,
       abi:          ERC1155_ABI,

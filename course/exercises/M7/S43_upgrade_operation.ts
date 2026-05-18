@@ -334,9 +334,9 @@ function expectSuccess(label: string, fn: () => void): void {
 (async () => {
   console.log('=== S43: MEDIUM 취약점 처리 + 보안 테스트 설계 ===\n');
 
-  const ADMIN   = { address: '0xADMIN',   role: 'DEFAULT_ADMIN_ROLE' as Role };
-  const ATTACKER = { address: '0xATTACK',  role: 'NONE' as Role };
-  const USER    = { address: '0xUSER',    role: 'NONE' as Role };
+  const ADMIN   = { address: '0xad1111111111111111111111111111111111ad11',   role: 'DEFAULT_ADMIN_ROLE' as Role };
+  const ATTACKER = { address: '0xbad0bad0bad0bad0bad0bad0bad0bad0bad0bad0',  role: 'NONE' as Role };
+  const USER    = { address: '0xaaaa111111111111111111111111111111111111',    role: 'NONE' as Role };
 
   // ── [1] MEDIUM 취약점: 접근 제어 누락 ───────────────────────────────
   console.log('[검증 1] MEDIUM 취약점 — 접근 제어 누락 (updateTokenURI)');
@@ -375,13 +375,13 @@ function expectSuccess(label: string, fn: () => void): void {
     roleHistory.length === 0,
   );
 
-  auditLog.emit('RoleGranted', { role: 'MINTER_ROLE', account: '0xVASP', sender: '0xADMIN' });
+  auditLog.emit('RoleGranted', { role: 'MINTER_ROLE', account: '0xdadb000000000000000000000000000000000001', sender: '0xad1111111111111111111111111111111111ad11' });
   const roleHistoryAfter = auditLog.getRoleGrantHistory();
   check('이벤트 있는 역할 부여: RoleGranted 기록 1건 (감사 가능)',
     roleHistoryAfter.length === 1,
   );
   check('RoleGranted 이벤트에 account 정보 포함',
-    roleHistoryAfter[0]?.params['account'] === '0xVASP',
+    roleHistoryAfter[0]?.params['account'] === '0xdadb000000000000000000000000000000000001',
   );
 
   // ── [3] 보안 테스트 5가지 질문 프레임워크 ────────────────────────────

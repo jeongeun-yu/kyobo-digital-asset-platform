@@ -180,7 +180,7 @@ function buildMocks(overrides: {
       txCalls.push(params.args);
       return {
         status:    overrides.txStatus ?? 'success',
-        txHash:    '0xabc123def456',
+        txHash:    '0xabc1230000000000def4560000000000abc1230000000000def4560000000000',
         timestamp: Date.now(),
       };
     },
@@ -200,7 +200,7 @@ function buildMocks(overrides: {
       if (overrides.noAccount) return null;
       return {
         userId,
-        walletAddr: '0xWallet001',
+        walletAddr: '0xdead000000000000000000000000000000000001',
         status:     overrides.accountStatus ?? 'active',
       };
     },
@@ -229,7 +229,7 @@ const BASE_ORACLE: OracleData = {
   dataType:  'WALK',
   value:     15_000,
   timestamp: Date.now(),
-  signature: '0xOracleSig',
+  signature: '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ac1e',
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ if (require.main === module) (async () => {
   const svc1       = new IssuerService({
     ...mocks1,
     idempotency: idempotency1,
-    nftIssuerAddr: '0xNFTContract001',
+    nftIssuerAddr: '0xc0de000000000000000000000000000000000001',
   });
 
   const result1 = await svc1.issueActivityNFT({
@@ -255,7 +255,7 @@ if (require.main === module) (async () => {
     oracleData: BASE_ORACLE,
   });
 
-  check('txHash 반환됨',                          result1.txHash === '0xabc123def456');
+  check('txHash 반환됨',                          result1.txHash === '0xabc1230000000000def4560000000000abc1230000000000def4560000000000');
   check('컨트랙트 1회 호출됨',                     mocks1.txCalls.length === 1);
 
   await new Promise(r => setTimeout(r, 10));
@@ -280,7 +280,7 @@ if (require.main === module) (async () => {
   // ── [3] AML flagged → 에러, 컨트랙트 미호출 ──────────────────────────
   console.log('\n[검증 3] AML flagged=true → Error, 컨트랙트 호출 안 됨');
   const mocks3 = buildMocks({ amlFlagged: true, amlReason: 'OFAC sanction list' });
-  const svc3   = new IssuerService({ ...mocks3, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xNFTContract' });
+  const svc3   = new IssuerService({ ...mocks3, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
 
   let amlErr: Error | undefined;
   try {
@@ -294,7 +294,7 @@ if (require.main === module) (async () => {
   // ── [4] account.status !== 'active' → 발행 차단 ────────────────────────
   console.log('\n[검증 4] account.status=suspended → 발행 차단');
   const mocks4 = buildMocks({ accountStatus: 'suspended' });
-  const svc4   = new IssuerService({ ...mocks4, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xNFTContract' });
+  const svc4   = new IssuerService({ ...mocks4, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
 
   let suspendedErr: Error | undefined;
   try {
@@ -308,7 +308,7 @@ if (require.main === module) (async () => {
   // ── [5] 계정 없음 → Error ────────────────────────────────────────────
   console.log('\n[검증 5] 계정 없음 → Error');
   const mocks5 = buildMocks({ noAccount: true });
-  const svc5   = new IssuerService({ ...mocks5, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xNFTContract' });
+  const svc5   = new IssuerService({ ...mocks5, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
 
   let noAccErr: Error | undefined;
   try {
@@ -320,7 +320,7 @@ if (require.main === module) (async () => {
   // ── [6] TX 실패 → Error ──────────────────────────────────────────────
   console.log('\n[검증 6] TX status=failed → Error');
   const mocks6 = buildMocks({ txStatus: 'failed' });
-  const svc6   = new IssuerService({ ...mocks6, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xNFTContract' });
+  const svc6   = new IssuerService({ ...mocks6, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
 
   let txErr: Error | undefined;
   try {
@@ -332,7 +332,7 @@ if (require.main === module) (async () => {
   // ── [7] CoreBanking 알림 실패 → TX 롤백 없음 (fire-and-forget) ─────────
   console.log('\n[검증 7] CoreBanking 알림 실패 → 발행 TX 롤백 없음 (fire-and-forget)');
   const mocks7 = buildMocks({ notifyFail: true });
-  const svc7   = new IssuerService({ ...mocks7, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xNFTContract' });
+  const svc7   = new IssuerService({ ...mocks7, idempotency: new InMemoryIdempotencyGuard(), nftIssuerAddr: '0xc0de000000000000000000000000000000000000' });
 
   let notifyErr: Error | undefined;
   let txHash7: string | undefined;

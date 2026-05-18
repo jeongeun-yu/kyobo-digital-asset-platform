@@ -30,14 +30,14 @@ function makeService(threshold = 2) {
 }
 
 const BASE_TX: SafeTxParams = {
-  to: '0xKyoboNFTProxy00000000000000000000000000',
+  to: '0xc0de000000000000000000000000000000000001',
   value: 0n,
   data: '0x8456cb59',
   operation: 0,
 };
 
-const SIGNER_A = '0xSignerA0000000000000000000000000000000000';
-const SIGNER_B = '0xSignerB0000000000000000000000000000000000';
+const SIGNER_A = '0xa111a000000000000000000000000000000000a1';
+const SIGNER_B = '0xb111b000000000000000000000000000000000b1';
 
 // ─── 채점 테스트 ─────────────────────────────────────────────────────────────
 
@@ -85,7 +85,7 @@ describe('S48 채점 — MultisigService', () => {
     it('collected: 1, required: 2, ready: false', async () => {
       const { service } = makeService();
       const tx  = await service.proposeTx('admin', BASE_TX);
-      const st  = await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
+      const st  = await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
       expect(st.collected).toBe(1);
       expect(st.required).toBe(2);
       expect(st.ready).toBe(false);
@@ -94,7 +94,7 @@ describe('S48 채점 — MultisigService', () => {
     it('getSigningStatus.ready: false (실행 불가)', async () => {
       const { service } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
       const status = await service.getSigningStatus(tx.id);
       expect(status.ready).toBe(false);
     });
@@ -104,8 +104,8 @@ describe('S48 채점 — MultisigService', () => {
     it('collected: 2, ready: true', async () => {
       const { service } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
-      const st = await service.addSignature(tx.id, SIGNER_B, '0xsig_b');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+      const st = await service.addSignature(tx.id, SIGNER_B, '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
       expect(st.collected).toBe(2);
       expect(st.ready).toBe(true);
     });
@@ -113,24 +113,24 @@ describe('S48 채점 — MultisigService', () => {
     it('DB status: READY_TO_EXECUTE', async () => {
       const { service, db } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
-      await service.addSignature(tx.id, SIGNER_B, '0xsig_b');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+      await service.addSignature(tx.id, SIGNER_B, '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
       expect(db.getRow(tx.id)?.status).toBe('READY_TO_EXECUTE');
     });
 
     it('DB collectedSignatures: 2개', async () => {
       const { service, db } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
-      await service.addSignature(tx.id, SIGNER_B, '0xsig_b');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+      await service.addSignature(tx.id, SIGNER_B, '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
       expect(db.getRow(tx.id)?.collectedSignatures).toHaveLength(2);
     });
 
     it('알림 type: TX_READY_TO_EXECUTE', async () => {
       const { service, notifier } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
-      await service.addSignature(tx.id, SIGNER_B, '0xsig_b');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+      await service.addSignature(tx.id, SIGNER_B, '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
       expect(notifier.lastType()).toBe('TX_READY_TO_EXECUTE');
     });
   });
@@ -139,18 +139,18 @@ describe('S48 채점 — MultisigService', () => {
     it('같은 서명자가 두 번 서명 → DuplicateSignatureError', async () => {
       const { service } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
       await expect(
-        service.addSignature(tx.id, SIGNER_A, '0xsig_a2'),
+        service.addSignature(tx.id, SIGNER_A, '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a21b'),
       ).rejects.toMatchObject({ name: 'DuplicateSignatureError' });
     });
 
     it('DuplicateSignatureError 는 Error 의 인스턴스', async () => {
       const { service } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
       await expect(
-        service.addSignature(tx.id, SIGNER_A, '0xsig_a2'),
+        service.addSignature(tx.id, SIGNER_A, '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a21b'),
       ).rejects.toBeInstanceOf(Error);
     });
   });
@@ -159,14 +159,14 @@ describe('S48 채점 — MultisigService', () => {
     it('1-of-3 서명만으로 executeTx → not ready 에러', async () => {
       const { service } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
       await expect(service.executeTx(tx.id, 'executor')).rejects.toThrow(/not ready/i);
     });
 
     it('1-of-3 차단 시 Safe.execTransaction 미호출 (가스 낭비 방지)', async () => {
       const { service, safeClient } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
       try { await service.executeTx(tx.id, 'executor'); } catch { /* expected */ }
       expect(safeClient.execTransactionCallCount).toBe(0);
     });
@@ -189,8 +189,8 @@ describe('S48 채점 — MultisigService', () => {
     async function prepareExecuted() {
       const { service, safeClient, db, auditLog } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
-      await service.addSignature(tx.id, SIGNER_B, '0xsig_b');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+      await service.addSignature(tx.id, SIGNER_B, '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
       const result = await service.executeTx(tx.id, 'executor');
       return { service, safeClient, db, auditLog, tx, result };
     }
@@ -225,8 +225,8 @@ describe('S48 채점 — MultisigService', () => {
     it('EXECUTED TX cancelTx → already-executed 에러', async () => {
       const { service } = makeService();
       const tx = await service.proposeTx('admin', BASE_TX);
-      await service.addSignature(tx.id, SIGNER_A, '0xsig_a');
-      await service.addSignature(tx.id, SIGNER_B, '0xsig_b');
+      await service.addSignature(tx.id, SIGNER_A, '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+      await service.addSignature(tx.id, SIGNER_B, '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
       await service.executeTx(tx.id, 'executor');
       await expect(service.cancelTx(tx.id, 'admin', '취소 시도')).rejects.toThrow(/already-executed/i);
     });

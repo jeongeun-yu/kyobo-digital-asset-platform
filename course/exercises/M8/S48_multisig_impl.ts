@@ -118,7 +118,7 @@ export class MockGnosisSafeClient {
       return recovered.toLowerCase() === signer.toLowerCase();
     } catch {
       // 테스트용 mock 서명은 always-valid로 처리
-      return signature.startsWith('0xsig_') || signature.startsWith('0x');
+      return signature.startsWith('0x');
     }
   }
 
@@ -319,7 +319,7 @@ function makeService(threshold = 2): {
 }
 
 const baseTxParams: SafeTxParams = {
-  to: '0xKyoboNFTProxy00000000000000000000000000',
+  to: '0xc0de000000000000000000000000000000000001',
   value: 0n,
   data: '0x8456cb59',
   operation: 0,
@@ -348,7 +348,7 @@ const baseTxParams: SafeTxParams = {
 
   const { service: svc2 } = makeService();
   const tx2  = await svc2.proposeTx('admin', baseTxParams);
-  const st2A = await svc2.addSignature(tx2.id, '0xSignerA0000000000000000000000000000000000', '0xsig_a');
+  const st2A = await svc2.addSignature(tx2.id, '0xa111a000000000000000000000000000000000a1', '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
 
   check('collected: 1', st2A.collected === 1);
   check('required: 2',  st2A.required  === 2);
@@ -365,8 +365,8 @@ const baseTxParams: SafeTxParams = {
   const { service: svc3, notifier: nt3, db: db3 } = makeService();
   const tx3 = await svc3.proposeTx('admin', baseTxParams);
 
-  await svc3.addSignature(tx3.id, '0xSignerA0000000000000000000000000000000000', '0xsig_a');
-  const st3B = await svc3.addSignature(tx3.id, '0xSignerB0000000000000000000000000000000000', '0xsig_b');
+  await svc3.addSignature(tx3.id, '0xa111a000000000000000000000000000000000a1', '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+  const st3B = await svc3.addSignature(tx3.id, '0xb111b000000000000000000000000000000000b1', '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
 
   check('collected: 2', st3B.collected === 2);
   check('ready: true',  st3B.ready     === true);
@@ -381,11 +381,11 @@ const baseTxParams: SafeTxParams = {
 
   const { service: svc4 } = makeService();
   const tx4 = await svc4.proposeTx('admin', baseTxParams);
-  await svc4.addSignature(tx4.id, '0xSignerA0000000000000000000000000000000000', '0xsig_a');
+  await svc4.addSignature(tx4.id, '0xa111a000000000000000000000000000000000a1', '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
 
   await expectError(
     'DuplicateSignatureError 발생',
-    () => svc4.addSignature(tx4.id, '0xSignerA0000000000000000000000000000000000', '0xsig_a2'),
+    () => svc4.addSignature(tx4.id, '0xa111a000000000000000000000000000000000a1', '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a21b'),
     err => err.name === 'DuplicateSignatureError',
   );
 
@@ -394,7 +394,7 @@ const baseTxParams: SafeTxParams = {
 
   const { service: svc5, safeClient: sc5 } = makeService();
   const tx5 = await svc5.proposeTx('admin', baseTxParams);
-  await svc5.addSignature(tx5.id, '0xSignerA0000000000000000000000000000000000', '0xsig_a');
+  await svc5.addSignature(tx5.id, '0xa111a000000000000000000000000000000000a1', '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
   // 서명자 B 없음
 
   await expectError(
@@ -415,8 +415,8 @@ const baseTxParams: SafeTxParams = {
 
   const { service: svc6, safeClient: sc6, db: db6, auditLog: al6 } = makeService();
   const tx6 = await svc6.proposeTx('admin', baseTxParams);
-  await svc6.addSignature(tx6.id, '0xSignerA0000000000000000000000000000000000', '0xsig_a');
-  await svc6.addSignature(tx6.id, '0xSignerB0000000000000000000000000000000000', '0xsig_b');
+  await svc6.addSignature(tx6.id, '0xa111a000000000000000000000000000000000a1', '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11b');
+  await svc6.addSignature(tx6.id, '0xb111b000000000000000000000000000000000b1', '0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b11b');
 
   const execResult = await svc6.executeTx(tx6.id, 'executor');
 

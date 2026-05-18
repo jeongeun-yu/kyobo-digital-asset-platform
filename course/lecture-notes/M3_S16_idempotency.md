@@ -268,6 +268,7 @@ export class InvalidStatusTransitionError extends Error {
 export class VaspMockClient implements VaspTxClient {
   // requestId → txHash 매핑 (Idempotency 구현)
   private submitted = new Map<string, string>();
+  private counter   = 0;
   // txHash → status 매핑 (시나리오 시뮬레이션)
   private txStatus  = new Map<string, {
     status: 'pending' | 'mined' | 'confirmed' | 'failed' | 'not_found';
@@ -283,7 +284,8 @@ export class VaspMockClient implements VaspTxClient {
       return { txHash: this.submitted.get(params.requestId)! };
     }
 
-    const txHash = `0xMOCK_${Date.now().toString(16)}`;
+    const base = `${(++this.counter).toString(16)}${Date.now().toString(16)}`;
+    const txHash = `0x${base.repeat(Math.ceil(64 / base.length)).slice(0, 64)}`;
     this.submitted.set(params.requestId, txHash);
     // 기본: pending 상태로 시작
     this.txStatus.set(txHash, { status: 'pending' });
@@ -307,7 +309,8 @@ export class VaspMockClient implements VaspTxClient {
     _txHash: string,
     _percent: number,
   ): Promise<{ txHash: string }> {
-    const newTxHash = `0xBUMP_${Date.now().toString(16)}`;
+    const t = Date.now().toString(16);
+    const newTxHash = `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}`;
     this.txStatus.set(newTxHash, { status: 'pending' });
     return { txHash: newTxHash };
   }
