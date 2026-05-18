@@ -12,7 +12,7 @@ import type {
   MintBatchParams,
   BurnParams,
 } from '@kyobo/chain-adapters';
-import { LoggingAdapterDecorator, RetryAdapterDecorator } from '@kyobo/chain-adapters';
+import { AdapterDecorator, LoggingAdapterDecorator, RetryAdapterDecorator } from '@kyobo/chain-adapters';
 import { CircuitBreaker, CircuitOpenError } from '@kyobo/core-banking';
 
 // ── Stub 어댑터 ──────────────────────────────────────────────────────────────
@@ -149,28 +149,46 @@ async function section3() {
   }
 }
 
-// ── [4] Decorator 조합 — Retry(Logging(adapter)) ─────────────────────────────
+// ── [4] Decorator 조합 — abstract AdapterDecorator 상속 후 Retry(Timing(adapter)) ──
+
+// AdapterDecorator를 상속 — mintNFT만 override, 나머지는 inner 자동 위임
+class TimingAdapterDecorator extends AdapterDecorator {
+  readonly timings: number[] = [];
+
+  override async mintNFT(p: MintParams): Promise<TransactionReceipt> {
+    const start = performance.now();
+    try {
+      return await this.inner.mintNFT(p);
+    } finally {
+      this.timings.push(Math.round((performance.now() - start) * 1000) / 1000);
+    }
+  }
+}
 
 async function section4() {
-  console.log('\n[4] Decorator 조합 — Retry(Logging(adapter))');
+  console.log('\n[4] Decorator 조합 — Retry(Timing(Logging(adapter)))');
 
   const logs: string[] = [];
   const inner = new ControllableAdapter();
   inner.failUntil = 1;
 
+  const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 23);
+  const logging = new LoggingAdapterDecorator(inner, {
+    info:  (msg: string) => logs.push(`[${ts()}] INFO  ${msg}`),
+    error: (msg: string) => logs.push(`[${ts()}] ERROR ${msg}`),
+  });
+  const timing  = new TimingAdapterDecorator(logging);
   const stacked = new RetryAdapterDecorator(
-    new LoggingAdapterDecorator(inner, {
-      info:  (msg: string) => logs.push(`INFO:${msg}`),
-      error: (msg: string) => logs.push(`ERROR:${msg}`),
-    }),
+    timing,
     { maxAttempts: 3, initialDelayMs: 10, maxDelayMs: 50, backoffFactor: 2 },
   );
 
   const receipt = await stacked.mintNFT({ contractAddr: CONTRACT_ADDR, to: USER_ADDR, tokenId: 5000n, amount: 1n, requestId: 'mint-6ba7b813-9dad-11d1-80b4-00c04fd430c8' });
 
-  console.log('  callCount :', inner.callCount);
-  console.log('  receipt   :', receipt);
+  console.log('  callCount :', inner.callCount);        // 2 (1번 실패 후 재시도)
+  console.log('  timings   :', timing.timings);         // 시도마다 소요시간(ms)
   console.log('  logs      :', logs);
+  console.log('  receipt   :', receipt);
 }
 
 // ── [5] CircuitBreaker — CLOSED → OPEN → HALF_OPEN ───────────────────────────
