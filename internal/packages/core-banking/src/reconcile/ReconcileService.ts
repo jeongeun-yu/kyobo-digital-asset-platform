@@ -1,4 +1,5 @@
 import type { ICoreBankingAdapter } from '../interfaces/ICoreBankingAdapter';
+import type { IReconcileService } from './IReconcileService';
 
 /**
  * ReconcileService — KRW 스테이블코인 ↔ 원화 수탁 계좌 / NFT 보유 현황 대조 서비스
@@ -36,7 +37,9 @@ export interface NftReconcileResult {
   checkedAt:      number;
 }
 
-export class ReconcileService {
+export class ReconcileService implements IReconcileService {
+  private lastResult: ReconcileResult | null = null;
+
   constructor(
     private readonly coreBanking: ICoreBankingAdapter,
     private readonly onchain: {
@@ -46,10 +49,14 @@ export class ReconcileService {
       balanceOf(address: string, tokenId: bigint): Promise<bigint>;
       /** 특정 주소의 온체인 NFT 보유 tokenId 목록 */
       getNftHoldings(address: string): Promise<bigint[]>;
+      /** 현재 블록 번호 조회 */
+      getBlockNumber(): Promise<number>;
     },
     private readonly ledger: {
       /** 내부 원장 기준 사용자 NFT 보유 tokenId 목록 */
       getHoldings(userId: string): Promise<bigint[]>;
+      /** 전체 사용자 ID 목록 (reconcileAllNftHoldings 배치용) */
+      getAllUserIds(): Promise<string[]>;
     },
     private readonly alerter: {
       fire(message: string, severity: 'warn' | 'critical'): Promise<void>;
@@ -86,33 +93,31 @@ export class ReconcileService {
       );
     }
 
+    this.lastResult = result;
     return result;
   }
 
-  /**
-   * mint/burn 이벤트 수신 후 증분 검증
-   * ChainEventListener → NFTIssuedHandler 패턴과 동일하게 이벤트 핸들러로 등록
-   */
-  async onMint(amount: bigint, txHash: string): Promise<void> {
-    await this.coreBanking.recordTransaction({
-      txHash,
-      userId:    'system',
-      type:      'KRW_MINT',
-      amount:    amount.toString(),
-      status:    'confirmed',
-      timestamp: Math.floor(Date.now() / 1000),
-    });
+  getLastResult(): ReconcileResult | null {
+    return this.lastResult;
   }
 
-  async onBurn(amount: bigint, txHash: string): Promise<void> {
-    await this.coreBanking.recordTransaction({
-      txHash,
-      userId:    'system',
-      type:      'KRW_BURN',
-      amount:    amount.toString(),
-      status:    'confirmed',
-      timestamp: Math.floor(Date.now() / 1000),
-    });
+  /** 이벤트 블록 기준 확정 깊이 — 리스크팀 협의 값 */
+  private static readonly CONFIRMATION_DEPTH = 12;
+
+  /**
+   * Mint/Burn 이벤트 수신 후 confirmation depth 확인 → reconcile() 트리거
+   * 이벤트 블록 + 12블록 미만이면 아직 Reorg 가능 구간 → 대조 건너뜀
+   */
+  async onMintEvent(_tokenId: bigint, _amount: bigint, blockNumber: number): Promise<void> {
+    const currentBlock = await this.onchain.getBlockNumber();
+    if (currentBlock - blockNumber < ReconcileService.CONFIRMATION_DEPTH) return;
+    await this.reconcile();
+  }
+
+  async onBurnEvent(_tokenId: bigint, _amount: bigint, blockNumber: number): Promise<void> {
+    const currentBlock = await this.onchain.getBlockNumber();
+    if (currentBlock - blockNumber < ReconcileService.CONFIRMATION_DEPTH) return;
+    await this.reconcile();
   }
 
   /**
@@ -158,5 +163,31 @@ export class ReconcileService {
     }
 
     return { isHealthy, discrepancies, checkedAt: Date.now() };
+  }
+
+  /**
+   * 전체 사용자 NFT 보유 현황 일괄 대조 (정기 배치)
+   * 불일치가 한 건이라도 있으면 isHealthy = false
+   */
+  async reconcileAllNftHoldings(): Promise<NftReconcileResult> {
+    const userIds = await this.ledger.getAllUserIds();
+    const allDiscrepancies: NftReconcileResult['discrepancies'] = [];
+
+    for (const userId of userIds) {
+      const result = await this.reconcileNftHoldings(userId);
+      allDiscrepancies.push(...result.discrepancies);
+    }
+
+    const isHealthy = allDiscrepancies.length === 0;
+
+    if (!isHealthy) {
+      const severity = allDiscrepancies.length >= 10 ? 'critical' : 'warn';
+      await this.alerter.fire(
+        `[NFT Reconcile All] 전체 불일치=${allDiscrepancies.length}건`,
+        severity,
+      );
+    }
+
+    return { isHealthy, discrepancies: allDiscrepancies, checkedAt: Date.now() };
   }
 }

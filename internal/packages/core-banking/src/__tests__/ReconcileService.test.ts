@@ -28,6 +28,7 @@ function makeOnchain(
   supply: bigint,
   bankBalance: bigint,
   onchainHoldings: Map<string, bigint[]> = new Map(),
+  currentBlock = 1000,
 ) {
   return {
     async getTotalSupply()           { return supply; },
@@ -39,6 +40,7 @@ function makeOnchain(
     async getNftHoldings(address: string): Promise<bigint[]> {
       return onchainHoldings.get(address) ?? [];
     },
+    async getBlockNumber() { return currentBlock; },
   };
 }
 
@@ -46,6 +48,9 @@ function makeLedger(ledgerHoldings: Map<string, bigint[]> = new Map()) {
   return {
     async getHoldings(userId: string): Promise<bigint[]> {
       return ledgerHoldings.get(userId) ?? [];
+    },
+    async getAllUserIds(): Promise<string[]> {
+      return [...ledgerHoldings.keys()];
     },
   };
 }
@@ -122,29 +127,34 @@ describe('ReconcileService.reconcile()', () => {
 
 // ── onMint / onBurn ───────────────────────────────────────────────────────────
 
-describe('ReconcileService.onMint()', () => {
-  it('coreBanking.recordTransaction KRW_MINT으로 호출', async () => {
-    const cb = makeCoreBanking();
-    const svc = new ReconcileService(cb, makeOnchain(0n, 0n), makeLedger(), makeAlerter());
-    await svc.onMint(100_000n, '0xminthash');
-    expect(cb.recordCalls).toHaveLength(1);
-    const call = cb.recordCalls[0] as any;
-    expect(call.type).toBe('KRW_MINT');
-    expect(call.amount).toBe('100000');
-    expect(call.txHash).toBe('0xminthash');
+describe('ReconcileService.onMintEvent() / onBurnEvent()', () => {
+  it('confirmation depth 미달(11블록) → reconcile() 스킵', async () => {
+    const svc = new ReconcileService(
+      makeCoreBanking(), makeOnchain(1_000_000n, 1_000_000n, new Map(), 1011),
+      makeLedger(), makeAlerter(),
+    );
+    await svc.onMintEvent(1n, 100_000n, 1000);  // 1011 - 1000 = 11 < 12
+    expect(svc.getLastResult()).toBeNull();       // reconcile 호출 안 됨
   });
-});
 
-describe('ReconcileService.onBurn()', () => {
-  it('coreBanking.recordTransaction KRW_BURN으로 호출', async () => {
-    const cb = makeCoreBanking();
-    const svc = new ReconcileService(cb, makeOnchain(0n, 0n), makeLedger(), makeAlerter());
-    await svc.onBurn(50_000n, '0xburnhash');
-    expect(cb.recordCalls).toHaveLength(1);
-    const call = cb.recordCalls[0] as any;
-    expect(call.type).toBe('KRW_BURN');
-    expect(call.amount).toBe('50000');
-    expect(call.txHash).toBe('0xburnhash');
+  it('confirmation depth 충족(12블록) → reconcile() 실행', async () => {
+    const svc = new ReconcileService(
+      makeCoreBanking(), makeOnchain(1_000_000n, 1_000_000n, new Map(), 1012),
+      makeLedger(), makeAlerter(),
+    );
+    await svc.onMintEvent(1n, 100_000n, 1000);  // 1012 - 1000 = 12 >= 12
+    expect(svc.getLastResult()?.isHealthy).toBe(true);
+  });
+
+  it('onBurnEvent — depth 충족 + 불일치 시 critical 알림', async () => {
+    const alerter = makeAlerter();
+    const svc = new ReconcileService(
+      makeCoreBanking(), makeOnchain(3_000_000n, 1_000_000n, new Map(), 1012),
+      makeLedger(), alerter,
+    );
+    await svc.onBurnEvent(1n, 50_000n, 1000);
+    expect(alerter.fires).toHaveLength(1);
+    expect(alerter.fires[0]!.severity).toBe('critical');
   });
 });
 
