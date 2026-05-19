@@ -61,7 +61,7 @@ const BASE_PARAMS: LogParams = {
   action:       'MINT_REQUESTED',
   resourceType: 'MintRequest',
   resourceId:   'req-001',
-  afterState:   { status: 'PENDING' },
+  afterState:   { status: 'REQUESTED' },
 };
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
