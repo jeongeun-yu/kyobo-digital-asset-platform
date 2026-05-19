@@ -27,6 +27,9 @@ import { logger } from '../infra/logger';
 export interface LedgerService {
   creditNFT(owner: string, tokenId: string, amount?: number): Promise<void>;
   getNFTBalance(owner: string, tokenId: string): Promise<number>;
+  // TODO(M4): mint_request 상태를 CONFIRMED로 전이
+  // NFTIssued 이벤트 처리 완료 후 호출 — Java 영구 원장 반영이 끝났음을 기록
+  updateMintRequestConfirmed?(requestId: string): Promise<void>;
 }
 
 export interface FinalizedBlockProvider {
@@ -68,6 +71,11 @@ export class NFTIssuedProcessor implements EventProcessor {
 
     const processed = await this.idempotency.run(idempotencyKey, async () => {
       await this.ledger.creditNFT(payload.to, payload.tokenId);
+
+      // TODO(M4): Java 영구 원장 반영 완료 후 mint_request 상태를 CONFIRMED로 전이
+      // 설계: CONFIRMED = "내부 원장 반영 완료" (온체인 확인과 별개)
+      // 구현 시 아래 호출 추가:
+      //   await this.ledger.updateMintRequestConfirmed?.(requestId);
     });
 
     if (!processed) {

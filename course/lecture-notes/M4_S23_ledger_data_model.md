@@ -2,7 +2,7 @@
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.
 
-> 모듈 4 · 세션 23 · 1시간  
+> 모듈 4 · 세션 23 · 1시간 10분  
 > 스켈레톤: `internal/packages/core-banking/src/ledger/LedgerService.ts`
 
 ---
@@ -354,6 +354,77 @@ ReconcileService가 할 수 있는 건 딱 두 가지:
 2. 담당자에게 **알림**
 
 보정은 반드시 사람이 판단 후 정상 발행 프로세스(IssuerService)를 통해 새 TX로 처리한다.
+
+---
+
+### 7. InternalLedgerBalance — 4단계 잔액 모델 (Phase 3 예고)
+
+> **현재(Phase 1)는 구현하지 않는다.** 이 섹션은 Phase 3(직접 Custody 전환) 시점에 왜 4단계 잔액이 필요한지 미리 짚어두는 것이다.
+
+Phase 1에서는 CONFIRMED 이후 Java Gateway의 영구 원장에 보유 기록을 위임한다. 출금(NFT 전송)이 없으니 잔액을 "잠그는" 개념이 필요 없다.
+
+Phase 3에서 직접 Custody를 운영하면 달라진다. 사용자가 "출금 요청"을 하는 순간부터 TX가 최종 확정(FINALIZED)될 때까지, 같은 잔액으로 두 번째 출금을 막아야 한다.
+
+```typescript
+export interface InternalLedgerBalance {
+  userId:    string;
+  tokenId:   bigint;
+  available: bigint; // = settled - reserved - pending
+  reserved:  bigint; // 출금 승인됐으나 온체인 미확정
+  pending:   bigint; // TX 전송됨, 블록 미포함
+  settled:   bigint; // 온체인 Finalized 기준 최종
+  updatedAt: Date;
+}
+```
+
+**4단계 잔액 흐름 (Phase 3):**
+
+| 단계 | 이벤트 | 잔액 변화 |
+|---|---|---|
+| 1 | 출금 요청 승인 | Available → Reserved (이중 인출 방지 잠금) |
+| 2 | TX 브로드캐스트 | Reserved → Pending |
+| 3 | FINALIZED | Pending → Settled (최종 정산) |
+| — | 출금 취소 | Reserved → Available (잠금 해제) |
+
+**이중 인출 방지 원리:** 출금 승인 즉시 RESERVE로 잠그기 때문에, 같은 잔액으로 두 번째 출금 요청이 들어오면 `available = settled - reserved - pending = 0`이 되어 자동으로 차단된다.
+
+---
+
+### 8. 데이터 수명 관리 + 규제 보존 의무
+
+테이블마다 데이터를 얼마나 보존해야 하는지는 **비즈니스 필요**와 **법적 의무** 두 가지가 결정한다.
+
+**테이블별 보존 기간:**
+
+| 테이블 | 보존 기간 | 이유 |
+|---|---|---|
+| `mint_requests` | 30일 (CONFIRMED/FAILED 후) | 종료된 요청이 쌓이면 DB 부담; 개인정보보호법 §21 |
+| `processed_events` | 90일 | Reorg 감지 목적 (최대 Reorg 길이 << 90일분 블록) |
+| `user_nft_holdings` | 보유 중 영구 | 현재 보유 현황 캐시 — 삭제 = 데이터 손실 |
+| `audit_log` | 5년 | 가상자산이용자보호법 §15 (거래 기록 보존) |
+
+**규제 매핑:**
+
+| 법령 | 의무 | 적용 테이블 | 기간 |
+|---|---|---|---|
+| 가상자산이용자보호법 §15 | 거래 기록 보존 | `audit_log` | 5년 |
+| 전자금융감독규정 §34 | 접근 기록 보존 | `audit_log` | 1년 이상 |
+| 개인정보보호법 §21 | 목적 달성 후 삭제 | `mint_requests` | 30일 |
+| 내부 정책 | Reorg 감지 | `processed_events` | 90일 |
+
+**자동 만료 구현 (PostgreSQL pg_cron):**
+
+```sql
+-- 매일 자정 실행
+DELETE FROM mint_requests
+WHERE status IN ('CONFIRMED', 'FAILED')
+  AND updated_at < NOW() - INTERVAL '30 days';
+
+DELETE FROM processed_events
+WHERE processed_at < NOW() - INTERVAL '90 days';
+```
+
+감독원 조회 요건: `audit_log`는 즉시 조회 가능해야 한다. `resource_type`, `actor` 컬럼에 인덱스를 걸고, INSERT-only + RLS 정책으로 변조를 막는다. 상세는 S26에서 다룬다.
 
 ---
 
