@@ -19,6 +19,7 @@
 7. [프로젝트 구조](#7-프로젝트-구조)
 8. [강의 자료](#8-강의-자료)
 9. [트러블슈팅](#9-트러블슈팅)
+10. [Docker 개발 환경](#10-docker-개발-환경)
 
 ---
 
@@ -730,3 +731,131 @@ Java가 없으면 [1-4. Java 17 설치](#1-4-java-17-설치) 참고.
 Test-Path internal\internal-ledger\src\test\resources\application.yml
 # True 출력되어야 함
 ```
+
+---
+
+## 10. Docker 개발 환경
+
+PostgreSQL · Redis · Hardhat 로컬 노드를 Docker로 띄우는 방법입니다.
+
+### 10-1. 사전 설치
+
+#### WSL2 설치
+
+PowerShell을 **관리자 권한**으로 열고 실행:
+
+```powershell
+wsl --install
+```
+
+설치 완료 후 **재부팅** 필요. 재부팅하면 Ubuntu 초기 설정(계정 생성)이 자동으로 뜹니다.
+
+#### Rancher Desktop 설치
+
+1. [https://rancherdesktop.io](https://rancherdesktop.io) 에서 Windows용 설치 파일 다운로드
+2. 설치 완료 후 실행
+3. **Preferences → Container Engine → `dockerd (moby)` 선택** (기본값이 `containerd`인 경우 반드시 변경)
+4. 하단 상태가 `Running`이 될 때까지 대기 (최초 실행 시 수 분 소요)
+
+설치 확인 — 터미널을 **새로 열고** 실행:
+
+```powershell
+docker --version
+docker compose version
+```
+
+### 10-2. 환경 변수 설정
+
+`infrastructure/docker/` 디렉터리에 `.env` 파일 생성:
+
+```powershell
+@"
+POSTGRES_PASSWORD=kyobo_dev_pw
+REDIS_PASSWORD=kyobo_redis_pw
+"@ | Out-File -FilePath infrastructure\docker\.env -Encoding utf8
+```
+
+> `.env` 파일은 `.gitignore`에 포함되어 있어 커밋되지 않습니다.
+
+### 10-3. 컨테이너 실행
+
+```powershell
+# PostgreSQL + Redis 실행 (개발 시 최소 구성)
+docker compose -f infrastructure/docker/docker-compose.yml up -d postgres redis
+
+# 상태 확인
+docker compose -f infrastructure/docker/docker-compose.yml ps
+
+# 스키마 초기화 확인
+docker exec docker-postgres-1 psql -U kyobo -d kyobo_internal -c "\dt"
+```
+
+정상이면 아래 5개 테이블이 출력됩니다:
+
+```
+ audit_log · mint_requests · outbox_events · processed_events · user_nft_holdings
+```
+
+### 10-4. 접속 정보
+
+| 서비스 | 호스트 | 포트 |
+|---|---|---|
+| PostgreSQL | localhost | 5433 |
+| Redis | localhost | 6380 |
+| Hardhat RPC | localhost | 8545 |
+
+### 10-5. 종료
+
+```powershell
+# 컨테이너만 종료 (데이터 유지)
+docker compose -f infrastructure/docker/docker-compose.yml down
+
+# 컨테이너 + 볼륨 삭제 (DB 초기화)
+docker compose -f infrastructure/docker/docker-compose.yml down -v
+```
+
+---
+
+### Docker 트러블슈팅
+
+#### `docker: command not found`
+
+Rancher Desktop 설치 후 터미널을 새로 열지 않으면 PATH가 반영되지 않습니다. 터미널을 닫고 새로 여세요.
+
+#### `open //./pipe/docker_engine: The system cannot find the file specified`
+
+Docker daemon이 아직 시작되지 않은 상태입니다.
+
+- Rancher Desktop 하단 상태가 `Running`인지 확인
+- Preferences → Container Engine → **`dockerd (moby)`** 로 변경되어 있는지 확인
+
+#### `Error: UNKNOWN: unknown error, open '\\wsl$\rancher-desktop-data\etc\hosts'`
+
+Rancher Desktop 시작 시 WSL2 배포판이 깨진 경우입니다. PowerShell 관리자 권한으로 초기화:
+
+```powershell
+wsl --unregister rancher-desktop-data
+wsl --unregister rancher-desktop
+```
+
+이후 Rancher Desktop을 다시 실행하면 WSL 배포판을 새로 생성합니다.
+
+#### `POSTGRES_PASSWORD` 변수가 빈값 — 컨테이너가 즉시 종료됨
+
+`infrastructure/docker/.env` 파일이 없거나 `POSTGRES_PASSWORD`가 비어있는 경우입니다.
+[10-2. 환경 변수 설정](#10-2-환경-변수-설정)을 따라 `.env` 파일을 생성하세요.
+
+> **주의:** 프로젝트 루트의 `.env`는 `-f`로 compose 파일 경로를 지정할 경우 자동으로 읽히지 않습니다. `infrastructure/docker/.env`에 별도로 생성해야 합니다.
+
+#### 테이블이 생성되지 않음 — `Did not find any relations`
+
+`initdb.d` 스크립트는 볼륨이 처음 생성될 때만 실행됩니다. 이전에 빈 상태로 컨테이너가 뜬 적이 있으면 볼륨을 삭제하고 재시작해야 합니다:
+
+```powershell
+docker compose -f infrastructure/docker/docker-compose.yml down -v
+docker compose -f infrastructure/docker/docker-compose.yml up -d postgres redis
+```
+
+#### `write .../meta.db: input/output error`
+
+Docker 내부 스토리지 손상 — Rancher Desktop을 완전히 종료(트레이 우클릭 → Quit) 후 재시작하세요.
