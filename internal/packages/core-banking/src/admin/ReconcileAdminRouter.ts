@@ -25,19 +25,8 @@ export function registerReconcileAdminRoutes(
     const limit   = Number(req.query['limit'])   || 20;
     const runType = req.query['runType'] as string | undefined;
 
-    // TODO: reconcile_history 테이블에서 조회
-    //   SELECT run_at, run_type, target_count, mismatch_count,
-    //          mismatch_user_ids, duration_ms
-    //   FROM reconcile_history
-    //   WHERE run_type = $runType (있을 때만)
-    //   ORDER BY run_at DESC
-    //   LIMIT $limit
-    //
-    // 응답 형식:
-    //   { history: [ { run_at, run_type, target_count, mismatch_count,
-    //                  mismatch_user_ids, duration_ms }, ... ] }
-    void limit; void runType;
-    res.status(501).json({ error: 'Not implemented' });
+    const result = await reconcileAdmin.getHistory(limit, runType);
+    res.status(200).json({ history: result });
   });
 
   // ── 실습 2-B: 수동 reconcile 트리거 ──────────────────────────
@@ -48,17 +37,18 @@ export function registerReconcileAdminRoutes(
       reason?:  string;
     };
 
-    // TODO: userId, operator 유효성 검사 (없으면 400)
+    if (!userId || !operator) {
+      res.status(400).json({ error: 'userId and operator are required' });
+      return;
+    }
 
-    // TODO: reconcileAdmin.runManualReconcile(userId, operator) 호출
-    //   결과를 아래 형식으로 응답:
-    //   {
-    //     userId,
-    //     mismatch:      result.mismatchCount > 0,
-    //     mismatchCount: result.mismatchCount,
-    //     durationMs:    result.durationMs,
-    //   }
-    void userId; void operator; void reason; void reconcileAdmin;
-    res.status(501).json({ error: 'Not implemented' });
+    void reason;
+    const result = await reconcileAdmin.runManualReconcile(userId, operator);
+    res.status(200).json({
+      userId,
+      mismatch:      result.mismatchCount > 0,
+      mismatchCount: result.mismatchCount,
+      durationMs:    result.durationMs,
+    });
   });
 }

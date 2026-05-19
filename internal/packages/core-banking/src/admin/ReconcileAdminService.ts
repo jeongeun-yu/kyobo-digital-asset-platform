@@ -46,15 +46,41 @@ export class ReconcileAdminService {
     private readonly notifier:         NotifierAdapter,
   ) {}
 
+  // ── 이력 조회 (Router 2-A 지원) ──────────────────────────────
+  async getHistory(limit: number, runType?: string): Promise<Record<string, unknown>[]> {
+    const conditions: string[] = [];
+    const params: unknown[]    = [];
+
+    if (runType) {
+      conditions.push(`run_type = $${params.length + 1}`);
+      params.push(runType);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(limit);
+
+    const { rows } = await this.db.query(
+      `SELECT run_at, run_type, target_count, mismatch_count,
+              mismatch_user_ids, duration_ms
+       FROM reconcile_history
+       ${where}
+       ORDER BY run_at DESC
+       LIMIT $${params.length}`,
+      params,
+    );
+    return rows;
+  }
+
   // ── 실습 1-A: Hourly Reconcile ───────────────────────────────
   async runHourlyReconcile(): Promise<ReconcileRunResult> {
     const start = Date.now();
     const runAt = new Date();
 
-    // TODO: 최근 1시간 내 업데이트된 user_nft_holdings 사용자 조회
-    //   SELECT DISTINCT user_id FROM user_nft_holdings
-    //   WHERE updated_at >= NOW() - INTERVAL '1 hour'
-    const userIds: string[] = [];
+    const { rows } = await this.db.query(
+      `SELECT DISTINCT user_id FROM user_nft_holdings
+       WHERE updated_at >= NOW() - INTERVAL '1 hour'`,
+    );
+    const userIds = rows.map(r => r['user_id'] as string);
 
     return this._runReconcileForUsers(userIds, 'HOURLY', start, runAt);
   }
@@ -64,9 +90,10 @@ export class ReconcileAdminService {
     const start = Date.now();
     const runAt = new Date();
 
-    // TODO: 전체 사용자 조회
-    //   SELECT DISTINCT user_id FROM user_nft_holdings ORDER BY user_id
-    const userIds: string[] = [];
+    const { rows } = await this.db.query(
+      `SELECT DISTINCT user_id FROM user_nft_holdings ORDER BY user_id`,
+    );
+    const userIds = rows.map(r => r['user_id'] as string);
 
     return this._runReconcileForUsers(userIds, 'DAILY', start, runAt);
   }
@@ -76,8 +103,13 @@ export class ReconcileAdminService {
     const start = Date.now();
     const runAt = new Date();
 
-    // TODO: 수동 트리거 감사 로그 기록
-    //   this.auditLog.log({ actor: operator, action: 'RECONCILE_MANUAL_TRIGGER', ... })
+    await this.auditLog.log({
+      actor:      operator,
+      action:     'RECONCILE_MANUAL_TRIGGER',
+      resourceId: userId,
+      resourceType: 'USER',
+      afterState: { triggeredAt: runAt.toISOString() },
+    });
 
     return this._runReconcileForUsers([userId], 'MANUAL', start, runAt);
   }
@@ -93,10 +125,17 @@ export class ReconcileAdminService {
 
     for (const userId of userIds) {
       try {
-        // TODO: reconcileService.reconcileNftHoldings(userId) 호출
-        //   결과가 !isHealthy이면 mismatchUserIds에 추가
-        //   불일치 발견 시 auditLog.log({ action: 'RECONCILE_MISMATCH_DETECTED', ... }) 기록
-        void userId;
+        const result = await this.reconcileService.reconcileNftHoldings(userId);
+        if (!result.isHealthy) {
+          mismatchUserIds.push(userId);
+          await this.auditLog.log({
+            actor:        'SYSTEM',
+            action:       'RECONCILE_MISMATCH_DETECTED',
+            resourceId:   userId,
+            resourceType: 'USER',
+            afterState:   { discrepancies: result.discrepancies },
+          });
+        }
       } catch (err) {
         console.error(`[ReconcileAdmin] reconcile 오류 userId=${userId}`, err);
       }
@@ -112,11 +151,21 @@ export class ReconcileAdminService {
       durationMs,
     };
 
-    // TODO: reconcile_history 테이블에 runResult 저장
-    //   INSERT INTO reconcile_history (run_at, run_type, target_count, ...) VALUES (...)
+    await this.db.query(
+      `INSERT INTO reconcile_history
+         (run_at, run_type, target_count, mismatch_count, mismatch_user_ids, duration_ms)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        runResult.runAt,
+        runResult.runType,
+        runResult.targetCount,
+        runResult.mismatchCount,
+        JSON.stringify(runResult.mismatchUserIds),
+        runResult.durationMs,
+      ],
+    );
 
-    // TODO: _sendMismatchAlert() 호출
-    void runResult;
+    await this._sendMismatchAlert(runResult.mismatchCount, runType, runResult);
 
     return runResult;
   }
@@ -129,9 +178,15 @@ export class ReconcileAdminService {
   ): Promise<void> {
     if (mismatchCount === 0) return;
 
-    // TODO: 건수별 심각도 결정
-    //   10건+ → 'P1' / 5~9건 → 'P2' / 1~4건 → 'P3'
-    // TODO: this.notifier.sendAlert() 호출
-    void runType; void result;
+    const severity = mismatchCount >= 10 ? 'P1'
+                   : mismatchCount >= 5  ? 'P2'
+                   :                       'P3';
+
+    await this.notifier.sendAlert({
+      title:    `[Reconcile] ${runType} 불일치 ${mismatchCount}건`,
+      severity,
+      body:     `대상 ${result.targetCount}명 중 ${mismatchCount}명 불일치 (소요 ${result.durationMs}ms)`,
+      metadata: { mismatchUserIds: result.mismatchUserIds, runAt: result.runAt.toISOString() },
+    });
   }
 }
