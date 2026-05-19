@@ -17,7 +17,7 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "user_nft_holdings",
-    uniqueConstraints = @UniqueConstraint(columnNames = {"token_id", "contract_addr", "chain_id"}))
+    uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "token_id", "contract_addr", "chain_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class NftHolding {
@@ -39,6 +39,9 @@ public class NftHolding {
     @Column(name = "chain_id", nullable = false)
     private Integer chainId;
 
+    @Column(name = "amount", nullable = false)
+    private Long amount;
+
     @Column(name = "acquired_at", nullable = false)
     private Instant acquiredAt;
 
@@ -49,12 +52,13 @@ public class NftHolding {
     private String onChainTx;
 
     public static NftHolding of(String userId, Long tokenId, String contractAddr,
-                                 Integer chainId, Instant acquiredAt, String onChainTx) {
+                                 Integer chainId, Long amount, Instant acquiredAt, String onChainTx) {
         NftHolding h = new NftHolding();
         h.userId = userId;
         h.tokenId = tokenId;
         h.contractAddr = contractAddr;
         h.chainId = chainId;
+        h.amount = amount;
         h.acquiredAt = acquiredAt;
         h.onChainTx = onChainTx;
         return h;

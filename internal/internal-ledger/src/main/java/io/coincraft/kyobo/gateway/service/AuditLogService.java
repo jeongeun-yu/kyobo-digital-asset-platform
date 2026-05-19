@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 
 /**
@@ -32,8 +33,9 @@ public class AuditLogService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void log(String actor, String action, String resourceType,
                     String resourceId, String beforeState, String afterState) {
-        String checksum = computeChecksum(Instant.now().toString(), actor, action, resourceId, afterState);
-        AuditLogEntry entry = AuditLogEntry.of(actor, action, resourceType, resourceId, beforeState, afterState, checksum);
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        String checksum = computeChecksum(now.toString(), actor, action, resourceId, afterState);
+        AuditLogEntry entry = AuditLogEntry.of(actor, action, resourceType, resourceId, beforeState, afterState, checksum, now);
         auditLogRepository.save(entry);
         log.debug("[Audit] actor={}, action={}, resource={}:{}", actor, action, resourceType, resourceId);
     }

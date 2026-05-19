@@ -36,6 +36,7 @@ export interface GatewayNftHoldingRequest {
   tokenId:      number;   // Java Long → TS number (NFT tokenId 범위에서 안전)
   contractAddr: string;
   chainId:      number;
+  amount:       number;   // ERC-1155 발행 수량 (Java Long)
   acquiredAt:   string;   // ISO-8601 (Java Instant)
   onChainTx:    string;
 }

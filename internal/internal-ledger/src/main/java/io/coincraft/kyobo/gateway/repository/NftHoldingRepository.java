@@ -5,7 +5,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
 public interface NftHoldingRepository extends JpaRepository<NftHolding, Long> {
-    boolean existsByTokenIdAndContractAddrAndChainId(Long tokenId, String contractAddr, Integer chainId);
-    Optional<NftHolding> findByTokenIdAndContractAddrAndChainIdAndReleasedAtIsNull(
-        Long tokenId, String contractAddr, Integer chainId);
+    boolean existsByUserIdAndTokenIdAndContractAddrAndChainId(
+        String userId, Long tokenId, String contractAddr, Integer chainId);
+    Optional<NftHolding> findByUserIdAndTokenIdAndContractAddrAndChainIdAndReleasedAtIsNull(
+        String userId, Long tokenId, String contractAddr, Integer chainId);
 }

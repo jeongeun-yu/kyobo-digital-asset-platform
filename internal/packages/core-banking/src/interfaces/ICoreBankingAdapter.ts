@@ -70,6 +70,7 @@ export interface ICoreBankingAdapter {
     tokenId: bigint;
     contractAddr: string;
     chainId: number;
+    amount: bigint;
     acquiredAt: Date;
     onChainTx: string;
   }): Promise<void>;

@@ -56,9 +56,9 @@ public class AuditLogEntry {
 
     public static AuditLogEntry of(String actor, String action, String resourceType,
                                     String resourceId, String beforeState, String afterState,
-                                    String checksum) {
+                                    String checksum, Instant eventTime) {
         AuditLogEntry e = new AuditLogEntry();
-        e.eventTime = Instant.now();
+        e.eventTime = eventTime;
         e.actor = actor;
         e.action = action;
         e.resourceType = resourceType;

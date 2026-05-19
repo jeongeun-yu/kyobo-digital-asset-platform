@@ -30,13 +30,13 @@ public class InternalLedgerService {
      */
     @Transactional
     public void recordNftHolding(String userId, NftHoldingRequest request) {
-        // 중복 방지: 동일 (tokenId, contractAddr, chainId) 이미 존재 시 skip
+        // 중복 방지: 동일 (userId, tokenId, contractAddr, chainId) 이미 존재 시 skip
         boolean alreadyExists = nftHoldingRepository
-            .existsByTokenIdAndContractAddrAndChainId(
-                request.tokenId(), request.contractAddr(), request.chainId());
+            .existsByUserIdAndTokenIdAndContractAddrAndChainId(
+                userId, request.tokenId(), request.contractAddr(), request.chainId());
 
         if (alreadyExists) {
-            log.warn("[Ledger] 이미 기록된 NFT 보유: tokenId={}, tx={}", request.tokenId(), request.onChainTx());
+            log.warn("[Ledger] 이미 기록된 NFT 보유: userId={}, tokenId={}, tx={}", userId, request.tokenId(), request.onChainTx());
             return;
         }
 
@@ -45,14 +45,18 @@ public class InternalLedgerService {
             request.tokenId(),
             request.contractAddr(),
             request.chainId(),
+            request.amount(),
             request.acquiredAt(),
             request.onChainTx()
         );
         nftHoldingRepository.save(holding);
 
+        String afterJson = String.format(
+            "{\"userId\":\"%s\",\"tokenId\":%d,\"contractAddr\":\"%s\",\"chainId\":%d,\"amount\":%d,\"onChainTx\":\"%s\"}",
+            userId, request.tokenId(), request.contractAddr(), request.chainId(), request.amount(), request.onChainTx());
         auditLogService.log("system", "NFT_ACQUIRED", "NftHolding",
             request.contractAddr() + ":" + request.tokenId(),
-            null, holding.toString());
+            null, afterJson);
 
         log.info("[Ledger] NFT 보유 기록 완료: userId={}, tokenId={}", userId, request.tokenId());
     }
@@ -62,13 +66,17 @@ public class InternalLedgerService {
      * on-chain Transfer(to=0x0 or to=other) 이벤트 확정 후 내부망 issuer-service에서 호출
      */
     @Transactional
-    public void releaseNftHolding(Long tokenId, String contractAddr, Integer chainId) {
+    public void releaseNftHolding(String userId, Long tokenId, String contractAddr, Integer chainId) {
         nftHoldingRepository
-            .findByTokenIdAndContractAddrAndChainIdAndReleasedAtIsNull(tokenId, contractAddr, chainId)
+            .findByUserIdAndTokenIdAndContractAddrAndChainIdAndReleasedAtIsNull(userId, tokenId, contractAddr, chainId)
             .ifPresent(holding -> {
                 holding.release();
+                String stateJson = String.format(
+                    "{\"userId\":\"%s\",\"tokenId\":%d,\"contractAddr\":\"%s\",\"chainId\":%d,\"onChainTx\":\"%s\"}",
+                    holding.getUserId(), holding.getTokenId(), holding.getContractAddr(),
+                    holding.getChainId(), holding.getOnChainTx());
                 auditLogService.log("system", "NFT_RELEASED", "NftHolding",
-                    contractAddr + ":" + tokenId, holding.toString(), holding.toString());
+                    contractAddr + ":" + tokenId, stateJson, stateJson);
             });
     }
 }

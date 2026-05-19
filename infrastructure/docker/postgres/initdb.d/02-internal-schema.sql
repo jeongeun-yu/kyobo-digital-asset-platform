@@ -8,10 +8,11 @@ CREATE TABLE IF NOT EXISTS user_nft_holdings (
   token_id      BIGINT NOT NULL,
   contract_addr VARCHAR(42) NOT NULL,
   chain_id      INT NOT NULL,
+  amount        BIGINT NOT NULL DEFAULT 1,
   acquired_at   TIMESTAMPTZ NOT NULL,
   released_at   TIMESTAMPTZ,
   on_chain_tx   VARCHAR(66) NOT NULL,
-  UNIQUE(token_id, contract_addr, chain_id)
+  UNIQUE(user_id, token_id, contract_addr, chain_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_nft_holdings_user ON user_nft_holdings(user_id);

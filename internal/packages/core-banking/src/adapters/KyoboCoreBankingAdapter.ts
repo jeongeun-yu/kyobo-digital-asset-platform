@@ -83,13 +83,15 @@ export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
     tokenId:      bigint;
     contractAddr: string;
     chainId:      number;
+    amount:       bigint;
     acquiredAt:   Date;
     onChainTx:    string;
   }): Promise<void> {
     await this.gateway.recordNftHolding(params.userId, {
-      tokenId:      Number(params.tokenId),  // bigint → number (ERC-1155 tokenId 범위 안전)
+      tokenId:      Number(params.tokenId),
       contractAddr: params.contractAddr,
       chainId:      params.chainId,
+      amount:       Number(params.amount),
       acquiredAt:   params.acquiredAt.toISOString(),
       onChainTx:    params.onChainTx,
     });
