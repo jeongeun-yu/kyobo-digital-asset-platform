@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
   resource_id   VARCHAR(128) NOT NULL,
   before_state  JSONB,
   after_state   JSONB NOT NULL,
-  checksum      VARCHAR(64) NOT NULL
+  prev_checksum VARCHAR(64),          -- NULL = genesis (첫 레코드)
+  checksum      VARCHAR(64) NOT NULL  -- SHA-256(prevChecksum+eventTime+actor+action+resourceId+afterState)
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON audit_log(resource_type, resource_id);

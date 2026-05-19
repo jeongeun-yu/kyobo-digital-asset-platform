@@ -51,12 +51,15 @@ public class AuditLogEntry {
     @Column(name = "after_state", nullable = false, columnDefinition = "jsonb")
     private String afterState;
 
+    @Column(name = "prev_checksum", length = 64)
+    private String prevChecksum;
+
     @Column(name = "checksum", nullable = false, length = 64)
     private String checksum;
 
     public static AuditLogEntry of(String actor, String action, String resourceType,
                                     String resourceId, String beforeState, String afterState,
-                                    String checksum, Instant eventTime) {
+                                    String prevChecksum, String checksum, Instant eventTime) {
         AuditLogEntry e = new AuditLogEntry();
         e.eventTime = eventTime;
         e.actor = actor;
@@ -65,6 +68,7 @@ public class AuditLogEntry {
         e.resourceId = resourceId;
         e.beforeState = beforeState;
         e.afterState = afterState;
+        e.prevChecksum = prevChecksum;
         e.checksum = checksum;
         return e;
     }
