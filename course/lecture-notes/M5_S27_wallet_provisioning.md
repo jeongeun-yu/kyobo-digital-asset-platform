@@ -23,16 +23,27 @@ M4에서 원장과 감사 로그를 완성했다. 이제 실제 비즈니스 로
 
 ---
 
-### 2. VASP 유형에 따라 지갑 획득 방식이 다르다
+### 2. 지갑 등록 방식은 두 가지로 나뉜다
 
-교보생명이 협력하는 VASP에 따라 지갑 획득 방법이 달라진다.
+Phase 1에서 사용자의 지갑 주소를 시스템에 등록하는 방식은 크게 두 가지다.
+
+| 방식 | private key 위치 | 지갑 주소 출처 | verified 저장 |
+|---|---|---|---|
+| **수탁 (Custodial)** — Phase 1 기본 | VASP(월렛원) 서버 | VASP API 응답 | `true` 즉시 — VASP가 소유권 보장 |
+| **비수탁 (Non-Custodial)** — 선택적 지원 | 사용자 본인 | 사용자가 직접 제출 | `false` → EIP-191 서명 후 `true` (S29) |
+
+그리고 교보 내재화(Phase 4):
 
 | VASP 유형 | 예시 | 지갑 관리 주체 | 서버 처리 방식 |
 |---|---|---|---|
-| EXTERNAL | 월렛원, KorbitCustody | VASP Custody 시스템 | VASP API 호출 → 지갑 주소 조회 |
-| KYOBO | Phase 4 내재화 | 교보 내부 HSM | 직접 생성 → DB 저장 |
+| EXTERNAL 수탁 | 월렛원, KorbitCustody | VASP Custody 시스템 | VASP API 호출 → 지갑 주소 조회 → `verified: true` |
+| KYOBO | Phase 4 내재화 | 교보 내부 HSM | 직접 생성 → DB 저장 → `verified: true` |
 
-**EXTERNAL 방식**: VASP(예: 월렛원)가 사용자를 위한 Custody 지갑을 관리한다. 서버는 VASP API를 호출해서 userId에 해당하는 지갑 주소를 가져온다.
+**수탁(Custodial) 방식 — Phase 1 현재:**
+VASP(월렛원)가 사용자를 위한 Custody 지갑을 생성하고 private key를 보관한다. 서버는 VASP API를 호출해 지갑 주소를 받아온다. VASP가 직접 생성한 지갑이므로 소유권이 자명하다 — 별도 서명 검증 없이 `verified: true`로 저장한다.
+
+**비수탁(Non-Custodial) 방식 — Phase 1 선택적:**
+사용자가 MetaMask 같은 자가관리 지갑을 직접 교보 시스템에 등록하는 경우다. 이때는 사용자가 해당 주소의 private key를 실제로 보유하고 있는지 증명해야 한다. 주소만 제출하는 것만으로는 소유권을 알 수 없다 — EIP-191 서명 검증이 필요하다(S29).
 
 **KYOBO 방식**: Phase 4에서 교보가 직접 HSM(Hardware Security Module)으로 키를 관리하는 내재화 단계. Phase 1에서는 미구현이지만 코드 구조는 지금부터 준비해둔다.
 

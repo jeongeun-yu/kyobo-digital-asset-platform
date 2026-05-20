@@ -74,7 +74,14 @@ CREATE TABLE user_wallet_mapping (
 CREATE INDEX idx_wallet_mapping_addr ON user_wallet_mapping(wallet_addr);
 ```
 
-`verified` 컬럼이 중요하다. EXTERNAL(월렛원) 방식에서는 사용자가 서명을 통해 지갑 소유권을 증명해야 `verified=true`가 된다(S29에서 구현). KYOBO 방식에서는 VASP가 지갑을 생성하므로 즉시 `verified=true`.
+`verified` 컬럼은 지갑 등록 방식에 따라 초기값이 다르다.
+
+| 등록 방식 | verified 초기값 | 이유 |
+|---|---|---|
+| VASP 수탁 (월렛원, KYOBO) | `true` 즉시 | VASP가 지갑을 직접 생성 → 소유권 자명 |
+| 비수탁 (사용자 자가관리) | `false` | 주소만 제출 — 소유권 미검증 상태 |
+
+비수탁 지갑은 EIP-191 서명 검증(S29) 성공 후 `verified=true`로 업데이트된다.
 
 `verified=false`인 지갑으로는 NFT 발행을 진행하면 안 된다.
 
@@ -82,13 +89,26 @@ CREATE INDEX idx_wallet_mapping_addr ON user_wallet_mapping(wallet_addr);
 
 ### 5. 지갑 주소 등록 흐름 비교
 
-**월렛원 방식 (EXTERNAL — 사용자 자기관리형)**
+**수탁 방식 (월렛원 EXTERNAL — Phase 1 기본)**
+
+```
+사용자 가입 완료
+    │
+    ▼
+서버: VASP API 호출 → 지갑 자동 생성 (또는 기존 지갑 조회)
+    │
+    ▼
+walletAddr 응답 → DB 저장, verified=true
+(VASP가 private key 보관 + 지갑 생성 주체 → 소유권 자명, 별도 서명 불필요)
+```
+
+**비수탁 방식 (사용자 자가관리 — MetaMask 등)**
 
 ```
 앱 로그인
     │
     ▼
-사용자 MetaMask(또는 월렛원 앱) 연결 → walletAddr 서버 전송
+사용자: 자신의 지갑 주소(0xABCD...) 서버에 제출
     │
     ▼
 서버: nonce 생성 + 클라이언트 전달
@@ -103,19 +123,19 @@ CREATE INDEX idx_wallet_mapping_addr ON user_wallet_mapping(wallet_addr);
 복원 주소 == walletAddr → DB 저장, verified=true
 ```
 
-왜 서명이 필요한지는 S29에서 자세히 다룬다.
+비수탁 방식에서 서명이 필요한 이유는 S29에서 자세히 다룬다.
 
-**코다 방식 (KYOBO — Custody 시스템)**
+**KYOBO 방식 (Phase 4 내재화)**
 
 ```
 사용자 가입 완료
     │
     ▼
-서버: Custody API 호출 → 지갑 자동 생성
+서버: 내부 HSM/MPC로 지갑 직접 생성
     │
     ▼
-walletAddr 응답 → DB 저장, verified=true
-(VASP가 private key 보관 → 사용자 서명 불필요)
+walletAddr 생성 → DB 저장, verified=true
+(교보가 직접 키 생성 주체 → 소유권 자명)
 ```
 
 ---
@@ -176,31 +196,32 @@ async getMapping(userId: string): Promise<WalletMapping | null>
 
 ---
 
-### 8. verified 상태 전이 — EXTERNAL vs KYOBO
+### 8. verified 상태 전이 — 등록 방식별 비교
 
 ```
-EXTERNAL 방식 (월렛원 — 현재 Phase 1):
-  provision() 완료
-       │
-       ▼  verified = false  (DB 저장)
-          ← 지갑 주소는 알지만 소유권은 미검증 상태
-          ← 이 상태로 NFT 발행하면 공격자가 등록한 주소일 수 있음
-       │
-  verifyOwnership() 성공  (S29)
-       │
-       ▼  verified = true  (DB 업데이트)
-          ← 사용자가 private key를 실제 보유함이 증명됨
-          ← 이제 NFT 발행 가능
-
-KYOBO 방식 (Phase 3/4 내재화):
+수탁 방식 (월렛원 EXTERNAL / KYOBO):
   provision() 완료
        │
        ▼  verified = true  (즉시)
-          ← VASP가 private key를 직접 생성·보관
-          ← 별도 서명 검증 불필요
+          ← VASP 또는 교보가 지갑을 직접 생성한 주체
+          ← 소유권이 자명 → 별도 서명 검증 불필요
+          ← NFT 발행 즉시 가능
+
+비수탁 방식 (사용자 자가관리 — MetaMask 등):
+  사용자가 지갑 주소 제출
+       │
+       ▼  verified = false  (DB 저장)
+          ← 주소는 알지만 소유권 미검증
+          ← 이 상태로 NFT 발행 불가
+       │
+  verifyOwnership() 성공  (S29 — EIP-191 서명 검증)
+       │
+       ▼  verified = true  (DB 업데이트)
+          ← 사용자가 private key를 실제 보유함이 수학적으로 증명됨
+          ← 이제 NFT 발행 가능
 ```
 
-`verified` 컬럼이 있는 이유: EXTERNAL 방식에서 지갑 주소를 DB에 먼저 저장하고 나중에 검증하는 2단계 구조이기 때문이다. 프로비저닝(주소 획득)과 소유권 검증(서명 확인)이 분리된 API 호출이다.
+`verified` 컬럼이 있는 이유: 비수탁 지갑의 경우 주소 제출과 소유권 증명이 분리된 2단계 흐름이기 때문이다. 수탁 지갑은 VASP가 생성 주체이므로 1단계로 끝난다.
 
 ---
 
