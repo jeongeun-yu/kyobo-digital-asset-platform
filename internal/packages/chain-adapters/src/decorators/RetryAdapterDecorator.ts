@@ -64,11 +64,19 @@ export class RetryAdapterDecorator extends AdapterDecorator {
         return await fn();
       } catch (err) {
         const msg = String(err).toLowerCase();
+        
+        // NON_RETRYABLE 재시도 불가 오류 감지, 
+        // NON_RETRYABLE 에러 재시도 시 가스비만 낭비되고, 문제 해결되지 않음
         if (NON_RETRYABLE.some(p => msg.includes(p))) throw err;
         if (attempt === this.opts.maxAttempts) throw err;
 
+        // 여러 클라이언트 동시 재시도 방지
         const jittered = delayMs * (0.8 + Math.random() * 0.4);
         await new Promise(r => setTimeout(r, jittered));
+       
+        // 다음 재시도 대기 시간 계산 (지수 백오프)
+        // 서버가 과부하 상태면, 바로 재시도 시 더 큰 부하가 될 수 있으므로, 재시도 간격을 점점 늘려가는 전략
+        // (서버 상태 개선될 때까지 기다리되, 너무 오래 기다리지 말자)
         delayMs = Math.min(delayMs * this.opts.backoffFactor, this.opts.maxDelayMs);
       }
     }
