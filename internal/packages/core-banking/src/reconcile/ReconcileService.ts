@@ -1,7 +1,8 @@
 import type { ICoreBankingAdapter } from '../interfaces/ICoreBankingAdapter';
+import type { IReconcileService } from './IReconcileService';
 
 /**
- * ReconcileService — KRW 스테이블코인 ↔ 원화 수탁 계좌 조정 서비스
+ * ReconcileService — KRW 스테이블코인 ↔ 원화 수탁 계좌 / NFT 보유 현황 대조 서비스
  *
  * 설계 원칙 (변경 금지):
  *   온체인 발행량과 교보생명 원화 수탁 계좌 잔액은 항상 1:1이어야 한다.
@@ -9,7 +10,7 @@ import type { ICoreBankingAdapter } from '../interfaces/ICoreBankingAdapter';
  *
  * 실행 주기:
  *   - 실시간: mint/burn 이벤트마다 증분 검증
- *   - 정기:   매일 00:00 KST 전체 잔액 대조 (cron)
+ *   - 정기:   매일 00:00 KST 전체 잔액 대조 (cron) / NFT: 매시 또는 이벤트 트리거
  *
  * Phase 2 구현 전 상태:
  *   CoreBanking API와 온체인 공급량 조회 모두 stub.
@@ -24,12 +25,38 @@ export interface ReconcileResult {
   isHealthy:      boolean;
 }
 
-export class ReconcileService {
+export interface NftReconcileResult {
+  isHealthy:      boolean;
+  discrepancies:  Array<{
+    userId:  string;
+    tokenId: bigint;
+    type:    'LEDGER_ONLY' | 'ONCHAIN_ONLY';
+    // LEDGER_ONLY  — 원장에만 있고 온체인에 없음 (Reorg·DB 조작 의심)
+    // ONCHAIN_ONLY — 온체인에만 있고 원장에 없음 (이벤트 미처리)
+  }>;
+  checkedAt:      number;
+}
+
+export class ReconcileService implements IReconcileService {
+  private lastResult: ReconcileResult | null = null;
+
   constructor(
     private readonly coreBanking: ICoreBankingAdapter,
     private readonly onchain: {
       getTotalSupply(): Promise<bigint>;
-      getCustodyAccountBalance(): Promise<bigint>;  // 수탁 계좌 원화 잔액
+      getCustodyAccountBalance(): Promise<bigint>;
+      /** ERC-1155: balanceOf(account, tokenId) → 보유 수량 */
+      balanceOf(address: string, tokenId: bigint): Promise<bigint>;
+      /** 특정 주소의 온체인 NFT 보유 tokenId 목록 */
+      getNftHoldings(address: string): Promise<bigint[]>;
+      /** 현재 블록 번호 조회 */
+      getBlockNumber(): Promise<number>;
+    },
+    private readonly ledger: {
+      /** 내부 원장 기준 사용자 NFT 보유 tokenId 목록 */
+      getHoldings(userId: string): Promise<bigint[]>;
+      /** 전체 사용자 ID 목록 (reconcileAllNftHoldings 배치용) */
+      getAllUserIds(): Promise<string[]>;
     },
     private readonly alerter: {
       fire(message: string, severity: 'warn' | 'critical'): Promise<void>;
@@ -66,32 +93,101 @@ export class ReconcileService {
       );
     }
 
+    this.lastResult = result;
     return result;
   }
 
-  /**
-   * mint/burn 이벤트 수신 후 증분 검증
-   * ChainEventListener → NFTIssuedHandler 패턴과 동일하게 이벤트 핸들러로 등록
-   */
-  async onMint(amount: bigint, txHash: string): Promise<void> {
-    await this.coreBanking.recordTransaction({
-      txHash,
-      userId:    'system',
-      type:      'KRW_MINT',
-      amount:    amount.toString(),
-      status:    'confirmed',
-      timestamp: Math.floor(Date.now() / 1000),
-    });
+  getLastResult(): ReconcileResult | null {
+    return this.lastResult;
   }
 
-  async onBurn(amount: bigint, txHash: string): Promise<void> {
-    await this.coreBanking.recordTransaction({
-      txHash,
-      userId:    'system',
-      type:      'KRW_BURN',
-      amount:    amount.toString(),
-      status:    'confirmed',
-      timestamp: Math.floor(Date.now() / 1000),
-    });
+  /** 이벤트 블록 기준 확정 깊이 — 리스크팀 협의 값 */
+  private static readonly CONFIRMATION_DEPTH = 12;
+
+  /**
+   * Mint/Burn 이벤트 수신 후 confirmation depth 확인 → reconcile() 트리거
+   * 이벤트 블록 + 12블록 미만이면 아직 Reorg 가능 구간 → 대조 건너뜀
+   */
+  async onMintEvent(_tokenId: bigint, _amount: bigint, blockNumber: number): Promise<void> {
+    const currentBlock = await this.onchain.getBlockNumber();
+    if (currentBlock - blockNumber < ReconcileService.CONFIRMATION_DEPTH) return;
+    await this.reconcile();
+  }
+
+  async onBurnEvent(_tokenId: bigint, _amount: bigint, blockNumber: number): Promise<void> {
+    const currentBlock = await this.onchain.getBlockNumber();
+    if (currentBlock - blockNumber < ReconcileService.CONFIRMATION_DEPTH) return;
+    await this.reconcile();
+  }
+
+  /**
+   * 단일 사용자 NFT 보유 현황 대조
+   *   원장 O / 온체인 X → LEDGER_ONLY  (Reorg·DB 조작 의심)
+   *   온체인 O / 원장 X → ONCHAIN_ONLY (이벤트 미처리)
+   */
+  async reconcileNftHoldings(userId: string): Promise<NftReconcileResult> {
+    const account = await this.coreBanking.getUserAccount(userId);
+    if (!account) throw new Error(`지갑 주소 없음: userId=${userId}`);
+
+    const [ledgerTokens, onchainTokens] = await Promise.all([
+      this.ledger.getHoldings(userId),
+      this.onchain.getNftHoldings(account.walletAddr),
+    ]);
+
+    const discrepancies: NftReconcileResult['discrepancies'] = [];
+
+    // 원장에만 있는 토큰 확인
+    for (const tokenId of ledgerTokens) {
+      const balance = await this.onchain.balanceOf(account.walletAddr, tokenId);
+      if (balance === 0n) {
+        discrepancies.push({ userId, tokenId, type: 'LEDGER_ONLY' });
+      }
+    }
+
+    // 온체인에만 있는 토큰 확인
+    const ledgerSet = new Set(ledgerTokens.map(String));
+    for (const tokenId of onchainTokens) {
+      if (!ledgerSet.has(String(tokenId))) {
+        discrepancies.push({ userId, tokenId, type: 'ONCHAIN_ONLY' });
+      }
+    }
+
+    const isHealthy = discrepancies.length === 0;
+
+    if (!isHealthy) {
+      const severity = discrepancies.length >= 10 ? 'critical' : 'warn';
+      await this.alerter.fire(
+        `[NFT Reconcile] userId=${userId}, 불일치=${discrepancies.length}건`,
+        severity,
+      );
+    }
+
+    return { isHealthy, discrepancies, checkedAt: Date.now() };
+  }
+
+  /**
+   * 전체 사용자 NFT 보유 현황 일괄 대조 (정기 배치)
+   * 불일치가 한 건이라도 있으면 isHealthy = false
+   */
+  async reconcileAllNftHoldings(): Promise<NftReconcileResult> {
+    const userIds = await this.ledger.getAllUserIds();
+    const allDiscrepancies: NftReconcileResult['discrepancies'] = [];
+
+    for (const userId of userIds) {
+      const result = await this.reconcileNftHoldings(userId);
+      allDiscrepancies.push(...result.discrepancies);
+    }
+
+    const isHealthy = allDiscrepancies.length === 0;
+
+    if (!isHealthy) {
+      const severity = allDiscrepancies.length >= 10 ? 'critical' : 'warn';
+      await this.alerter.fire(
+        `[NFT Reconcile All] 전체 불일치=${allDiscrepancies.length}건`,
+        severity,
+      );
+    }
+
+    return { isHealthy, discrepancies: allDiscrepancies, checkedAt: Date.now() };
   }
 }

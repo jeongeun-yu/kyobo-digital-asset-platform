@@ -76,7 +76,7 @@ export class MintRequestNotFoundError extends Error {
 //
 // 힌트:
 //   · 종단 상태(FINALIZED, FAILED)는 빈 배열 []
-//   · SUBMITTED → PENDING 없음 (M3 TxStateMachine과 다름!)
+//   · SUBMITTED → PENDING(mempool) 없음 — TxStateMachine과 달리 LedgerService는 mempool 추적 안 함
 //   · REORGED 이후 MINED 복귀 가능, FINALIZED 직접 불가
 // ────────────────────────────────────────────────────────────────────────
 

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS mint_requests (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   error_msg    TEXT,
-  expires_at   TIMESTAMPTZ GENERATED ALWAYS AS (created_at + INTERVAL '30 days') STORED
+  expires_at   TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
 );
 
 CREATE INDEX IF NOT EXISTS idx_mint_requests_user_id ON mint_requests(user_id);

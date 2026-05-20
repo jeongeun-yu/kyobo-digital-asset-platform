@@ -1,11 +1,11 @@
 /**
- * AuditLogService 단위 테스트
+ * AuditLogService 단위 테스트 — 읽기 전용 (조회·무결성 검증)
  *
- * SHA-256 체크섬 생성, 무결성 검증, 조작 감지 검증
+ * 쓰기(log())는 Java 위임으로 변경됨. 이 테스트는 조회·검증 경로만 다룬다.
  */
 
+import { createHash } from 'crypto';
 import { AuditLogService } from '../audit/AuditLogService';
-import type { LogParams } from '../audit/AuditLogService';
 
 // ── In-Memory DB Mock ────────────────────────────────────────────────────────
 
@@ -15,35 +15,16 @@ function makeDb() {
 
   return {
     rows,
+    get nextId() { return nextId; },
     async query(sql: string, params: unknown[] = []): Promise<{ rows: Record<string, unknown>[] }> {
       const s = sql.trim().toUpperCase();
-
-      if (s.startsWith('INSERT INTO AUDIT_LOG')) {
-        const [eventTime, actor, action, resourceType, resourceId, beforeState, afterState, ip, session, checksum] = params;
-        const row: Record<string, unknown> = {
-          id:            nextId++,
-          event_time:    eventTime,
-          actor,
-          action,
-          resource_type: resourceType,
-          resource_id:   resourceId,
-          before_state:  beforeState,
-          after_state:   afterState,
-          ip_address:    ip,
-          session_id:    session,
-          checksum,
-        };
-        rows.push(row);
-        return { rows: [{ id: row['id'] }] };
-      }
 
       if (s.startsWith('SELECT * FROM AUDIT_LOG WHERE ID')) {
         const id = params[0] as number;
         return { rows: rows.filter(r => r['id'] === id) };
       }
 
-      if (s.startsWith('SELECT * FROM AUDIT_LOG\n       WHERE RESOURCE_TYPE') ||
-          s.startsWith('SELECT * FROM AUDIT_LOG\n       WHERE RESOURCE_TYPE')) {
+      if (s.startsWith('SELECT * FROM AUDIT_LOG\n       WHERE RESOURCE_TYPE')) {
         return { rows: rows.filter(r => r['resource_type'] === params[0] && r['resource_id'] === params[1]) };
       }
 
@@ -53,74 +34,40 @@ function makeDb() {
 
       return { rows };
     },
+    // 테스트 데이터 직접 삽입 헬퍼
+    seed(params: {
+      actor: string; action: string; resourceType: string;
+      resourceId: string; afterState: unknown; beforeState?: unknown;
+    }): number {
+      const eventTime = new Date();
+      const raw = `${eventTime.toISOString()}${params.actor}${params.action}${params.resourceId}${JSON.stringify(params.afterState)}`;
+      const checksum = createHash('sha256').update(raw, 'utf8').digest('hex');
+      const id = nextId++;
+      rows.push({
+        id,
+        event_time:    eventTime.toISOString(),
+        actor:         params.actor,
+        action:        params.action,
+        resource_type: params.resourceType,
+        resource_id:   params.resourceId,
+        before_state:  params.beforeState !== undefined ? JSON.stringify(params.beforeState) : null,
+        after_state:   JSON.stringify(params.afterState),
+        ip_address:    null,
+        session_id:    null,
+        checksum,
+      });
+      return id;
+    },
   };
 }
 
-const BASE_PARAMS: LogParams = {
-  actor:        'system',
-  action:       'MINT_REQUESTED',
-  resourceType: 'MintRequest',
-  resourceId:   'req-001',
-  afterState:   { status: 'PENDING' },
-};
-
 // ── 테스트 ────────────────────────────────────────────────────────────────────
 
-describe('AuditLogService.log()', () => {
-  it('로그 ID(숫자) 반환', async () => {
-    const svc = new AuditLogService(makeDb());
-    const id = await svc.log(BASE_PARAMS);
-    expect(typeof id).toBe('number');
-    expect(id).toBeGreaterThan(0);
-  });
-
-  it('DB에 레코드 1건 저장', async () => {
-    const db  = makeDb();
-    const svc = new AuditLogService(db);
-    await svc.log(BASE_PARAMS);
-    expect(db.rows).toHaveLength(1);
-  });
-
-  it('저장된 레코드의 actor, action, resourceId 일치', async () => {
-    const db  = makeDb();
-    const svc = new AuditLogService(db);
-    await svc.log(BASE_PARAMS);
-    const row = db.rows[0]!;
-    expect(row['actor']).toBe('system');
-    expect(row['action']).toBe('MINT_REQUESTED');
-    expect(row['resource_id']).toBe('req-001');
-  });
-
-  it('checksum이 64자 hex 문자열', async () => {
-    const db  = makeDb();
-    const svc = new AuditLogService(db);
-    await svc.log(BASE_PARAMS);
-    const checksum = db.rows[0]!['checksum'] as string;
-    expect(checksum).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it('beforeState가 있으면 직렬화하여 저장', async () => {
-    const db  = makeDb();
-    const svc = new AuditLogService(db);
-    await svc.log({ ...BASE_PARAMS, beforeState: { status: 'SUBMITTED' } });
-    const row = db.rows[0]!;
-    expect(row['before_state']).not.toBeNull();
-  });
-
-  it('beforeState 없으면 null 저장', async () => {
-    const db  = makeDb();
-    const svc = new AuditLogService(db);
-    await svc.log(BASE_PARAMS);
-    const row = db.rows[0]!;
-    expect(row['before_state']).toBeNull();
-  });
-});
-
 describe('AuditLogService.verifyIntegrity()', () => {
-  it('저장된 직후 체크섬 검증 → valid: true', async () => {
+  it('정상 레코드 검증 → valid: true', async () => {
     const db  = makeDb();
     const svc = new AuditLogService(db);
-    const id  = await svc.log(BASE_PARAMS);
+    const id  = db.seed({ actor: 'system', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-001', afterState: { status: 'REQUESTED' } });
     const result = await svc.verifyIntegrity(id);
     expect(result.valid).toBe(true);
     expect(result.storedChecksum).toBe(result.computedChecksum);
@@ -129,9 +76,8 @@ describe('AuditLogService.verifyIntegrity()', () => {
   it('체크섬 조작 후 검증 → valid: false', async () => {
     const db  = makeDb();
     const svc = new AuditLogService(db);
-    const id  = await svc.log(BASE_PARAMS);
+    const id  = db.seed({ actor: 'system', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-001', afterState: { status: 'REQUESTED' } });
 
-    // 체크섬 조작
     const row = db.rows.find(r => r['id'] === id)!;
     row['checksum'] = '0'.repeat(64);
 
@@ -150,7 +96,7 @@ describe('AuditLogService.queryByResource()', () => {
   it('beforeState 포함 로그 조회 시 역직렬화 반환', async () => {
     const db  = makeDb();
     const svc = new AuditLogService(db);
-    await svc.log({ ...BASE_PARAMS, beforeState: { status: 'SUBMITTED' } });
+    db.seed({ actor: 'system', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-001', afterState: { status: 'REQUESTED' }, beforeState: { status: 'SUBMITTED' } });
 
     const results = await svc.queryByResource('MintRequest', 'req-001');
     expect(results[0]!.beforeState).toEqual({ status: 'SUBMITTED' });
@@ -159,8 +105,8 @@ describe('AuditLogService.queryByResource()', () => {
   it('해당 resource의 로그만 반환', async () => {
     const db  = makeDb();
     const svc = new AuditLogService(db);
-    await svc.log({ ...BASE_PARAMS, resourceId: 'req-001' });
-    await svc.log({ ...BASE_PARAMS, resourceId: 'req-002' });
+    db.seed({ actor: 'system', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-001', afterState: {} });
+    db.seed({ actor: 'system', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-002', afterState: {} });
 
     const results = await svc.queryByResource('MintRequest', 'req-001');
     expect(results).toHaveLength(1);
@@ -172,8 +118,8 @@ describe('AuditLogService.queryByActor()', () => {
   it('actor + 시간 범위에 해당하는 로그 반환', async () => {
     const db  = makeDb();
     const svc = new AuditLogService(db);
-    await svc.log({ ...BASE_PARAMS, actor: 'admin-01' });
-    await svc.log({ ...BASE_PARAMS, actor: 'admin-02' });
+    db.seed({ actor: 'admin-01', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-001', afterState: {} });
+    db.seed({ actor: 'admin-02', action: 'MINT_REQUESTED', resourceType: 'MintRequest', resourceId: 'req-002', afterState: {} });
 
     const from = new Date(Date.now() - 60_000);
     const to   = new Date(Date.now() + 60_000);

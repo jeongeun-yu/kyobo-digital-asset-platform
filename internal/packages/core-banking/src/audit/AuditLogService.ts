@@ -14,17 +14,6 @@ export interface AuditEntry {
   checksum: string;
 }
 
-export interface LogParams {
-  actor: string;
-  action: string;
-  resourceType: string;
-  resourceId: string;
-  beforeState?: unknown;
-  afterState: unknown;
-  ipAddress?: string;
-  sessionId?: string;
-}
-
 export interface VerifyResult {
   id: number;
   valid: boolean;
@@ -33,51 +22,18 @@ export interface VerifyResult {
 }
 
 /**
- * AuditLogService — 금융 규제 기준 감사 로그
+ * AuditLogService — 감사 로그 조회·검증 (읽기 전용)
+ *
+ * 쓰기(INSERT)는 Java internal-ledger가 전담한다.
+ * Node.js에서 감사 이벤트 발생 시 ICoreBankingAdapter.recordAuditLog()로 위임.
  *
  * 규제 근거:
  *   전자금융감독규정 §34: 접근 기록 1년 이상 보존
  *   가상자산이용자보호법 §15: 거래 기록 5년 보존
  *   ISMS-P: 암호 무결성 검증 요건
- *
- * 무결성 보장:
- *   checksum = SHA-256(eventTime || actor || action || resourceId || JSON(afterState))
- *   DB 레벨에서도 INSERT-only Row Security Policy 적용 필요
  */
 export class AuditLogService {
   constructor(private readonly db: DatabaseClient) {}
-
-  async log(params: LogParams): Promise<number> {
-    const eventTime = new Date();
-    const checksum  = this.generateChecksum(
-      eventTime,
-      params.actor,
-      params.action,
-      params.resourceId,
-      params.afterState,
-    );
-
-    const { rows } = await this.db.query(
-      `INSERT INTO audit_log
-         (event_time, actor, action, resource_type, resource_id,
-          before_state, after_state, ip_address, session_id, checksum)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       RETURNING id`,
-      [
-        eventTime.toISOString(),
-        params.actor,
-        params.action,
-        params.resourceType,
-        params.resourceId,
-        params.beforeState !== undefined ? JSON.stringify(params.beforeState) : null,
-        JSON.stringify(params.afterState),
-        params.ipAddress ?? null,
-        params.sessionId ?? null,
-        checksum,
-      ],
-    );
-    return rows[0]!['id'] as number;
-  }
 
   async verifyIntegrity(id: number): Promise<VerifyResult> {
     const { rows } = await this.db.query(

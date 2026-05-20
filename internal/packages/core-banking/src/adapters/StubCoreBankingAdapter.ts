@@ -51,10 +51,10 @@ export class StubCoreBankingAdapter implements ICoreBankingAdapter {
 
   async recordNftHolding(params: {
     userId: string; tokenId: bigint; contractAddr: string;
-    chainId: number; acquiredAt: Date; onChainTx: string;
+    chainId: number; amount: bigint; acquiredAt: Date; onChainTx: string;
   }): Promise<void> {
     this.holdings.push(params);
-    console.log('[Stub] recordNftHolding:', params.userId, params.tokenId.toString());
+    console.log('[Stub] recordNftHolding:', params.userId, params.tokenId.toString(), 'amount:', params.amount.toString());
   }
 
   async recordAuditLog(entry: {

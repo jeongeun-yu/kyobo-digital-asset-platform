@@ -26,7 +26,7 @@ function makeDb() {
 
       if (s.startsWith('INSERT INTO MINT_REQUESTS')) {
         const [id, userId, policyId, , createdAt] = params as string[];
-        rows.push({ id, user_id: userId, policy_id: policyId, status: 'PENDING', tx_hash: null, token_id: null, error_msg: null, created_at: createdAt, updated_at: createdAt });
+        rows.push({ id, user_id: userId, policy_id: policyId, status: 'REQUESTED', tx_hash: null, token_id: null, error_msg: null, created_at: createdAt, updated_at: createdAt });
         return { rows: [{ id }] };
       }
 
@@ -62,33 +62,33 @@ function makeDb() {
   };
 }
 
-function makeAuditLog() {
+function makeCb() {
   const logs: unknown[] = [];
-  return { logs, async log(entry: unknown) { logs.push(entry); } };
+  return { logs, async recordAuditLog(entry: unknown) { logs.push(entry); } } as any;
 }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
 
 describe('LedgerService.createMintRequest()', () => {
-  it('PENDING 상태의 MintRequest 반환', async () => {
+  it('REQUESTED 상태의 MintRequest 반환', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const req = await svc.createMintRequest('u-001', 'policy-A');
-    expect(req.status).toBe('PENDING');
+    expect(req.status).toBe('REQUESTED');
     expect(req.userId).toBe('u-001');
     expect(req.policyId).toBe('policy-A');
   });
 
   it('UUID 형식의 id 부여', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const req = await svc.createMintRequest('u-001', 'policy-A');
     expect(req.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('감사 로그에 MINT_REQUESTED 기록', async () => {
     const db  = makeDb();
-    const audit = makeAuditLog();
+    const audit = makeCb();
     const svc = new LedgerService(db, audit);
     await svc.createMintRequest('u-001', 'policy-A');
     expect(audit.logs).toHaveLength(1);
@@ -98,7 +98,7 @@ describe('LedgerService.createMintRequest()', () => {
 describe('LedgerService.getMintRequest()', () => {
   it('존재하는 requestId → MintRequest 반환', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const created = await svc.createMintRequest('u-001', 'policy-A');
     const found   = await svc.getMintRequest(created.id);
     expect(found?.id).toBe(created.id);
@@ -106,32 +106,32 @@ describe('LedgerService.getMintRequest()', () => {
 
   it('존재하지 않는 requestId → null', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     expect(await svc.getMintRequest('non-existent-id')).toBeNull();
   });
 });
 
 describe('LedgerService.updateMintRequest() — 상태 전이', () => {
-  it('PENDING → SUBMITTED 허용', async () => {
+  it('REQUESTED → SUBMITTED 허용', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const req  = await svc.createMintRequest('u-001', 'policy-A');
     const updated = await svc.updateMintRequest(req.id, { status: 'SUBMITTED', txHash: '0xtx' });
     expect(updated.status).toBe('SUBMITTED');
     expect(updated.txHash).toBe('0xtx');
   });
 
-  it('PENDING → FAILED 허용', async () => {
+  it('REQUESTED → FAILED 허용', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const req = await svc.createMintRequest('u-001', 'policy-A');
     const updated = await svc.updateMintRequest(req.id, { status: 'FAILED', errorMsg: 'submit failed' });
     expect(updated.status).toBe('FAILED');
   });
 
-  it('PENDING → CONFIRMED 불허 → InvalidStateTransitionError', async () => {
+  it('REQUESTED → CONFIRMED 불허 → InvalidStateTransitionError', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const req = await svc.createMintRequest('u-001', 'policy-A');
     await expect(svc.updateMintRequest(req.id, { status: 'CONFIRMED' }))
       .rejects.toThrow(InvalidStateTransitionError);
@@ -139,10 +139,10 @@ describe('LedgerService.updateMintRequest() — 상태 전이', () => {
 
   it('CONFIRMED 상태에서 추가 전이 불허', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const req = await svc.createMintRequest('u-001', 'policy-A');
 
-    // PENDING → SUBMITTED → MINED → CONFIRMED → FINALIZED
+    // REQUESTED → SUBMITTED → MINED → CONFIRMED → FINALIZED
     await svc.updateMintRequest(req.id, { status: 'SUBMITTED', txHash: '0xtx' });
     await svc.updateMintRequest(req.id, { status: 'MINED' });
     await svc.updateMintRequest(req.id, { status: 'CONFIRMED' });
@@ -154,14 +154,14 @@ describe('LedgerService.updateMintRequest() — 상태 전이', () => {
 
   it('존재하지 않는 requestId → MintRequestNotFoundError', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     await expect(svc.updateMintRequest('bad-id', { status: 'FAILED' }))
       .rejects.toThrow(MintRequestNotFoundError);
   });
 
   it('업데이트 후 감사 로그 추가 기록', async () => {
     const db  = makeDb();
-    const audit = makeAuditLog();
+    const audit = makeCb();
     const svc = new LedgerService(db, audit);
     const req = await svc.createMintRequest('u-001', 'policy-A');
     await svc.updateMintRequest(req.id, { status: 'SUBMITTED', txHash: '0xtx' });
@@ -172,7 +172,7 @@ describe('LedgerService.updateMintRequest() — 상태 전이', () => {
 describe('LedgerService.recordProcessedEvent() — 이벤트 Idempotency', () => {
   it('처음 처리 → skipped: false, id 포함', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const result = await svc.recordProcessedEvent('0xtx', 0, 'Transfer', 100n, {});
     expect(result.skipped).toBe(false);
     expect(result.id).toBeDefined();
@@ -180,7 +180,7 @@ describe('LedgerService.recordProcessedEvent() — 이벤트 Idempotency', () =>
 
   it('동일 txHash + logIndex 재처리 → skipped: true', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     await svc.recordProcessedEvent('0xtx', 0, 'Transfer', 100n, {});
     const dup = await svc.recordProcessedEvent('0xtx', 0, 'Transfer', 100n, {});
     expect(dup.skipped).toBe(true);
@@ -188,7 +188,7 @@ describe('LedgerService.recordProcessedEvent() — 이벤트 Idempotency', () =>
 
   it('같은 txHash, 다른 logIndex → skipped: false', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     await svc.recordProcessedEvent('0xtx', 0, 'Transfer', 100n, {});
     const second = await svc.recordProcessedEvent('0xtx', 1, 'Transfer', 100n, {});
     expect(second.skipped).toBe(false);
@@ -198,7 +198,7 @@ describe('LedgerService.recordProcessedEvent() — 이벤트 Idempotency', () =>
 describe('LedgerService.updateMintRequest() — tokenId 브랜치', () => {
   it('tokenId 포함 업데이트 → BigInt 변환 후 반환', async () => {
     const db  = makeDb();
-    const svc = new LedgerService(db, makeAuditLog());
+    const svc = new LedgerService(db, makeCb());
     const req = await svc.createMintRequest('u-001', 'policy-A');
 
     await svc.updateMintRequest(req.id, { status: 'SUBMITTED', txHash: '0xtx' });
@@ -219,12 +219,12 @@ describe('에러 클래스', () => {
   });
 
   it('InvalidStateTransitionError.name', () => {
-    expect(new InvalidStateTransitionError('PENDING', 'CONFIRMED').name).toBe('InvalidStateTransitionError');
+    expect(new InvalidStateTransitionError('REQUESTED', 'CONFIRMED').name).toBe('InvalidStateTransitionError');
   });
 
   it('InvalidStateTransitionError 메시지에 from/to 포함', () => {
-    const err = new InvalidStateTransitionError('PENDING', 'CONFIRMED');
-    expect(err.message).toContain('PENDING');
+    const err = new InvalidStateTransitionError('REQUESTED', 'CONFIRMED');
+    expect(err.message).toContain('REQUESTED');
     expect(err.message).toContain('CONFIRMED');
   });
 });

@@ -13,8 +13,9 @@
  */
 
 import { randomUUID } from 'crypto';
+import type { ICoreBankingAdapter } from '../interfaces/ICoreBankingAdapter';
 
-export type MintStatus = 'PENDING' | 'SUBMITTED' | 'MINED' | 'CONFIRMED' | 'FINALIZED' | 'FAILED' | 'REORGED';
+export type MintStatus = 'REQUESTED' | 'SUBMITTED' | 'MINED' | 'CONFIRMED' | 'FINALIZED' | 'FAILED' | 'REORGED';
 
 // ── 내부 원장 4단계 잔액 모델 (Phase 3: 직접 Custody 전환 시 활성화) ─────────
 //
@@ -75,7 +76,7 @@ export interface ProcessedEventResult {
 export class LedgerService {
   // 허용된 상태 전이 맵
   private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
-    PENDING:   ['SUBMITTED', 'FAILED'],
+    REQUESTED: ['SUBMITTED', 'FAILED'],
     SUBMITTED: ['MINED',     'FAILED'],
     MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
     CONFIRMED: ['FINALIZED'],
@@ -86,7 +87,7 @@ export class LedgerService {
 
   constructor(
     private readonly db: DatabaseClient,
-    private readonly auditLog: AuditLogClient,
+    private readonly coreBanking: ICoreBankingAdapter,
   ) {}
 
   // ── Mint Request ──────────────────────────────────────────────
@@ -97,19 +98,19 @@ export class LedgerService {
 
     await this.db.query(
       `INSERT INTO mint_requests (id, user_id, policy_id, status, created_at, updated_at)
-       VALUES ($1,$2,$3,'PENDING',$4,$4)`,
+       VALUES ($1,$2,$3,'REQUESTED',$4,$4)`,
       [requestId, userId, policyId, now.toISOString()],
     );
 
-    await this.auditLog.log({
+    await this.coreBanking.recordAuditLog({
       actor:        'system',
       action:       'MINT_REQUESTED',
       resourceType: 'MintRequest',
       resourceId:   requestId,
-      afterState:   { userId, policyId, status: 'PENDING' },
+      afterState:   { userId, policyId, status: 'REQUESTED' },
     });
 
-    return { id: requestId, userId, policyId, status: 'PENDING', createdAt: now, updatedAt: now };
+    return { id: requestId, userId, policyId, status: 'REQUESTED', createdAt: now, updatedAt: now };
   }
 
   async getMintRequest(requestId: string): Promise<MintRequest | null> {
@@ -160,7 +161,7 @@ export class LedgerService {
       ],
     );
 
-    await this.auditLog.log({
+    await this.coreBanking.recordAuditLog({
       actor:        'system',
       action:       `STATUS_${patch.status}`,
       resourceType: 'MintRequest',
@@ -216,13 +217,4 @@ interface DatabaseClient {
   query(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
 }
 
-interface AuditLogClient {
-  log(entry: {
-    actor: string;
-    action: string;
-    resourceType: string;
-    resourceId: string;
-    beforeState?: unknown;
-    afterState: unknown;
-  }): Promise<void>;
-}
+
