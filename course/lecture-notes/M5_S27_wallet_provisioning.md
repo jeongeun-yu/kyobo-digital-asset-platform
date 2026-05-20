@@ -91,6 +91,70 @@ WalletMappingService (S28~S29)
 
 ---
 
+### 5. M5 전체 의존 관계 아키텍처
+
+S27~S29가 완성되면 아래 구조가 된다.
+
+```
+[컨트롤러]
+  POST /api/wallet/provision
+         │
+         ▼
+[WalletProvisioningService]         ← S27 실습
+  ├── ExternalVaspClient (인터페이스)
+  │       └── 구현체: WalletWon HTTP 클라이언트
+  │            → getWalletAddr(userId): 기존 custodial 지갑 조회
+  │            → createWallet(userId):  신규 지갑 생성 (Phase 4)
+  │
+  └── WalletMappingService           ← S28~S29 실습
+            ├── WalletMappingRepository (인터페이스)
+            │       └── 구현체: PgWalletMappingRepository → PostgreSQL
+            ├── ExternalVaspWalletClient (인터페이스)
+            └── SignatureVerifier (인터페이스)
+                     └── 구현체: EthersSignatureVerifier (S29)
+```
+
+`WalletProvisioningService`는 두 가지에만 의존한다.
+
+1. `ExternalVaspClient` — VASP API 호출 (지갑 주소 획득)
+2. `WalletMappingService` — 획득한 주소를 DB에 저장·조회
+
+S27은 이 두 의존성이 어떻게 연결되는지를 다루고, S28~S29는 `WalletMappingService` 내부를 완성한다.
+
+---
+
+### 6. ExternalVaspClient 인터페이스 — Phase 전환을 위한 추상화
+
+실제 코드의 인터페이스 정의:
+
+```typescript
+export interface ExternalVaspClient {
+  getWalletAddr(userId: string): Promise<string>;  // 기존 custodial 지갑 조회
+  createWallet(userId: string):  Promise<string>;  // 내부 신규 생성 (Phase 4)
+}
+```
+
+`WalletProvisioningService`가 **인터페이스**에 의존하는 이유:
+
+| Phase | 구현체 | 내용 |
+|---|---|---|
+| Phase 1 (현재) | `WalletWonAdapter` | 월렛원 REST API 호출 |
+| Phase 3 | `KyoboCustodyAdapter` | 교보 자체 HSM/MPC |
+
+Phase 1 → Phase 3 전환 시 `WalletProvisioningService` 코드는 한 글자도 바뀌지 않는다. 생성자에 주입하는 구현체만 교체한다.
+
+```typescript
+// Phase 1 — 현재
+new WalletProvisioningService(new WalletWonAdapter(apiKey), walletMapping);
+
+// Phase 3 — 교체 후 (이 줄만 바뀜)
+new WalletProvisioningService(new KyoboCustodyAdapter(hsm), walletMapping);
+```
+
+M4에서 배운 의존성 역전(DIP)이 M5에서도 동일하게 적용된다. 서비스는 "어떻게 지갑을 가져오는지"를 모르고, "지갑을 가져올 수 있다"는 계약(인터페이스)만 안다.
+
+---
+
 ## 실습 파트 (35분)
 
 ### 스켈레톤 코드

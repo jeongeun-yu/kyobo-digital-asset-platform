@@ -145,6 +145,99 @@ async getWalletAddr(userId: string): Promise<string> {
 
 ---
 
+### 7. WalletMappingService 전체 공개 API
+
+실제 코드에 있는 네 개의 공개 메서드:
+
+```typescript
+// 1. userId → walletAddr 조회 (NFT 발행 전 매번 호출)
+async getWalletAddr(userId: string): Promise<string>
+
+// 2. EIP-191 서명 검증 → verified=true 저장 (S29 실습)
+async verifyOwnership(params: { userId, walletAddr, signature, nonce }): Promise<boolean>
+
+// 3. 서명 검증용 일회성 nonce 생성 (GET /wallet/nonce)
+generateNonce(userId: string): string
+
+// 4. 원시 WalletMapping 객체 반환 (verified 상태 포함)
+async getMapping(userId: string): Promise<WalletMapping | null>
+```
+
+각 메서드의 호출 시점:
+
+| 메서드 | 호출 시점 |
+|---|---|
+| `getWalletAddr()` | NFT 발행 직전 — 발행 대상 주소 확인 |
+| `generateNonce()` | `GET /wallet/nonce` — 서명 전 nonce 발급 |
+| `verifyOwnership()` | `POST /wallet/verify` — 서명 제출 + 검증 |
+| `getMapping()` | 프로비저닝 중복 체크, 관리자 조회 등 |
+
+`getWalletAddr()`는 단순 조회처럼 보이지만 내부에서 "DB에 없으면 VASP 자동 프로비저닝 → 저장"까지 처리한다. `WalletProvisioningService`에서 명시적으로 `provision()`을 호출하지 않아도, `getWalletAddr()`가 lazy 프로비저닝 역할을 한다.
+
+---
+
+### 8. verified 상태 전이 — EXTERNAL vs KYOBO
+
+```
+EXTERNAL 방식 (월렛원 — 현재 Phase 1):
+  provision() 완료
+       │
+       ▼  verified = false  (DB 저장)
+          ← 지갑 주소는 알지만 소유권은 미검증 상태
+          ← 이 상태로 NFT 발행하면 공격자가 등록한 주소일 수 있음
+       │
+  verifyOwnership() 성공  (S29)
+       │
+       ▼  verified = true  (DB 업데이트)
+          ← 사용자가 private key를 실제 보유함이 증명됨
+          ← 이제 NFT 발행 가능
+
+KYOBO 방식 (Phase 3/4 내재화):
+  provision() 완료
+       │
+       ▼  verified = true  (즉시)
+          ← VASP가 private key를 직접 생성·보관
+          ← 별도 서명 검증 불필요
+```
+
+`verified` 컬럼이 있는 이유: EXTERNAL 방식에서 지갑 주소를 DB에 먼저 저장하고 나중에 검증하는 2단계 구조이기 때문이다. 프로비저닝(주소 획득)과 소유권 검증(서명 확인)이 분리된 API 호출이다.
+
+---
+
+### 9. Repository 패턴 — M4 DatabaseClient와 같은 원칙
+
+M4 `AuditLogService`는 `DatabaseClient` 인터페이스에 의존했다. S28의 `WalletMappingService`도 동일한 원칙:
+
+```
+M4:
+  AuditLogService → DatabaseClient (인터페이스)
+                         └── 실제 구현: PostgreSQL 클라이언트
+
+M5:
+  WalletMappingService → WalletMappingRepository (인터페이스)
+                              ├── 실제 구현: PgWalletMappingRepository  ← 실습 과제
+                              └── 테스트 구현: makeInMemoryWalletRepo()  ← 실습 과제
+```
+
+실제 코드의 인터페이스:
+
+```typescript
+export interface WalletMappingRepository {
+  findByUserId(userId: string):         Promise<WalletMapping | null>;
+  save(mapping: WalletMapping):         Promise<void>;
+  findByWalletAddr(walletAddr: string): Promise<WalletMapping | null>;
+}
+```
+
+서비스 코드에 SQL이 없다. `findByUserId()`, `save()` 같은 의미 있는 메서드만 호출한다. SQL은 Repository 구현체 안에만 있다.
+
+이 패턴의 이점:
+- 단위 테스트 시 In-Memory 구현체로 DB 없이 빠르게 실행
+- PostgreSQL → 다른 DB 교체 시 서비스 코드 무변경
+- 실습에서 `PgWalletMappingRepository` 구현 과제가 이 인터페이스를 기반으로 한다
+
+---
+
 ## 실습 파트 (30분)
 
 ### 마이그레이션 작성
