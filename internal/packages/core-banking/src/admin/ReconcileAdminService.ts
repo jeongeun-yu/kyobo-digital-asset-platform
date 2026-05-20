@@ -1,5 +1,5 @@
 import type { ReconcileService }  from '../reconcile/ReconcileService';
-import type { AuditLogService }    from '../audit/AuditLogService';
+import type { ICoreBankingAdapter } from '../interfaces/ICoreBankingAdapter';
 
 // ── 공유 타입 ─────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ export class ReconcileAdminService {
   constructor(
     private readonly db:               DatabaseClient,
     private readonly reconcileService: ReconcileService,
-    private readonly auditLog:         AuditLogService,
+    private readonly auditLog:         ICoreBankingAdapter,
     private readonly notifier:         NotifierAdapter,
   ) {}
 
@@ -103,7 +103,7 @@ export class ReconcileAdminService {
     const start = Date.now();
     const runAt = new Date();
 
-    await this.auditLog.log({
+    await this.auditLog.recordAuditLog({
       actor:      operator,
       action:     'RECONCILE_MANUAL_TRIGGER',
       resourceId: userId,
@@ -128,7 +128,7 @@ export class ReconcileAdminService {
         const result = await this.reconcileService.reconcileNftHoldings(userId);
         if (!result.isHealthy) {
           mismatchUserIds.push(userId);
-          await this.auditLog.log({
+          await this.auditLog.recordAuditLog({
             actor:        'SYSTEM',
             action:       'RECONCILE_MISMATCH_DETECTED',
             resourceId:   userId,

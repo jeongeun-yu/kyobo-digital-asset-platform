@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import type { ICoreBankingAdapter } from '../interfaces/ICoreBankingAdapter';
 
 export type MintStatus = 'REQUESTED' | 'SUBMITTED' | 'MINED' | 'CONFIRMED' | 'FINALIZED' | 'FAILED' | 'REORGED';
 
@@ -86,7 +87,7 @@ export class LedgerService {
 
   constructor(
     private readonly db: DatabaseClient,
-    private readonly auditLog: AuditLogClient,
+    private readonly coreBanking: ICoreBankingAdapter,
   ) {}
 
   // ── Mint Request ──────────────────────────────────────────────
@@ -101,7 +102,7 @@ export class LedgerService {
       [requestId, userId, policyId, now.toISOString()],
     );
 
-    await this.auditLog.log({
+    await this.coreBanking.recordAuditLog({
       actor:        'system',
       action:       'MINT_REQUESTED',
       resourceType: 'MintRequest',
@@ -160,7 +161,7 @@ export class LedgerService {
       ],
     );
 
-    await this.auditLog.log({
+    await this.coreBanking.recordAuditLog({
       actor:        'system',
       action:       `STATUS_${patch.status}`,
       resourceType: 'MintRequest',
@@ -216,13 +217,4 @@ interface DatabaseClient {
   query(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
 }
 
-interface AuditLogClient {
-  log(entry: {
-    actor: string;
-    action: string;
-    resourceType: string;
-    resourceId: string;
-    beforeState?: unknown;
-    afterState: unknown;
-  }): Promise<void>;
-}
+
