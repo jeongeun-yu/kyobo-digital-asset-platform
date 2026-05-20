@@ -207,9 +207,164 @@ describe('WalletProvisioningService', () => {
 
 ---
 
+### 5. 중복 프로비저닝 처리 — 이미 등록된 userId가 다시 요청하면?
+
+> **[권장 패턴 / 실습 과제]** 현재 에는 중복 체크가 없다. 아래는 멱등성을 보장하는 권장 구현이다.
+
+`provision()`은 최초 1회만 호출되어야 한다. 그런데 동일 userId로 두 번 요청이 오면 어떻게 해야 하는가?
+
+**선택지 두 가지:**
+
+| 방식 | 동작 | 문제 |
+|---|---|---|
+| 덮어쓰기 | 항상 VASP API 재호출 → 새 주소 저장 | VASP가 매번 새 주소를 생성하면 이전 지갑과 불일치 |
+| 멱등 처리 | 이미 등록된 경우 기존 주소 그대로 반환 | **올바른 선택** |
+
+멱등 처리가 정답이다. 프로비저닝은 "있으면 조회, 없으면 생성" 패턴으로 만든다:
+
+```typescript
+async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
+  // 이미 등록된 경우 → 기존 주소 반환 (VASP API 재호출 없음)
+  const existing = await this.walletMapping.getMapping(userId);
+  if (existing) {
+    return {
+      userId,
+      walletAddress: existing.walletAddr,
+      vaspType:      existing.vaspType,
+      provisionedAt: existing.createdAt,
+    };
+  }
+
+  // 최초 등록
+  let walletAddress: string;
+  if (vaspType === 'EXTERNAL') {
+    walletAddress = await this.vaspClient.getWalletAddr(userId);
+  } else if (vaspType === 'KYOBO') {
+    walletAddress = await this.vaspClient.createWallet(userId);
+  } else {
+    throw new UnsupportedVaspError(vaspType);
+  }
+
+  await this.walletMapping.saveMapping(userId, walletAddress, vaspType);
+  return { userId, walletAddress, vaspType, provisionedAt: new Date() };
+}
+```
+
+컨트롤러에서 중복을 별도 처리하지 않는다. 서비스 레이어가 멱등성을 보장하므로 같은 요청을 몇 번 보내도 결과가 동일하다.
+
+---
+
+### 6. VASP API 실패 시 안전성 분석
+
+`vaspClient.getWalletAddr()`가 네트워크 오류로 실패하면 어떻게 되는가?
+
+```
+VASP API 호출 실패 → 예외 throw
+                   → DB 저장 미실행
+                   → user_wallet_mapping 행 없음 (일관된 상태)
+```
+
+이 흐름은 안전하다. **VASP 호출이 성공하고 DB 저장이 실패**하는 경우가 문제다:
+
+```
+VASP API 호출 성공 → walletAddr 획득
+                  → DB INSERT 실패 (네트워크 단절 등)
+                  → walletAddr는 VASP에 이미 생성됐지만 DB에 없음
+```
+
+재시도 시 `getWalletAddr(userId)`를 VASP에 다시 호출하면 같은 주소를 돌려주므로 실질적 문제는 없다. VASP Custody 시스템은 userId당 지갑이 고정이기 때문이다. 단, VASP가 매번 새 주소를 생성하는 방식이라면 이 가정이 깨진다 — 계약서에서 반드시 확인해야 한다.
+
+---
+
+### 7. 감사 로그 연동 — M4 AuditLog와 연결
+
+> **[권장 패턴 / 실습 과제]** 현재 코드에는 감사 로그 연동이 없다. M4에서 만든 를 주입해 아래와 같이 확장한다.
+
+지갑 프로비저닝은 금융 규제상 기록 대상이다. M4에서 만든 `ICoreBankingAdapter.recordAuditLog()`를 연동한다.
+
+```typescript
+export class WalletProvisioningService {
+  constructor(
+    private readonly vaspClient:    ExternalVaspClient,
+    private readonly walletMapping: WalletMappingService,
+    private readonly coreBanking:   ICoreBankingAdapter,  // M4 연결
+  ) {}
+
+  async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
+    const existing = await this.walletMapping.getMapping(userId);
+    if (existing) {
+      return { userId, walletAddress: existing.walletAddr, vaspType: existing.vaspType, provisionedAt: existing.createdAt };
+    }
+
+    let walletAddress: string;
+    if (vaspType === 'EXTERNAL') {
+      walletAddress = await this.vaspClient.getWalletAddr(userId);
+    } else if (vaspType === 'KYOBO') {
+      walletAddress = await this.vaspClient.createWallet(userId);
+    } else {
+      throw new UnsupportedVaspError(vaspType);
+    }
+
+    await this.walletMapping.saveMapping(userId, walletAddress, vaspType);
+
+    // 감사 로그 — Java internal-ledger에 기록
+    await this.coreBanking.recordAuditLog({
+      actor:        'system',
+      action:       'WALLET_PROVISIONED',
+      resourceType: 'USER',
+      resourceId:   userId,
+      afterState:   { walletAddress, vaspType },
+    });
+
+    return { userId, walletAddress, vaspType, provisionedAt: new Date() };
+  }
+}
+```
+
+`recordAuditLog()`는 `provision()` 완료 후 호출한다. 감사 로그 실패가 프로비저닝 자체를 롤백해서는 안 된다 — 지갑은 이미 등록됐고, 감사 로그는 별도 트랜잭션(`REQUIRES_NEW`)으로 처리되기 때문이다.
+
+---
+
+### 8. 실습 추가 테스트 케이스
+
+> **[실습 과제]** 위 5번·7번 구현 후 아래 테스트를 추가한다.
+
+```typescript
+it('이미 프로비저닝된 userId → VASP API 재호출 없음', async () => {
+  const vaspSpy = jest.spyOn(mockVaspClient, 'getWalletAddr');
+
+  await service.provision('user1', 'EXTERNAL');  // 최초 등록
+  await service.provision('user1', 'EXTERNAL');  // 재요청
+
+  // VASP는 1번만 호출됐어야 함
+  expect(vaspSpy).toHaveBeenCalledTimes(1);
+});
+
+it('VASP API 실패 → DB 저장 안 됨 (일관 상태)', async () => {
+  jest.spyOn(mockVaspClient, 'getWalletAddr').mockRejectedValue(new Error('VASP timeout'));
+
+  await expect(service.provision('user1', 'EXTERNAL')).rejects.toThrow('VASP timeout');
+
+  // DB에 아무것도 저장되지 않았어야 함
+  expect(mockMapping.saveMapping).not.toHaveBeenCalled();
+});
+
+it('WALLET_PROVISIONED 감사 로그 기록 확인', async () => {
+  await service.provision('user1', 'EXTERNAL');
+
+  expect(mockCoreBanking.recordAuditLog).toHaveBeenCalledWith(
+    expect.objectContaining({ action: 'WALLET_PROVISIONED', resourceId: 'user1' }),
+  );
+});
+```
+
+---
+
 ## 완료 기준
 
 - [ ] POST /api/wallet/provision 라우트 등록
 - [ ] vaspType 분기 구조 확인
 - [ ] UnsupportedVaspError 테스트 통과
-- [ ] saveMapping 호출 확인
+- [ ] 중복 프로비저닝 → VASP API 재호출 없이 기존 주소 반환
+- [ ] VASP 실패 시 DB 미저장 테스트 통과
+- [ ] WALLET_PROVISIONED 감사 로그 기록 확인

@@ -209,9 +209,165 @@ export class WalletNotVerifiedError extends Error {
 
 ---
 
+### 7. WalletMappingRepository — 인터페이스와 구현 분리
+
+> **[실습 과제]** 인터페이스()는 실제 코드에 있다.  구현체는 없다 — 아래를 직접 작성한다.
+
+서비스 코드가 직접 SQL을 쓰지 않는다. M4 패턴과 동일하게 Repository 인터페이스로 의존성을 역전한다.
+
+```typescript
+// 인터페이스 — 서비스가 의존하는 계약
+export interface WalletMappingRepository {
+  findByUserId(userId: string):       Promise<WalletMapping | null>;
+  save(mapping: WalletMapping):       Promise<void>;
+  findByWalletAddr(walletAddr: string): Promise<WalletMapping | null>;
+}
+```
+
+**PostgreSQL 구현체:**
+
+```typescript
+export class PgWalletMappingRepository implements WalletMappingRepository {
+  constructor(private readonly db: DbClient) {}
+
+  async findByUserId(userId: string): Promise<WalletMapping | null> {
+    const { rows } = await this.db.query(
+      'SELECT * FROM user_wallet_mapping WHERE user_id = $1',
+      [userId],
+    );
+    if (rows.length === 0) return null;
+    return this._toModel(rows[0]!);
+  }
+
+  async save(mapping: WalletMapping): Promise<void> {
+    // UPSERT — 이미 있으면 wallet_addr, vasp_type, verified 갱신
+    await this.db.query(
+      `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified, created_at)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id)
+       DO UPDATE SET wallet_addr = $2, vasp_type = $3, verified = $4`,
+      [
+        mapping.userId,
+        mapping.walletAddr,
+        mapping.vaspType,
+        mapping.verified,
+        mapping.createdAt.toISOString(),
+      ],
+    );
+  }
+
+  async findByWalletAddr(walletAddr: string): Promise<WalletMapping | null> {
+    const { rows } = await this.db.query(
+      'SELECT * FROM user_wallet_mapping WHERE wallet_addr = $1',
+      [walletAddr.toLowerCase()],
+    );
+    if (rows.length === 0) return null;
+    return this._toModel(rows[0]!);
+  }
+
+  private _toModel(row: Record<string, unknown>): WalletMapping {
+    return {
+      userId:    row['user_id']    as string,
+      walletAddr: row['wallet_addr'] as string,
+      vaspType:  row['vasp_type']  as VaspType,
+      verified:  row['verified']   as boolean,
+      createdAt: new Date(row['created_at'] as string),
+    };
+  }
+}
+```
+
+`ON CONFLICT (user_id) DO UPDATE` — 지갑 교체 시나리오를 처리한다. INSERT를 시도하다 `user_id` 충돌이 나면 `wallet_addr`와 `verified`를 최신 값으로 갱신한다. 별도 UPDATE 쿼리 없이 한 번의 SQL로 처리된다.
+
+---
+
+### 8. In-Memory 구현 — 테스트용 Mock
+
+> **[실습 과제]** 단위 테스트용 In-Memory 구현체. 실제 코드에 없으므로 직접 작성한다.
+
+실제 DB 없이 단위 테스트를 돌리려면 In-Memory 구현체를 만든다.
+
+```typescript
+export function makeInMemoryWalletRepo(): WalletMappingRepository & { store: Map<string, WalletMapping> } {
+  const store = new Map<string, WalletMapping>();
+
+  return {
+    store,
+    async findByUserId(userId) {
+      return store.get(userId) ?? null;
+    },
+    async save(mapping) {
+      // lowercase 정규화 — DB와 동일한 동작 보장
+      store.set(mapping.userId, { ...mapping, walletAddr: mapping.walletAddr.toLowerCase() });
+    },
+    async findByWalletAddr(walletAddr) {
+      const lower = walletAddr.toLowerCase();
+      for (const m of store.values()) {
+        if (m.walletAddr === lower) return m;
+      }
+      return null;
+    },
+  };
+}
+```
+
+테스트에서 사용:
+
+```typescript
+describe('WalletMappingService', () => {
+  it('미등록 userId → WalletNotFoundError', async () => {
+    const repo = makeInMemoryWalletRepo();
+    const svc  = new WalletMappingService(repo, mockVasp, mockVerifier);
+
+    await expect(svc.getWalletAddr('unknown-user')).rejects.toThrow(WalletNotFoundError);
+  });
+
+  it('save() 후 findByUserId() → 동일 주소 반환', async () => {
+    const repo = makeInMemoryWalletRepo();
+    await repo.save({
+      userId: 'user1', walletAddr: '0xABCD', vaspType: 'EXTERNAL',
+      verified: true, createdAt: new Date(),
+    });
+
+    const result = await repo.findByUserId('user1');
+    expect(result?.walletAddr).toBe('0xabcd');  // lowercase 정규화 확인
+  });
+
+  it('지갑 교체 → 최신 주소만 남음 (UPSERT)', async () => {
+    const repo = makeInMemoryWalletRepo();
+    await repo.save({ userId: 'user1', walletAddr: '0xOLD', vaspType: 'EXTERNAL', verified: true, createdAt: new Date() });
+    await repo.save({ userId: 'user1', walletAddr: '0xNEW', vaspType: 'EXTERNAL', verified: true, createdAt: new Date() });
+
+    const result = await repo.findByUserId('user1');
+    expect(result?.walletAddr).toBe('0xnew');
+    expect(repo.store.size).toBe(1);  // 행이 2개가 되면 안 됨
+  });
+});
+```
+
+---
+
+### 9. saveMapping() vs repo.save() — 네이밍 혼동 주의
+
+강의 다이어그램에서 `saveMapping()`이라고 표기했지만 실제 서비스 코드에서는 `repo.save(mapping)`을 직접 호출한다. `WalletMappingService`가 외부에 제공하는 메서드는 없고, `WalletProvisioningService`가 `WalletMappingService`의 내부 `repo`를 통해 저장한다.
+
+```
+WalletProvisioningService.provision()
+  └─ this.walletMapping.saveMapping() ← 다이어그램 표기
+       └─ repo.save(mapping)          ← 실제 코드
+            └─ SQL UPSERT              ← DB 실행
+```
+
+외부에서 보이는 인터페이스(`saveMapping`)와 내부 구현(`repo.save`)을 구분하는 것이 서비스 레이어의 역할이다.
+
+---
+
 ## 완료 기준
 
 - [ ] user_wallet_mapping 마이그레이션 완성
-- [ ] WalletNotFoundError 정의
+- [ ] WalletNotFoundError, WalletNotVerifiedError 정의
 - [ ] getWalletAddr() 미등록 userId → WalletNotFoundError
+- [ ] getWalletAddr() verified=false → WalletNotVerifiedError
+- [ ] PgWalletMappingRepository.save() UPSERT 구현 확인
+- [ ] makeInMemoryWalletRepo() 테스트 통과 — 교체, 정규화, 중복 방지
 - [ ] 등록 흐름 시퀀스 다이어그램 완성
