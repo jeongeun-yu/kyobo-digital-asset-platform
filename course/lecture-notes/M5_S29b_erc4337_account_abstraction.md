@@ -421,13 +421,13 @@ paymasterAndData 구조:
 **Phase 1 (현재): AA 불필요**
 
 ```
-사용자 → 교보 서버 → VASP(월렛원) API → 온체인
+사용자 → 교보 서버 → VASP(VASP) API → 온체인
                           ↑
          VASP가 gas 처리, 사용자는 서명 없음
          교보 서버가 VASP에 위임 → AA 도입 비용만 증가
 ```
 
-월렛원이 Custody 지갑을 관리하므로, 교보 서버는 단순히 REST API를 호출한다. 사용자가 직접 서명하거나 gas를 지불할 일이 없다. AA 도입의 이점이 없다.
+VASP이 Custody 지갑을 관리하므로, 교보 서버는 단순히 REST API를 호출한다. 사용자가 직접 서명하거나 gas를 지불할 일이 없다. AA 도입의 이점이 없다.
 
 **Phase 3 (자체 VASP): AA 필요**
 

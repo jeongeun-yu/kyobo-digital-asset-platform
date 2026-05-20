@@ -1,7 +1,7 @@
 ﻿# M5 S28 — 온체인 식별자와 내부 사용자 ID의 매핑 설계
 
-> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
-> **Phase 1 맥락:** 지갑 주소는 월렛원이 생성·관리합니다. 교보 시스템은 `userId ↔ walletAddr` 매핑만 내부 DB에 보관합니다. Phase 3에서는 자체 HSM이 주소를 파생합니다.
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(VASP) 위탁 아키텍처를 기반으로 합니다.  
+> **Phase 1 맥락:** 지갑 주소는 VASP이 생성·관리합니다. 교보 시스템은 `userId ↔ walletAddr` 매핑만 내부 DB에 보관합니다. Phase 3에서는 자체 HSM이 주소를 파생합니다.
 
 > 모듈 5 · 세션 28 · 1시간  
 > 스켈레톤: `internal/apps/issuer-service/src/services/WalletMappingService.ts`
@@ -78,7 +78,7 @@ CREATE INDEX idx_wallet_mapping_addr ON user_wallet_mapping(wallet_addr);
 
 | 등록 방식 | verified 초기값 | 이유 |
 |---|---|---|
-| VASP 수탁 (월렛원, KYOBO) | `true` 즉시 | VASP가 지갑을 직접 생성 → 소유권 자명 |
+| VASP 수탁 (VASP, KYOBO) | `true` 즉시 | VASP가 지갑을 직접 생성 → 소유권 자명 |
 | 비수탁 (사용자 자가관리) | `false` | 주소만 제출 — 소유권 미검증 상태 |
 
 비수탁 지갑은 EIP-191 서명 검증(S29) 성공 후 `verified=true`로 업데이트된다.
@@ -89,7 +89,7 @@ CREATE INDEX idx_wallet_mapping_addr ON user_wallet_mapping(wallet_addr);
 
 ### 5. 지갑 주소 등록 흐름 비교
 
-**수탁 방식 (월렛원 EXTERNAL — Phase 1 기본)**
+**수탁 방식 (VASP EXTERNAL — Phase 1 기본)**
 
 ```
 사용자 가입 완료
@@ -199,7 +199,7 @@ async getMapping(userId: string): Promise<WalletMapping | null>
 ### 8. verified 상태 전이 — 등록 방식별 비교
 
 ```
-수탁 방식 (월렛원 EXTERNAL / KYOBO):
+수탁 방식 (VASP EXTERNAL / KYOBO):
   provision() 완료
        │
        ▼  verified = true  (즉시)
@@ -295,12 +295,12 @@ export class WalletNotVerifiedError extends Error {
 }
 ```
 
-### 월렛원 vs 코다 등록 흐름 시퀀스 다이어그램 작성 과제
+### VASP vs 코다 등록 흐름 시퀀스 다이어그램 작성 과제
 
 강의를 보며 아래 시퀀스 다이어그램의 각 단계를 직접 채워보세요:
 
 ```
-월렛원 방식:
+VASP 방식:
 사용자  →  앱  →  서버(IssuerService)  →  DB
   │         │              │               │
   ├─로그인─▶│              │               │

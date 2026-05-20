@@ -1,7 +1,7 @@
 ﻿# M5 S27 — 사용자 레이어 진입점 설계 · VASP별 지갑 프로비저닝 분기
 
-> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
-> **Phase 1 맥락:** 지갑 생성은 `vaspAdapter.createWallet()`을 통해 월렛원에 위탁합니다. Phase 3에서 교보생명이 직접 VASP 인가를 취득한 이후에는 자체 HSM/MPC로 지갑을 생성하는 `KyoboVASPAdapter`로 교체됩니다.
+> **[Phase 1 — 현재 구현]** 이 모듈은 VASP(VASP) 위탁 아키텍처를 기반으로 합니다.  
+> **Phase 1 맥락:** 지갑 생성은 `vaspAdapter.createWallet()`을 통해 VASP에 위탁합니다. Phase 3에서 교보생명이 직접 VASP 인가를 취득한 이후에는 자체 HSM/MPC로 지갑을 생성하는 `KyoboVASPAdapter`로 교체됩니다.
 
 > 모듈 5 · 세션 27 · 1시간  
 > 스켈레톤: `internal/apps/issuer-service/src/services/WalletProvisioningService.ts`
@@ -29,18 +29,18 @@ Phase 1에서 사용자의 지갑 주소를 시스템에 등록하는 방식은 
 
 | 방식 | private key 위치 | 지갑 주소 출처 | verified 저장 |
 |---|---|---|---|
-| **수탁 (Custodial)** — Phase 1 기본 | VASP(월렛원) 서버 | VASP API 응답 | `true` 즉시 — VASP가 소유권 보장 |
+| **수탁 (Custodial)** — Phase 1 기본 | VASP(VASP) 서버 | VASP API 응답 | `true` 즉시 — VASP가 소유권 보장 |
 | **비수탁 (Non-Custodial)** — 선택적 지원 | 사용자 본인 | 사용자가 직접 제출 | `false` → EIP-191 서명 후 `true` (S29) |
 
 그리고 교보 내재화(Phase 4):
 
 | VASP 유형 | 예시 | 지갑 관리 주체 | 서버 처리 방식 |
 |---|---|---|---|
-| EXTERNAL 수탁 | 월렛원, KorbitCustody | VASP Custody 시스템 | VASP API 호출 → 지갑 주소 조회 → `verified: true` |
+| EXTERNAL 수탁 | VASP, KorbitCustody | VASP Custody 시스템 | VASP API 호출 → 지갑 주소 조회 → `verified: true` |
 | KYOBO | Phase 4 내재화 | 교보 내부 HSM | 직접 생성 → DB 저장 → `verified: true` |
 
 **수탁(Custodial) 방식 — Phase 1 현재:**
-VASP(월렛원)가 사용자를 위한 Custody 지갑을 생성하고 private key를 보관한다. 서버는 VASP API를 호출해 지갑 주소를 받아온다. VASP가 직접 생성한 지갑이므로 소유권이 자명하다 — 별도 서명 검증 없이 `verified: true`로 저장한다.
+VASP(VASP)가 사용자를 위한 Custody 지갑을 생성하고 private key를 보관한다. 서버는 VASP API를 호출해 지갑 주소를 받아온다. VASP가 직접 생성한 지갑이므로 소유권이 자명하다 — 별도 서명 검증 없이 `verified: true`로 저장한다.
 
 **비수탁(Non-Custodial) 방식 — Phase 1 선택적:**
 사용자가 MetaMask 같은 자가관리 지갑을 직접 교보 시스템에 등록하는 경우다. 이때는 사용자가 해당 주소의 private key를 실제로 보유하고 있는지 증명해야 한다. 주소만 제출하는 것만으로는 소유권을 알 수 없다 — EIP-191 서명 검증이 필요하다(S29).
@@ -149,7 +149,7 @@ export interface ExternalVaspClient {
 
 | Phase | 구현체 | 내용 |
 |---|---|---|
-| Phase 1 (현재) | `WalletWonAdapter` | 월렛원 REST API 호출 |
+| Phase 1 (현재) | `WalletWonAdapter` | VASP REST API 호출 |
 | Phase 3 | `KyoboCustodyAdapter` | 교보 자체 HSM/MPC |
 
 Phase 1 → Phase 3 전환 시 `WalletProvisioningService` 코드는 한 글자도 바뀌지 않는다. 생성자에 주입하는 구현체만 교체한다.
