@@ -228,7 +228,195 @@ function validateUserOp(
 
 ---
 
-### 7. Phase 1에서 AA를 쓰지 않는 이유 — Phase 3 로드맵
+### 7. AA 활용 사례 — Paymaster 외 3가지
+
+Paymaster(가스 대납)는 AA의 기능 중 하나일 뿐이다. `validateUserOp()`과 `execute()`를 자유롭게 구현할 수 있다는 점에서 훨씬 더 많은 시나리오가 가능하다.
+
+---
+
+#### 7-1. 소셜 복구 (Social Recovery) — private key 분실 대비
+
+EOA에서 private key를 잃으면 자산은 영구히 잠긴다. Smart Contract Account에서는 사전에 지정한 Guardian들이 새 owner를 지정할 수 있다.
+
+```
+[교보생명 Recovery Account]
+
+Guardian 등록:
+  owner가 신뢰하는 주소 3개를 컨트랙트에 등록
+  예: 가족 주소, 교보 고객센터 주소, 백업 디바이스
+
+복구 흐름:
+  owner private key 분실
+       │
+       ▼
+  Guardian 2개 이상이 새 owner 주소에 서명
+       │
+       ▼
+  initiateRecovery(newOwner, guardianSigs[])
+       │
+       ▼
+  시간 지연(Timelock, 예: 48시간) → 이 기간에 owner가 취소 가능
+       │
+       ▼
+  finalizeRecovery() → owner 교체 완료
+
+결과: 이전 주소의 NFT·잔액이 그대로 새 owner에게 이전
+```
+
+```solidity
+// RecoveryAccount 핵심 로직 (의사코드)
+function initiateRecovery(address newOwner, bytes[] calldata guardianSigs) external {
+    uint256 approvals = 0;
+    for (uint i = 0; i < guardianSigs.length; i++) {
+        address signer = recoverSigner(newOwner, guardianSigs[i]);
+        if (isGuardian[signer]) approvals++;
+    }
+    require(approvals >= threshold, "not enough guardians");  // 예: 2-of-3
+
+    pendingOwner = newOwner;
+    recoveryInitiatedAt = block.timestamp;  // Timelock 시작
+}
+
+function finalizeRecovery() external {
+    require(block.timestamp >= recoveryInitiatedAt + RECOVERY_DELAY);
+    owner = pendingOwner;
+}
+```
+
+**교보생명 적용 시나리오:**
+- 일반 고객: Guardian = 가족 지갑 + 교보 고객센터 (2-of-2)
+- 분실 신고 → 교보 고객센터가 Guardian 서명 → 48시간 후 복구 완료
+- 기존 EOA 방식에서는 불가능했던 "고객 지원" 가능
+
+---
+
+#### 7-2. 세션키 (Session Key) — 매번 서명 없이 앱 자동화
+
+사용자가 앱을 사용할 때마다 MetaMask 팝업이 뜨면 UX가 나쁘다. 세션키는 "이 키가 이 범위 내에서만 서명할 수 있다"는 임시 권한을 부여한다.
+
+```
+[세션키 등록]
+
+사용자가 앱 실행 시 1회만 서명:
+  owner가 임시 세션키(SessionKey)에 권한 위임
+  → 대상 컨트랙트: KyoboNFT만
+  → 최대 금액: 1개 NFT 수령만
+  → 유효기간: 24시간
+
+[세션키 사용 흐름]
+
+앱이 NFT 수령 UserOperation 생성
+  signature = sessionKey.sign(userOpHash)
+       │
+       ▼
+validateUserOp():
+  서명이 sessionKey로 됐는지 확인
+  callData가 허용된 컨트랙트(KyoboNFT)인지 확인
+  유효기간 내인지 확인
+  → 통과 → 실행
+```
+
+```typescript
+// 세션키 등록 (앱 초기화 시 1회)
+const sessionKeyPair = ethers.Wallet.createRandom();  // 임시 키
+
+await smartAccount.addSessionKey({
+  key:        sessionKeyPair.address,
+  allowedTargets: [KYOBO_NFT_ADDRESS],
+  maxAmount:  1n,          // NFT 1개까지
+  expiresAt:  Date.now() + 24 * 60 * 60 * 1000,  // 24시간
+});
+
+// 이후 앱이 자동으로 서명 (팝업 없음)
+const userOp = buildUserOp({ ... });
+userOp.signature = await sessionKeyPair.signMessage(userOpHash);
+await bundler.sendUserOperation(userOp);
+```
+
+**교보생명 적용 시나리오:**
+- 걷기 목표 달성 시 앱이 자동으로 NFT 수령 UserOperation 전송
+- 사용자는 앱 설치 시 1회만 세션키 권한 부여 → 이후 자동 실행
+- 권한 범위가 컨트랙트 레벨에서 강제되므로 세션키 탈취돼도 NFT 수령 이외 동작 불가
+
+---
+
+#### 7-3. 배치 트랜잭션 (Batch TX) — 여러 작업을 1번의 UserOperation으로
+
+EOA에서는 "approve → transfer"처럼 2단계 작업이 TX 2개였다. Smart Contract Account는 `execute()` 안에서 여러 호출을 순차 실행할 수 있다.
+
+```
+EOA 방식 (2 TX):
+  TX1: ERC-20.approve(spender, amount)   ← 서명 1회 + gas
+  TX2: DeFi.deposit(amount)              ← 서명 1회 + gas
+  문제: TX1 성공 + TX2 실패 가능 → 불일치 상태
+
+AA 배치 방식 (1 UserOperation):
+  executeBatch([
+    { to: ERC20,  data: approve(spender, amount)  },
+    { to: DeFi,   data: deposit(amount)           },
+    { to: KyoboNFT, data: safeTransferFrom(...)   },
+  ])
+  → 3개 작업이 1 TX 안에서 원자적 실행
+  → 하나라도 실패하면 전체 롤백
+```
+
+```solidity
+// SimpleAccount.executeBatch() 의사코드
+function executeBatch(
+    address[] calldata dest,
+    bytes[]   calldata func
+) external {
+    require(dest.length == func.length);
+    for (uint256 i = 0; i < dest.length; i++) {
+        _call(dest[i], 0, func[i]);  // 실패하면 전체 revert
+    }
+}
+```
+
+**교보생명 적용 시나리오:**
+- 보험 만기 정산: "환급금 수령 + NFT 발행 + 소각" 3단계를 1 UserOperation으로 처리
+- 원자성 보장: 중간 단계 실패 시 전체 롤백 → 원장 불일치 없음
+
+---
+
+#### 7-4. ERC-20 가스 지불 (Token Paymaster)
+
+ETH가 아닌 ERC-20 토큰(예: USDC, WETH)으로 gas를 지불할 수 있다. Paymaster가 ERC-20을 받고 ETH gas를 대신 지불한다.
+
+```
+[Token Paymaster 흐름]
+
+사용자: USDC 1개 → Token Paymaster
+Token Paymaster: 시세 확인 → ETH gas로 환산 → EntryPoint에 ETH 지불
+
+사용자 입장:
+  ETH 잔액 = 0
+  USDC 잔액에서 gas 차감
+  → ETH를 따로 살 필요 없음
+
+paymasterAndData 구조:
+  [Paymaster 주소 20바이트][ERC-20 토큰 주소 20바이트][최대 지불 금액 32바이트][서명]
+```
+
+**교보 적용 시나리오:**
+- Phase 3에서 교보가 자체 스테이블코인(KRW 연동) 발행 시, 이 토큰으로 gas 지불 가능
+- 사용자 경험: "ETH 없이 KRW 스테이블코인으로 모든 거래 처리"
+
+---
+
+**4가지 사례 정리:**
+
+| 기능 | 해결하는 문제 | 교보 시나리오 |
+|---|---|---|
+| Paymaster (가스 대납) | ETH 없는 사용자 | 일반 고객 NFT 수령 |
+| 소셜 복구 | private key 분실 | 고객센터 Guardian 복구 |
+| 세션키 | 매번 서명 UX 나쁨 | 앱 자동 NFT 수령 |
+| 배치 TX | 다단계 작업 원자성 | 만기 정산 3단계 원자 실행 |
+| Token Paymaster | ETH 구매 장벽 | KRW 스테이블코인으로 gas 지불 |
+
+---
+
+### 8. Phase 1에서 AA를 쓰지 않는 이유 — Phase 3 로드맵
 
 **Phase 1 (현재): AA 불필요**
 
