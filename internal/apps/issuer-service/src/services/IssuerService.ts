@@ -21,6 +21,10 @@ import NFT_ISSUER_ABI                      from '../abi/NFTIssuer.json';
  *
  * CONFIRMED 전이는 VASP Webhook 핸들러 담당 (이 서비스 범위 밖).
  * 이 서비스는 체인·VASP·CoreBanking 구현을 모른다 (인터페이스만 참조).
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 관련 모듈: M5 S28~S29 (IssuerService · NFT 발행 오케스트레이터)
  */
 export class IssuerService {
   constructor(private readonly deps: {

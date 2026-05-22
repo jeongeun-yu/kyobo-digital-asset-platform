@@ -4,15 +4,15 @@ CREATE TABLE IF NOT EXISTS user_wallet_mapping (
   id          BIGSERIAL    PRIMARY KEY,
   user_id     VARCHAR(64)  NOT NULL UNIQUE,
   wallet_addr VARCHAR(42)  NOT NULL,
-  vasp_type   VARCHAR(16)  NOT NULL CHECK (vasp_type IN ('EXTERNAL', 'KYOBO')),
+  vasp_type   VARCHAR(16)  NOT NULL,
   verified    BOOLEAN      NOT NULL DEFAULT false,
-  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_vasp_type CHECK (vasp_type IN ('EXTERNAL', 'KYOBO'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_wallet_mapping_user_id ON user_wallet_mapping(user_id);
-CREATE INDEX IF NOT EXISTS idx_wallet_mapping_addr    ON user_wallet_mapping(wallet_addr);
+CREATE INDEX IF NOT EXISTS idx_wallet_mapping_addr ON user_wallet_mapping(wallet_addr);
 
-COMMENT ON TABLE user_wallet_mapping IS 'M5 실습: userId ↔ walletAddr 매핑 (S27)';
+COMMENT ON TABLE user_wallet_mapping IS 'M5 실습: userId ↔ walletAddr 1:1 매핑 (S27~S28)';
 
 -- ── S28: 발행 정책 ──────────────────────────────────────────────────────────
 

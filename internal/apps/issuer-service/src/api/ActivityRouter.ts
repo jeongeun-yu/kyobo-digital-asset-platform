@@ -8,6 +8,10 @@ import type { ActivityEvent }                  from '../services/EventConditionS
  *
  * WebhookServer에 이벤트 타입별 핸들러를 등록한다.
  * Phase 2/3에서 새 이벤트 타입이 추가되면 이 클래스에 핸들러만 추가.
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 관련 모듈: M5 S29 (ActivityRouter · Webhook 이벤트 라우팅)
  */
 export class ActivityRouter {
   constructor(

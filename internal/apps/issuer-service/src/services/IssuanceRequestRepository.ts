@@ -21,6 +21,10 @@ import type { Pool }  from 'pg';
  *   IssuerService → IIssuanceRequestRepository (인터페이스)
  *   운영: PgIssuanceRequestRepository
  *   테스트: InMemoryIssuanceRequestRepository
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 관련 모듈: M5 S29 (IssuanceRequestRepository · 발행 요청 상태머신)
  */
 
 // ── 도메인 타입 ───────────────────────────────────────────────────────────────
