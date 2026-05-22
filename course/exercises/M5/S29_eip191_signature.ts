@@ -1,45 +1,36 @@
 /**
  * S29 실습 — 블록체인 서명 기반 지갑 소유권 증명 원리
  *
- * 강의 노트: M5_S29_eip191_signature.md
+ * 사전 준비:
+ *   npm run exercise:s27:db:up      ← S27과 같은 DB 사용
  *
- * 실행 방법 (루트에서): npm run exercise:s29
- *
- * 목표:
- *   [1] EIP-191 서명 검증 흐름 — nonce 확인 → ecrecover → 주소 일치 → nonce 무효화
- *   [2] verifyOwnership() 구현 — 잘못된 서명 → false, 올바른 서명 → true + DB 저장
- *   [3] nonce 재사용 방지 — 같은 nonce 두 번 → 두 번째 false
- *   [4] 주소 비교 lowercase 정규화
+ * 실행:
+ *   npm run exercise:s29            → 전체 실행
+ *   npm run exercise:s29:1          → [1] EIP-191 실제 서명 흐름 (ethers.js)
+ *   npm run exercise:s29:2          → [2] 올바른 서명 → verifyOwnership → verified=true
+ *   npm run exercise:s29:3          → [3] 잘못된 서명 → false → DB 변화 없음
+ *   npm run exercise:s29:4          → [4] nonce 재사용 방지 (replay attack)
+ *   npm run exercise:s29:5          → [5] 미발급 nonce → false
+ *   npm run exercise:s29:6          → [6] 주소 대소문자 정규화 (EIP-55 checksum)
+ *   npm run exercise:s29:7          → [7] 지갑 교체 시나리오
  */
 
 import { createHash } from 'crypto';
-import { ethers } from 'ethers';
+import { ethers }     from 'ethers';
+import { Pool }       from 'pg';
 
-// ────────────────────────────────────────────────────────────────────────
-// 타입 정의
-// ────────────────────────────────────────────────────────────────────────
+// ── 타입 정의 ─────────────────────────────────────────────────────────────────
 
 type VaspType = 'EXTERNAL' | 'KYOBO';
 
-interface WalletRecord {
-  userId:     string;
-  walletAddr: string;
-  vaspType:   VaspType;
-  verified:   boolean;
-  createdAt:  Date;
-}
-
-/** 서명에서 복원된 주소를 반환하는 인터페이스 */
 interface SignatureVerifier {
   recoverAddress(message: string, signature: string): Promise<string>;
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// EthersSignatureVerifier (완성 코드 — 수정 불필요)
+// ── EthersSignatureVerifier — 실제 EIP-191 검증 ──────────────────────────────
 //
-// EIP-191 접두사: "\x19Ethereum Signed Message:\n" + len(message)
-// ethers.verifyMessage()가 이 접두사를 자동으로 처리한다.
-// ────────────────────────────────────────────────────────────────────────
+// ethers.verifyMessage()가 "\x19Ethereum Signed Message:\n{len}{msg}" 접두사를
+// 자동으로 처리한다. 접두사가 없으면 ecrecover 결과가 달라짐 (피싱 방지 목적).
 
 class EthersSignatureVerifier implements SignatureVerifier {
   async recoverAddress(message: string, signature: string): Promise<string> {
@@ -47,75 +38,28 @@ class EthersSignatureVerifier implements SignatureVerifier {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// InMemory 저장소 (완성 코드 — 수정 불필요)
-// ────────────────────────────────────────────────────────────────────────
-
-class InMemoryNonceRepo {
-  private store = new Map<string, string>();  // userId → nonce
-
-  async find(userId: string): Promise<string | null> {
-    return this.store.get(userId) ?? null;
-  }
-
-  async save(userId: string, nonce: string): Promise<void> {
-    this.store.set(userId, nonce);
-  }
-
-  async delete(userId: string): Promise<void> {
-    this.store.delete(userId);
-  }
-}
-
-class InMemoryWalletRepo {
-  private store = new Map<string, WalletRecord>();  // userId → WalletRecord
-
-  async findByUserId(userId: string): Promise<WalletRecord | null> {
-    return this.store.get(userId) ?? null;
-  }
-
-  async upsert(record: WalletRecord): Promise<void> {
-    this.store.set(record.userId, { ...record });
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// 실습: WalletMappingService.verifyOwnership()을 구현하라
+// ── WalletMappingService — S29 확장 버전 ─────────────────────────────────────
 //
-// 이미 구현된 메서드:
-//   - generateNonce(userId): sha256(userId + timestamp + random).slice(0,16)
-//   - issueNonce(userId): nonce 생성 + DB 저장 + 반환
-//
-// 구현할 메서드: verifyOwnership(params)
+// nonce: in-memory Map (운영에서는 Redis — TTL 5분)
+// wallet: PostgreSQL (user_wallet_mapping 테이블)
 //
 // 검증 순서 (반드시 이 순서로!):
-//   ① nonce 확인 (cheap check — DoS 방지, 연산 낭비 차단)
-//      → nonceRepo.find(userId)로 저장된 nonce 조회
-//      → storedNonce가 없거나 params.nonce와 다르면 → false 반환
-//   ② 서명에서 주소 복원 (ECDSA ecrecover — 연산 비용 높음)
-//      → 메시지 형식: `Kyobo Digital Asset Wallet: ${userId}:${nonce}`
-//      → sigVerifier.recoverAddress(message, signature)로 복원
-//   ③ 복원 주소 == 사용자 주장 주소?
-//      → recovered.toLowerCase() !== walletAddr.toLowerCase() 이면 → false 반환
-//      → EIP-55 checksum 주소 대소문자 차이 방지를 위해 반드시 lowercase 비교
-//   ④ nonce 무효화 (검증 성공 후에만 — 실패 시 재시도 허용)
-//      → nonceRepo.delete(userId)
-//   ⑤ DB upsert (verified=true)
-//      → walletRepo.upsert({ userId, walletAddr, vaspType: 'EXTERNAL', verified: true, createdAt: new Date() })
-//   ⑥ true 반환
-// ────────────────────────────────────────────────────────────────────────
+//   ① nonce 확인   — cheap check (DB/ECDSA 연산 전 DoS 방지)
+//   ② ecrecover    — ECDSA 서명 복원 (연산 비용 높음, nonce 확인 후 실행)
+//   ③ 주소 일치    — lowercase 정규화 필수 (EIP-55 checksum 차이 방지)
+//   ④ nonce 무효화 — 검증 성공 후에만 (실패 시 재시도 허용)
+//   ⑤ DB markVerified — verified=true 업데이트
 
 export class WalletMappingService {
+  private readonly nonceStore = new Map<string, string>();  // userId → nonce
+
   constructor(
-    private readonly nonceRepo:    InMemoryNonceRepo,
-    private readonly walletRepo:   InMemoryWalletRepo,
-    private readonly sigVerifier:  SignatureVerifier,
+    private readonly pool:        Pool,
+    private readonly sigVerifier: SignatureVerifier,
   ) {}
 
-  /**
-   * nonce 생성 — 서명 요청마다 새 값 발급
-   * sha256(userId + timestamp + random).slice(0, 16)
-   */
+  // ── nonce 발급 ──────────────────────────────────────────────────────────────
+
   generateNonce(userId: string): string {
     const raw = `${userId}:${Date.now()}:${Math.random()}`;
     return createHash('sha256').update(raw).digest('hex').slice(0, 16);
@@ -123,180 +67,297 @@ export class WalletMappingService {
 
   async issueNonce(userId: string): Promise<string> {
     const nonce = this.generateNonce(userId);
-    await this.nonceRepo.save(userId, nonce);
+    this.nonceStore.set(userId, nonce);
+    console.log(`  [NONCE] issueNonce  userId='${userId}'  nonce='${nonce}'`);
     return nonce;
   }
 
-  /**
-   * EIP-191 서명 기반 지갑 소유권 검증
-   *
-   * @returns true  → 검증 성공 (verified=true DB 저장)
-   * @returns false → 검증 실패 (nonce 불일치 또는 서명자 불일치)
-   */
+  // ── 지갑 등록 (S27 provision 이후 호출 — UPSERT) ──────────────────────────
+
+  async saveMapping(userId: string, walletAddr: string, vaspType: VaspType): Promise<void> {
+    const verified = vaspType === 'KYOBO';
+    await this.pool.query(
+      `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id) DO UPDATE
+         SET wallet_addr = EXCLUDED.wallet_addr,
+             vasp_type   = EXCLUDED.vasp_type,
+             verified    = EXCLUDED.verified`,
+      [userId, walletAddr, vaspType, verified],
+    );
+    console.log(`  [DB] UPSERT user_id='${userId}'  wallet_addr='${walletAddr}'  vasp_type='${vaspType}'  verified=${verified}`);
+  }
+
+  // ── EIP-191 서명 기반 소유권 검증 ──────────────────────────────────────────
+
   async verifyOwnership(params: {
     userId:     string;
     walletAddr: string;
     signature:  string;
     nonce:      string;
   }): Promise<boolean> {
-    return undefined as never;
-    // 힌트:
-    // const { userId, walletAddr, signature, nonce } = params;
-    // ① storedNonce = await this.nonceRepo.find(userId)
-    //    if (!storedNonce || storedNonce !== nonce) return false;
-    // ② const message = `Kyobo Digital Asset Wallet: ${userId}:${nonce}`
-    //    const recovered = await this.sigVerifier.recoverAddress(message, signature)
-    // ③ if (recovered.toLowerCase() !== walletAddr.toLowerCase()) return false;
-    // ④ await this.nonceRepo.delete(userId)
-    // ⑤ await this.walletRepo.upsert({ userId, walletAddr, vaspType: 'EXTERNAL', verified: true, createdAt: new Date() })
-    // ⑥ return true;
-  }
-}
+    const { userId, walletAddr, signature, nonce } = params;
 
-// ────────────────────────────────────────────────────────────────────────
-// 테스트용 Mock SignatureVerifier (완성 코드 — 수정 불필요)
-// ────────────────────────────────────────────────────────────────────────
+    // ① nonce 확인 (cheap check — ECDSA 연산 전에 수행)
+    const storedNonce = this.nonceStore.get(userId) ?? null;
+    console.log(`  [NONCE] check  userId='${userId}'  stored='${storedNonce}'  given='${nonce}'`);
+    if (!storedNonce || storedNonce !== nonce) {
+      console.log(`  [NONCE] 불일치 또는 미발급 → false 반환`);
+      return false;
+    }
 
-function createMockVerifier(expectedAddr: string, validSig: string): SignatureVerifier {
-  return {
-    async recoverAddress(_message: string, signature: string): Promise<string> {
-      if (signature === validSig) return expectedAddr.toLowerCase();
-      return '0x0000000000000000000000000000000000000000';
-    },
-  };
-}
+    // ② 서명에서 주소 복원 (ECDSA ecrecover)
+    const message   = `Kyobo Digital Asset Wallet: ${userId}:${nonce}`;
+    const recovered = await this.sigVerifier.recoverAddress(message, signature);
+    console.log(`  [SIG]   recovered='${recovered}'  claimed='${walletAddr}'`);
 
-// ────────────────────────────────────────────────────────────────────────
-// 헬퍼
-// ────────────────────────────────────────────────────────────────────────
+    // ③ 복원 주소 일치 확인 (lowercase 정규화)
+    if (recovered.toLowerCase() !== walletAddr.toLowerCase()) {
+      console.log(`  [SIG]   주소 불일치 → false 반환`);
+      return false;
+    }
 
-function check(label: string, pass: boolean) {
-  console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
-  if (!pass) process.exitCode = 1;
-}
+    // ④ nonce 무효화 (재생 공격 방지 — 성공 후에만)
+    this.nonceStore.delete(userId);
+    console.log(`  [NONCE] 무효화 완료`);
 
-// ────────────────────────────────────────────────────────────────────────
-// 실습 진입점
-// ────────────────────────────────────────────────────────────────────────
-
-if (require.main === module) (async () => {
-  console.log('=== S29: EIP-191 서명 기반 지갑 소유권 증명 ===\n');
-
-  const WALLET_ADDR = '0xAbCd1234EF5678901234567890abcdef01234567';
-  const VALID_SIG   = '0xa1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b21c';
-
-  const mockVerifier = createMockVerifier(WALLET_ADDR, VALID_SIG);
-
-  function newService() {
-    return new WalletMappingService(
-      new InMemoryNonceRepo(),
-      new InMemoryWalletRepo(),
-      mockVerifier,
+    // ⑤ DB markVerified
+    const res = await this.pool.query(
+      `UPDATE user_wallet_mapping SET verified = true WHERE user_id = $1`,
+      [userId],
     );
+    console.log(`  [DB] UPDATE verified=true WHERE user_id='${userId}'  → rowCount=${res.rowCount}`);
+
+    return true;
+  }
+}
+
+// ── DB 상태 출력 헬퍼 ────────────────────────────────────────────────────────
+
+async function showDb(pool: Pool, where?: string): Promise<void> {
+  const sql = where
+    ? `SELECT id, user_id, wallet_addr, vasp_type, verified, created_at FROM user_wallet_mapping WHERE ${where} ORDER BY id`
+    : `SELECT id, user_id, wallet_addr, vasp_type, verified, created_at FROM user_wallet_mapping ORDER BY id`;
+  const res = await pool.query(sql);
+  console.table(res.rows);
+}
+
+// ── 섹션 함수 ─────────────────────────────────────────────────────────────────
+
+async function section1(_pool: Pool): Promise<void> {
+  console.log('[1] EIP-191 실제 서명 흐름 (ethers.js)');
+
+  const wallet  = ethers.Wallet.createRandom();
+  const userId  = 'K-29240001';
+  const nonce   = createHash('sha256').update(`${userId}:${Date.now()}:${Math.random()}`).digest('hex').slice(0, 16);
+  const message = `Kyobo Digital Asset Wallet: ${userId}:${nonce}`;
+
+  console.log(`  [WALLET] address    ${wallet.address}`);
+  console.log(`  [WALLET] privateKey ${wallet.privateKey}  ← 교육용, 절대 실제 키 노출 금지`);
+  console.log(`  [MSG]    ${message}`);
+
+  const signature = await wallet.signMessage(message);
+  console.log(`  [SIG]    ${signature}`);
+
+  const recovered = ethers.verifyMessage(message, signature);
+  console.log(`  [RECOVER] ${recovered}`);
+  console.log(`  [CHECK]   일치: ${recovered.toLowerCase() === wallet.address.toLowerCase()}`);
+}
+
+async function section2(pool: Pool): Promise<void> {
+  console.log('[2] 올바른 서명 → verifyOwnership → verified=true');
+
+  const wallet = ethers.Wallet.createRandom();
+  const svc    = new WalletMappingService(pool, new EthersSignatureVerifier());
+
+  // S27 provision 후 상태 재현 (EXTERNAL → verified=false)
+  await svc.saveMapping('K-29240001', wallet.address, 'EXTERNAL');
+  await showDb(pool, `user_id = 'K-29240001'`);
+
+  const nonce     = await svc.issueNonce('K-29240001');
+  const message   = `Kyobo Digital Asset Wallet: K-29240001:${nonce}`;
+  const signature = await wallet.signMessage(message);
+
+  const result = await svc.verifyOwnership({
+    userId:     'K-29240001',
+    walletAddr: wallet.address,
+    signature,
+    nonce,
+  });
+
+  console.log(`  verifyOwnership 결과: ${result}`);
+  await showDb(pool, `user_id = 'K-29240001'`);
+}
+
+async function section3(pool: Pool): Promise<void> {
+  console.log('[3] 잘못된 서명 → false → DB 변화 없음');
+
+  const wallet      = ethers.Wallet.createRandom();
+  const wrongWallet = ethers.Wallet.createRandom();  // 다른 키로 서명
+  const svc         = new WalletMappingService(pool, new EthersSignatureVerifier());
+
+  await svc.saveMapping('K-29240002', wallet.address, 'EXTERNAL');
+
+  const nonce     = await svc.issueNonce('K-29240002');
+  const message   = `Kyobo Digital Asset Wallet: K-29240002:${nonce}`;
+  const badSig    = await wrongWallet.signMessage(message);  // 다른 지갑이 서명
+
+  const result = await svc.verifyOwnership({
+    userId:     'K-29240002',
+    walletAddr: wallet.address,
+    signature:  badSig,
+    nonce,
+  });
+
+  console.log(`  verifyOwnership 결과: ${result}  (false 예상)`);
+  await showDb(pool, `user_id = 'K-29240002'`);
+  console.log(`  → verified 여전히 false  DB 변화 없음`);
+}
+
+async function section4(pool: Pool): Promise<void> {
+  console.log('[4] nonce 재사용 방지 (replay attack)');
+
+  const wallet = ethers.Wallet.createRandom();
+  const svc    = new WalletMappingService(pool, new EthersSignatureVerifier());
+
+  await svc.saveMapping('K-29240003', wallet.address, 'EXTERNAL');
+
+  const nonce     = await svc.issueNonce('K-29240003');
+  const message   = `Kyobo Digital Asset Wallet: K-29240003:${nonce}`;
+  const signature = await wallet.signMessage(message);
+
+  const first  = await svc.verifyOwnership({ userId: 'K-29240003', walletAddr: wallet.address, signature, nonce });
+  console.log(`  1차 검증 결과: ${first}  (true 예상)`);
+
+  // 같은 nonce·서명 재전송 (재생 공격 시뮬레이션)
+  const second = await svc.verifyOwnership({ userId: 'K-29240003', walletAddr: wallet.address, signature, nonce });
+  console.log(`  2차 검증 결과: ${second}  (false 예상 — nonce 이미 무효화)`);
+}
+
+async function section5(pool: Pool): Promise<void> {
+  console.log('[5] 미발급 nonce → false (nonce 없이 서명 전송)');
+
+  const wallet = ethers.Wallet.createRandom();
+  const svc    = new WalletMappingService(pool, new EthersSignatureVerifier());
+
+  await svc.saveMapping('K-29240004', wallet.address, 'EXTERNAL');
+
+  const fakeNonce = 'never-issued-nonce';
+  const message   = `Kyobo Digital Asset Wallet: K-29240004:${fakeNonce}`;
+  const signature = await wallet.signMessage(message);
+
+  const result = await svc.verifyOwnership({
+    userId:     'K-29240004',
+    walletAddr: wallet.address,
+    signature,
+    nonce:      fakeNonce,
+  });
+
+  console.log(`  verifyOwnership 결과: ${result}  (false 예상 — nonce 미발급)`);
+}
+
+async function section6(pool: Pool): Promise<void> {
+  console.log('[6] 주소 대소문자 정규화 (EIP-55 checksum)');
+
+  const wallet = ethers.Wallet.createRandom();
+  const svc    = new WalletMappingService(pool, new EthersSignatureVerifier());
+
+  // EIP-55 checksum 형식(대소문자 혼합) vs lowercase 주소
+  const checksumAddr = wallet.address;                         // 예: 0xAbCd...
+  const upperAddr    = checksumAddr.toUpperCase().replace('0X', '0x');  // 예: 0xABCD...
+
+  console.log(`  checksum 주소:  ${checksumAddr}`);
+  console.log(`  upper 주소:     ${upperAddr}`);
+
+  await svc.saveMapping('K-29240005', checksumAddr, 'EXTERNAL');
+
+  const nonce     = await svc.issueNonce('K-29240005');
+  const message   = `Kyobo Digital Asset Wallet: K-29240005:${nonce}`;
+  const signature = await wallet.signMessage(message);
+
+  // walletAddr를 uppercase로 전달해도 toLowerCase() 비교 덕분에 통과
+  const result = await svc.verifyOwnership({
+    userId:     'K-29240005',
+    walletAddr: upperAddr,
+    signature,
+    nonce,
+  });
+
+  console.log(`  verifyOwnership 결과: ${result}  (true 예상 — lowercase 정규화 동작)`);
+}
+
+async function section7(pool: Pool): Promise<void> {
+  console.log('[7] 지갑 교체 시나리오 — 재등록 후 최신 주소로 verified');
+
+  const oldWallet = ethers.Wallet.createRandom();
+  const newWallet = ethers.Wallet.createRandom();
+  const svc       = new WalletMappingService(pool, new EthersSignatureVerifier());
+
+  // 초기 등록
+  await svc.saveMapping('K-29240006', oldWallet.address, 'EXTERNAL');
+  console.log('  [등록] 구 지갑');
+  await showDb(pool, `user_id = 'K-29240006'`);
+
+  // 구 지갑으로 검증
+  const nonce1 = await svc.issueNonce('K-29240006');
+  const msg1   = `Kyobo Digital Asset Wallet: K-29240006:${nonce1}`;
+  const sig1   = await oldWallet.signMessage(msg1);
+  const r1     = await svc.verifyOwnership({ userId: 'K-29240006', walletAddr: oldWallet.address, signature: sig1, nonce: nonce1 });
+  console.log(`  구 지갑 검증: ${r1}`);
+  await showDb(pool, `user_id = 'K-29240006'`);
+
+  // 지갑 교체 (새 지갑으로 UPSERT — verified 다시 false)
+  await svc.saveMapping('K-29240006', newWallet.address, 'EXTERNAL');
+  console.log('  [교체] 신 지갑 등록');
+  await showDb(pool, `user_id = 'K-29240006'`);
+
+  // 새 지갑으로 검증
+  const nonce2 = await svc.issueNonce('K-29240006');
+  const msg2   = `Kyobo Digital Asset Wallet: K-29240006:${nonce2}`;
+  const sig2   = await newWallet.signMessage(msg2);
+  const r2     = await svc.verifyOwnership({ userId: 'K-29240006', walletAddr: newWallet.address, signature: sig2, nonce: nonce2 });
+  console.log(`  신 지갑 검증: ${r2}`);
+  await showDb(pool, `user_id = 'K-29240006'`);
+}
+
+// ── 진입점 ───────────────────────────────────────────────────────────────────
+
+const SECTIONS: Record<string, (pool: Pool) => Promise<void>> = {
+  '1': section1,
+  '2': section2,
+  '3': section3,
+  '4': section4,
+  '5': section5,
+  '6': section6,
+  '7': section7,
+};
+
+(async () => {
+  const pool = new Pool({
+    host:     'localhost',
+    port:     5434,
+    database: 'kyobo_exercise',
+    user:     'kyobo',
+    password: 'kyobo',
+  });
+
+  const arg = process.argv[2];
+
+  if (arg && SECTIONS[arg]) {
+    await pool.query('TRUNCATE TABLE user_wallet_mapping RESTART IDENTITY');
+    console.log(`=== S29: 섹션 [${arg}] ===\n`);
+    await SECTIONS[arg]!(pool);
+  } else {
+    await pool.query('TRUNCATE TABLE user_wallet_mapping RESTART IDENTITY');
+    console.log('=== S29: EIP-191 서명 기반 지갑 소유권 증명 — 전체 실행 ===\n');
+    for (const [num, fn] of Object.entries(SECTIONS)) {
+      await fn(pool);
+      console.log();
+    }
+    console.log('[최종] user_wallet_mapping 전체 조회');
+    await showDb(pool);
   }
 
-  // ── [1] 올바른 서명 → verified=true ────────────────────────────────────
-  console.log('[검증 1] 올바른 서명 → true 반환 + verified=true DB 저장');
-  const svc1   = newService();
-  const nonce1 = await svc1.issueNonce('user1');
-  const result1 = await svc1.verifyOwnership({
-    userId:     'user1',
-    walletAddr: WALLET_ADDR,
-    signature:  VALID_SIG,
-    nonce:      nonce1,
-  });
-  check('올바른 서명 → true',                      result1 === true);
-
-  // ── [2] 잘못된 서명 → false ──────────────────────────────────────────────
-  console.log('\n[검증 2] 잘못된 서명 → false 반환 (HTTP 403)');
-  const svc2   = newService();
-  const nonce2 = await svc2.issueNonce('user2');
-  const result2 = await svc2.verifyOwnership({
-    userId:     'user2',
-    walletAddr: WALLET_ADDR,
-    signature:  '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef1b',
-    nonce:      nonce2,
-  });
-  check('잘못된 서명 → false',                     result2 === false);
-
-  // ── [3] nonce 재사용 방지 ─────────────────────────────────────────────
-  console.log('\n[검증 3] nonce 재사용 방지 — 동일 nonce 두 번 → 두 번째 false');
-  const svc3   = newService();
-  const nonce3 = await svc3.issueNonce('user3');
-
-  const first = await svc3.verifyOwnership({
-    userId: 'user3', walletAddr: WALLET_ADDR, signature: VALID_SIG, nonce: nonce3,
-  });
-  const second = await svc3.verifyOwnership({
-    userId: 'user3', walletAddr: WALLET_ADDR, signature: VALID_SIG, nonce: nonce3,
-  });
-  check('첫 번째 검증 성공',                       first === true);
-  check('두 번째 검증 실패 (nonce 이미 무효화)',    second === false);
-
-  // ── [4] 유효하지 않은 nonce (미발급) → false ───────────────────────────
-  console.log('\n[검증 4] 미발급 nonce → false (nonce 발급 없이 서명 전송)');
-  const svc4  = newService();
-  const fake  = await svc4.verifyOwnership({
-    userId: 'user4', walletAddr: WALLET_ADDR, signature: VALID_SIG,
-    nonce:  'fake-nonce-never-issued',
-  });
-  check('미발급 nonce → false',                    fake === false);
-
-  // ── [5] 주소 대소문자 정규화 — EIP-55 checksum ────────────────────────
-  console.log('\n[검증 5] 주소 대소문자 정규화 — lowercase 비교');
-  const checksumSvc = new WalletMappingService(
-    new InMemoryNonceRepo(),
-    new InMemoryWalletRepo(),
-    createMockVerifier(WALLET_ADDR, VALID_SIG),
-  );
-  const nonce5b = await checksumSvc.issueNonce('user5');
-  const upperAddr = WALLET_ADDR.toUpperCase().replace('0X', '0x');
-  const result5 = await checksumSvc.verifyOwnership({
-    userId: 'user5', walletAddr: upperAddr, signature: VALID_SIG, nonce: nonce5b,
-  });
-  check('EIP-55 대소문자 checksum 주소도 정상 검증', result5 === true);
-
-  // ── [6] nonce 생성 형식 확인 ────────────────────────────────────────────
-  console.log('\n[검증 6] nonce 형식 — 16자 hex 문자열');
-  const svc6   = newService();
-  const nonce6 = svc6.generateNonce('user6');
-  check('nonce 길이 16자',                          nonce6.length === 16);
-  check('nonce hex 형식',                           /^[0-9a-f]{16}$/.test(nonce6));
-
-  const nonce6b = svc6.generateNonce('user6');
-  check('연속 발급 nonce 중복 없음',                 nonce6 !== nonce6b);
-
-  // ── [7] 지갑 교체 시나리오 ────────────────────────────────────────────
-  console.log('\n[검증 7] 지갑 교체 — 재등록 후 최신 주소만 유지');
-  const repo7       = new InMemoryWalletRepo();
-  const nonceRepo7  = new InMemoryNonceRepo();
-  const NEW_ADDR    = '0xc400000000000000000000000000000000000004';
-  const svc7        = new WalletMappingService(nonceRepo7, repo7, createMockVerifier(NEW_ADDR, VALID_SIG));
-
-  const nonce7a = await svc7.issueNonce('user7');
-  await svc7.verifyOwnership({ userId: 'user7', walletAddr: WALLET_ADDR, signature: VALID_SIG, nonce: nonce7a });
-  const nonce7b = await svc7.issueNonce('user7');
-  const replaceResult = await svc7.verifyOwnership({ userId: 'user7', walletAddr: NEW_ADDR, signature: VALID_SIG, nonce: nonce7b });
-  check('지갑 교체 등록 성공',                      replaceResult === true);
-
-  // ── EIP-191 이론 확인 (ethers.js 실제 동작) ───────────────────────────
-  console.log('\n[참고] EIP-191 실제 서명 검증 예시 (ethers.js)');
-  const wallet    = ethers.Wallet.createRandom();
-  const testMsg   = `Kyobo Digital Asset Wallet: test-user:abc123`;
-  const testSig   = await wallet.signMessage(testMsg);
-  const recovered = ethers.verifyMessage(testMsg, testSig);
-  console.log(`  서명자 주소:  ${wallet.address}`);
-  console.log(`  복원된 주소:  ${recovered}`);
-  check('ethers.verifyMessage — 주소 복원 성공',   recovered.toLowerCase() === wallet.address.toLowerCase());
-
-  // ── 정리 ─────────────────────────────────────────────────────────────
-  console.log('\n=== S29 실습 완료 ===');
-  console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
-  console.log('\n핵심 정리:');
-  console.log('  1. Sybil 공격 방지: 주소를 아는 것≠주소 소유 → 서명으로 개인키 보유 증명');
-  console.log('  2. EIP-191 접두사: "\\x19Ethereum Signed Message:\\n{len}" — 피싱 트랜잭션과 구분');
-  console.log('  3. nonce: 일회용 랜덤값 → 재생(Replay) 공격 방지 (같은 서명 재사용 차단)');
-  console.log('  4. 검증 순서: ① nonce 확인 (cheap) → ② ecrecover → ③ 주소 비교 → ④ nonce 무효화');
-  console.log('  5. lowercase 정규화: EIP-55 checksum 형식 차이로 인한 false negative 방지');
-  console.log('  6. nonce 무효화는 검증 성공 후에만 → 실패 시 재시도 허용');
+  await pool.end();
+  console.log('\nS29 완료');
 })();

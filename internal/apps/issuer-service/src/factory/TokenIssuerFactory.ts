@@ -8,6 +8,7 @@ import {
   IssuancePolicyService,
   PgIssuancePolicyRepository,
 }                                   from '../services/IssuancePolicyService';
+import { PgIssuanceRequestRepository } from '../services/IssuanceRequestRepository';
 import { EventConditionService }    from '../services/EventConditionService';
 
 /**
@@ -52,6 +53,7 @@ export class TokenIssuerFactory {
   createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService): IssuerService {
     const policyRepo    = new PgIssuancePolicyRepository(this.deps.pool);
     const policyService = new IssuancePolicyService(policyRepo);
+    const issuanceRepo  = new PgIssuanceRequestRepository(this.deps.pool);
 
     return new IssuerService({
       chainAdapter:     this.deps.chainAdapter,
@@ -61,6 +63,7 @@ export class TokenIssuerFactory {
       nftIssuerAddr,
       policyService,
       conditionService,
+      issuanceRepo,
     });
   }
 

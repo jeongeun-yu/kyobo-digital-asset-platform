@@ -1,10 +1,11 @@
-﻿# M5 S27 — 사용자 레이어 진입점 설계 · VASP별 지갑 프로비저닝 분기
+# M5 S27 — 사용자 레이어 진입점 설계 · VASP별 지갑 프로비저닝 분기
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(VASP) 위탁 아키텍처를 기반으로 합니다.  
 > **Phase 1 맥락:** 지갑 생성은 `vaspAdapter.createWallet()`을 통해 VASP에 위탁합니다. Phase 3에서 교보생명이 직접 VASP 인가를 취득한 이후에는 자체 HSM/MPC로 지갑을 생성하는 `KyoboVASPAdapter`로 교체됩니다.
 
 > 모듈 5 · 세션 27 · 1시간  
-> 스켈레톤: `internal/apps/issuer-service/src/services/WalletProvisioningService.ts`
+> 실습 파일: `course/exercises/M5/S27_wallet_provisioning.ts`  
+> 실행: `npm run exercise:s27`
 
 ---
 
@@ -139,7 +140,7 @@ S27은 이 두 의존성이 어떻게 연결되는지를 다루고, S28~S29는 `
 실제 코드의 인터페이스 정의:
 
 ```typescript
-export interface ExternalVaspClient {
+interface ExternalVaspClient {
   getWalletAddr(userId: string): Promise<string>;  // 기존 custodial 지갑 조회
   createWallet(userId: string):  Promise<string>;  // 내부 신규 생성 (Phase 4)
 }
@@ -168,61 +169,234 @@ M4에서 배운 의존성 역전(DIP)이 M5에서도 동일하게 적용된다. 
 
 ## 실습 파트 (35분)
 
-### 스켈레톤 코드
+```bash
+npm run exercise:s27
+```
+
+실습 파일 한 개에 7개 섹션이 순서대로 실행된다. 각 섹션은 독립 스코프(`{}`)로 격리되어 이전 결과가 섞이지 않는다.
+
+`ethers` + `crypto` 모듈을 사용해 실제 Ethereum 주소·키를 생성하고, DB 레이어는 PostgreSQL 쿼리 형태로 로그를 출력한다. 함수(mock)가 아니라 실제 암호화 연산 결과를 확인하는 것이 핵심이다.
+
+---
+
+### 구현 구조 개요
+
+```
+import { ethers }     from 'ethers';   // HD 지갑·랜덤 지갑 생성
+import { createHash } from 'crypto';   // SHA-256 체크섬 (AuditLog)
+
+makeVaspClient()    → ExternalVaspClient  (HD 파생 / createRandom)
+makeWalletMapping() → WalletMappingService (SQL 로그 + in-memory store)
+makeAuditLog()      → AuditLogAdapter      (SHA-256 체크섬 계산)
+```
+
+---
+
+### VASP 클라이언트 — 실제 HD 지갑 파생
 
 ```typescript
-// WalletProvisioningService.ts
+// 테스트 니모닉 (실제 VASP는 HSM 내부에 마스터 시드 보관)
+const VASP_MNEMONIC = 'test test test test test test test test test test test junk';
+
+// depth 0 루트 노드에서 파생
+const hdRoot = ethers.HDNodeWallet.fromPhrase(VASP_MNEMONIC, undefined, "m");
+```
+
+**EXTERNAL — 수탁 방식 (HD 파생)**
+
+실제 커스터디 VASP는 HD(Hierarchical Deterministic) 지갑 구조로 운영된다.  
+마스터 시드 하나로 BIP-44 경로를 따라 사용자마다 고유 지갑을 파생한다.
+
+```
+m / 44' / 60' / 0' / 0 / {index}
+          ↑     ↑    ↑    ↑   ↑
+        ETH  account  외부  인덱스(사용자별)
+```
+
+```typescript
+const path  = `m/44'/60'/0'/0/${hdIdx++}`;
+const child = hdRoot.derivePath(path);
+// child.address  → 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+// child.privateKey → VASP HSM 보관, 사용자는 알 수 없음
+```
+
+> 테스트 니모닉의 첫 번째 파생 주소(`index=0`)는 Hardhat 기본 계정과 동일하다.  
+> 수강생이 Hardhat을 써봤다면 `0xf39Fd6e51aad...` 주소를 알아볼 것이다.
+
+같은 `userId`는 항상 같은 HD 인덱스에 매핑 → **재요청해도 동일 주소 반환** (멱등성 근거).
+
+**KYOBO — HSM 신규 생성 방식**
+
+```typescript
+const wallet = ethers.Wallet.createRandom();
+// wallet.address    → 0x59099f15...   (매 실행마다 다름)
+// wallet.privateKey → 0xd72825...     (HSM이 보관, 출력 후 즉시 폐기)
+```
+
+콘솔에 privateKey가 출력되는 것을 보면서: "이 키가 HSM 밖으로 나온다는 게 어떤 의미인지" 강조.
+
+---
+
+### WalletMapping — SQL 쿼리 로그
+
+in-memory Map으로 동작하지만 실제 PostgreSQL 쿼리 형태로 출력한다.
+
+```
+[DB] SELECT wallet_addr, vasp_type, created_at
+     FROM   user_wallet_mapping
+     WHERE  user_id = 'K-20240001'
+     → 0 rows
+
+[DB] INSERT INTO user_wallet_mapping
+     (user_id, wallet_addr, vasp_type, verified, created_at)
+     VALUES ('K-20240001', '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 'EXTERNAL', true, NOW())
+```
+
+`verified: true`가 INSERT에 포함된다 — VASP가 생성한 지갑이므로 소유권 증명 불필요.
+
+---
+
+### AuditLog — SHA-256 체크섬
+
+S26에서 구현한 `AuditLogService`와 동일한 체크섬 계산 로직을 사용한다.
+
+```typescript
+const raw      = `${eventTime}${actor}${action}${resourceId}${JSON.stringify(afterState)}`;
+const checksum = createHash('sha256').update(raw, 'utf8').digest('hex');
+```
+
+```
+[AUDIT] action     WALLET_PROVISIONED
+[AUDIT] resourceId K-20240009
+[AUDIT] afterState {"walletAddress":"0xf39F...","vaspType":"EXTERNAL"}
+[AUDIT] checksum   33fe7a171487f1b6a5dcc8019304c062e52895e1b4df2e407ac8162796e10900
+```
+
+같은 입력이면 항상 같은 체크섬 → 무결성 검증 가능.
+
+---
+
+### 실습 섹션별 흐름
+
+| 섹션 | 내용 | 핵심 확인 포인트 |
+|---|---|---|
+| [1] | EXTERNAL → HD 파생 (`m/44'/60'/0'/0/0`) | 파생 경로·주소·INSERT 쿼리 |
+| [2] | KYOBO → `createRandom()` | 주소·privateKey 출력, INSERT 쿼리 |
+| [3] | 미지원 vaspType → `UnsupportedVaspError` | 에러 이름·메시지, `saveCalls = 0` |
+| [4] | 컨트롤러 시뮬레이션 | EXTERNAL=200, 미지원=400, KYOBO=200 |
+| [5] | 멱등성 — 3회 재요청 | r1·r2·r3 주소 동일, `vasp calls=1`, `saveCalls=1` |
+| [6] | VASP 실패 → DB 미저장 | SELECT 후 에러, `saveCalls=0` |
+| [7] | 감사 로그 — SHA-256 체크섬 | checksum 64자리, 재요청 시 미기록 |
+
+---
+
+### [1] EXTERNAL — HD 지갑 파생 흐름
+
+```
+provision('K-20240001', 'EXTERNAL')
+  │
+  ├─ getMapping('K-20240001')        → SELECT → 0 rows
+  │
+  ├─ vaspClient.getWalletAddr(...)
+  │    └─ HD 파생 m/44'/60'/0'/0/0
+  │         → 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+  │
+  ├─ saveMapping(userId, addr, 'EXTERNAL')
+  │    └─ INSERT ... verified=true
+  │
+  └─ return ProvisionResult
+```
+
+---
+
+### [5] 멱등성 — HD 파생의 결정론적 특성
+
+`provision()`은 최초 1회만 VASP를 호출해야 한다. 동일 userId로 재요청이 오면:
+
+| 방식 | 동작 | 문제 |
+|---|---|---|
+| 덮어쓰기 | 항상 VASP 재호출 → 새 주소 저장 | VASP가 매번 새 주소를 생성하면 이전 지갑과 불일치 |
+| **멱등 처리** | DB에 있으면 기존 주소 반환 | **올바른 선택** |
+
+실습 출력에서 확인할 것:
+- `r1`, `r2`, `r3`의 `walletAddress` 모두 동일
+- `vasp calls: 1` — HD 파생은 최초 1회만
+- `saveCalls: 1` — INSERT도 1회만
+- 2회·3회 요청 시 SELECT → `1 row` 로그만 찍힘
+
+---
+
+### [6] VASP 실패 시 안전성
+
+`vaspClient.getWalletAddr()`가 실패하면:
+
+```
+SELECT → 0 rows
+VASP API 호출 실패 → 예외 throw
+                   → saveMapping() 미실행
+                   → INSERT 없음 (일관된 상태)
+```
+
+**VASP 성공 + DB 실패** 케이스: 재시도 시 `getWalletAddr()`를 다시 호출해도 HD 파생은 결정론적이므로 동일 주소를 반환한다. 실질적 문제 없음.
+
+> HD 파생이 아니라 매번 새 주소를 생성하는 VASP라면 이 가정이 깨진다 — 계약서에서 반드시 확인해야 한다.
+
+---
+
+### [7] 감사 로그 — S26 AuditLogService 연결
+
+`AuditLogAdapter`를 optional로 주입한다. 미주입 시 `?.record()` optional chaining으로 무시.
+
+주목할 동작:
+- 최초 `provision()` → `WALLET_PROVISIONED` + SHA-256 체크섬 기록
+- 재요청(멱등) → early return → 감사 로그 **미기록** (`entries.length` 여전히 1)
+- 같은 입력이면 체크섬도 항상 동일 → S26의 `verifyIntegrity()` 검증 가능
+
+---
+
+### WalletProvisioningService 최종 구현
+
+```typescript
 export class WalletProvisioningService {
   constructor(
-    private readonly vaspClient: ExternalVaspClient,
+    private readonly vaspClient:    ExternalVaspClient,
     private readonly walletMapping: WalletMappingService,
+    private readonly auditLog?:     AuditLogAdapter,
   ) {}
 
-  async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
-    // TODO: VASP 타입별 분기 구현
-    throw new Error('TODO: implement provision()');
-  }
-}
+  async provision(userId: string, vaspType: VaspType | string): Promise<ProvisionResult> {
+    const existing = await this.walletMapping.getMapping(userId);
+    if (existing) {
+      return { userId, walletAddress: existing.walletAddr, vaspType: existing.vaspType, provisionedAt: existing.createdAt };
+    }
 
-export interface ExternalVaspClient {
-  getWalletAddr(userId: string): Promise<string>;   // 기존 custodial 지갑 조회
-  createWallet(userId: string): Promise<string>;    // 내부 신규 생성 (Phase 4)
+    let walletAddress: string;
+
+    if (vaspType === 'EXTERNAL') {
+      walletAddress = await this.vaspClient.getWalletAddr(userId);
+    } else if (vaspType === 'KYOBO') {
+      walletAddress = await this.vaspClient.createWallet(userId);
+    } else {
+      throw new UnsupportedVaspError(vaspType);
+    }
+
+    await this.walletMapping.saveMapping(userId, walletAddress, vaspType as VaspType);
+    await this.auditLog?.record({
+      actor: 'system', action: 'WALLET_PROVISIONED',
+      resourceType: 'USER', resourceId: userId,
+      afterState: { walletAddress, vaspType },
+    });
+
+    return { userId, walletAddress, vaspType: vaspType as VaspType, provisionedAt: new Date() };
+  }
 }
 ```
 
-### `provision()` 구현
+---
+
+### 컨트롤러 라우트 참고
 
 ```typescript
-async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
-  let walletAddress: string;
-
-  if (vaspType === 'EXTERNAL') {
-    // VASP API 호출 → 기존 Custody 지갑 주소 조회
-    walletAddress = await this.vaspClient.getWalletAddr(userId);
-  } else if (vaspType === 'KYOBO') {
-    // Phase 4: 교보 내부 HSM으로 지갑 생성
-    walletAddress = await this.vaspClient.createWallet(userId);
-  } else {
-    // 지원하지 않는 VASP 타입 → 명시적 예외
-    throw new UnsupportedVaspError(vaspType);
-  }
-
-  // 획득한 주소를 매핑 DB에 저장
-  await this.walletMapping.saveMapping(userId, walletAddress, vaspType);
-
-  return {
-    userId,
-    walletAddress,
-    vaspType,
-    provisionedAt: new Date(),
-  };
-}
-```
-
-### 컨트롤러 라우트 등록
-
-```typescript
-// controller.ts
 app.post('/api/wallet/provision', async (req, res) => {
   try {
     const { userId, vaspType } = req.body;
@@ -238,208 +412,14 @@ app.post('/api/wallet/provision', async (req, res) => {
 });
 ```
 
-### UnsupportedVaspError 에러 클래스
-
-```typescript
-export class UnsupportedVaspError extends Error {
-  constructor(vaspType: string) {
-    super(`지원하지 않는 VASP 타입: ${vaspType}`);
-    this.name = 'UnsupportedVaspError';
-  }
-}
-```
-
-### 테스트 케이스
-
-```typescript
-describe('WalletProvisioningService', () => {
-  const mockVaspClient: ExternalVaspClient = {
-    async getWalletAddr(userId) { return `0xExternal-${userId}`; },
-    async createWallet(userId) { return `0xKyobo-${userId}`; },
-  };
-
-  const mockMapping = { saveMapping: jest.fn() };
-  const service = new WalletProvisioningService(mockVaspClient, mockMapping as any);
-
-  it('EXTERNAL → vaspClient.getWalletAddr() 호출', async () => {
-    const result = await service.provision('user1', 'EXTERNAL');
-    expect(result.walletAddress).toBe('0xExternal-user1');
-    expect(mockMapping.saveMapping).toHaveBeenCalledWith('user1', '0xExternal-user1', 'EXTERNAL');
-  });
-
-  it('KYOBO → vaspClient.createWallet() 호출', async () => {
-    const result = await service.provision('user1', 'KYOBO');
-    expect(result.walletAddress).toBe('0xKyobo-user1');
-  });
-
-  it('알 수 없는 vaspType → UnsupportedVaspError', async () => {
-    await expect(
-      service.provision('user1', 'UNKNOWN' as VaspType),
-    ).rejects.toThrow(UnsupportedVaspError);
-  });
-});
-```
-
----
-
-### 5. 중복 프로비저닝 처리 — 이미 등록된 userId가 다시 요청하면?
-
-> **[권장 패턴 / 실습 과제]** 현재 에는 중복 체크가 없다. 아래는 멱등성을 보장하는 권장 구현이다.
-
-`provision()`은 최초 1회만 호출되어야 한다. 그런데 동일 userId로 두 번 요청이 오면 어떻게 해야 하는가?
-
-**선택지 두 가지:**
-
-| 방식 | 동작 | 문제 |
-|---|---|---|
-| 덮어쓰기 | 항상 VASP API 재호출 → 새 주소 저장 | VASP가 매번 새 주소를 생성하면 이전 지갑과 불일치 |
-| 멱등 처리 | 이미 등록된 경우 기존 주소 그대로 반환 | **올바른 선택** |
-
-멱등 처리가 정답이다. 프로비저닝은 "있으면 조회, 없으면 생성" 패턴으로 만든다:
-
-```typescript
-async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
-  // 이미 등록된 경우 → 기존 주소 반환 (VASP API 재호출 없음)
-  const existing = await this.walletMapping.getMapping(userId);
-  if (existing) {
-    return {
-      userId,
-      walletAddress: existing.walletAddr,
-      vaspType:      existing.vaspType,
-      provisionedAt: existing.createdAt,
-    };
-  }
-
-  // 최초 등록
-  let walletAddress: string;
-  if (vaspType === 'EXTERNAL') {
-    walletAddress = await this.vaspClient.getWalletAddr(userId);
-  } else if (vaspType === 'KYOBO') {
-    walletAddress = await this.vaspClient.createWallet(userId);
-  } else {
-    throw new UnsupportedVaspError(vaspType);
-  }
-
-  await this.walletMapping.saveMapping(userId, walletAddress, vaspType);
-  return { userId, walletAddress, vaspType, provisionedAt: new Date() };
-}
-```
-
-컨트롤러에서 중복을 별도 처리하지 않는다. 서비스 레이어가 멱등성을 보장하므로 같은 요청을 몇 번 보내도 결과가 동일하다.
-
----
-
-### 6. VASP API 실패 시 안전성 분석
-
-`vaspClient.getWalletAddr()`가 네트워크 오류로 실패하면 어떻게 되는가?
-
-```
-VASP API 호출 실패 → 예외 throw
-                   → DB 저장 미실행
-                   → user_wallet_mapping 행 없음 (일관된 상태)
-```
-
-이 흐름은 안전하다. **VASP 호출이 성공하고 DB 저장이 실패**하는 경우가 문제다:
-
-```
-VASP API 호출 성공 → walletAddr 획득
-                  → DB INSERT 실패 (네트워크 단절 등)
-                  → walletAddr는 VASP에 이미 생성됐지만 DB에 없음
-```
-
-재시도 시 `getWalletAddr(userId)`를 VASP에 다시 호출하면 같은 주소를 돌려주므로 실질적 문제는 없다. VASP Custody 시스템은 userId당 지갑이 고정이기 때문이다. 단, VASP가 매번 새 주소를 생성하는 방식이라면 이 가정이 깨진다 — 계약서에서 반드시 확인해야 한다.
-
----
-
-### 7. 감사 로그 연동 — M4 AuditLog와 연결
-
-> **[권장 패턴 / 실습 과제]** 현재 코드에는 감사 로그 연동이 없다. M4에서 만든 를 주입해 아래와 같이 확장한다.
-
-지갑 프로비저닝은 금융 규제상 기록 대상이다. M4에서 만든 `ICoreBankingAdapter.recordAuditLog()`를 연동한다.
-
-```typescript
-export class WalletProvisioningService {
-  constructor(
-    private readonly vaspClient:    ExternalVaspClient,
-    private readonly walletMapping: WalletMappingService,
-    private readonly coreBanking:   ICoreBankingAdapter,  // M4 연결
-  ) {}
-
-  async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
-    const existing = await this.walletMapping.getMapping(userId);
-    if (existing) {
-      return { userId, walletAddress: existing.walletAddr, vaspType: existing.vaspType, provisionedAt: existing.createdAt };
-    }
-
-    let walletAddress: string;
-    if (vaspType === 'EXTERNAL') {
-      walletAddress = await this.vaspClient.getWalletAddr(userId);
-    } else if (vaspType === 'KYOBO') {
-      walletAddress = await this.vaspClient.createWallet(userId);
-    } else {
-      throw new UnsupportedVaspError(vaspType);
-    }
-
-    await this.walletMapping.saveMapping(userId, walletAddress, vaspType);
-
-    // 감사 로그 — Java internal-ledger에 기록
-    await this.coreBanking.recordAuditLog({
-      actor:        'system',
-      action:       'WALLET_PROVISIONED',
-      resourceType: 'USER',
-      resourceId:   userId,
-      afterState:   { walletAddress, vaspType },
-    });
-
-    return { userId, walletAddress, vaspType, provisionedAt: new Date() };
-  }
-}
-```
-
-`recordAuditLog()`는 `provision()` 완료 후 호출한다. 감사 로그 실패가 프로비저닝 자체를 롤백해서는 안 된다 — 지갑은 이미 등록됐고, 감사 로그는 별도 트랜잭션(`REQUIRES_NEW`)으로 처리되기 때문이다.
-
----
-
-### 8. 실습 추가 테스트 케이스
-
-> **[실습 과제]** 위 5번·7번 구현 후 아래 테스트를 추가한다.
-
-```typescript
-it('이미 프로비저닝된 userId → VASP API 재호출 없음', async () => {
-  const vaspSpy = jest.spyOn(mockVaspClient, 'getWalletAddr');
-
-  await service.provision('user1', 'EXTERNAL');  // 최초 등록
-  await service.provision('user1', 'EXTERNAL');  // 재요청
-
-  // VASP는 1번만 호출됐어야 함
-  expect(vaspSpy).toHaveBeenCalledTimes(1);
-});
-
-it('VASP API 실패 → DB 저장 안 됨 (일관 상태)', async () => {
-  jest.spyOn(mockVaspClient, 'getWalletAddr').mockRejectedValue(new Error('VASP timeout'));
-
-  await expect(service.provision('user1', 'EXTERNAL')).rejects.toThrow('VASP timeout');
-
-  // DB에 아무것도 저장되지 않았어야 함
-  expect(mockMapping.saveMapping).not.toHaveBeenCalled();
-});
-
-it('WALLET_PROVISIONED 감사 로그 기록 확인', async () => {
-  await service.provision('user1', 'EXTERNAL');
-
-  expect(mockCoreBanking.recordAuditLog).toHaveBeenCalledWith(
-    expect.objectContaining({ action: 'WALLET_PROVISIONED', resourceId: 'user1' }),
-  );
-});
-```
-
 ---
 
 ## 완료 기준
 
-- [ ] POST /api/wallet/provision 라우트 등록
-- [ ] vaspType 분기 구조 확인
-- [ ] UnsupportedVaspError 테스트 통과
-- [ ] 중복 프로비저닝 → VASP API 재호출 없이 기존 주소 반환
-- [ ] VASP 실패 시 DB 미저장 테스트 통과
-- [ ] WALLET_PROVISIONED 감사 로그 기록 확인
+- [ ] [1] HD 파생 경로(`m/44'/60'/0'/0/0`)와 주소 확인, INSERT 쿼리에 `verified=true`
+- [ ] [2] KYOBO `createRandom()` — 주소·privateKey 출력 확인
+- [ ] [3] 미지원 vaspType → `UnsupportedVaspError`, `saveCalls = 0`
+- [ ] [4] 컨트롤러 시뮬레이션 → EXTERNAL=200 / 미지원=400
+- [ ] [5] 멱등성 → r1·r2·r3 주소 동일, `vasp calls = 1`, `saveCalls = 1`
+- [ ] [6] VASP 실패 → SELECT 후 에러, `saveCalls = 0`
+- [ ] [7] 감사 로그 → SHA-256 체크섬 64자리, 재요청 시 `entries.length` 여전히 1

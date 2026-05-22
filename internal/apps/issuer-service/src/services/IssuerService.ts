@@ -1,25 +1,25 @@
-import type { IBlockchainAdapter }   from '@kyobo/chain-adapters';
-import type { IVASPAdapter }          from '@kyobo/vasp';
-import type { ICoreBankingAdapter }   from '@kyobo/core-banking';
-import type { IdempotencyGuard }      from '@kyobo/event-engine/webhook';
-import type { ActivityEvent }         from './EventConditionService';
-import { EventConditionService }      from './EventConditionService';
-import { IssuancePolicyService }      from './IssuancePolicyService';
-import NFT_ISSUER_ABI                 from '../abi/NFTIssuer.json';
+import type { IBlockchainAdapter }        from '@kyobo/chain-adapters';
+import type { IVASPAdapter }               from '@kyobo/vasp';
+import type { ICoreBankingAdapter }        from '@kyobo/core-banking';
+import type { IdempotencyGuard }           from '@kyobo/event-engine/webhook';
+import type { ActivityEvent }              from './EventConditionService';
+import { EventConditionService }           from './EventConditionService';
+import { IssuancePolicyService }           from './IssuancePolicyService';
+import type { IIssuanceRequestRepository } from './IssuanceRequestRepository';
+import NFT_ISSUER_ABI                      from '../abi/NFTIssuer.json';
 
 /**
- * IssuerService — NFT 발행 비즈니스 로직
+ * IssuerService — NFT 발행 오케스트레이터
  *
- * 레이어 역할:
- *   Webhook → IssuerService → (조건 판단 → 정책 조회 → KYC/AML → VASP TX 위탁 → CoreBanking 알림)
+ * 발행 파이프라인 (M5 S28~S29):
+ *   ① 정책 조회   — IssuancePolicyService.getPolicy()  → tokenId·amount·유효기간
+ *   ② 조건 판단  — EventConditionService.evaluate()   → eligible 여부
+ *   ③ 멱등성 체크 — issuanceRepo.findPending()         → 중복 요청 방지
+ *   ④ REQUESTED  — issuanceRepo.create()
+ *   ⑤ KYC/AML   — coreBanking + vaspAdapter           → 실패 시 FAILED
+ *   ⑥ VASP 위탁  — vaspAdapter.submitTransaction()    → SUBMITTED / 실패 시 FAILED
  *
- * 발행 파이프라인 (M5 S28~S30):
- *   1. EventConditionService.evaluate()  — 조건 관문 (걸음수·자격 등)
- *   2. IssuancePolicyService.getPolicy() — 정책 관문 (tokenId·amount·유효기간)
- *   3. CoreBanking KYC 확인 + VASP AML 스크리닝
- *   4. VASP에 mint TX 위탁 (비동기 완료 — NFT_ISSUED Webhook으로 통보)
- *   5. CoreBanking 보상 알림 (fire-and-forget)
- *
+ * CONFIRMED 전이는 VASP Webhook 핸들러 담당 (이 서비스 범위 밖).
  * 이 서비스는 체인·VASP·CoreBanking 구현을 모른다 (인터페이스만 참조).
  */
 export class IssuerService {
@@ -31,81 +31,109 @@ export class IssuerService {
     nftIssuerAddr:    string;
     policyService:    IssuancePolicyService;
     conditionService: EventConditionService;
+    issuanceRepo:     IIssuanceRequestRepository;
   }) {}
 
   /**
    * 활동 달성 NFT 발행
    *
-   * @param activityId 오프체인 활동 고유 ID (멱등성 키)
+   * @param activityId VASP 멱등성 키 (동일 activityId → VASP 중복 제출 방지)
    * @param event      ActivityEvent — 조건 판단·정책 조회에 사용
-   * @throws Error 조건 미충족 · 정책 없음 · KYC 실패 · AML 차단 · VASP TX 실패
+   * @returns eligible=false면 requestId 빈 문자열, DB 레코드 미생성
+   * @throws NoPolicyError, Error (KYC·AML·VASP 실패)
    */
   async issueActivityNFT(params: {
     userId:     string;
     activityId: string;
     event:      ActivityEvent;
-  }): Promise<{ txHash: string; tokenId: string }> {
+  }): Promise<{ requestId: string; eligible: boolean; txHash?: string; tokenId?: string }> {
     const { userId, activityId, event } = params;
 
-    // ── 1. 조건 관문 ─────────────────────────────────────────────────
-    const conditionResult = await this.deps.conditionService.evaluate(event);
-    if (!conditionResult.eligible) {
-      throw new Error(`IssuerService: condition not met: ${conditionResult.reason}`);
-    }
-
-    // ── 2. 정책 관문 (tokenId·amount 권위 있는 출처) ──────────────────
-    // EventConditionService가 계산한 tokenId는 로컬 검증용.
-    // 실제 발행에 사용하는 tokenId는 정책 DB에서만 가져온다 (SRP).
+    // ── ① 정책 조회 — NoPolicyError 상위 전파 ────────────────────────
+    // tokenId 권위 있는 출처는 정책 DB. EventConditionService는 tokenId를 모른다 (SRP).
     const policy = await this.deps.policyService.getPolicy(event.eventType);
 
-    // ── 3. KYC / AML ──────────────────────────────────────────────────
-    const account = await this.deps.coreBanking.getUserAccount(userId);
-    if (!account) throw new Error(`IssuerService: user not found: ${userId}`);
-    if (account.status !== 'active') throw new Error(`IssuerService: account not active: ${userId}`);
-
-    const aml = await this.deps.vaspAdapter.screenAddress(account.walletAddr);
-    if (aml.flagged) throw new Error(`IssuerService: AML flagged: ${aml.reason}`);
-
-    // ── 4. VASP(월렛원)에 mint TX 위탁 ───────────────────────────────
-    // issuer-service(내부망)는 TX를 직접 서명하지 않는다. VASP가 서명·브로드캐스트 후
-    // NFT_ISSUED Webhook으로 결과를 통보한다 (비동기 완료).
-    const vaspReceipt = await this.deps.vaspAdapter.submitTransaction({
-      contractAddr:   this.deps.nftIssuerAddr,
-      abi:            NFT_ISSUER_ABI,
-      method:         'mint',
-      args: [
-        account.walletAddr,
-        policy.tokenId.toString(),
-        policy.amount.toString(),
-        `0x${Buffer.from(activityId).toString('hex').padEnd(64, '0')}`,
-      ],
-      idempotencyKey: activityId,
-    });
-
-    if (vaspReceipt.status === 'failed') {
-      throw new Error(`IssuerService: VASP TX failed: ${vaspReceipt.txHash}`);
+    // ── ② 조건 판단 ───────────────────────────────────────────────────
+    const condition = await this.deps.conditionService.evaluate(event);
+    if (!condition.eligible) {
+      return { requestId: '', eligible: false };
     }
 
-    // Phase 3 전환 시 위 블록을 아래로 교체 (자체 Custody 인가 취득 후):
-    // const receipt = await this.deps.chainAdapter.sendTransaction({
-    //   contractAddr: this.deps.nftIssuerAddr,
-    //   abi:          NFT_ISSUER_ABI,
-    //   method:       'mint',
-    //   args:         [account.walletAddr, policy.tokenId.toString(), policy.amount.toString(), ...],
-    // });
-    // ─────────────────────────────────────────────────────────────────
+    // ── ③ 멱등성 체크 — 진행 중 요청 있으면 기존 반환 ────────────────
+    const existing = await this.deps.issuanceRepo.findPending(userId, event.eventType, policy.tokenId);
+    if (existing) {
+      return { requestId: existing.id, eligible: true, txHash: existing.txHash ?? undefined };
+    }
 
-    // ── 5. CoreBanking 보상 알림 (fire-and-forget) ────────────────────
+    // ── ④ 발행 요청 생성 → REQUESTED ─────────────────────────────────
+    const req = await this.deps.issuanceRepo.create({
+      userId,
+      eventType:  event.eventType,
+      tokenId:    policy.tokenId,
+      amount:     policy.amount,
+      walletAddr: null,
+      status:     'REQUESTED',
+      txHash:     null,
+      failReason: null,
+    });
+
+    // ── ⑤ KYC / AML / 지갑 조회 — 실패 → FAILED + throw ─────────────
+    let walletAddr: string;
+    try {
+      const account = await this.deps.coreBanking.getUserAccount(userId);
+      if (!account) throw new Error(`user not found: ${userId}`);
+      if (account.status !== 'active') throw new Error(`account not active: ${userId}`);
+
+      const aml = await this.deps.vaspAdapter.screenAddress(account.walletAddr);
+      if (aml.flagged) throw new Error(`AML flagged: ${aml.reason}`);
+
+      walletAddr = account.walletAddr;
+      await this.deps.issuanceRepo.setWalletAddr(req.id, walletAddr);
+    } catch (err) {
+      await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason: (err as Error).message });
+      throw err;
+    }
+
+    // ── ⑥ VASP 위탁 → SUBMITTED — 실패 → FAILED + throw ─────────────
+    // issuer-service(내부망)는 TX를 직접 서명하지 않는다.
+    // VASP가 서명·브로드캐스트 후 NFT_ISSUED Webhook으로 결과를 통보한다 (비동기 완료).
+    let txHash: string;
+    try {
+      const vaspReceipt = await this.deps.vaspAdapter.submitTransaction({
+        contractAddr:   this.deps.nftIssuerAddr,
+        abi:            NFT_ISSUER_ABI,
+        method:         'mint',
+        args: [
+          walletAddr,
+          policy.tokenId.toString(),
+          policy.amount.toString(),
+          `0x${Buffer.from(activityId).toString('hex').padEnd(64, '0')}`,
+        ],
+        idempotencyKey: activityId,
+      });
+
+      if (vaspReceipt.status === 'failed') throw new Error(`VASP TX failed: ${vaspReceipt.txHash}`);
+
+      txHash = vaspReceipt.txHash;
+      await this.deps.issuanceRepo.updateStatus(req.id, 'SUBMITTED', { txHash });
+    } catch (err) {
+      await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason: (err as Error).message });
+      throw err;
+    }
+
+    // Phase 3 전환 시 ⑥ 블록을 chainAdapter.sendTransaction()으로 교체 (자체 Custody 인가 취득 후)
+
+    // ── CoreBanking 보상 알림 (fire-and-forget) ───────────────────────
     // 알림 실패가 발행 결과에 영향 주지 않음.
     // 원장 최종 기록은 NFT_ISSUED Webhook 수신 후 Consumer가 처리한다.
     this.deps.coreBanking.notifyReward({
       userId,
       rewardType: 'ACTIVITY_NFT',
       tokenId:    policy.tokenId.toString(),
-      txHash:     vaspReceipt.txHash,
-      issuedAt:   vaspReceipt.timestamp,
+      txHash,
+      issuedAt:   Math.floor(Date.now() / 1000),
     }).catch(err => console.error('[IssuerService] CoreBanking notify failed:', err));
 
-    return { txHash: vaspReceipt.txHash, tokenId: policy.tokenId.toString() };
+    return { requestId: req.id, eligible: true, txHash, tokenId: policy.tokenId.toString() };
   }
 }

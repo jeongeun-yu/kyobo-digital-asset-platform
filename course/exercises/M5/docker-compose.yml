@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kyobo-exercise-db
+    environment:
+      POSTGRES_DB:       kyobo_exercise
+      POSTGRES_USER:     kyobo
+      POSTGRES_PASSWORD: kyobo
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kyobo -d kyobo_exercise"]
+      interval: 3s
+      retries: 10

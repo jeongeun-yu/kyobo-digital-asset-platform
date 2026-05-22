@@ -273,7 +273,7 @@ async sendTransaction(params: ContractCallParams): Promise<TransactionReceipt> {
   const iface    = new Interface(params.abi as string[]);
   const contract = new Contract(params.contractAddr, iface, this.wallet);
   const tx       = await contract[params.method](...params.args);
-  const receipt  = await tx.wait();   // ← 채굴될 때까지 blocking 대기
+  const receipt  = await tx.wait();   // ← 채굴될 때까지 async 대기 (이벤트 루프 차단 아님, 흐름 직렬화)
 
   return {
     txHash:      receipt.hash,
@@ -290,17 +290,19 @@ async sendTransaction(params: ContractCallParams): Promise<TransactionReceipt> {
 
 #### tx.wait()가 왜 문제인가
 
+> **정확한 이해**: `tx.wait()`는 `Promise<TransactionReceipt>`를 반환하는 **async 함수**다. `await tx.wait()`는 Node.js 이벤트 루프 자체를 차단하지 않는다. 문제는 이벤트 루프 차단이 아니라, 이 async 함수의 흐름이 TX 확정 전까지 다음 줄로 진행되지 못한다는 것이다. 순차 처리 구조에서 이것이 처리량 병목을 만든다.
+
 ```
-동기 방식 (tx.wait() 사용):
+순차 처리 (await tx.wait() 사용):
 
   Worker ──TX 전송──→ 블록체인
-         ←─────────── (대기 중...)
-         ←─────────── (대기 중...)   ← 네트워크 혼잡 시 수분
+         ←─────────── (async 대기 중... 이벤트 루프는 살아있음)
+         ←─────────── (async 대기 중... 네트워크 혼잡 시 수분)
          ←── 완료 ─── 
 
-  Worker는 이 TX 하나가 끝날 때까지 다른 일을 못 함
-  → 100건 배치 → 첫 번째가 막히면 나머지 99건 대기
-  → Worker 하나가 사실상 멈춤
+  Worker의 for 루프가 다음 TX로 진행하지 못함
+  → 100건 배치 → 첫 번째 확정 대기 중 나머지 99건 시작 불가
+  → Worker 처리량 = 1건/확정시간
 ```
 
 ```
@@ -317,9 +319,10 @@ async sendTransaction(params: ContractCallParams): Promise<TransactionReceipt> {
 ```
 
 ```
-tx.wait() → 블록에 포함될 때까지 blocking 대기
-           → 네트워크 혼잡 시 몇 분씩 대기 가능
-           → 타임아웃 없으면 Worker가 영원히 block
+await tx.wait() → TX 확정까지 이 async 함수 흐름 정지
+                → 네트워크 혼잡 시 수분 대기 가능
+                → 타임아웃 없으면 해당 async 함수가 영원히 재개 안 됨
+                → [이벤트 루프 차단은 아님 — 다른 Promise는 계속 처리됨]
 ```
 
 **해결 방향:**
@@ -333,7 +336,7 @@ getReceipt(txHash) → 주기적으로 polling → null이면 PENDING 유지
 MINED 감지 시 → MINED 전이 → PoS finality 확보 → FINALIZED → CONFIRMED
 ```
 
-현재 구현은 `tx.wait()`으로 blocking하는 단순 구조다. 실제 운영에서는 TxStateMachineService의 pollStale 루프와 `getReceipt()`를 조합해야 한다.
+현재 구현은 `tx.wait()`으로 TX 확정을 직렬 대기하는 단순 구조다 (이벤트 루프 차단은 아님). 실제 운영에서는 TxStateMachineService의 pollStale 루프와 `getReceipt()`를 조합해야 한다.
 
 ---
 
@@ -372,7 +375,7 @@ S13의 `TxStateMachineService`가 이 null을 PENDING으로 해석하고 TIMEOUT
 | | `sendTransaction` | `getReceipt` |
 |---|---|---|
 | **언제** | TX를 처음 전송할 때 | 이미 전송된 TX 상태를 확인할 때 |
-| **blocking** | tx.wait()로 대기 | 즉시 반환 (null or receipt) |
+| **대기 방식** | await tx.wait() — async 흐름 직렬 대기 (이벤트 루프 차단 아님) | 즉시 반환 (null or receipt) |
 | **S13 연계** | SUBMITTED 상태 진입 | PENDING → MINED → FINALIZED → CONFIRMED/FAILED 전이 판단 |
 
 ---
@@ -676,7 +679,7 @@ TransactionReceipt.gasUsed?: bigint   ← optional
 | 개념 | 핵심 |
 |---|---|
 | read-only 모드 | privateKey 없으면 wallet=null → sendTransaction throw |
-| tx.wait() 문제 | blocking 대기 → TxStateMachineService pollStale + getReceipt 조합으로 분리 |
+| tx.wait() 문제 | async 흐름 직렬 대기 → 처리량 병목 → TxStateMachineService pollStale + getReceipt 조합으로 분리 |
 | getReceipt null | 블록 미포함 → PENDING → TxStateMachineService TIMEOUT 처리로 연결 |
 | subscribeEvents | listeners 배열 + 클로저 → 단일 unsubscribe 함수로 전체 해제 |
 | _fromBlock 무시 | WebSocket은 연결 시점부터 수신 → missed event는 queryEvents 담당 |
@@ -798,7 +801,7 @@ Webhook (S5~S6 구현 측)
 ---
 
 **완료 기준:**
-- [ ] `sendTransaction`의 `tx.wait()` 문제점과 `getReceipt()`와의 역할 분리 설명
+- [ ] `sendTransaction`의 `tx.wait()` 특성 설명 가능 — async 함수이므로 이벤트 루프를 차단하지 않으나, await 시 해당 async 흐름이 TX 확정까지 직렬 대기함. 처리량 병목이 발생하는 이유와 `getReceipt()` 폴링으로의 역할 분리 설명
 - [ ] `getReceipt()` null 반환 → TxStateMachineService PENDING 해석 연결
 - [ ] `subscribeEvents`가 `listeners` 배열 + 클로저로 unsubscribe를 구현하는 이유
 - [ ] `_fromBlock`이 무시되는 이유 — missed event 복구 책임이 `queryEvents`에 있는 이유
