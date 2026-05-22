@@ -260,6 +260,8 @@ export interface TransactionReceipt {
 
 `gasUsed`가 optional인 이유: XRPL은 가스 개념이 없다. 어댑터가 체인 특성에 맞게 채울 수 있는 필드만 채운다. 상위 레이어는 `gasUsed`에 의존하지 않아야 한다.
 
+> **ethers.js 표준과 혼동 주의**: 이 `TransactionReceipt`는 이 코드베이스의 **커스텀 인터페이스**다. ethers.js 라이브러리의 `TransactionReceipt` 타입과 다르다. ethers.js에서 `gasUsed`는 `bigint` 타입의 **필수(required) 필드**다. 여기서 optional로 정의한 것은 EVM 외 체인(XRPL 등)을 단일 인터페이스로 수용하기 위한 설계 결정이지, ethers.js 스펙이 아니다.
+
 ### ChainEvent
 
 ```typescript

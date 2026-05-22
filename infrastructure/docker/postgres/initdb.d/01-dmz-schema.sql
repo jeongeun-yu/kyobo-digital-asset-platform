@@ -58,3 +58,58 @@ CREATE INDEX IF NOT EXISTS idx_outbox_pending
   WHERE status = 'PENDING';
 
 COMMENT ON TABLE outbox_events IS '운영 원장 (issuer-service 소유): Outbox 패턴 — DB-외부 시스템 원자성 보장. PENDING→PROCESSING→PROCESSED|DEAD. 5회 재시도 후 DEAD.';
+
+-- 사용자 ↔ 지갑 주소 매핑 1:1 (issuer-service 소유)
+-- Phase 1: userId당 하나의 walletAddr만 허용 (UNIQUE user_id).
+CREATE TABLE IF NOT EXISTS user_wallet_mapping (
+  id          BIGSERIAL    PRIMARY KEY,
+  user_id     VARCHAR(64)  NOT NULL UNIQUE,
+  wallet_addr VARCHAR(42)  NOT NULL,
+  vasp_type   VARCHAR(16)  NOT NULL,
+  verified    BOOLEAN      NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_vasp_type CHECK (vasp_type IN ('EXTERNAL', 'KYOBO'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_mapping_addr ON user_wallet_mapping(wallet_addr);
+
+COMMENT ON TABLE user_wallet_mapping IS '운영 원장 (issuer-service 소유): userId ↔ walletAddr 1:1 매핑. EXTERNAL=외부VASP 수탁지갑, KYOBO=Phase 4 자체VASP.';
+
+-- 이벤트 타입별 NFT 발행 정책 (issuer-service 소유)
+CREATE TABLE IF NOT EXISTS issuance_policies (
+  id         BIGSERIAL    PRIMARY KEY,
+  event_type VARCHAR(64)  NOT NULL UNIQUE,
+  token_id   NUMERIC      NOT NULL,
+  amount     NUMERIC      NOT NULL DEFAULT 1,
+  valid_from TIMESTAMPTZ,
+  valid_to   TIMESTAMPTZ,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_issuance_policies_event_type ON issuance_policies(event_type);
+
+COMMENT ON TABLE issuance_policies IS '운영 원장 (issuer-service 소유): 이벤트 타입별 NFT 발행 정책. token_id·amount 권위 있는 출처.';
+
+-- NFT 발행 요청 상태머신 (issuer-service 소유)
+-- REQUESTED → SUBMITTED → CONFIRMED (종단)
+--                       → FAILED    (종단)
+CREATE TABLE IF NOT EXISTS issuance_requests (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     VARCHAR(64)  NOT NULL,
+  event_type  VARCHAR(64)  NOT NULL,
+  token_id    NUMERIC      NOT NULL,
+  amount      NUMERIC      NOT NULL DEFAULT 1,
+  wallet_addr VARCHAR(42),
+  status      VARCHAR(16)  NOT NULL CHECK (status IN ('REQUESTED','SUBMITTED','CONFIRMED','FAILED')),
+  tx_hash     VARCHAR(66),
+  fail_reason TEXT,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- 진행 중 요청 멱등성 조회용 (findPending)
+CREATE INDEX IF NOT EXISTS idx_issuance_requests_pending
+  ON issuance_requests(user_id, event_type, token_id)
+  WHERE status IN ('REQUESTED', 'SUBMITTED');
+
+COMMENT ON TABLE issuance_requests IS '운영 원장 (issuer-service 소유): NFT 발행 요청 상태머신. CONFIRMED/FAILED는 종단 상태 — 전이 불가.';

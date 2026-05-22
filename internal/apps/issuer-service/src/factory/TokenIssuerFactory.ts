@@ -1,8 +1,15 @@
+import type { Pool }                 from 'pg';
 import type { IBlockchainAdapter }  from '@kyobo/chain-adapters';
-import type { IVASPAdapter }   from '@kyobo/vasp';
+import type { IVASPAdapter }        from '@kyobo/vasp';
 import type { ICoreBankingAdapter } from '@kyobo/core-banking';
 import type { IdempotencyGuard }    from '@kyobo/event-engine/webhook';
 import { IssuerService }            from '../services/IssuerService';
+import {
+  IssuancePolicyService,
+  PgIssuancePolicyRepository,
+}                                   from '../services/IssuancePolicyService';
+import { PgIssuanceRequestRepository } from '../services/IssuanceRequestRepository';
+import { EventConditionService }    from '../services/EventConditionService';
 
 /**
  * TokenIssuerFactory — 토큰 유형별 IssuerService 생성 팩토리
@@ -16,10 +23,19 @@ import { IssuerService }            from '../services/IssuerService';
  *   - vaspAdapter:    ExternalVASPAdapter (Phase 1/2) → KyoboVASPAdapter (Phase 4)
  *   - coreBanking:    KyoboCoreBankingAdapter
  *   - idempotency:    IdempotencyGuard (Redis 기반 — 멱등성)
+ *   - pool:           pg.Pool (issuance_policies 테이블 조회용)
+ *
+ * createNFTIssuer() 내부 DI:
+ *   pool → PgIssuancePolicyRepository → IssuancePolicyService
+ *   conditionService (호출자가 Strategy 등록 후 주입)
  *
  * Phase 3 확장:
  *   createSTOIssuer() 추가 시 STOIssuerService(extends IssuerService) 반환
  *   IssuerService 인터페이스 변경 없이 확장 가능.
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 관련 모듈: M5 S29~S30 (TokenIssuerFactory · 서비스 조립 팩토리)
  */
 export class TokenIssuerFactory {
   constructor(
@@ -28,16 +44,30 @@ export class TokenIssuerFactory {
       vaspAdapter:  IVASPAdapter;
       coreBanking:  ICoreBankingAdapter;
       idempotency:  IdempotencyGuard;
+      pool:         Pool;
     },
   ) {}
 
   /**
    * Phase 1 — 활동 보상 NFT 발행 서비스
+   *
+   * @param nftIssuerAddr   배포된 NFTIssuer 컨트랙트 주소
+   * @param conditionService 전략이 등록된 EventConditionService 인스턴스
    */
-  createNFTIssuer(nftIssuerAddr: string): IssuerService {
+  createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService): IssuerService {
+    const policyRepo    = new PgIssuancePolicyRepository(this.deps.pool);
+    const policyService = new IssuancePolicyService(policyRepo);
+    const issuanceRepo  = new PgIssuanceRequestRepository(this.deps.pool);
+
     return new IssuerService({
-      ...this.deps,
+      chainAdapter:     this.deps.chainAdapter,
+      vaspAdapter:      this.deps.vaspAdapter,
+      coreBanking:      this.deps.coreBanking,
+      idempotency:      this.deps.idempotency,
       nftIssuerAddr,
+      policyService,
+      conditionService,
+      issuanceRepo,
     });
   }
 

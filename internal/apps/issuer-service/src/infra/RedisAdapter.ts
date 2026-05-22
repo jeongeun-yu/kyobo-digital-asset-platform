@@ -3,6 +3,10 @@
  *
  * RedisConsumerClient + DLQRedisClient 두 인터페이스를 모두 구현.
  * ConsumerGroupWorker / DLQHandler 에 주입하여 사용한다.
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 관련 모듈: M5 S30 (IoRedisAdapter · ioredis → event-engine 어댑터)
  */
 
 import type Redis from 'ioredis';

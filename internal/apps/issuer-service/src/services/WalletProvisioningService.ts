@@ -8,28 +8,38 @@
  *   VASP 타입별 내부 분기 → 상위 레이어(컨트롤러)는 VASP 구현 세부사항 모름.
  *
  * VASP별 분기:
- *   EXTERNAL VASP: ExternalVASPAdapter.getWalletAddr(userId)
- *     → 외부 Custody API가 지갑 관리. 서버는 조회만 함.
- *   KYOBO VASP: 내부 Custody API 직접 호출
- *     → Phase 4 내재화 이후. 지갑 직접 생성 + DB 저장.
+ *   EXTERNAL VASP: ExternalVaspClient.getWalletAddr(userId)
+ *     → 외부 Custody API에서 기존 custodial 지갑 조회. 서버는 결과를 저장.
+ *   KYOBO VASP: ExternalVaspClient.createWallet(userId)
+ *     → 내부 HSM/MPC로 신규 지갑 생성 (Phase 4)
  *
  * WalletMappingService 연계:
- *   provision() 성공 후 walletMapping.save()로 매핑 저장.
- *   이후 getWalletAddress()는 WalletMappingService에서 조회.
+ *   provision() 멱등성 체크 → getMapping() 조회
+ *   VASP 성공 후 → saveMapping() 저장
+ *   이후 getWalletAddr()는 WalletMappingService에서 조회.
  *
  * 의존 방향:
- *   WalletProvisioningService → ExternalVASPAdapter (지갑 조회)
- *                             → WalletMappingService (매핑 저장)
+ *   WalletProvisioningService → ExternalVaspClient (지갑 획득)
+ *                             → WalletMappingService (매핑 조회·저장)
+ *                             → AuditLogAdapter? (감사 로그, 선택적)
+ *
+ * ── 교육생 안내 ──────────────────────────────────────────────────────────────
+ * 역할: 참고용 구현체 — 수정하지 말 것
+ * 관련 모듈: M5 S27 (WalletProvisioningService · VASP별 지갑 프로비저닝)
  */
 
 import type { WalletMappingService, VaspType } from './WalletMappingService';
 
+// ── 에러 ──────────────────────────────────────────────────────────────────────
+
 export class UnsupportedVaspError extends Error {
   constructor(vaspType: string) {
-    super(`지원하지 않는 VASP 타입: ${vaspType}`);
+    super(`미지원 VASP 타입: ${vaspType}`);
     this.name = 'UnsupportedVaspError';
   }
 }
+
+// ── 인터페이스 ────────────────────────────────────────────────────────────────
 
 export interface ProvisionResult {
   userId:        string;
@@ -39,29 +49,56 @@ export interface ProvisionResult {
 }
 
 export interface ExternalVaspClient {
-  /** 외부 VASP에서 userId에 해당하는 custodial 지갑 주소 조회 */
+  /** 외부 VASP에서 userId에 해당하는 custodial 지갑 조회 (EXTERNAL) */
   getWalletAddr(userId: string): Promise<string>;
-  /** 교보 내부 Custody API — 지갑 신규 생성 */
+  /** 내부 HSM/MPC로 신규 지갑 생성 (KYOBO — Phase 4) */
   createWallet(userId: string): Promise<string>;
 }
 
+export interface AuditLogAdapter {
+  record(entry: {
+    actor:        string;
+    action:       string;
+    resourceType: string;
+    resourceId:   string;
+    afterState:   Record<string, unknown>;
+  }): Promise<void>;
+}
+
+// ── 서비스 ────────────────────────────────────────────────────────────────────
+
 export class WalletProvisioningService {
   constructor(
-    private readonly vaspClient:     ExternalVaspClient,
-    private readonly walletMapping:  WalletMappingService,
+    private readonly vaspClient:    ExternalVaspClient,
+    private readonly walletMapping: WalletMappingService,
+    private readonly auditLog?:     AuditLogAdapter,
   ) {}
 
   /**
    * VASP 타입별 지갑 프로비저닝
    *
-   * @param userId   교보 내부 사용자 ID
-   * @param vaspType 'EXTERNAL' | 'KYOBO'
-   * @returns        지갑 주소 + 프로비저닝 결과
-   * @throws         UnsupportedVaspError — 미지원 vaspType
+   * ① 멱등성 체크 — 이미 매핑 있으면 즉시 반환
+   * ② VASP 분기 — vaspType에 따라 지갑 획득
+   * ③ 매핑 저장 — saveMapping()
+   * ④ 감사 로그 기록 (auditLog 주입된 경우)
+   * ⑤ 반환
+   *
+   * @throws UnsupportedVaspError — 미지원 vaspType
    */
-  async provision(userId: string, vaspType: VaspType): Promise<ProvisionResult> {
-    let walletAddress: string;
+  async provision(userId: string, vaspType: VaspType | string): Promise<ProvisionResult> {
+    // ① 멱등성 체크
+    const existing = await this.walletMapping.getMapping(userId);
+    if (existing) {
+      return {
+        userId,
+        walletAddress: existing.walletAddr,
+        vaspType: existing.vaspType,
+        provisionedAt: existing.createdAt,
+      };
+    }
 
+    // ② VASP 분기
+    let walletAddress: string;
     if (vaspType === 'EXTERNAL') {
       walletAddress = await this.vaspClient.getWalletAddr(userId);
     } else if (vaspType === 'KYOBO') {
@@ -70,8 +107,19 @@ export class WalletProvisioningService {
       throw new UnsupportedVaspError(vaspType);
     }
 
-    await this.walletMapping.getWalletAddr(userId); // mapping 캐시 갱신
+    // ③ 매핑 저장 — VASP 성공 시에만 호출
+    await this.walletMapping.saveMapping(userId, walletAddress, vaspType as VaspType);
 
-    return { userId, walletAddress, vaspType, provisionedAt: new Date() };
+    // ④ 감사 로그 (선택적 — 미주입 시 무시)
+    await this.auditLog?.record({
+      actor:        'system',
+      action:       'WALLET_PROVISIONED',
+      resourceType: 'USER',
+      resourceId:   userId,
+      afterState:   { walletAddress, vaspType },
+    });
+
+    // ⑤ 반환
+    return { userId, walletAddress, vaspType: vaspType as VaspType, provisionedAt: new Date() };
   }
 }

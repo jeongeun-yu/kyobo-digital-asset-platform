@@ -13,6 +13,7 @@
  */
 
 import Redis                        from 'ioredis';
+import { Pool }                    from 'pg';
 import { EVMAdapter }              from '@kyobo/chain-adapters';
 import { ChainEventListener }      from '@kyobo/event-engine/listener';
 import { WebhookServer }           from '@kyobo/event-engine/webhook';
@@ -32,9 +33,10 @@ import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
 import { KyoboCoreBankingAdapter, InternalGatewayClient } from '@kyobo/core-banking';
 import { ISMSChecklist }           from '@kyobo/compliance';
 
-import { IssuerService }   from './services/IssuerService';
-import { ActivityRouter }  from './api/ActivityRouter';
-import NFTIssuerABI        from './abi/NFTIssuer.json';
+import { TokenIssuerFactory }      from './factory/TokenIssuerFactory';
+import { ActivityConditionStrategy, EventConditionService } from './services/EventConditionService';
+import { ActivityRouter }          from './api/ActivityRouter';
+import NFTIssuerABI                from './abi/NFTIssuer.json';
 
 async function bootstrap() {
   // ── 환경 변수 검증 ──────────────────────────────────────────────────────────
@@ -78,6 +80,9 @@ async function bootstrap() {
   });
   const coreBanking = new KyoboCoreBankingAdapter(gatewayClient);
 
+  // ── PostgreSQL ────────────────────────────────────────────────────────────────
+  const pgPool = new Pool({ connectionString: process.env.DATABASE_URL! });
+
   // ── Redis ────────────────────────────────────────────────────────────────────
   const redis        = new Redis(process.env.REDIS_URL!);
   const redisAdapter = new IoRedisAdapter(redis);
@@ -92,14 +97,16 @@ async function bootstrap() {
     dlq,
   );
 
-  // ── 발행 서비스 ───────────────────────────────────────────────────────────────
-  const issuerService = new IssuerService({
-    chainAdapter,
-    vaspAdapter,
-    coreBanking,
-    idempotency,
-    nftIssuerAddr: process.env.NFT_ISSUER_ADDR!,
-  });
+  // ── 조건 서비스 (Strategy 등록) ───────────────────────────────────────────────
+  const conditionService = new EventConditionService([
+    new ActivityConditionStrategy(),
+    // Phase 2+: new CouponConditionStrategy(eligibilityChecker)
+    // Phase 2+: new PremiumConditionStrategy(threshold)
+  ]);
+
+  // ── 발행 서비스 (Factory 경유 — policyService·issuanceRepo 자동 주입) ─────────
+  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, idempotency, pool: pgPool });
+  const issuerService = factory.createNFTIssuer(process.env.NFT_ISSUER_ADDR!, conditionService);
 
   // ── 온체인 이벤트 리스너 ──────────────────────────────────────────────────────
   const nftIssuedHandler = new NFTIssuedHandler(
