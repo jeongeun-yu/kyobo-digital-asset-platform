@@ -29,6 +29,12 @@ function makeRepo(): TxRepository & { store: Map<string, MintRequest> } {
       const req = store.get(id);
       if (req) store.set(id, { ...req, status, ...extra, updatedAt: new Date() });
     },
+    async findByTxHash(txHash) {
+      for (const req of store.values()) {
+        if (req.txHash === txHash) return { ...req };
+      }
+      return null;
+    },
     async findPendingOlderThan(minutes) {
       const cutoff = new Date(Date.now() - minutes * 60_000);
       return [...store.values()].filter(r =>
@@ -66,14 +72,14 @@ function makeWallet(): WalletResolver {
 describe('TxStateMachineService.submitMintRequest()', () => {
   it('requestId(UUID) 반환', async () => {
     const svc = new TxStateMachineService(makeRepo(), makeVasp(), makeWallet());
-    const id = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
     expect(id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('SUBMITTED 상태로 저장 + txHash 세팅', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp({ txHash: '0xf1f5700000000000000000000000000000000000000000000000000000f1f570' }), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
     const req  = await repo.findById(id);
     expect(req?.status).toBe('SUBMITTED');
     expect(req?.txHash).toBe('0xf1f5700000000000000000000000000000000000000000000000000000f1f570');
@@ -102,7 +108,7 @@ describe('TxStateMachineService.handleMined()', () => {
   it('SUBMITTED → MINED 전이', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     await svc.handleMined(id, 18_500_001);
     const req = await repo.findById(id);
@@ -118,7 +124,7 @@ describe('TxStateMachineService.handleMined()', () => {
   it('이미 CONFIRMED인 상태 → 전이 스킵(무시)', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
     await svc.handleMined(id, 100);
     await svc.handleFinalized(id);
     await svc.handleConfirmed(id);
@@ -133,7 +139,7 @@ describe('TxStateMachineService.handleFinalized() / handleConfirmed()', () => {
   it('MINED → FINALIZED → CONFIRMED 순차 전이', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     await svc.handleMined(id, 100);
     await svc.handleFinalized(id);
@@ -145,7 +151,7 @@ describe('TxStateMachineService.handleFinalized() / handleConfirmed()', () => {
   it('MINED가 아닌 상태에서 handleFinalized → 전이 스킵', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     // SUBMITTED에서 FINALIZED 호출 → 무시
     await svc.handleFinalized(id);
@@ -157,7 +163,7 @@ describe('TxStateMachineService.handleFailed()', () => {
   it('any 상태 → FAILED + failReason 저장', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
     await svc.handleFailed(id, 'execution reverted: SFT_LIMIT_EXCEEDED');
 
     const req = await repo.findById(id);
@@ -170,7 +176,7 @@ describe('TxStateMachineService.handleTimeout()', () => {
   it('PENDING 상태 → gas bump 후 PENDING 유지 + retryCount++', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp({ txHash: '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333' }), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     // SUBMITTED → 수동으로 PENDING 상태로 변경
     await repo.updateStatus(id, 'PENDING', { txHash: '0xaaaa0000bbbb1111cccc2222dddd3333aaaa0000bbbb1111cccc2222dddd3333' });
@@ -185,7 +191,7 @@ describe('TxStateMachineService.handleTimeout()', () => {
   it('PENDING이 아닌 상태에서 handleTimeout → 전이 스킵', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     // SUBMITTED에서 timeout 호출 → 무시
     await svc.handleTimeout(id);
@@ -198,7 +204,7 @@ describe('TxStateMachineService.pollStaleRequests()', () => {
     const repo = makeRepo();
     const vasp = makeVasp({ statusResponse: { status: 'confirmed' } });
     const svc  = new TxStateMachineService(repo, vasp, makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     // 31분 전 MINED 상태로 조작 (handleConfirmed는 MINED에서만 전이)
     const req = repo.store.get(id)!;
@@ -216,7 +222,7 @@ describe('TxStateMachineService.pollStaleRequests()', () => {
     const repo = makeRepo();
     const vasp = makeVasp({ statusResponse: { status: 'not_found' } });
     const svc  = new TxStateMachineService(repo, vasp, makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
@@ -241,7 +247,7 @@ describe('TxStateMachineService — Observer 이벤트', () => {
     const svc = new TxStateMachineService(makeRepo(), makeVasp(), makeWallet());
     svc.on('transition', (e: TxTransitionEvent) => events.push(e));
 
-    const id = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
     await svc.handleMined(id, 100);
     await svc.handleFinalized(id);
     await svc.handleConfirmed(id);
@@ -257,7 +263,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
     const repo = makeRepo();
     const vasp = makeVasp({ statusResponse: { status: 'failed', revertReason: 'out of gas' } });
     const svc  = new TxStateMachineService(repo, vasp, makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
@@ -280,7 +286,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
       async resubmitWithGasBump() { return { txHash: '0xcccc3333dddd4444eeee5555ffff0000aaaa1111bbbb2222cccc3333dddd4444' }; },
     };
     const svc = new TxStateMachineService(repo, vasp, makeWallet());
-    const id  = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
@@ -296,7 +302,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
   it('txHash 없는 stale 건 → 스킵 (processed 카운트 안 함)', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     const req = repo.store.get(id)!;
     req.createdAt = new Date(Date.now() - 31 * 60_000);
@@ -311,7 +317,7 @@ describe('TxStateMachineService.pollStaleRequests() — 추가 브랜치', () =>
 
 describe('TxStateMachineService.handleReorg()', () => {
   async function setupMined(repo: ReturnType<typeof makeRepo>, svc: TxStateMachineService) {
-    const id = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
     await svc.handleMined(id, 100);
     return id;
   }
@@ -345,7 +351,7 @@ describe('TxStateMachineService.handleReorg()', () => {
   it('MINED가 아닌 상태 → 즉시 리턴 (전이 없음)', async () => {
     const repo = makeRepo();
     const svc  = new TxStateMachineService(repo, makeVasp(), makeWallet());
-    const id   = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
+    const { requestId: id } = await svc.submitMintRequest({ userId: 'u-001', tokenId: 1n, amount: 1n });
 
     await svc.handleReorg(id); // SUBMITTED 상태 → 스킵
     expect((await repo.findById(id))?.status).toBe('SUBMITTED');

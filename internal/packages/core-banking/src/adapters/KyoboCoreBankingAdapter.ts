@@ -88,7 +88,7 @@ export class KyoboCoreBankingAdapter implements ICoreBankingAdapter {
     onChainTx:    string;
   }): Promise<void> {
     await this.gateway.recordNftHolding(params.userId, {
-      tokenId:      Number(params.tokenId),
+      tokenId:      params.tokenId.toString(),
       contractAddr: params.contractAddr,
       chainId:      params.chainId,
       amount:       Number(params.amount),

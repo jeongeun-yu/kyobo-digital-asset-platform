@@ -134,6 +134,26 @@ export class LedgerService {
     };
   }
 
+  async findByTxHash(txHash: string): Promise<MintRequest | null> {
+    const { rows } = await this.db.query(
+      'SELECT * FROM mint_requests WHERE tx_hash = $1 LIMIT 1',
+      [txHash],
+    );
+    if (rows.length === 0) return null;
+    const r = rows[0]!;
+    return {
+      id:        r['id'] as string,
+      userId:    r['user_id'] as string,
+      policyId:  r['policy_id'] as string,
+      status:    r['status'] as MintStatus,
+      txHash:    r['tx_hash'] as string | undefined,
+      tokenId:   r['token_id'] ? BigInt(r['token_id'] as string) : undefined,
+      errorMsg:  r['error_msg'] as string | undefined,
+      createdAt: new Date(r['created_at'] as string),
+      updatedAt: new Date(r['updated_at'] as string),
+    };
+  }
+
   async updateMintRequest(
     requestId: string,
     patch: { status: MintStatus; txHash?: string; tokenId?: bigint; errorMsg?: string },

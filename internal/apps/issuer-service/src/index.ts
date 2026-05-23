@@ -16,7 +16,7 @@ import Redis                        from 'ioredis';
 import { Pool }                    from 'pg';
 import { EVMAdapter }              from '@kyobo/chain-adapters';
 import { ChainEventListener }      from '@kyobo/event-engine/listener';
-import { WebhookServer }           from '@kyobo/event-engine/webhook';
+import { WebhookServer, WebhookPublishHandler } from '@kyobo/event-engine/webhook';
 import { IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/webhook';
 import { RetryHandler, DeadLetterQueue } from '@kyobo/event-engine/webhook';
 import { NFTIssuedHandler }        from '@kyobo/event-engine/handlers';
@@ -25,7 +25,9 @@ import {
   DLQHandler,
   NFTIssuedProcessor,
   InMemoryLedgerService,
+  RedisStreamPublisher,
 }                                  from '@kyobo/event-engine';
+import type { RedisStreamClient }  from '@kyobo/event-engine';
 import { IoRedisAdapter }          from './infra/RedisAdapter';
 import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
 // Phase 3 전환 시: ExternalVASPAdapter → KyoboVASPAdapter 로 교체
@@ -36,6 +38,8 @@ import { ISMSChecklist }           from '@kyobo/compliance';
 import { TokenIssuerFactory }      from './factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from './services/EventConditionService';
 import { ActivityRouter }          from './api/ActivityRouter';
+import { IssuanceConfirmHandler }  from './handlers/IssuanceConfirmHandler';
+import { PgIssuanceRequestRepository } from './services/IssuanceRequestRepository';
 import NFTIssuerABI                from './abi/NFTIssuer.json';
 
 async function bootstrap() {
@@ -47,14 +51,17 @@ async function bootstrap() {
     'CORE_BANKING_URL', 'CORE_BANKING_SECRET',
     'WEBHOOK_SECRET', 'WEBHOOK_PORT',
     'REDIS_URL',
+    'DATABASE_URL',
   ];
   for (const key of required) {
     if (!process.env[key]) throw new Error(`Missing env: ${key}`);
   }
 
   // ── 체인 어댑터 ──────────────────────────────────────────────────────────────
-  // Phase 1: EVMAdapter (read-only — FINALIZED 확인 전용, TX 실행은 VASP 위탁)
-  // Phase 2: EVMAdapter 유지 + ChainEventListener 직접 이벤트 구독 활성화
+  // Phase 1: EVMAdapter (read-only — ChainEventListener 폴백 폴링 + FINALIZED 확인)
+  //          TX 실행은 ExternalVASPAdapter 위탁 / ChainEventListener는 Phase 1부터 가동
+  //          → VASP 장애·내부 서버 누락 시 RPC 직접 폴링으로 온체인 이벤트 복구
+  // Phase 2: EVMAdapter 유지 + Circle Arc USDC/KRW1 결제 레이어 추가
   // Phase 3: EVMAdapter.sendTransaction() 활성화 (KyoboVASPAdapter 전환 시 직접 호출)
   const chainAdapter = new EVMAdapter({
     rpcUrl:     process.env.RPC_URL!,
@@ -64,8 +71,11 @@ async function bootstrap() {
 
   // ── VASP 어댑터 ──────────────────────────────────────────────────────────────
   // Phase 1: ExternalVASPAdapter (월렛원 외부 API 위탁 — TX 서명·브로드캐스트 전위임)
+  //          온체인 상태 수신 경로 2개:
+  //            ① VASP → NFT_ISSUED 인바운드 웹훅 → Redis Streams → LedgerService
+  //            ② ChainEventListener RPC 직접 폴링 → NFTIssuedHandler + IssuanceConfirmHandler
+  //          ①이 정상 경로, ②는 VASP 장애·웹훅 누락 시 복구용 폴백 (Phase 1 공존)
   // Phase 2: ExternalVASPAdapter 유지 + Circle Arc USDC/KRW1 결제 레이어 추가
-  //          ChainEventListener 직접 이벤트 구독 시작 (월렛원 Webhook 의존도 감소)
   // Phase 3: KyoboVASPAdapter   (교보 VASP 인가 취득 후 HSM/MPC 직접 서명·브로드캐스트)
   //          → new KyoboVASPAdapter() 로 교체, 상위 레이어 수정 없음
   const vaspAdapter = new ExternalVASPAdapter({
@@ -105,8 +115,11 @@ async function bootstrap() {
   ]);
 
   // ── 발행 서비스 (Factory 경유 — policyService·issuanceRepo 자동 주입) ─────────
-  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, idempotency, pool: pgPool });
-  const issuerService = factory.createNFTIssuer(process.env.NFT_ISSUER_ADDR!, conditionService);
+  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool });
+  const {
+    issuerService,
+    confirmHandler: issuanceConfirmHandler,
+  } = factory.createNFTIssuer(process.env.NFT_ISSUER_ADDR!, conditionService);
 
   // ── 온체인 이벤트 리스너 ──────────────────────────────────────────────────────
   const nftIssuedHandler = new NFTIssuedHandler(
@@ -121,14 +134,14 @@ async function bootstrap() {
 
   const eventListener = new ChainEventListener(
     chainAdapter,
-    [nftIssuedHandler],
+    [nftIssuedHandler, issuanceConfirmHandler],
     [{
       addr:       process.env.NFT_CONTRACT_ADDR!,
       abi:        NFTIssuerABI,
       eventNames: ['Issued'],
     }],
     {
-      // Phase 2: Redis/DB 기반 스테이트 스토어로 교체 (재시작 내성)
+      // Phase 2+: Redis/DB 기반 스테이트 스토어로 교체 (재시작 내성 — 현재 인메모리로 0 고정)
       async getLastProcessedBlock() { return 0; },
       async setLastProcessedBlock(_b: number) {},
     },
@@ -143,6 +156,27 @@ async function bootstrap() {
 
   const activityRouter = new ActivityRouter(issuerService, idempotency);
   activityRouter.register(webhookServer);
+
+  // ── 외부 VASP → NFT_ISSUED 콜백 수신 → Redis Streams 적재 ──────────────────
+  // 외부 VASP가 온체인 TX 확정 후 NFT_ISSUED 웹훅으로 통보
+  // → WebhookPublishHandler가 kyobo:events 스트림에 적재
+  // → ConsumerGroupPool(NFTIssuedProcessor)이 소비 → 내부 원장 업데이트
+  //
+  // IoRedisAdapter는 RedisConsumerClient + DLQRedisClient 전용이므로
+  // RedisStreamPublisher에 필요한 xgroupCreate·ping을 redis 인스턴스로 직접 구현
+  const streamClient: RedisStreamClient = {
+    async xadd(key, fields) {
+      const flat = Object.entries(fields).flat();
+      return (redis as any).xadd(key, '*', ...flat) as Promise<string>;
+    },
+    async xgroupCreate(key, group, id, mkstream) {
+      await (redis as any).xgroup('CREATE', key, group, id, ...(mkstream ? ['MKSTREAM'] : []));
+    },
+    async ping() { return redis.ping(); },
+  };
+  const streamPublisher  = new RedisStreamPublisher(streamClient);
+  const webhookPublisher = new WebhookPublishHandler(streamPublisher, idempotency);
+  webhookServer.on('NFT_ISSUED', webhookPublisher.createHandler());
 
   // ── ISMS 자동 점검 (주기적 실행) ─────────────────────────────────────────────
   const isms = new ISMSChecklist({

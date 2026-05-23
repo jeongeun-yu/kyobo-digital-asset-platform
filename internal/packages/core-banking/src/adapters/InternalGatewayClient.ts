@@ -33,7 +33,7 @@ export interface GatewayUserAccountResponse {
 
 /** mirrors Java: NftHoldingRequest record */
 export interface GatewayNftHoldingRequest {
-  tokenId:      number;   // Java Long → TS number (NFT tokenId 범위에서 안전)
+  tokenId:      string;   // uint256 → string (2^64 이상이므로 number 사용 불가)
   contractAddr: string;
   chainId:      number;
   amount:       number;   // ERC-1155 발행 수량 (Java Long)

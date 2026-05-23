@@ -1,0 +1,28 @@
+{
+  "preset":          "ts-jest",
+  "testEnvironment": "node",
+  "globalSetup":           "./setup/globalSetup.ts",
+  "setupFiles":            ["./setup/loadEnv.ts"],
+  "globalTeardown":  "./setup/globalTeardown.ts",
+  "testMatch":       ["**/__tests__/**/*.integration.test.ts"],
+  "testTimeout":     60000,
+  "forceExit":       true,
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", {
+      "tsconfig": "./tsconfig.json"
+    }]
+  },
+  "moduleNameMapper": {
+    "^@kyobo/vasp$":                         "<rootDir>/../packages/vasp/src/index.ts",
+    "^@kyobo/vasp/(.*)$":                    "<rootDir>/../packages/vasp/src/$1",
+    "^@kyobo/event-engine$":                 "<rootDir>/../packages/event-engine/src/index.ts",
+    "^@kyobo/event-engine/interfaces$":      "<rootDir>/../packages/event-engine/src/interfaces/IEventHandler.ts",
+    "^@kyobo/event-engine/listener$":        "<rootDir>/../packages/event-engine/src/listener/index.ts",
+    "^@kyobo/event-engine/webhook$":         "<rootDir>/../packages/event-engine/src/webhook/index.ts",
+    "^@kyobo/event-engine/handlers$":        "<rootDir>/../packages/event-engine/src/handlers/index.ts",
+    "^@kyobo/event-engine/(.*)$":            "<rootDir>/../packages/event-engine/src/$1",
+    "^@kyobo/core-banking$":                 "<rootDir>/../packages/core-banking/src/index.ts",
+    "^@kyobo/core-banking/(.*)$":            "<rootDir>/../packages/core-banking/src/$1",
+    "^@kyobo/chain-adapters$":               "<rootDir>/../packages/chain-adapters/src/index.ts"
+  }
+}

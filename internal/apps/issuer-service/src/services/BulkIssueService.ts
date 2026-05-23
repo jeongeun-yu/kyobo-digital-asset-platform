@@ -44,6 +44,7 @@ export interface BulkChunkResult {
 export interface BulkJob {
   id:          string;
   tokenId:     bigint;
+  amount:      bigint;
   totalUsers:  number;
   totalChunks: number;
   doneChunks:  number;
@@ -115,6 +116,7 @@ export class BulkIssueService {
     const job: BulkJob = {
       id:          jobId,
       tokenId,
+      amount,
       totalUsers:  userIds.length,
       totalChunks: chunks.length,
       doneChunks:  0,
@@ -190,7 +192,7 @@ export class BulkIssueService {
       try {
         const requestIds = await Promise.all(
           chunk.map(userId =>
-            this.submitter.submitMintRequest({ userId, tokenId: job.tokenId, amount: 1n }),
+            this.submitter.submitMintRequest({ userId, tokenId: job.tokenId, amount: job.amount }),
           ),
         );
         // 해당 청크 결과 업데이트

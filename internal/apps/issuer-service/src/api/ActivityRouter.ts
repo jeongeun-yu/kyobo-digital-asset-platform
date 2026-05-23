@@ -22,6 +22,7 @@ export class ActivityRouter {
   register(server: WebhookServer): void {
     server.on('ACTIVITY_ACHIEVED', this._handleActivityAchieved.bind(this));
     server.on('COUPON_ISSUED',     this._handleCouponIssued.bind(this));
+    server.on('VASP_TX_FAILED',    this._handleVaspTxFailed.bind(this));
     // Phase 2+: 'KRW_DEPOSITED', 'STO_SUBSCRIBED' 추가
   }
 
@@ -45,6 +46,11 @@ export class ActivityRouter {
     await this.idempotency.run(`activity:${payload.requestId}`, async () => {
       await this.issuer.issueActivityNFT({ userId: data.userId, activityId: data.activityId, event });
     });
+  }
+
+  private async _handleVaspTxFailed(payload: WebhookPayload): Promise<void> {
+    const data = payload.data as { txHash: string; reason?: string };
+    await this.issuer.handleVaspTxFailed({ txHash: data.txHash, reason: data.reason });
   }
 
   private async _handleCouponIssued(payload: WebhookPayload): Promise<void> {

@@ -7,9 +7,11 @@
     "blockchain",
     "internal/apps/*",
     "internal/packages/*",
+    "internal/integration",
     "course/exercises/M2/event-listener"
   ],
   "scripts": {
+    "test:integration": "npm run test:integration --workspace=@kyobo/integration-tests",
     "build": "npm run build --workspaces --if-present",
     "build:hardhat": "cd blockchain && npx hardhat compile",
     "build:java": "internal\\internal-ledger\\mvnw.cmd -f internal/internal-ledger/pom.xml package -q -DskipTests",
@@ -141,6 +143,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/pg": "^8.20.0",
+    "ethers": "^6.0.0",
     "ioredis": "^5.10.1",
     "pg": "^8.21.0",
     "tsconfig-paths": "^4.2.0",

@@ -68,6 +68,9 @@ export interface IIssuanceRequestRepository {
   findPending(userId: string, eventType: string, tokenId: bigint): Promise<IssuanceRequest | null>;
 
   findById(id: string): Promise<IssuanceRequest | null>;
+
+  /** txHash로 단건 조회 — CONFIRMED·FAILED 전이 연결용 */
+  findByTxHash(txHash: string): Promise<IssuanceRequest | null>;
 }
 
 // ── DB 행 타입 (내부) ────────────────────────────────────────────────────────
@@ -143,15 +146,23 @@ export class PgIssuanceRequestRepository implements IIssuanceRequestRepository {
     newStatus: IssuanceStatus,
     extra?:    { txHash?: string; failReason?: string },
   ): Promise<void> {
-    await this.pool.query(
+    const res = await this.pool.query<{ status: string }>(
       `UPDATE issuance_requests
        SET    status      = $1,
               tx_hash     = COALESCE($2, tx_hash),
               fail_reason = COALESCE($3, fail_reason),
               updated_at  = NOW()
-       WHERE  id = $4`,
+       WHERE  id = $4
+         AND  status NOT IN ('CONFIRMED', 'FAILED')
+       RETURNING status`,
       [newStatus, extra?.txHash ?? null, extra?.failReason ?? null, id],
     );
+    if (!res.rowCount) {
+      const current = await this.findById(id);
+      if (current && (current.status === 'CONFIRMED' || current.status === 'FAILED')) {
+        throw new Error(`상태 전이 불가: ${current.status} → ${newStatus}`);
+      }
+    }
   }
 
   async findPending(userId: string, eventType: string, tokenId: bigint): Promise<IssuanceRequest | null> {
@@ -172,6 +183,15 @@ export class PgIssuanceRequestRepository implements IIssuanceRequestRepository {
     const res = await this.pool.query<DbRow>(
       `SELECT * FROM issuance_requests WHERE id = $1`,
       [id],
+    );
+    if (!res.rowCount) return null;
+    return this._toModel(res.rows[0]!);
+  }
+
+  async findByTxHash(txHash: string): Promise<IssuanceRequest | null> {
+    const res = await this.pool.query<DbRow>(
+      `SELECT * FROM issuance_requests WHERE tx_hash = $1 LIMIT 1`,
+      [txHash],
     );
     if (!res.rowCount) return null;
     return this._toModel(res.rows[0]!);
@@ -248,6 +268,13 @@ export class InMemoryIssuanceRequestRepository implements IIssuanceRequestReposi
   async findById(id: string): Promise<IssuanceRequest | null> {
     const req = this.store.get(id);
     return req ? { ...req } : null;
+  }
+
+  async findByTxHash(txHash: string): Promise<IssuanceRequest | null> {
+    for (const req of this.store.values()) {
+      if (req.txHash === txHash) return { ...req };
+    }
+    return null;
   }
 
   private _get(id: string): IssuanceRequest {

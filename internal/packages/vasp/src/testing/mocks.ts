@@ -119,6 +119,13 @@ export class InMemoryTxRepository implements TxRepository {
     return this.store.get(id) ?? null;
   }
 
+  async findByTxHash(txHash: string): Promise<MintRequest | null> {
+    for (const req of this.store.values()) {
+      if (req.txHash === txHash) return { ...req };
+    }
+    return null;
+  }
+
   async updateStatus(
     id: string,
     status: TxStatus,

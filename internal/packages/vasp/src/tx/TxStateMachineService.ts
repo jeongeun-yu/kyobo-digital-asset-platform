@@ -102,6 +102,7 @@ export interface TxTransitionEvent {
 export interface TxRepository {
   save(req: MintRequest): Promise<void>;
   findById(id: string): Promise<MintRequest | null>;
+  findByTxHash(txHash: string): Promise<MintRequest | null>;
   updateStatus(
     id: string,
     status: TxStatus,
@@ -187,7 +188,7 @@ export class TxStateMachineService extends EventEmitter {
   constructor(
     private readonly repo:   TxRepository,
     private readonly vasp:   VaspTxClient,
-    private readonly wallet: WalletResolver,
+    private readonly wallet?: WalletResolver,
   ) {
     super();
   }
@@ -207,10 +208,11 @@ export class TxStateMachineService extends EventEmitter {
    * @returns requestId (이후 상태 조회에 사용)
    */
   async submitMintRequest(params: {
-    userId:  string;
-    tokenId: bigint;
-    amount:  bigint;
-  }): Promise<string> {
+    userId:      string;
+    tokenId:     bigint;
+    amount:      bigint;
+    walletAddr?: string;  // 제공 시 WalletResolver 호출 생략 (IssuerService가 KYC 후 전달)
+  }): Promise<{ requestId: string; txHash: string }> {
     const { userId, tokenId, amount } = params;
 
     const id  = randomUUID();
@@ -230,17 +232,16 @@ export class TxStateMachineService extends EventEmitter {
     await this.repo.save(req);
 
     try {
-      const walletAddr  = await this.wallet.getWalletAddr(userId);
-      const { txHash }  = await this.vasp.submitMint({
+      const walletAddr = params.walletAddr ?? await this.wallet!.getWalletAddr(userId);
+      const { txHash } = await this.vasp.submitMint({
         to: walletAddr, tokenId, amount, requestId: id,
       });
       await this._transition(req, 'SUBMITTED', { txHash });
+      return { requestId: id, txHash };
     } catch (err) {
       await this._transition(req, 'FAILED', { failReason: `submit failed: ${String(err)}` });
       throw err;
     }
-
-    return id;
   }
 
   // ── TX 콜백 핸들러 ─────────────────────────────────────────────────────

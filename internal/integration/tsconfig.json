@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target":           "ES2020",
+    "module":           "CommonJS",
+    "moduleResolution": "node",
+    "esModuleInterop":  true,
+    "strict":           false,
+    "skipLibCheck":     true,
+    "resolveJsonModule": true,
+    "types":            ["jest", "node"],
+    "baseUrl":          ".",
+    "paths": {
+      "@kyobo/vasp":                    ["../packages/vasp/src/index.ts"],
+      "@kyobo/vasp/*":                  ["../packages/vasp/src/*"],
+      "@kyobo/event-engine":            ["../packages/event-engine/src/index.ts"],
+      "@kyobo/event-engine/interfaces": ["../packages/event-engine/src/interfaces/IEventHandler.ts"],
+      "@kyobo/event-engine/listener":   ["../packages/event-engine/src/listener/index.ts"],
+      "@kyobo/event-engine/webhook":    ["../packages/event-engine/src/webhook/index.ts"],
+      "@kyobo/event-engine/handlers":   ["../packages/event-engine/src/handlers/index.ts"],
+      "@kyobo/event-engine/*":          ["../packages/event-engine/src/*"],
+      "@kyobo/core-banking":            ["../packages/core-banking/src/index.ts"],
+      "@kyobo/core-banking/*":          ["../packages/core-banking/src/*"],
+      "@kyobo/chain-adapters":          ["../packages/chain-adapters/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
