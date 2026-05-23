@@ -78,6 +78,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.UUPSUpgradeable__factory>;
     getContractFactory(
+      name: "ERC1155",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ERC1155__factory>;
+    getContractFactory(
       name: "IERC1155MetadataURI",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IERC1155MetadataURI__factory>;
@@ -173,6 +177,10 @@ declare module "hardhat/types/runtime" {
       name: "MockInvestorRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MockInvestorRegistry__factory>;
+    getContractFactory(
+      name: "MockVASP",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockVASP__factory>;
     getContractFactory(
       name: "ActivityOracle",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -275,6 +283,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.UUPSUpgradeable>;
     getContractAt(
+      name: "ERC1155",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ERC1155>;
+    getContractAt(
       name: "IERC1155MetadataURI",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -394,6 +407,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.MockInvestorRegistry>;
+    getContractAt(
+      name: "MockVASP",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockVASP>;
     getContractAt(
       name: "ActivityOracle",
       address: string | ethers.Addressable,
@@ -485,6 +503,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.UUPSUpgradeable>;
     deployContract(
+      name: "ERC1155",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ERC1155>;
+    deployContract(
       name: "IERC1155MetadataURI",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC1155MetadataURI>;
@@ -580,6 +602,10 @@ declare module "hardhat/types/runtime" {
       name: "MockInvestorRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockInvestorRegistry>;
+    deployContract(
+      name: "MockVASP",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockVASP>;
     deployContract(
       name: "ActivityOracle",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -682,6 +708,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.UUPSUpgradeable>;
     deployContract(
+      name: "ERC1155",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ERC1155>;
+    deployContract(
       name: "IERC1155MetadataURI",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -801,6 +832,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockInvestorRegistry>;
+    deployContract(
+      name: "MockVASP",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockVASP>;
     deployContract(
       name: "ActivityOracle",
       args: any[],

@@ -38,6 +38,8 @@ export type { Initializable } from "./@openzeppelin/contracts/proxy/utils/Initia
 export { Initializable__factory } from "./factories/@openzeppelin/contracts/proxy/utils/Initializable__factory";
 export type { UUPSUpgradeable } from "./@openzeppelin/contracts/proxy/utils/UUPSUpgradeable";
 export { UUPSUpgradeable__factory } from "./factories/@openzeppelin/contracts/proxy/utils/UUPSUpgradeable__factory";
+export type { ERC1155 } from "./@openzeppelin/contracts/token/ERC1155/ERC1155";
+export { ERC1155__factory } from "./factories/@openzeppelin/contracts/token/ERC1155/ERC1155__factory";
 export type { IERC1155MetadataURI } from "./@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI";
 export { IERC1155MetadataURI__factory } from "./factories/@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI__factory";
 export type { IERC1155 } from "./@openzeppelin/contracts/token/ERC1155/IERC1155";
@@ -86,6 +88,8 @@ export type { MockERC1155 } from "./src/mocks/MockERC1155";
 export { MockERC1155__factory } from "./factories/src/mocks/MockERC1155__factory";
 export type { MockInvestorRegistry } from "./src/mocks/MockInvestorRegistry";
 export { MockInvestorRegistry__factory } from "./factories/src/mocks/MockInvestorRegistry__factory";
+export type { MockVASP } from "./src/mocks/MockVASP";
+export { MockVASP__factory } from "./factories/src/mocks/MockVASP__factory";
 export type { ActivityOracle } from "./src/rewards/ActivityOracle";
 export { ActivityOracle__factory } from "./factories/src/rewards/ActivityOracle__factory";
 export type { KyoboNFT } from "./src/rewards/KyoboNFT";

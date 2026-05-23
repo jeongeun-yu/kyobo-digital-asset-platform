@@ -3,3 +3,4 @@
 /* eslint-disable */
 export { MockERC1155__factory } from "./MockERC1155__factory";
 export { MockInvestorRegistry__factory } from "./MockInvestorRegistry__factory";
+export { MockVASP__factory } from "./MockVASP__factory";

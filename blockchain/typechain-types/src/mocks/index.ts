@@ -3,3 +3,4 @@
 /* eslint-disable */
 export type { MockERC1155 } from "./MockERC1155";
 export type { MockInvestorRegistry } from "./MockInvestorRegistry";
+export type { MockVASP } from "./MockVASP";

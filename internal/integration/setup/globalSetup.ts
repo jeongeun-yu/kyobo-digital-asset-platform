@@ -5,7 +5,7 @@ import { resolve }             from 'path';
 import { config as loadEnv }   from 'dotenv';
 
 // .env 명시적 로드 — jest 실행 위치에 무관하게 동작
-loadEnv({ path: resolve(__dirname, '..', '.env') });
+loadEnv({ path: resolve(__dirname, '..', '..', '..', '..', '.env') });
 
 export const STATE_FILE = resolve(__dirname, '..', '.integration-state.json');
 
