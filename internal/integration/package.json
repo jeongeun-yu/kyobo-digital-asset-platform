@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test:integration": "jest --config jest.config.json --runInBand --forceExit"
+    "test:integration": "jest --config jest.config.json --runInBand --forceExit",
+    "build:java": "docker build -t kyobo/internal-ledger:test ../internal-ledger",
+    "build:hardhat": "docker build -t kyobo/hardhat-node:test ../../blockchain"
   },
   "dependencies": {
     "@kyobo/vasp":          "*",
