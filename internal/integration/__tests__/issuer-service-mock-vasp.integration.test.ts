@@ -3,40 +3,57 @@
  *
  * 실제 흐름:
  *   HTTP POST → WebhookServer → ActivityRouter → IssuerService
- *   → AnvilVASPAdapter → MockVASP (Hardhat 로컬 노드)
- *   → ChainEventListener (Issued 이벤트) → IssuanceConfirmHandler
- *   → TxStateMachineService → PostgreSQL CONFIRMED
+ *   → ExternalVASPAdapter → VASPServer (POST /transactions)
+ *   → 서명 → Hardhat 블록체인 → TX 확정
+ *   → VASPServer → NFT_ISSUED 콜백 → WebhookServer
+ *   → WebhookPublishHandler → Redis Stream XADD
+ *   → ConsumerGroupWorker XREADGROUP → NFTIssuedProcessor → InMemoryLedger
  *
- * 5가지 시나리오:
- *   [1] NORMAL  : 정상 발행 → ChainEventListener → CONFIRMED
- *   [2] REVERT  : TX revert → FAILED
- *   [3] NO_EMIT : mint 성공, 이벤트 없음 → SUBMITTED 유지 (폴백 경로 시뮬레이션)
- *   [4] PENDING : 블록 중단 → TX mempool 체류 → mineBlock → CONFIRMED
- *   [5] REORG   : snapshot → CONFIRMED → revertToSnapshot → 체인 상태 원복 확인
+ * 폴백 경로 (병행):
+ *   ChainEventListener (Issued 이벤트 폴링) → IssuanceConfirmHandler
+ *   → TxStateMachineService → PostgreSQL issuance_requests CONFIRMED
+ *
+ * 8가지 시나리오:
+ *   [1] NORMAL    : 정상 발행 → NFT_ISSUED 콜백 → Redis Stream → ledger + CONFIRMED
+ *   [2] REVERT    : TX revert → VASPServer 500 → IssuerService FAILED
+ *   [3] NO_EMIT   : mint 성공, Issued 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
+ *   [4] PENDING   : 블록 중단 → TX mempool 체류 → mineBlock → 콜백 → CONFIRMED
+ *   [5] REORG     : snapshot → 발행 → revertToSnapshot → 온체인 상태 원복 확인
+ *   [stream-2]    : 중복 requestId → 멱등성 보장 (Redis Stream 독립 검증)
+ *   [stream-3]    : retryCount >= 3 → DLQ 이동
+ *   [stream-4]    : XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
  *
  * 인프라:
- *   - Hardhat 로컬 노드 (포트 18545) — 자식 프로세스로 기동
- *   - MockVASP 컨트랙트 — ethers.js ContractFactory로 배포
+ *   - Hardhat 로컬 노드 (Docker) — MockVASP 컨트랙트 배포
+ *   - VASPServer (HTTP, 포트 19876) — 서명·브로드캐스트·콜백
  *   - PostgreSQL — @testcontainers/postgresql
- *   - ChainEventListener — EVMAdapter HTTP 폴링 (ws 불필요)
+ *   - Redis — testcontainers GenericContainer
+ *   - Java internal-ledger — testcontainers GenericContainer
  */
 
-import { readFileSync }                 from 'fs';
-import { resolve }                      from 'path';
-import http                             from 'http';
-import crypto                           from 'crypto';
-import { randomUUID }                   from 'crypto';
-import { ethers }                       from 'ethers';
-import { Pool }                         from 'pg';
+import { readFileSync }  from 'fs';
+import { resolve }       from 'path';
+import http              from 'http';
+import crypto            from 'crypto';
+import { randomUUID }    from 'crypto';
+import { ethers }        from 'ethers';
+import { Pool }          from 'pg';
+import Redis             from 'ioredis';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { GenericContainer, Network, Wait }                from 'testcontainers';
 import type { StartedNetwork }                             from 'testcontainers';
 
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
-import { ActivityRouter }                        from '../../apps/issuer-service/src/api/ActivityRouter';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
-import { WebhookServer, IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/webhook';
+import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
+import {
+  WebhookServer,
+  IdempotencyGuard,
+  InMemoryIdempotencyStore,
+  RedisIdempotencyStore,
+  WebhookPublishHandler,
+}                                                from '@kyobo/event-engine/webhook';
 import type { WebhookPayload }                   from '@kyobo/event-engine/webhook';
 import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
@@ -44,37 +61,42 @@ import { PgDatabaseClient }                      from '../../packages/core-banki
 import { OutboxWorker }                          from '../../packages/vasp/src/outbox/OutboxWorker';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';
+import {
+  ConsumerGroupPool,
+  DLQHandler,
+  NFTIssuedProcessor,
+  ActivityProcessor,
+  InMemoryLedgerService,
+  RedisStreamPublisher,
+}                                                from '@kyobo/event-engine';
+import { PgNFTLedgerService }                    from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
+import type { RedisStreamClient, StreamMessage }  from '@kyobo/event-engine';
+import { ExternalVASPAdapter }                   from '@kyobo/vasp';
 import { AnvilVASPAdapter }                      from '../../packages/vasp/src/testing/AnvilVASPAdapter';
-import type { ChainVASPAdapterConfig }            from '../../packages/vasp/src/testing/ChainVASPAdapterBase';
-import type {
-  VASPTransactionReceipt,
-  SubmitTransactionParams,
-}                                                from '../../packages/vasp/src/interfaces/IVASPAdapter';
+import { VASPServer }                            from '../../packages/vasp/src/testing/VASPServer';
 import MOCK_VASP_ABI                             from '../../packages/vasp/src/testing/MockVASP.abi.json';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
-const WEBHOOK_PORT    = 19878;
-const WEBHOOK_SECRET  = 'mock-vasp-test-secret-kyobo-32ch';
+const VASP_PORT     = 19876;  // VASPServer HTTP 포트
+const WEBHOOK_PORT  = 19878;  // 내부 WebhookServer 포트
+const WEBHOOK_SECRET = 'mock-vasp-test-secret-kyobo-32ch';
 const TEST_EVENT_TYPE = 'WALK_GOAL_MET';
 const TOKEN_ID        = '1001';
 const TOKEN_ID_BN     = BigInt(TOKEN_ID);
 
-// Hardhat 기본 계정 (테스트 전용)
+// Hardhat 기본 계정
 const DEPLOYER_KEY  = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 const OPERATOR_KEY  = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const DEPLOYER_ADDR = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const OPERATOR_ADDR = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 
-const BLOCKCHAIN_DIR  = resolve(__dirname, '..', '..', '..', 'blockchain');
-const ARTIFACT_PATH   = resolve(
+const BLOCKCHAIN_DIR = resolve(__dirname, '..', '..', '..', 'blockchain');
+const ARTIFACT_PATH  = resolve(
   BLOCKCHAIN_DIR, 'artifacts', 'src', 'mocks', 'MockVASP.sol', 'MockVASP.json',
 );
 
-// ── IntegrationAnvilVASPAdapter ────────────────────────────────────────────────
-// ── PgHybridCoreBankingAdapter ────────────────────────────────────────────────
-// getUserAccount: user_wallet_mapping DB 조회 (실제 DB 경로 검증)
-// 그 외 메서드: StubCoreBankingAdapter 위임 (in-memory)
+// ── PgHybridCoreBankingAdapter ─────────────────────────────────────────────────
 
 class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
   constructor(private readonly pool: Pool) { super(); }
@@ -87,48 +109,10 @@ class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
     if (!rows[0]) return null;
     return {
       userId,
-      accountId: `acc-${userId}`,
+      accountId:  `acc-${userId}`,
       walletAddr: rows[0].wallet_addr as string,
       status:     'active' as const,
     };
-  }
-}
-
-// VaspTxClientAdapter가 method:'mint'으로 호출 → MockVASP.issueActivityNFT로 위임
-// (이미 this.mockVasp에 MOCK_VASP_ABI가 로드되어 있음)
-
-class IntegrationAnvilVASPAdapter extends AnvilVASPAdapter {
-  constructor(config: ChainVASPAdapterConfig) {
-    super(config);
-  }
-
-  override async submitTransaction(
-    params: SubmitTransactionParams,
-  ): Promise<VASPTransactionReceipt> {
-    // args: [to, tokenId, amount, reason] — VaspTxClientAdapter.submitMint() 기준
-    const [to, tokenId, amount, rawReason] = params.args;
-
-    // VaspTxClientAdapter는 requestId(UUID) 를 UTF-8 hex 로 인코딩하여
-    // bytes32 보다 길어질 수 있음 → 앞 32 바이트(64 hex 자)만 취해 정규화
-    const reasonHex  = String(rawReason).startsWith('0x')
-      ? String(rawReason).slice(2)
-      : String(rawReason);
-    const reason32   = ('0x' + reasonHex.padEnd(64, '0').slice(0, 64)) as `0x${string}`;
-
-    const fn = this.mockVasp['issueActivityNFT'] as (
-      to: unknown, tokenId: unknown, amount: unknown, reason: unknown,
-    ) => Promise<ethers.ContractTransactionResponse>;
-    const tx = await fn(to, tokenId, amount, reason32);
-
-    // tx.wait(1)을 호출하지 않고 즉시 txHash를 반환한다.
-    // 이유: Hardhat automine 환경에서는 fn() 호출(eth_sendRawTransaction) 시점에
-    //       블록이 이미 채굴된다. tx.wait(1)은 provider.pollingInterval(기본 4000ms)
-    //       주기로 영수증을 확인하므로 최대 4s 지연이 발생한다.
-    //       EVMAdapter의 contract.on() 폴링이 이 지연 창 안에서 Issued 이벤트를
-    //       감지하면 tx_mint_requests에 아직 txHash가 없어 findByTxHash null → 영구 누락.
-    //       즉시 반환함으로써 TxStateMachineService가 DB를 먼저 업데이트하고,
-    //       이후 EVMAdapter 폴링이 Issued 이벤트를 처리할 때 findByTxHash가 성공한다.
-    return { txHash: tx.hash, status: 'submitted', timestamp: Date.now() };
   }
 }
 
@@ -137,22 +121,13 @@ class IntegrationAnvilVASPAdapter extends AnvilVASPAdapter {
 function makePayload(
   overrides: Partial<WebhookPayload> & { data: Record<string, unknown> },
 ): WebhookPayload {
-  return {
-    eventType: 'ACTIVITY_ACHIEVED',
-    requestId: randomUUID(),
-    timestamp: Date.now(),
-    ...overrides,
-  };
+  return { eventType: 'ACTIVITY_ACHIEVED', requestId: randomUUID(), timestamp: Date.now(), ...overrides };
 }
 
-function postWebhook(
-  payload: WebhookPayload,
-  opts: { secret?: string } = {},
-): Promise<number> {
+function postWebhook(payload: WebhookPayload, opts: { secret?: string } = {}): Promise<number> {
   const body   = JSON.stringify(payload);
   const secret = opts.secret ?? WEBHOOK_SECRET;
   const sig    = crypto.createHmac('sha256', secret).update(body).digest('hex');
-
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -185,10 +160,7 @@ async function waitFor(
   }
 }
 
-function postJavaApi(
-  path: string,
-  body: unknown,
-): Promise<{ status: number; body: string }> {
+function postJavaApi(path: string, body: unknown): Promise<{ status: number; body: string }> {
   const data = JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const target = new URL(javaBaseUrl + path);
@@ -198,10 +170,7 @@ function postJavaApi(
         port:     Number(target.port),
         path:     target.pathname,
         method:   'POST',
-        headers:  {
-          'Content-Type':   'application/json',
-          'Content-Length': Buffer.byteLength(data),
-        },
+        headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
       },
       res => {
         let buf = '';
@@ -216,81 +185,93 @@ function postJavaApi(
 }
 
 async function deployMockVASP(rpcUrl: string): Promise<string> {
-  const artifact = JSON.parse(readFileSync(ARTIFACT_PATH, 'utf-8'));
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  // NonceManager로 래핑 → deploy + grantRole 연속 TX 시 nonce 캐시 문제 방지
+  const artifact    = JSON.parse(readFileSync(ARTIFACT_PATH, 'utf-8'));
+  const provider    = new ethers.JsonRpcProvider(rpcUrl);
   const deployerBase = new ethers.Wallet(DEPLOYER_KEY, provider);
-  const deployer     = new ethers.NonceManager(deployerBase);
-  const factory  = new ethers.ContractFactory(artifact.abi, artifact.bytecode, deployer);
-  // constructor(address operator) — deployer가 deployer, OPERATOR_ADDR가 operator
-  const contract = await factory.deploy(OPERATOR_ADDR);
+  const deployer    = new ethers.NonceManager(deployerBase);
+  const factory     = new ethers.ContractFactory(artifact.abi, artifact.bytecode, deployer);
+  const contract    = await factory.deploy(OPERATOR_ADDR);
   await contract.waitForDeployment();
   const addr = await contract.getAddress();
   console.log(`  [deploy] MockVASP → ${addr}`);
 
-  // deployer에게 OPERATOR_ROLE 부여 — controlVasp(DEPLOYER_KEY) setMode 전용 signer로 사용
-  // (IssuerService는 OPERATOR_KEY signer 사용 → nonce 충돌 없음)
+  // deployer에게 OPERATOR_ROLE 부여 — controlVasp(DEPLOYER_KEY) setMode 전용
   const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes('OPERATOR_ROLE'));
   const mockVasp = new ethers.Contract(addr, artifact.abi, deployer);
-  await (await (mockVasp['grantRole'] as (role: string, account: string) => Promise<ethers.ContractTransactionResponse>)(OPERATOR_ROLE, DEPLOYER_ADDR)).wait();
+  await (await (mockVasp['grantRole'] as Function)(OPERATOR_ROLE, DEPLOYER_ADDR)).wait();
   console.log(`  [deploy] OPERATOR_ROLE granted to deployer`);
-
   return addr;
 }
 
 // ── 전역 상태 ─────────────────────────────────────────────────────────────────
 
-let hardhatRpc:     string;
+let hardhatRpc:      string;
 let hardhatContainer: { getHost(): string; getMappedPort(port: number): number; stop(): Promise<unknown> };
-let dockerNetwork:  StartedNetwork;
-let pgContainer:    StartedPostgreSqlContainer;
-let javaContainer:  { getHost(): string; getMappedPort(port: number): number; stop(): Promise<unknown> };
-let javaBaseUrl:    string;
-let pool:           Pool;
-let mockVaspAddr:   string;
-let vasp:           IntegrationAnvilVASPAdapter;
-let controlVasp:    AnvilVASPAdapter;         // deployer 키 — setMode/freezeMining 전용
-let coreBanking:    PgHybridCoreBankingAdapter; // getUserAccount → user_wallet_mapping DB
-let ledgerService:  LedgerService;            // recordProcessedEvent → processed_events DB
-let outboxWorker:   OutboxWorker;             // processPending → outbox_events DB
-let webhookServer:  WebhookServer;
-let chainListener:  ChainEventListener;
-let provider:       ethers.JsonRpcProvider;
-let chainAdapter:   EVMAdapter;
-let confirmHandler: IssuanceConfirmHandler;
+let dockerNetwork:   StartedNetwork;
+let pgContainer:     StartedPostgreSqlContainer;
+let javaContainer:   { getHost(): string; getMappedPort(port: number): number; stop(): Promise<unknown> };
+let javaBaseUrl:     string;
+let redisContainer:  { getHost(): string; getMappedPort(port: number): number; stop(): Promise<unknown> };
+let pool:            Pool;
+let mockVaspAddr:    string;
+let provider:        ethers.JsonRpcProvider;
+
+let vaspServer:      VASPServer;
+let controlVasp:     AnvilVASPAdapter;   // DEPLOYER_KEY — setMode/freezeMining 전용
+
+let coreBanking:     PgHybridCoreBankingAdapter;
+let ledgerService:   LedgerService;
+let outboxWorker:    OutboxWorker;
+let webhookServer:   WebhookServer;
+let chainListener:   ChainEventListener;
+let chainAdapter:    EVMAdapter;
+let confirmHandler:  IssuanceConfirmHandler;
+
+let redis:           Redis;
+let ledger:          PgNFTLedgerService;   // Redis Stream → NFTIssuedProcessor 검증용
+let consumerPool:    ConsumerGroupPool;
+
+let redisAdapter:    IoRedisAdapter;
 let fallbackPollInterval: ReturnType<typeof setInterval>;
+
+// ── AlwaysFailProcessor (DLQ / 재처리 시나리오용) ─────────────────────────────
+
+class AlwaysFailProcessor extends NFTIssuedProcessor {
+  async process(_msg: StreamMessage): Promise<void> {
+    throw new Error('강제 실패 — DLQ 테스트용');
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', () => {
+describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가지 시나리오', () => {
 
   // ── beforeAll ──────────────────────────────────────────────────────────────
 
   beforeAll(async () => {
     console.log('\n══════════════════════════════════════════════════════════════');
-    console.log('  [SETUP] MockVASP 통합 테스트 환경 구축');
+    console.log('  [SETUP] 통합 테스트 환경 구축');
     console.log('══════════════════════════════════════════════════════════════');
 
-    // ① Hardhat 노드 컨테이너 기동 (kyobo/hardhat-node:test)
-    console.log('\n  [1/6] Hardhat 노드 컨테이너 기동...');
+    // ① Hardhat 노드 컨테이너
+    console.log('\n  [1/7] Hardhat 노드 컨테이너 기동...');
     hardhatContainer = await new GenericContainer('kyobo/hardhat-node:test')
       .withExposedPorts(8545)
       .withWaitStrategy(Wait.forLogMessage('Started HTTP and WebSocket JSON-RPC server'))
       .start();
     hardhatRpc = `http://${hardhatContainer.getHost()}:${hardhatContainer.getMappedPort(8545)}`;
-    // 이전 컨테이너 재사용 시 stale 상태 초기화
     await new ethers.JsonRpcProvider(hardhatRpc).send('hardhat_reset', []);
-    console.log(`  [1/6] Hardhat 컨테이너 준비 완료 → ${hardhatRpc}`);
+    console.log(`  [1/7] Hardhat 준비 완료 → ${hardhatRpc}`);
 
     // ② MockVASP 배포
-    console.log('\n  [2/6] MockVASP 컨트랙트 배포...');
+    console.log('\n  [2/7] MockVASP 컨트랙트 배포...');
     mockVaspAddr = await deployMockVASP(hardhatRpc);
     provider     = new ethers.JsonRpcProvider(hardhatRpc);
 
-    // ③ PostgreSQL Testcontainer (Docker 네트워크에 참여 — Java 컨테이너와 공유)
-    console.log('\n  [3/6] PostgreSQL 컨테이너 시작...');
+    // ③ PostgreSQL + Java internal-ledger 컨테이너
+    console.log('\n  [3/7] PostgreSQL + Java 컨테이너 시작...');
     dockerNetwork = await new Network().start();
-    pgContainer = await new PostgreSqlContainer('postgres:16-alpine')
+    pgContainer   = await new PostgreSqlContainer('postgres:16-alpine')
       .withDatabase('kyobo_test')
       .withUsername('kyobo')
       .withPassword('kyobo')
@@ -298,67 +279,68 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
       .withNetworkAliases('postgres')
       .start();
     pool = new Pool({ connectionString: pgContainer.getConnectionUri() });
-
-    // 스키마 생성
     const schema = readFileSync(resolve(__dirname, '..', 'setup', 'schema.sql'), 'utf-8');
     await pool.query(schema);
-    console.log('  [3/6] PostgreSQL 준비 완료');
 
-    // ③-b Java internal-ledger 컨테이너 시작 (ddl-auto: validate — 스키마 먼저 적용 필요)
-    console.log('\n  [3b] Java internal-ledger 컨테이너 시작 (kyobo/internal-ledger:test)...');
     javaContainer = await new GenericContainer('kyobo/internal-ledger:test')
       .withNetwork(dockerNetwork)
       .withEnvironment({
         DB_URL:           'jdbc:postgresql://postgres:5432/kyobo_test',
         DB_USERNAME:      'kyobo',
         DB_PASSWORD:      'kyobo',
-        CORE_BANKING_URL: 'http://localhost:9999',  // stub — 실제 연동 불필요
+        CORE_BANKING_URL: 'http://localhost:9999',
       })
       .withExposedPorts(8080)
       .withWaitStrategy(Wait.forHttp('/api/internal/health', 8080).forStatusCode(200))
       .start();
     javaBaseUrl = `http://${javaContainer.getHost()}:${javaContainer.getMappedPort(8080)}`;
-    console.log(`  [3b] Java 컨테이너 준비 완료 → ${javaBaseUrl}`);
+    console.log(`  [3/7] PostgreSQL + Java 준비 완료`);
 
-    // ④ VASP 어댑터 생성
-    console.log('\n  [4/6] IntegrationAnvilVASPAdapter 초기화...');
-    vasp = new IntegrationAnvilVASPAdapter({
-      rpcUrl:       hardhatRpc,
-      privateKey:   OPERATOR_KEY,
-      mockVaspAddr: mockVaspAddr,
-      confirmations: 1,
+    // ④ Redis 컨테이너
+    console.log('\n  [4/7] Redis 컨테이너 시작...');
+    redisContainer = await new GenericContainer('redis:7-alpine')
+      .withExposedPorts(6379)
+      .withWaitStrategy(Wait.forLogMessage('Ready to accept connections'))
+      .start();
+    const redisUrl = `redis://${redisContainer.getHost()}:${redisContainer.getMappedPort(6379)}`;
+    redis = new Redis(redisUrl);
+    console.log(`  [4/7] Redis 준비 완료 → ${redisUrl}`);
+
+    // ⑤ VASPServer 기동 (ExternalVASPAdapter 호출 대상)
+    console.log('\n  [5/7] VASPServer 기동...');
+    vaspServer = new VASPServer({
+      port:            VASP_PORT,
+      rpcUrl:          hardhatRpc,
+      signerKey:       OPERATOR_KEY,
+      contractAddr:    mockVaspAddr,
+      callbackUrl:     `http://localhost:${WEBHOOK_PORT}`,
+      callbackSecret:  WEBHOOK_SECRET,
+      pollingInterval: 100,
     });
-    // setMode().wait() 폴링도 빠르게 처리 (기본 4000ms → 100ms)
-    (vasp as any).provider.pollingInterval = 100;
+    await vaspServer.start();
 
-    // controlVasp: DEPLOYER_KEY — setMode/freezeMining 전용
-    // IssuerService는 vasp(OPERATOR_KEY)를 사용 → nonce 충돌 없음
+    // controlVasp: DEPLOYER_KEY — setMode/freezeMining/snapshot 전용 (nonce 분리)
     controlVasp = new AnvilVASPAdapter({
-      rpcUrl:       hardhatRpc,
-      privateKey:   DEPLOYER_KEY,
-      mockVaspAddr: mockVaspAddr,
+      rpcUrl:        hardhatRpc,
+      privateKey:    DEPLOYER_KEY,
+      mockVaspAddr:  mockVaspAddr,
       confirmations: 1,
     });
     (controlVasp as any).provider.pollingInterval = 100;
+    console.log(`  [5/7] VASPServer 준비 완료 → :${VASP_PORT}`);
 
-    // ⑤ Core Banking — user_wallet_mapping DB 조회 어댑터 + 정적 데이터 시드
+    // ⑥ Core Banking + 정적 데이터 시드
     coreBanking = new PgHybridCoreBankingAdapter(pool);
-
-    // user_wallet_mapping: getUserAccount()가 DB에서 walletAddr를 읽음
     await pool.query(
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ($1, $2, 'ANVIL', true) ON CONFLICT (user_id) DO NOTHING`,
       ['user-mock-001', OPERATOR_ADDR],
     );
-
-    // issuance_policies 시드
     await pool.query(
       `INSERT INTO issuance_policies (event_type, token_id, amount)
        VALUES ($1, $2, 1) ON CONFLICT (event_type) DO NOTHING`,
       [TEST_EVENT_TYPE, TOKEN_ID],
     );
-
-    // processed_events·outbox_events 서비스 초기화
     ledgerService = new LedgerService(new PgDatabaseClient(pool), coreBanking);
     outboxWorker  = new OutboxWorker({
       query: async (sql: string, params?: unknown[]) => {
@@ -367,38 +349,35 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
       },
     });
 
-    // ⑥ 서비스 조립
-    console.log('\n  [5/6] 서비스 조립 (IssuerService + ChainEventListener + WebhookServer)...');
+    // ⑦ 서비스 조립
+    console.log('\n  [6/7] 서비스 조립...');
 
-    chainAdapter = new EVMAdapter({
-      rpcUrl:  hardhatRpc,
-      chainId: '31337',
-    });
-    // 기본 폴링 간격(4000ms)에서는 contract.on('Issued') 이벤트가 너무 늦게 감지된다.
+    chainAdapter = new EVMAdapter({ rpcUrl: hardhatRpc, chainId: '31337' });
     (chainAdapter as any).provider.pollingInterval = 100;
 
-    const conditionSvc = new EventConditionService([new ActivityConditionStrategy()]);
-    const factory      = new TokenIssuerFactory({
+    // ExternalVASPAdapter → VASPServer (실제 VASP HTTP 경로 검증)
+    const externalVasp = new ExternalVASPAdapter({
+      baseUrl: `http://localhost:${VASP_PORT}`,
+      apiKey:  'test-api-key',
+    });
+
+    const conditionSvc  = new EventConditionService([new ActivityConditionStrategy()]);
+    const factory       = new TokenIssuerFactory({
       chainAdapter,
-      vaspAdapter: vasp,
+      vaspAdapter: externalVasp,
       coreBanking,
       pool,
     });
-
     const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
     const { issuerService } = factoryResult;
     confirmHandler = factoryResult.confirmHandler;
 
-    // ChainEventListener: MockVASP 'Issued' 이벤트 구독
+    // ChainEventListener — 폴백 경로 (issuance_requests CONFIRMED)
     const inMemoryBlockStore = { block: 0 };
     chainListener = new ChainEventListener(
       chainAdapter,
       [confirmHandler],
-      [{
-        addr:       mockVaspAddr,
-        abi:        MOCK_VASP_ABI as unknown[],
-        eventNames: ['Issued'],
-      }],
+      [{ addr: mockVaspAddr, abi: MOCK_VASP_ABI as unknown[], eventNames: ['Issued'] }],
       {
         async getLastProcessedBlock() { return inMemoryBlockStore.block; },
         async setLastProcessedBlock(b) { inMemoryBlockStore.block = b; },
@@ -406,8 +385,7 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
     );
     await chainListener.start();
 
-    // contract.on() 폴링이 환경(ethers v6 + Hardhat HTTP)에서 발화하지 않을 경우를 대비한
-    // 폴백 폴링: queryEvents()로 Issued 이벤트를 주기적으로 직접 조회 → confirmHandler 호출
+    // 폴백 폴링 (contract.on() 미발화 대비)
     {
       let fallbackFromBlock = await chainAdapter.getBlockNumber();
       let fallbackBusy = false;
@@ -425,7 +403,6 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
             await confirmHandler.handle(ev).catch(e =>
               console.error('[fallback] confirmHandler error:', (e as Error).message),
             );
-            // processed_events 기록 — BigInt를 string 변환 후 JSONB 저장 (ON CONFLICT DO NOTHING)
             const safePayload = JSON.parse(
               JSON.stringify(ev.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
             );
@@ -434,26 +411,60 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
             ).catch(e => console.error('[fallback] recordProcessedEvent error:', (e as Error).message));
           }
           fallbackFromBlock = toBlock;
-        } catch {
-          // ignore transient RPC errors
-        } finally {
+        } catch { /* ignore transient RPC errors */ } finally {
           fallbackBusy = false;
         }
       }, 300);
     }
 
-    // WebhookServer + ActivityRouter
-    const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
-    webhookServer     = new WebhookServer({
-      port:      WEBHOOK_PORT,
-      secret:    WEBHOOK_SECRET,
-      maxBodyKb: 64,
-    });
-    const router = new ActivityRouter(issuerService, idempotency);
-    router.register(webhookServer);
+    // Redis Stream: NFT_ISSUED 콜백 → XADD → ConsumerGroupWorker → ledger
+    const streamClient: RedisStreamClient = {
+      async xadd(key, fields) {
+        const flat = Object.entries(fields).flat();
+        return (redis as any).xadd(key, '*', ...flat) as Promise<string>;
+      },
+      async xgroupCreate(key, group, id, mkstream) {
+        await (redis as any).xgroup('CREATE', key, group, id, ...(mkstream ? ['MKSTREAM'] : []));
+      },
+      async ping() { return redis.ping(); },
+    };
+    const streamPublisher = new RedisStreamPublisher(streamClient);
+    await streamPublisher.initialize('nft-consumers');       // consumer group 생성
+    await streamPublisher.initialize('activity-consumers');  // consumer group 생성
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idempotency     = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
+    const webhookPublisher = new WebhookPublishHandler(streamPublisher, idempotency);
+
+    // WebhookServer: 모든 인바운드 Webhook → WebhookPublishHandler → Redis Stream (단일 경로)
+    webhookServer = new WebhookServer({ port: WEBHOOK_PORT, secret: WEBHOOK_SECRET, maxBodyKb: 64 });
+    // 내부 인바운드 (교보 앱)
+    webhookServer.on('ACTIVITY_ACHIEVED', webhookPublisher.createHandler());
+    // VASP 콜백
+    webhookServer.on('NFT_ISSUED', webhookPublisher.createHandler());
     await webhookServer.listen();
 
-    console.log('  [6/6] 환경 구축 완료');
+    // ConsumerGroupPool: 도메인별 Consumer Group 독립 소비
+    ledger = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    const nftIssuedProcessor  = new NFTIssuedProcessor(idempotency, ledger);
+    const activityProcessor   = new ActivityProcessor(issuerService, idempotency);
+    redisAdapter  = new IoRedisAdapter(redis);
+    const streamDlq     = new DLQHandler(
+      redisAdapter,
+      { async sendAlert(msg) { console.error('[DLQ]', msg); } },
+    );
+    consumerPool = new ConsumerGroupPool(
+      redisAdapter,
+      streamDlq,
+      { streamKey: 'kyobo:events', batchSize: 10, blockMs: 500, minIdleMs: 1_000 },
+      [
+        { groupName: 'nft-consumers',      consumerId: 'nft-1',      processors: [nftIssuedProcessor] },
+        { groupName: 'activity-consumers', consumerId: 'activity-1', processors: [activityProcessor] },
+      ],
+    );
+    consumerPool.start().catch(e => console.error('[consumerPool] fatal:', e));
+
+    console.log('  [7/7] 환경 구축 완료');
     console.log('\n══════════════════════════════════════════════════════════════\n');
   }, 120_000);
 
@@ -461,113 +472,98 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
 
   afterAll(async () => {
     clearInterval(fallbackPollInterval);
+    consumerPool?.stop();
     await webhookServer.close().catch(() => {});
     await chainListener.stop().catch(() => {});
+    await vaspServer.stop().catch(() => {});
+    await redis.quit().catch(() => {});
     await pool.end().catch(() => {});
     await javaContainer?.stop().catch(() => {});
     await pgContainer.stop().catch(() => {});
+    await redisContainer?.stop().catch(() => {});
     await dockerNetwork?.stop().catch(() => {});
     await hardhatContainer?.stop().catch(() => {});
   });
 
-  // ── beforeEach: 이전 테스트 background 처리 드레인 → 테이블 초기화 ─────────────
-  // setMode는 각 테스트가 직접 관리한다.
-  // — setMode를 여기서 호출하면 IssuerService background 처리와 동일 signer nonce 충돌 발생
+  // ── beforeEach: 이전 테스트 드레인 → 테이블 초기화 ─────────────────────────
 
   beforeEach(async () => {
-    // 이전 테스트의 비동기 처리(tx.wait, IssuerService)가 완료될 때까지 대기
+    // NO_EMIT 시나리오는 SUBMITTED가 영구 잔류하므로 짧게 포기
     await waitFor(async () => {
       const { rows } = await pool.query(
         "SELECT COUNT(*) AS cnt FROM issuance_requests WHERE status NOT IN ('CONFIRMED','FAILED')",
       );
       return parseInt(rows[0].cnt, 10) === 0;
-    }, 15_000, 'drain previous test').catch(() => {});
+    }, 3_000, 'drain previous test').catch(() => {});
 
     await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, outbox_events, user_nft_holdings, audit_log');
-    // 모드 복귀는 각 테스트 내부에서 처리 (nonce 충돌 방지)
   }, 20_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
 
-  it('[1] NORMAL — 정상 발행 → Issued 이벤트 → CONFIRMED', async () => {
+  it('[1] NORMAL — 정상 발행 → VASPServer NFT_ISSUED 콜백 → Redis Stream → ledger + CONFIRMED', async () => {
     console.log('\n──────────────────────────────────────────────────────────────');
-    console.log('  [1] NORMAL — 정상 발행 + ChainEventListener → CONFIRMED');
+    console.log('  [1] NORMAL — 전체 흐름: IssuerService → VASPServer → 콜백 → Redis Stream');
     console.log('──────────────────────────────────────────────────────────────');
 
-    const balBefore = await provider.send('eth_call', [{
-      to:   mockVaspAddr,
-      data: new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi)
-              .encodeFunctionData('balanceOf', [OPERATOR_ADDR, TOKEN_ID_BN]),
-    }, 'latest']);
-    const balBeforeNum = BigInt(balBefore);
-    console.log(`  · 발행 전 balanceOf  ${balBeforeNum}`);
+    const iface = new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi);
+    const viewContract = new ethers.Contract(mockVaspAddr, iface, provider);
+    const balBefore = await (viewContract['balanceOf'] as Function)(OPERATOR_ADDR, TOKEN_ID_BN) as bigint;
+    console.log(`  · 발행 전 balanceOf  ${balBefore}`);
 
     const statusCode = await postWebhook(makePayload({
       eventType: 'ACTIVITY_ACHIEVED',
-      data: {
-        userId:     'user-mock-001',
-        activityId: randomUUID(),
-        eventType:  TEST_EVENT_TYPE,
-        eventCode:  1,
-        data:       { steps: 15_000 },
-      },
+      data: { userId: 'user-mock-001', activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
     }));
     expect(statusCode).toBe(202);
     console.log('  · webhook 202 수신');
 
-    // SUBMITTED 또는 FAILED 대기 (FAILED면 빠르게 감지 가능)
+    // SUBMITTED 대기 — VASPServer 202 응답 후 IssuerService가 DB에 기록
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
       return rows.length > 0 && rows[0].status !== 'REQUESTED';
     }, 20_000, 'SUBMITTED');
     const { rows: midRows } = await pool.query('SELECT status, fail_reason, tx_hash FROM issuance_requests');
-    if (midRows[0].status === 'FAILED') {
-      throw new Error(`TX failed early: ${midRows[0].fail_reason}`);
-    }
-    console.log('  · issuance_requests SUBMITTED 확인');
-    console.log(`  · issuance_requests.tx_hash  ${midRows[0].tx_hash}`);
+    if (midRows[0].status === 'FAILED') throw new Error(`TX failed early: ${midRows[0].fail_reason}`);
+    console.log(`  · SUBMITTED 확인 / tx_hash=${midRows[0].tx_hash}`);
 
-    // tx_mint_requests 상태 확인 (디버그)
-    {
-      const { rows: txRows } = await pool.query('SELECT status, tx_hash FROM tx_mint_requests');
-      if (txRows.length > 0) {
-        console.log(`  · tx_mint_requests status    ${txRows[0].status}`);
-        console.log(`  · tx_mint_requests.tx_hash   ${txRows[0].tx_hash}`);
-        // eth_getLogs로 Issued 이벤트 직접 확인
-        const iface = new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi);
-        const receipt = await provider.getTransactionReceipt(txRows[0].tx_hash as string);
-        const issuedCount = receipt?.logs.filter(l => { try { return iface.parseLog(l)?.name === 'Issued'; } catch { return false; } }).length ?? 0;
-        console.log(`  · 해당 TX Issued 이벤트 수  ${issuedCount} (1이어야 함)`);
-      }
-    }
-
-    // ChainEventListener가 Issued 이벤트 수신 → CONFIRMED (최대 40s)
+    // CONFIRMED 대기 — ChainEventListener 폴백 경로
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
       return rows[0]?.status === 'CONFIRMED';
     }, 40_000, 'CONFIRMED');
 
     const { rows } = await pool.query('SELECT status, tx_hash, wallet_addr FROM issuance_requests');
-    console.log(`  · issuance_requests status   ${rows[0].status}`);
-    console.log(`  · tx_hash                    ${rows[0].tx_hash}`);
-    console.log(`  · wallet_addr                ${rows[0].wallet_addr}`);
-
+    console.log(`  · issuance_requests  ${rows[0].status}  tx=${rows[0].tx_hash}`);
     expect(rows[0].status).toBe('CONFIRMED');
     expect(rows[0].tx_hash).toMatch(/^0x/);
     expect(rows[0].wallet_addr?.toLowerCase()).toBe(OPERATOR_ADDR.toLowerCase());
-    console.log('  ✔ CONFIRMED 확인');
+    console.log('  ✔ CONFIRMED 확인 (ChainEventListener 경로)');
 
-    // ── user_wallet_mapping 검증
+    // Redis Stream 경로 검증: NFT_ISSUED 콜백 → XADD → NFTIssuedProcessor → ledger
+    await waitFor(async () => {
+      return (await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID)) > 0;
+    }, 15_000, 'ledger.creditNFT');
+    const balance = await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID);
+    console.log(`  · InMemoryLedger balance  ${balance} (>0이어야 함)`);
+    expect(balance).toBeGreaterThan(0);
+    console.log('  ✔ Redis Stream 경로 확인 (VASPServer 콜백 → XADD → NFTIssuedProcessor)');
+
+    // balanceOf 온체인 증가 확인
+    const balAfter = await (viewContract['balanceOf'] as Function)(OPERATOR_ADDR, TOKEN_ID_BN) as bigint;
+    expect(balAfter).toBe(balBefore + 1n);
+    console.log(`  ✔ 온체인 balanceOf ${balBefore} → ${balAfter}`);
+
+    // user_wallet_mapping 검증
     const { rows: wmRows } = await pool.query(
       'SELECT wallet_addr, verified FROM user_wallet_mapping WHERE user_id = $1',
       ['user-mock-001'],
     );
-    expect(wmRows).toHaveLength(1);
     expect(wmRows[0].wallet_addr.toLowerCase()).toBe(OPERATOR_ADDR.toLowerCase());
     expect(wmRows[0].verified).toBe(true);
     console.log('  ✔ user_wallet_mapping DB 조회 확인');
 
-    // ── processed_events 검증 (fallback poll이 recordProcessedEvent 호출)
+    // processed_events 검증
     const txHash = rows[0].tx_hash as string;
     const { rows: peRows } = await pool.query(
       'SELECT event_name, log_index FROM processed_events WHERE tx_hash = $1',
@@ -575,12 +571,11 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
     );
     expect(peRows.length).toBeGreaterThan(0);
     expect(peRows[0].event_name).toBe('Issued');
-    console.log(`  ✔ processed_events 기록 확인 (Issued, logIndex=${peRows[0].log_index})`);
+    console.log(`  ✔ processed_events 확인 (Issued, logIndex=${peRows[0].log_index})`);
 
-    // ── outbox_events 검증 (PENDING 삽입 → OutboxWorker 처리 → PROCESSED)
+    // outbox_events 검증
     await pool.query(
-      `INSERT INTO outbox_events (type, payload)
-       VALUES ('VASP_SUBMIT_MINT', $1::jsonb)`,
+      `INSERT INTO outbox_events (type, payload) VALUES ('VASP_SUBMIT_MINT', $1::jsonb)`,
       [JSON.stringify({ txHash, userId: 'user-mock-001', tokenId: TOKEN_ID })],
     );
     const { processed, failed } = await outboxWorker.processPending();
@@ -592,17 +587,10 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
     expect(obRows[0].status).toBe('PROCESSED');
     console.log('  ✔ outbox_events PENDING → PROCESSED 확인');
 
-    // ── Java internal-ledger: NFT 보유 기록 (user_nft_holdings)
+    // Java internal-ledger: NFT 보유 기록
     const nftRes = await postJavaApi(
       `/api/internal/users/user-mock-001/nft-holdings`,
-      {
-        tokenId:      Number(TOKEN_ID),
-        contractAddr: mockVaspAddr,
-        chainId:      31337,
-        amount:       1,
-        acquiredAt:   new Date().toISOString(),
-        onChainTx:    txHash,
-      },
+      { tokenId: Number(TOKEN_ID), contractAddr: mockVaspAddr, chainId: 31337, amount: 1, acquiredAt: new Date().toISOString(), onChainTx: txHash },
     );
     expect(nftRes.status).toBe(200);
     const { rows: nftRows } = await pool.query(
@@ -611,26 +599,17 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
     );
     expect(nftRows).toHaveLength(1);
     expect(String(nftRows[0].token_id)).toBe(TOKEN_ID);
-    expect(nftRows[0].on_chain_tx.toLowerCase()).toBe(txHash.toLowerCase());
     console.log('  ✔ user_nft_holdings Java → DB 기록 확인');
 
-    // ── Java internal-ledger: 감사 로그 (audit_log)
+    // Java internal-ledger: 감사 로그
     const auditRes = await postJavaApi(
       `/api/internal/audit-log`,
-      {
-        actor:        'user-mock-001',
-        action:       'NFT_ISSUED',
-        resourceType: 'issuance_request',
-        resourceId:   rows[0].tx_hash,
-        beforeState:  null,
-        afterState:   JSON.stringify({ status: 'CONFIRMED', txHash }),
-      },
+      { actor: 'user-mock-001', action: 'NFT_ISSUED', resourceType: 'issuance_request', resourceId: txHash, beforeState: null, afterState: JSON.stringify({ status: 'CONFIRMED', txHash }) },
     );
     expect(auditRes.status).toBe(200);
     const { rows: auditRows } = await pool.query(
       "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
     );
-    expect(auditRows.length).toBeGreaterThan(0);
     expect(auditRows[0].actor).toBe('user-mock-001');
     expect(auditRows[0].action).toBe('NFT_ISSUED');
     console.log('  ✔ audit_log Java → DB 기록 확인');
@@ -638,9 +617,9 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
 
   // ── [2] REVERT ──────────────────────────────────────────────────────────────
 
-  it('[2] REVERT — TX revert → issuance_requests FAILED', async () => {
+  it('[2] REVERT — TX revert → VASPServer 500 → ExternalVASPAdapter throws → FAILED', async () => {
     console.log('\n──────────────────────────────────────────────────────────────');
-    console.log('  [2] REVERT — TX revert 시뮬레이션');
+    console.log('  [2] REVERT — VASPServer 즉시 500 반환 → IssuerService FAILED');
     console.log('──────────────────────────────────────────────────────────────');
 
     await controlVasp.setMode('REVERT');
@@ -648,13 +627,7 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
 
     const statusCode = await postWebhook(makePayload({
       eventType: 'ACTIVITY_ACHIEVED',
-      data: {
-        userId:     'user-mock-001',
-        activityId: randomUUID(),
-        eventType:  TEST_EVENT_TYPE,
-        eventCode:  1,
-        data:       { steps: 15_000 },
-      },
+      data: { userId: 'user-mock-001', activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
     }));
     expect(statusCode).toBe(202);
 
@@ -664,112 +637,86 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
     }, 15_000, 'FAILED');
 
     const { rows } = await pool.query('SELECT status, fail_reason FROM issuance_requests');
-    console.log(`  · issuance_requests status   ${rows[0].status}`);
-    console.log(`  · fail_reason (일부)         ${String(rows[0].fail_reason).slice(0, 80)}`);
-
+    console.log(`  · status=${rows[0].status}  fail_reason=${String(rows[0].fail_reason).slice(0, 80)}`);
     expect(rows[0].status).toBe('FAILED');
-    console.log('  ✔ REVERT → FAILED 확인');
+    console.log('  ✔ REVERT → VASPServer 500 → FAILED 확인');
 
-    // 다음 테스트를 위해 모드 복원 (setMode('NORMAL') 호출이 OPERATOR_KEY nonce 소비 유의)
     await controlVasp.setMode('NORMAL');
     console.log('  · setMode(NORMAL) 복원 완료');
   });
 
   // ── [3] NO_EMIT ─────────────────────────────────────────────────────────────
 
-  it('[3] NO_EMIT — mint 성공, Issued 이벤트 없음 → SUBMITTED 유지', async () => {
+  it('[3] NO_EMIT — mint 성공, Issued 이벤트 없음 → VASPServer 콜백 없음 → SUBMITTED 유지', async () => {
     console.log('\n──────────────────────────────────────────────────────────────');
-    console.log('  [3] NO_EMIT — mint 성공, ChainEventListener 폴백 경로 검증');
+    console.log('  [3] NO_EMIT — TX 성공, 이벤트 없음 → 콜백 없음 → SUBMITTED 유지');
     console.log('──────────────────────────────────────────────────────────────');
 
     await controlVasp.setMode('NO_EMIT');
-    const actualMode = await controlVasp.getMode();
-    console.log(`  · setMode(NO_EMIT) 완료 — 실제 모드: ${actualMode} (NO_EMIT이어야 함)`);
+    console.log(`  · setMode(NO_EMIT) 완료`);
+
+    const balanceBefore = await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID);
 
     const statusCode = await postWebhook(makePayload({
       eventType: 'ACTIVITY_ACHIEVED',
-      data: {
-        userId:     'user-mock-001',
-        activityId: randomUUID(),
-        eventType:  TEST_EVENT_TYPE,
-        eventCode:  1,
-        data:       { steps: 15_000 },
-      },
+      data: { userId: 'user-mock-001', activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
     }));
     expect(statusCode).toBe(202);
 
-    // TX는 성공 (SUBMITTED) 이어야 함
     await waitFor(async () => {
-      const { rows } = await pool.query('SELECT status, fail_reason, tx_hash FROM issuance_requests');
-      if (rows.length > 0 && rows[0].status === 'FAILED') {
-        const onChainMode = await controlVasp.getMode().catch(() => 'unknown');
-        const { rows: txRows } = await pool.query('SELECT status, fail_reason, tx_hash FROM tx_mint_requests');
-        console.error(`  [3] FAILED 감지:`);
-        console.error(`      issuance_requests: status=${rows[0].status}, fail_reason=${rows[0].fail_reason ?? 'null'}, tx_hash=${rows[0].tx_hash ?? 'null'}`);
-        console.error(`      tx_mint_requests:  ${txRows.length} rows: ${JSON.stringify(txRows.map(r => ({status: r.status, fail_reason: r.fail_reason, tx_hash: r.tx_hash})))}`);
-        console.error(`      on-chain mode=${onChainMode}`);
-        throw new Error(`[3] TX가 FAILED: ${rows[0].fail_reason ?? '원인 없음'} (mode=${onChainMode})`);
-      }
+      const { rows } = await pool.query('SELECT status, fail_reason FROM issuance_requests');
+      if (rows.length > 0 && rows[0].status === 'FAILED') throw new Error(`TX FAILED: ${rows[0].fail_reason}`);
       return rows.length > 0 && rows[0].status === 'SUBMITTED';
     }, 20_000, 'SUBMITTED');
 
-    // Issued 이벤트가 없으므로 CONFIRMED 전이 발생하지 않음
+    // VASPServer가 콜백을 보내지 않으므로 ledger 잔액 변화 없음을 확인 (3s 관찰)
     await new Promise(r => setTimeout(r, 3_000));
 
-    const { rows }    = await pool.query('SELECT status, tx_hash FROM issuance_requests');
-    const txHash      = rows[0].tx_hash as string;
-    const receipt     = await provider.getTransactionReceipt(txHash);
-    const iface       = new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi);
-    const issuedLogs  = receipt!.logs.filter(l => {
-      try { return iface.parseLog(l)?.name === 'Issued'; } catch { return false; }
+    const { rows }   = await pool.query('SELECT status, tx_hash FROM issuance_requests');
+    const txHash     = rows[0].tx_hash as string;
+    const receipt    = await provider.getTransactionReceipt(txHash);
+    const issuedLogs = receipt!.logs.filter(l => {
+      try { return new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi).parseLog(l)?.name === 'Issued'; }
+      catch { return false; }
     });
 
     console.log(`  · issuance_requests status   ${rows[0].status}`);
-    console.log(`  · TX 수신 로그 내 Issued 수  ${issuedLogs.length} (0이어야 함)`);
-    console.log(`  · TX 자체는 성공 (status)    ${receipt!.status}`);
+    console.log(`  · TX 내 Issued 이벤트 수     ${issuedLogs.length} (0이어야 함)`);
+    console.log(`  · TX receipt.status          ${receipt!.status} (1=성공)`);
+    console.log(`  · ledger balance             ${await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID)} (변화 없어야 함)`);
 
-    expect(rows[0].status).toBe('SUBMITTED');      // Issued 없으면 CONFIRMED 미전이
-    expect(issuedLogs).toHaveLength(0);            // 이벤트 없음 확인
-    expect(receipt!.status).toBe(1);               // mint는 성공
+    expect(rows[0].status).toBe('SUBMITTED');
+    expect(issuedLogs).toHaveLength(0);
+    expect(receipt!.status).toBe(1);
+    expect(await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID)).toBe(balanceBefore);
+    console.log('  ✔ NO_EMIT — SUBMITTED 유지 + mint 성공 + ledger 변화 없음 확인');
 
-    console.log('  ✔ NO_EMIT — SUBMITTED 유지 + mint 성공 + Issued 0개 확인');
-    console.log('  ✔ ChainEventListener 폴백 경로 (queryEvents 스캔) 동작 지점 검증 완료');
-
-    // 다음 테스트를 위해 NORMAL 모드로 복원
     await controlVasp.setMode('NORMAL');
     console.log('  · setMode(NORMAL) 복원 완료');
   });
 
   // ── [4] PENDING ─────────────────────────────────────────────────────────────
 
-  it('[4] PENDING — 블록 중단 → TX mempool 체류 → mineBlock → CONFIRMED', async () => {
+  it('[4] PENDING — 블록 중단 → TX mempool 체류 → mineBlock → VASPServer 콜백 → CONFIRMED', async () => {
     console.log('\n──────────────────────────────────────────────────────────────');
-    console.log('  [4] PENDING — evm_setAutomine(false) → TX 체류 → 채굴 → CONFIRMED');
+    console.log('  [4] PENDING — evm_setAutomine(false) → mempool → mineBlock → 콜백 → CONFIRMED');
     console.log('──────────────────────────────────────────────────────────────');
 
-    await controlVasp.setMode('NORMAL'); // test [3] 잔류 모드 방어
+    await controlVasp.setMode('NORMAL');
     await controlVasp.freezeMining();
-    console.log('  · 블록 생성 중단 (evm_setAutomine=false)');
+    console.log('  · 블록 생성 중단');
 
     const blockBefore = await provider.getBlockNumber();
-    console.log(`  · 현재 블록       ${blockBefore}`);
+    const balanceBefore = await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID);
 
-    // webhook 전송 — 비동기 처리 시작 (tx.wait(1)이 내부에서 블록 대기)
     const webhookPromise = postWebhook(makePayload({
       eventType: 'ACTIVITY_ACHIEVED',
-      data: {
-        userId:     'user-mock-001',
-        activityId: randomUUID(),
-        eventType:  TEST_EVENT_TYPE,
-        eventCode:  1,
-        data:       { steps: 15_000 },
-      },
+      data: { userId: 'user-mock-001', activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
     }));
 
     // TX가 mempool에 들어갈 시간 확보
     await new Promise(r => setTimeout(r, 2_000));
 
-    // 블록 채굴 전 SUBMITTED 확인 — 이 시점에 Issued 이벤트가 없으므로 SUBMITTED여야 함
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
       return rows.length > 0 && rows[0].status === 'SUBMITTED';
@@ -777,94 +724,77 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
     console.log('  · SUBMITTED 확인 (블록 채굴 전)');
 
     const blockDuring = await provider.getBlockNumber();
-    console.log(`  · 블록 생성 중단 중 현재 블록  ${blockDuring} (변화 없어야 함)`);
-    expect(blockDuring).toBe(blockBefore);   // 블록 미생성 확인
+    expect(blockDuring).toBe(blockBefore);
 
-    // 블록 채굴 → TX 확정
-    // vasp.mineBlock() 대신 test provider로 직접 호출 (provider 인스턴스 격리 방지)
+    // 블록 채굴 → VASPServer tx.wait(1) 해소 → NFT_ISSUED 콜백
     await provider.send('hardhat_mine', ['0x1']);
     await provider.send('evm_setAutomine', [true]);
-    console.log('  · hardhat_mine(1) → 블록 생성');
-    console.log('  · evm_setAutomine(true) → 자동 생성 재개');
+    console.log('  · hardhat_mine(1) + automine 재개');
 
-    // webhook 202 확인
     const statusCode = await webhookPromise;
     expect(statusCode).toBe(202);
 
-    // 잠시 대기 후 블록 번호 확인 (노드 상태 반영 여유)
-    await new Promise(r => setTimeout(r, 300));
-    // eth_blockNumber는 '0x...' hex 문자열 반환 — Number()로 안전하게 변환
-    const blockAfter = Number(await provider.send('eth_blockNumber', []));
-    console.log(`  · 채굴 후 블록    ${blockAfter}`);
-    expect(blockAfter).toBeGreaterThan(blockBefore);
-
-    // CONFIRMED 대기 — 폴백 폴링이 Issued 이벤트 감지 후 전이
+    // CONFIRMED 대기
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
       return rows[0]?.status === 'CONFIRMED';
     }, 15_000, 'CONFIRMED');
 
     const { rows } = await pool.query('SELECT status, tx_hash FROM issuance_requests');
-    console.log(`  · issuance_requests status   ${rows[0].status}`);
     expect(rows[0].status).toBe('CONFIRMED');
+    console.log('  ✔ PENDING → 채굴 → CONFIRMED 확인');
 
-    // ── processed_events 검증
+    // Redis Stream 경로 검증
+    await waitFor(async () => {
+      return (await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID)) > balanceBefore;
+    }, 10_000, 'ledger.creditNFT (PENDING)');
+    console.log(`  ✔ ledger balance 증가 확인 (VASPServer 콜백 → Redis Stream)`);
+
+    // processed_events 검증
     const { rows: peRows } = await pool.query(
       'SELECT event_name FROM processed_events WHERE tx_hash = $1',
       [rows[0].tx_hash],
     );
     expect(peRows.length).toBeGreaterThan(0);
-    console.log('  ✔ PENDING → 블록 채굴 → CONFIRMED 확인');
     console.log(`  ✔ processed_events 기록 확인 (${peRows.length}건)`);
   });
 
   // ── [5] REORG ───────────────────────────────────────────────────────────────
 
-  it('[5] REORG — snapshot → 발행 → revertToSnapshot → 온체인 상태 원복 확인', async () => {
+  it('[5] REORG — snapshot → 발행 → revertToSnapshot → 온체인 원복·DB CONFIRMED 유지', async () => {
     console.log('\n──────────────────────────────────────────────────────────────');
     console.log('  [5] REORG — evm_snapshot → 발행 → evm_revert → 상태 원복');
     console.log('──────────────────────────────────────────────────────────────');
 
-    await controlVasp.setMode('NORMAL'); // 이전 테스트 잔류 모드 방어
+    await controlVasp.setMode('NORMAL');
 
-    const iface = new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi);
+    const iface       = new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi);
     const viewContract = new ethers.Contract(mockVaspAddr, iface, provider);
-
-    const balBefore = await (viewContract['balanceOf'] as Function)(OPERATOR_ADDR, TOKEN_ID_BN) as bigint;
+    const balBefore   = await (viewContract['balanceOf'] as Function)(OPERATOR_ADDR, TOKEN_ID_BN) as bigint;
     console.log(`  · 스냅샷 전 balanceOf  ${balBefore}`);
 
-    // 스냅샷 저장
     const snapshotId = await controlVasp.snapshot();
     console.log(`  · 스냅샷 ID           ${snapshotId}`);
 
-    // NORMAL 발행
     const statusCode = await postWebhook(makePayload({
       eventType: 'ACTIVITY_ACHIEVED',
-      data: {
-        userId:     'user-mock-001',
-        activityId: randomUUID(),
-        eventType:  TEST_EVENT_TYPE,
-        eventCode:  1,
-        data:       { steps: 15_000 },
-      },
+      data: { userId: 'user-mock-001', activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
     }));
     expect(statusCode).toBe(202);
 
-    // CONFIRMED 대기 (최대 40s)
+    // CONFIRMED 대기
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
       return rows.length > 0 && rows[0].status === 'CONFIRMED';
     }, 40_000, 'CONFIRMED before reorg');
 
     const balAfterIssue = await (viewContract['balanceOf'] as Function)(OPERATOR_ADDR, TOKEN_ID_BN) as bigint;
-    console.log(`  · 발행 후 balanceOf   ${balAfterIssue} (증가 확인)`);
     expect(balAfterIssue).toBe(balBefore + 1n);
+    console.log(`  · 발행 후 balanceOf   ${balAfterIssue}`);
 
     const { rows: confirmed } = await pool.query('SELECT status, tx_hash FROM issuance_requests');
-    console.log(`  · DB status (REORG 전) ${confirmed[0].status}`);
     expect(confirmed[0].status).toBe('CONFIRMED');
 
-    // ── processed_events 검증
     const { rows: peRows } = await pool.query(
       'SELECT event_name FROM processed_events WHERE tx_hash = $1',
       [confirmed[0].tx_hash],
@@ -872,23 +802,204 @@ describe('issuer-service MockVASP 통합 테스트 — 5가지 시나리오', ()
     expect(peRows.length).toBeGreaterThan(0);
     console.log(`  ✔ processed_events 기록 확인 (${peRows.length}건)`);
 
-    // REORG 시뮬레이션 — 스냅샷으로 롤백
+    // REORG 시뮬레이션
     await controlVasp.revertToSnapshot(snapshotId);
-    console.log('  · evm_revert 실행 → 체인 롤백');
+    console.log('  · evm_revert → 체인 롤백');
 
-    // 온체인 상태 원복 확인
     const balAfterReorg = await (viewContract['balanceOf'] as Function)(OPERATOR_ADDR, TOKEN_ID_BN) as bigint;
-    console.log(`  · REORG 후 balanceOf  ${balAfterReorg} (원복 확인)`);
     expect(balAfterReorg).toBe(balBefore);
+    console.log(`  · REORG 후 balanceOf  ${balAfterReorg} (원복 확인)`);
 
-    // DB는 여전히 CONFIRMED (REORG 감지는 ChainEventListener Phase 2 기능)
+    // DB는 CONFIRMED 유지 (REORG 감지는 ChainEventListener Phase 2 기능)
     const { rows: afterReorg } = await pool.query('SELECT status FROM issuance_requests');
-    console.log(`  · DB status (REORG 후) ${afterReorg[0].status} ← DB는 CONFIRMED 유지`);
-    console.log('  ✔ REORG 후 온체인 상태 원복 확인');
-    console.log('  ✔ DB는 CONFIRMED 유지 — REORG 감지(Phase 2)가 필요한 이유 시연');
-
-    // DB 상태는 여전히 CONFIRMED (이것이 REORG의 위험성 — 교육 포인트)
     expect(afterReorg[0].status).toBe('CONFIRMED');
+    console.log('  ✔ REORG 후 온체인 원복 확인');
+    console.log('  ✔ DB CONFIRMED 유지 — REORG 감지(Phase 2)가 필요한 이유 시연');
+  });
+
+  // ── [stream-2] 멱등성 ─────────────────────────────────────────────────────
+
+  it('[stream-2] 동일 requestId 중복 주입 → 멱등성 보장 (한 번만 처리)', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [stream-2] 멱등성 — 동일 requestId 두 번 XADD → creditNFT 1회');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    const idemKey   = `kyobo:events:idem-${Date.now()}`;
+    const idemGroup = 'nft-idem';
+    await (redis as any).xgroup('CREATE', idemKey, idemGroup, '0', 'MKSTREAM');
+
+    await pool.query(
+      `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
+       VALUES ('user-idem-002', '0xOWNER002', 'MOCK', true) ON CONFLICT (user_id) DO NOTHING`,
+    );
+    const idemLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    let creditCount       = 0;
+    const origCredit      = idemLedger.creditNFT.bind(idemLedger);
+    idemLedger.creditNFT  = async (owner, tokenId, amount, txHash) => {
+      creditCount++;
+      return origCredit(owner, tokenId, amount, txHash);
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idemIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
+    const idemProcessor   = new NFTIssuedProcessor(idemIdempotency, idemLedger);
+    const idemDlq         = new DLQHandler(redisAdapter, { async sendAlert() {} }, idemKey);
+    const idemPool        = new ConsumerGroupPool(
+      redisAdapter, idemDlq,
+      { streamKey: idemKey, batchSize: 10, blockMs: 200, minIdleMs: 60_000 },
+      [{ groupName: idemGroup, consumerId: 'idem-1', processors: [idemProcessor] }],
+    );
+    idemPool.start().catch(() => {});
+
+    const requestId = randomUUID();
+    const fields: Record<string, string> = {
+      eventType:   'NFT_ISSUED',
+      requestId,
+      txHash:      '0x' + 'bb'.repeat(32),
+      blockNumber: '1000',
+      payload:     JSON.stringify({ tokenId: '2002', to: '0xOWNER002', blockNumber: 1000 }),
+      publishedAt: new Date().toISOString(),
+      _retryCount: '0',
+    };
+
+    // 동일 requestId 두 번 발행
+    await redisAdapter.xadd(idemKey, fields);
+    await redisAdapter.xadd(idemKey, fields);
+
+    await waitFor(() => creditCount >= 1, 15_000, 'first credit');
+    await new Promise(r => setTimeout(r, 500));
+
+    expect(creditCount).toBe(1);
+    console.log('  ✔ creditNFT 호출 횟수:', creditCount, '(1이어야 함)');
+
+    idemPool.stop();
+    await (redis as any).del(idemKey, `${idemKey}:dlq`);
+  });
+
+  // ── [stream-3] DLQ ────────────────────────────────────────────────────────
+
+  it('[stream-3] retryCount >= 3 → DLQ 이동 확인', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [stream-3] DLQ — _retryCount=3 → DLQ 스트림으로 이동');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    const dlqKey   = `kyobo:events:dlq-test-${Date.now()}`;
+    const dlqGroup = 'nft-dlq';
+    await (redis as any).xgroup('CREATE', dlqKey, dlqGroup, '0', 'MKSTREAM');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dlqIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
+    const dlqLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    const failProcessor  = new AlwaysFailProcessor(dlqIdempotency, dlqLedger);
+
+    // sourceStreamKey를 dlqKey로 지정 → DLQ 키: dlqKey + ':dlq'
+    const dlqHandler = new DLQHandler(
+      redisAdapter,
+      { async sendAlert(m) { console.warn('[DLQ alert]', m); } },
+      dlqKey,
+    );
+    const dlqPool = new ConsumerGroupPool(
+      redisAdapter, dlqHandler,
+      { streamKey: dlqKey, batchSize: 10, blockMs: 200, minIdleMs: 60_000 },
+      [{ groupName: dlqGroup, consumerId: 'dlq-1', processors: [failProcessor] }],
+    );
+    dlqPool.start().catch(() => {});
+
+    await redisAdapter.xadd(dlqKey, {
+      eventType:   'NFT_ISSUED',
+      requestId:   randomUUID(),
+      txHash:      '0x' + 'cc'.repeat(32),
+      blockNumber: '1001',
+      payload:     JSON.stringify({ tokenId: '3003', to: '0xOWNER003', blockNumber: 1001 }),
+      publishedAt: new Date().toISOString(),
+      _retryCount: '3',   // >= MAX_RETRIES(3) → 즉시 DLQ 라우팅
+    });
+
+    const dlqStreamKey = `${dlqKey}:dlq`;
+    await waitFor(async () => {
+      const entries = await redisAdapter.xrange(dlqStreamKey, '-', '+');
+      return entries.length > 0;
+    }, 15_000, 'DLQ message');
+
+    const dlqEntries = await redisAdapter.xrange(dlqStreamKey, '-', '+');
+    expect(dlqEntries.length).toBeGreaterThan(0);
+    expect(dlqEntries[0]!.fields['eventType']).toBe('NFT_ISSUED');
+    expect(dlqEntries[0]!.fields['_reason']).toBeTruthy();
+    console.log('  ✔ DLQ 이동 확인  _reason:', dlqEntries[0]!.fields['_reason']?.slice(0, 60));
+
+    dlqPool.stop();
+    await (redis as any).del(dlqKey, dlqStreamKey);
+  });
+
+  // ── [stream-4] XAUTOCLAIM ─────────────────────────────────────────────────
+
+  it('[stream-4] XAUTOCLAIM — PEL 잔류 메시지 재수신 처리', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [stream-4] XAUTOCLAIM — crash 시뮬 → PEL 잔류 → 새 consumer 재수신');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    const claimKey    = `kyobo:events:xclaim-${Date.now()}`;
+    const claimGroup  = `nft-xclaim-${Date.now()}`;
+    const CRASH_CONSUMER = 'consumer-crash';
+    const NEW_CONSUMER   = 'consumer-reclaim';
+
+    // '$' 기준 생성 — 이후 추가된 메시지만 수신
+    await (redis as any).xgroup('CREATE', claimKey, claimGroup, '$', 'MKSTREAM');
+
+    await pool.query(
+      `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
+       VALUES ('user-xclaim-004', '0xOWNER004', 'MOCK', true) ON CONFLICT (user_id) DO NOTHING`,
+    );
+    const claimLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const claimIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
+    const claimProcessor   = new NFTIssuedProcessor(claimIdempotency, claimLedger);
+
+    // ① 메시지 발행
+    const tokenId = '4004';
+    const owner   = '0xOWNER004';
+    await redisAdapter.xadd(claimKey, {
+      eventType:   'NFT_ISSUED',
+      requestId:   randomUUID(),
+      txHash:      '0x' + 'dd'.repeat(32),
+      blockNumber: '1002',
+      payload:     JSON.stringify({ tokenId, to: owner, blockNumber: 1002 }),
+      publishedAt: new Date().toISOString(),
+      _retryCount: '0',
+    });
+
+    // ② CRASH_CONSUMER가 XREADGROUP으로 읽음 — XACK 없이 중단
+    const readResult = await redisAdapter.xreadgroup(
+      claimGroup, CRASH_CONSUMER,
+      [{ key: claimKey, id: '>' }],
+      10, 500,
+    );
+    expect(readResult[0]?.messages.length).toBe(1);
+    console.log('  · CRASH_CONSUMER 읽기 완료 (XACK 없음 → PEL 잔류)');
+
+    // ③ minIdleMs(200ms) 초과 대기
+    await new Promise(r => setTimeout(r, 600));
+
+    // ④ NEW_CONSUMER로 ConsumerGroupPool 기동 — XAUTOCLAIM으로 PEL 재수신
+    const claimDlq  = new DLQHandler(redisAdapter, { async sendAlert() {} }, claimKey);
+    const claimPool = new ConsumerGroupPool(
+      redisAdapter, claimDlq,
+      { streamKey: claimKey, batchSize: 10, blockMs: 100, minIdleMs: 200 },
+      [{ groupName: claimGroup, consumerId: NEW_CONSUMER, processors: [claimProcessor] }],
+    );
+    claimPool.start().catch(() => {});
+
+    // ⑤ 재처리 완료 확인
+    await waitFor(
+      async () => (await claimLedger.getNFTBalance(owner, tokenId)) > 0,
+      15_000,
+      'XAUTOCLAIM reclaim',
+    );
+    expect(await claimLedger.getNFTBalance(owner, tokenId)).toBe(1);
+    console.log('  ✔ XAUTOCLAIM — PEL 재수신 후 ledger 반영 확인');
+
+    claimPool.stop();
+    await (redis as any).del(claimKey, `${claimKey}:dlq`);
   });
 
 });

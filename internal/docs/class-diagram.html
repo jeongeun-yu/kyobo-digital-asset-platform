@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Kyobo DAP — Class Diagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',system-ui,sans-serif; }
+    header {
+      padding:18px 32px 12px; border-bottom:1px solid #21262d;
+      display:flex; align-items:baseline; gap:12px;
+    }
+    header h1 { font-size:17px; font-weight:600; color:#f0f6fc; }
+    header small { font-size:12px; color:#484f58; }
+    .legend {
+      display:flex; gap:18px; flex-wrap:wrap;
+      padding:9px 32px; border-bottom:1px solid #21262d; background:#010409;
+    }
+    .li { display:flex; align-items:center; gap:6px; font-size:12px; color:#8b949e; }
+    .dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+    .tabs {
+      display:flex; gap:2px; padding:10px 32px 0; flex-wrap:wrap;
+      background:#010409; border-bottom:1px solid #21262d;
+    }
+    .tab {
+      padding:6px 14px; font-size:12px; color:#8b949e; cursor:pointer;
+      border-radius:6px 6px 0 0; border:1px solid transparent; border-bottom:none;
+      transition:all .15s; user-select:none; margin-bottom:-1px;
+    }
+    .tab:hover { color:#c9d1d9; background:#161b22; }
+    .tab.active { color:#e6edf3; background:#0d1117; border-color:#30363d; }
+    .panel { display:none; padding:20px 32px 48px; }
+    .panel.active { display:block; }
+    .wrap {
+      background:#161b22; border:1px solid #30363d;
+      border-radius:10px; padding:24px; overflow:auto; min-height:200px;
+    }
+    .wrap svg { max-width:none !important; }
+    .err { color:#f85149; font-size:13px; font-family:monospace; white-space:pre-wrap; }
+    .loading { color:#484f58; font-size:13px; padding:16px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Kyobo Digital Asset Platform</h1>
+  <small>internal/ · Class Relationship Diagram</small>
+</header>
+
+<div class="legend">
+  <div class="li"><div class="dot" style="background:#58a6ff"></div>chain-adapters</div>
+  <div class="li"><div class="dot" style="background:#bc8cff"></div>event-engine</div>
+  <div class="li"><div class="dot" style="background:#3fb950"></div>vasp</div>
+  <div class="li"><div class="dot" style="background:#d29922"></div>core-banking</div>
+  <div class="li"><div class="dot" style="background:#f778ba"></div>compliance</div>
+  <div class="li"><div class="dot" style="background:#79c0ff"></div>issuer-service</div>
+  <div class="li"><div class="dot" style="background:#484f58"></div>interface</div>
+  <div class="li" style="margin-left:auto;font-size:11px;color:#484f58">
+    ◁|— 상속 &nbsp;·&nbsp; ◁|.. 구현 &nbsp;·&nbsp; ◆— 컴포지션 &nbsp;·&nbsp; ..> 의존
+  </div>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<div id="panels"></div>
+
+<script>
+// ── Tab/panel factory ──────────────────────────────────────────────────────────
+const TABS = [
+  { key:'full',    label:'전체 구조'       },
+  { key:'chain',   label:'chain-adapters'  },
+  { key:'ee',      label:'event-engine'    },
+  { key:'vasp',    label:'vasp'            },
+  { key:'cb',      label:'core-banking'    },
+  { key:'comp',    label:'compliance'      },
+  { key:'issuer',  label:'issuer-service'  },
+  { key:'stream',  label:'Stream Pipeline' },
+  { key:'tx',      label:'TX State Machine'},
+  { key:'boot',    label:'Bootstrap 주입'  },
+];
+
+const tabsEl   = document.getElementById('tabs');
+const panelsEl = document.getElementById('panels');
+TABS.forEach(({key, label}, i) => {
+  const tab = document.createElement('div');
+  tab.className = 'tab' + (i === 0 ? ' active' : '');
+  tab.dataset.tab = key;
+  tab.textContent = label;
+  tabsEl.appendChild(tab);
+
+  const panel = document.createElement('div');
+  panel.id        = 'panel-' + key;
+  panel.className = 'panel' + (i === 0 ? ' active' : '');
+  panel.innerHTML = '<div class="wrap loading" id="d-' + key + '">렌더링 중...</div>';
+  panelsEl.appendChild(panel);
+});
+
+tabsEl.addEventListener('click', e => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+});
+
+// ── Diagram sources (inline style syntax: class Name:::style { }) ──────────────
+const D = {};
+
+// ════════════════════════════════════════════════════════════════════════════════
+// 전체 구조
+// ════════════════════════════════════════════════════════════════════════════════
+D.full = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef chain fill:#0d2d4a,stroke:#58a6ff,color:#cae8ff
+  classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
+  classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
+  classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
+  classDef comp  fill:#2a0d1e,stroke:#f778ba,color:#ffb3d9
+  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+
+  class IBlockchainAdapter:::iface {
+    <<interface>>
+    +mintNFT(to, tokenId, uri)
+    +queryEvents(addr, abi, eventName)
+    +getBlockNumber()
+    +sendTransaction(params)
+  }
+  class EVMAdapter:::chain {
+    -rpcUrl string
+    -wallet Wallet
+    +mintNFT(to, tokenId, uri)
+  }
+  class AdapterDecorator:::chain {
+    <<abstract>>
+    #inner IBlockchainAdapter
+  }
+  class LoggingAdapterDecorator:::chain
+  class RetryAdapterDecorator:::chain
+  IBlockchainAdapter <|.. EVMAdapter
+  IBlockchainAdapter <|.. AdapterDecorator
+  AdapterDecorator <|-- LoggingAdapterDecorator
+  AdapterDecorator <|-- RetryAdapterDecorator
+
+  class IdempotencyStore:::iface {
+    <<interface>>
+    +tryMark(key, ttl)
+    +unmark(key)
+  }
+  class EventProcessor:::iface {
+    <<interface>>
+    +eventTypes string[]
+    +process(msg)
+  }
+  class IEventHandler:::iface {
+    <<interface>>
+    +handle(event)
+  }
+  class LedgerService:::iface {
+    <<interface>>
+    +creditNFT(wallet, tokenId, amount, txHash)
+    +getNFTBalance(wallet, tokenId)
+  }
+  class IActivityIssuer:::iface {
+    <<interface>>
+    +issueActivityNFT(payload)
+  }
+  class IdempotencyGuard:::ee {
+    -store IdempotencyStore
+    +run(key, fn)
+  }
+  class RedisIdempotencyStore:::ee {
+    +tryMark(key, ttl)
+    +unmark(key)
+  }
+  class ChainEventListener:::ee {
+    +start()
+    +stop()
+  }
+  class NFTIssuedHandler:::ee {
+    +handle(event)
+  }
+  class WebhookServer:::ee {
+    +on(eventType, handler)
+    +listen()
+  }
+  class WebhookPublishHandler:::ee {
+    +createHandler()
+  }
+  class RedisStreamPublisher:::ee {
+    +publish(event)
+    +initialize(groupName)
+  }
+  class ConsumerGroupPool:::ee {
+    +start()
+    +stop()
+  }
+  class NFTIssuedProcessor:::ee {
+    +process(msg)
+  }
+  class ActivityProcessor:::ee {
+    +process(msg)
+  }
+  IdempotencyStore <|.. RedisIdempotencyStore
+  IEventHandler <|.. NFTIssuedHandler
+  EventProcessor <|.. NFTIssuedProcessor
+  EventProcessor <|.. ActivityProcessor
+  IdempotencyGuard *-- IdempotencyStore
+  ChainEventListener *-- IBlockchainAdapter
+  ChainEventListener *-- IEventHandler
+  WebhookPublishHandler *-- RedisStreamPublisher
+  WebhookPublishHandler *-- IdempotencyGuard
+  ConsumerGroupPool *-- NFTIssuedProcessor
+  ConsumerGroupPool *-- ActivityProcessor
+  NFTIssuedProcessor *-- IdempotencyGuard
+  NFTIssuedProcessor *-- LedgerService
+  ActivityProcessor *-- IdempotencyGuard
+  ActivityProcessor *-- IActivityIssuer
+
+  class IVASPAdapter:::iface {
+    <<interface>>
+    +submitTransaction(params)
+    +screenAddress(addr)
+  }
+  class ExternalVASPAdapter:::vasp {
+    +submitTransaction(params)
+    +screenAddress(addr)
+  }
+  class KyoboVASPAdapter:::vasp {
+    +submitTransaction(params)
+  }
+  class TxStateMachineService:::vasp {
+    +submitMintRequest(req)
+    +updateStatus(txHash, status)
+  }
+  class PgTxRepository:::vasp {
+    +save(tx)
+    +updateStatus(id, status)
+  }
+  IVASPAdapter <|.. ExternalVASPAdapter
+  IVASPAdapter <|.. KyoboVASPAdapter
+  TxStateMachineService *-- PgTxRepository
+  TxStateMachineService ..> IVASPAdapter : submits TX
+
+  class ICoreBankingAdapter:::iface {
+    <<interface>>
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+  }
+  class KyoboCoreBankingAdapter:::cb {
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+  }
+  class InternalGatewayClient:::cb {
+    +getUserAccount(userId)
+    +health()
+  }
+  class CircuitBreaker:::cb {
+    +execute(fn)
+    +getState()
+  }
+  class CoreBankingLedgerService:::cb {
+    +createMintRequest(params)
+    +updateMintRequest(id, status)
+  }
+  ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
+  KyoboCoreBankingAdapter *-- InternalGatewayClient
+  InternalGatewayClient *-- CircuitBreaker
+  CoreBankingLedgerService *-- ICoreBankingAdapter
+
+  class IKYCProvider:::iface {
+    <<interface>>
+    +getStatus(userId)
+    +verify(userId)
+  }
+  class ISMSChecklist:::comp {
+    +runAll()
+    +getSummary(results)
+  }
+  class InvestorRegistryService:::comp {
+    +registerInvestor(userId)
+    +canAccept(userId, amount)
+  }
+  IKYCProvider <|.. InvestorRegistryService
+
+  class IssuerService:::is {
+    +issueActivityNFT(payload)
+    +handleVaspTxFailed(params)
+  }
+  class TokenIssuerFactory:::is {
+    +createNFTIssuer(addr, condSvc)
+  }
+  class EventConditionService:::is {
+    +evaluate(event, policy)
+  }
+  class PgIssuanceRequestRepository:::is {
+    +create(req)
+    +updateStatus(id, status)
+  }
+  class IssuanceConfirmHandler:::is {
+    +handle(event)
+  }
+  class PgNFTLedgerService:::is {
+    +creditNFT(wallet, tokenId, amount, txHash)
+    +getNFTBalance(wallet, tokenId)
+  }
+  class ActivityRouter:::is {
+    +register(server)
+  }
+  LedgerService <|.. PgNFTLedgerService
+  IEventHandler <|.. IssuanceConfirmHandler
+  IActivityIssuer <|.. IssuerService
+  IssuerService *-- IVASPAdapter
+  IssuerService *-- ICoreBankingAdapter
+  IssuerService *-- EventConditionService
+  IssuerService *-- PgIssuanceRequestRepository
+  IssuerService *-- TxStateMachineService
+  TokenIssuerFactory ..> IssuerService : creates
+  ActivityRouter *-- IssuerService
+  ActivityRouter *-- IdempotencyGuard
+  ActivityProcessor ..> IssuerService : calls
+  WebhookServer --> ActivityRouter : dispatches
+  WebhookServer --> WebhookPublishHandler : routes`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// chain-adapters
+// ════════════════════════════════════════════════════════════════════════════════
+D.chain = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef chain fill:#0d2d4a,stroke:#58a6ff,color:#cae8ff
+
+  class IBlockchainAdapter:::iface {
+    <<interface>>
+    +chainId string
+    +chainType string
+    +mintNFT(to, tokenId, uri)
+    +mintNFTBatch(recipients, tokenIds)
+    +burnNFT(tokenId)
+    +getBalance(addr, tokenId)
+    +call(params)
+    +sendTransaction(params)
+    +getBlockNumber()
+    +getReceipt(txHash)
+    +queryEvents(addr, abi, eventName)
+    +subscribeEvents(contracts, handler)
+  }
+  class IBlockchainAdapterV3:::iface {
+    <<interface>>
+    +getFeeParams()
+    +getRpcDegradeMode()
+  }
+  class AdapterDecorator:::chain {
+    <<abstract>>
+    #inner IBlockchainAdapter
+    +All methods — delegates to inner
+  }
+  class LoggingAdapterDecorator:::chain {
+    +All methods — logs then delegates
+  }
+  class RetryAdapterDecorator:::chain {
+    -maxRetries number
+    -delayMs number
+    +All methods — retries on failure
+  }
+  class EVMAdapter:::chain {
+    -rpcUrl string
+    -chainId string
+    -wallet Wallet
+    -provider JsonRpcProvider
+    +mintNFT(to, tokenId, uri)
+    +mintNFTBatch(recipients, tokenIds)
+    +burnNFT(tokenId)
+    +getBalance(addr, tokenId)
+    +sendTransaction(params)
+    +queryEvents(addr, abi, eventName)
+    +subscribeEvents(contracts, handler)
+    +getBlockNumber()
+    +getReceipt(txHash)
+  }
+  class XRPLAdapter:::chain {
+    +mintNFT(to, tokenId, uri)
+    +queryEvents(addr, abi, eventName)
+  }
+  class UTXOAdapter:::chain {
+    +mintNFT(to, tokenId, uri)
+    +queryEvents(addr, abi, eventName)
+  }
+  class CircleAdapter:::chain {
+    +mintNFT(to, tokenId, uri)
+    +queryEvents(addr, abi, eventName)
+  }
+  class ChainAdapterFactory:::chain {
+    +create(config) IBlockchainAdapter
+    +createFromEnv() IBlockchainAdapter
+  }
+
+  IBlockchainAdapter <|-- IBlockchainAdapterV3
+  IBlockchainAdapter <|.. EVMAdapter
+  IBlockchainAdapter <|.. XRPLAdapter
+  IBlockchainAdapter <|.. UTXOAdapter
+  IBlockchainAdapter <|.. CircleAdapter
+  IBlockchainAdapter <|.. AdapterDecorator
+  AdapterDecorator <|-- LoggingAdapterDecorator
+  AdapterDecorator <|-- RetryAdapterDecorator
+  ChainAdapterFactory ..> IBlockchainAdapter : creates`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// event-engine
+// ════════════════════════════════════════════════════════════════════════════════
+D.ee = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
+
+  class IdempotencyStore:::iface {
+    <<interface>>
+    +tryMark(key, ttl)
+    +unmark(key)
+  }
+  class IdempotencyGuard:::ee {
+    -store IdempotencyStore
+    -ttlSeconds number
+    +run(key, fn)
+  }
+  class InMemoryIdempotencyStore:::ee {
+    -map Map
+    +tryMark(key, ttl)
+    +unmark(key)
+  }
+  class RedisIdempotencyStore:::ee {
+    -redis RedisClient
+    +tryMark(key, ttl)
+    +unmark(key)
+  }
+  IdempotencyStore <|.. InMemoryIdempotencyStore
+  IdempotencyStore <|.. RedisIdempotencyStore
+  IdempotencyGuard *-- IdempotencyStore
+
+  class WebhookServer:::ee {
+    -port number
+    -secret string
+    +on(eventType, handler)
+    +listen()
+    +close()
+  }
+  class WebhookPublishHandler:::ee {
+    -publisher RedisStreamPublisher
+    -idempotency IdempotencyGuard
+    +createHandler()
+  }
+  class RetryHandler:::ee {
+    -config RetryConfig
+    -dlq DeadLetterQueue
+    +send(event)
+  }
+  class DeadLetterQueue:::ee {
+    -store DLQStore
+    +push(item)
+  }
+  class DLQStore:::iface {
+    <<interface>>
+    +save(item)
+  }
+  DLQStore <|.. DeadLetterQueue
+  RetryHandler *-- DeadLetterQueue
+  WebhookPublishHandler *-- IdempotencyGuard
+
+  class RedisStreamClient:::iface {
+    <<interface>>
+    +xadd(key, fields)
+    +xgroupCreate(key, group, startId)
+    +ping()
+  }
+  class RedisConsumerClient:::iface {
+    <<interface>>
+    +xreadgroup(group, consumer, streams, count, blockMs)
+    +xack(key, group, ids)
+    +xautoclaim(key, group, consumer, minIdle, startId)
+    +xrange(key, start, end)
+  }
+  class RedisStreamPublisher:::ee {
+    -redis RedisStreamClient
+    +publish(event)
+    +initialize(groupName)
+    +ping()
+  }
+  class ConsumerGroupWorker:::ee {
+    -redis RedisConsumerClient
+    -processors EventProcessor[]
+    -dlq DLQHandler
+    -config WorkerConfig
+    +start()
+    +stop()
+  }
+  class ConsumerGroupPool:::ee {
+    -workers ConsumerGroupWorker[]
+    +start()
+    +stop()
+  }
+  class DLQHandler:::ee {
+    -redis RedisConsumerClient
+    +move(item)
+  }
+  RedisStreamPublisher *-- RedisStreamClient
+  WebhookPublishHandler *-- RedisStreamPublisher
+  ConsumerGroupPool *-- ConsumerGroupWorker
+  ConsumerGroupWorker *-- RedisConsumerClient
+  ConsumerGroupWorker *-- DLQHandler
+
+  class EventProcessor:::iface {
+    <<interface>>
+    +eventTypes string[]
+    +process(msg)
+  }
+  class IEventHandler:::iface {
+    <<interface>>
+    +handle(event)
+  }
+  class LedgerService:::iface {
+    <<interface>>
+    +creditNFT(wallet, tokenId, amount, txHash)
+    +getNFTBalance(wallet, tokenId)
+  }
+  class IActivityIssuer:::iface {
+    <<interface>>
+    +issueActivityNFT(payload)
+  }
+  class NFTIssuedProcessor:::ee {
+    +eventTypes string[]
+    -idempotency IdempotencyGuard
+    -ledger LedgerService
+    +process(msg)
+  }
+  class ActivityProcessor:::ee {
+    +eventTypes string[]
+    -idempotency IdempotencyGuard
+    -issuer IActivityIssuer
+    +process(msg)
+  }
+  class CouponProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class NFTBurnedProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class NFTTransferredProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  EventProcessor <|.. NFTIssuedProcessor
+  EventProcessor <|.. ActivityProcessor
+  EventProcessor <|.. CouponProcessor
+  EventProcessor <|.. NFTBurnedProcessor
+  EventProcessor <|.. NFTTransferredProcessor
+  ConsumerGroupWorker *-- EventProcessor
+  NFTIssuedProcessor *-- IdempotencyGuard
+  NFTIssuedProcessor *-- LedgerService
+  ActivityProcessor *-- IdempotencyGuard
+  ActivityProcessor *-- IActivityIssuer
+
+  class ChainEventListener:::ee {
+    -adapter IBlockchainAdapter
+    -handlers IEventHandler[]
+    -contracts ContractConfig[]
+    +start()
+    +stop()
+  }
+  class NFTIssuedHandler:::ee {
+    -contractAddr string
+    -idempotency IdempotencyGuard
+    -retry RetryHandler
+    +handle(event)
+  }
+  IEventHandler <|.. NFTIssuedHandler
+  ChainEventListener *-- IEventHandler
+  NFTIssuedHandler *-- IdempotencyGuard
+  NFTIssuedHandler *-- RetryHandler`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// vasp
+// ════════════════════════════════════════════════════════════════════════════════
+D.vasp = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
+
+  class IVASPAdapter:::iface {
+    <<interface>>
+    +submitTransaction(params)
+    +screenAddress(addr)
+    +createWallet(userId)
+    +getWallet(userId)
+    +transfer(params)
+    +getTransferStatus(id)
+  }
+  class ExternalVASPAdapter:::vasp {
+    -baseUrl string
+    -apiKey string
+    +submitTransaction(params)
+    +screenAddress(addr)
+    +createWallet(userId)
+    +getWallet(userId)
+    +transfer(params)
+    +getTransferStatus(id)
+  }
+  class KyoboVASPAdapter:::vasp {
+    +submitTransaction(params)
+    +screenAddress(addr)
+    +createWallet(userId)
+    +getWallet(userId)
+    +transfer(params)
+    +getTransferStatus(id)
+  }
+  IVASPAdapter <|.. ExternalVASPAdapter
+  IVASPAdapter <|.. KyoboVASPAdapter
+
+  class TxRepository:::iface {
+    <<interface>>
+    +save(tx)
+    +findById(id)
+    +findByTxHash(hash)
+    +updateStatus(id, status)
+    +findPendingOlderThan(ms)
+  }
+  class PgTxRepository:::vasp {
+    -pool Pool
+    +save(tx)
+    +findById(id)
+    +findByTxHash(hash)
+    +updateStatus(id, status)
+    +findPendingOlderThan(ms)
+  }
+  TxRepository <|.. PgTxRepository
+
+  class VaspTxClient:::iface {
+    <<interface>>
+    +submitMint(req)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash)
+  }
+  class VaspTxClientAdapter:::vasp {
+    -vaspAdapter IVASPAdapter
+    +submitMint(req)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash)
+  }
+  VaspTxClient <|.. VaspTxClientAdapter
+  VaspTxClientAdapter *-- IVASPAdapter
+
+  class TxStateMachineService:::vasp {
+    -repo TxRepository
+    -vaspClient VaspTxClient
+    +submitMintRequest(req)
+    +updateStatus(txHash, status)
+    +pollStaleRequests()
+    +addEventListener(fn)
+  }
+  TxStateMachineService *-- TxRepository
+  TxStateMachineService *-- VaspTxClient
+
+  class NonceManager:::vasp {
+    -strategy NonceStrategy
+    +allocate()
+    +release(nonce)
+    +detectGap()
+  }
+  class Broadcaster:::vasp {
+    -attemptRepo TxAttemptRepository
+    +broadcast(tx)
+    +broadcastPending()
+  }
+  class ConfirmationTracker:::vasp {
+    +track(txHash)
+    +detectReorg(blockHash)
+  }
+  class VaspRecoveryService:::vasp {
+    +recover(txHash)
+    +handleStale(tx)
+  }
+  class WhitelistAddressService:::vasp {
+    +isWhitelisted(addr)
+    +add(addr)
+  }
+  class KeyGovernanceService:::vasp {
+    +sign(payload)
+    +rotate()
+  }`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// core-banking
+// ════════════════════════════════════════════════════════════════════════════════
+D.cb = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
+
+  class ICoreBankingAdapter:::iface {
+    <<interface>>
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+    +syncBalance(userId)
+    +recordTransaction(params)
+    +recordNftHolding(params)
+    +recordAuditLog(log)
+  }
+  class KyoboCoreBankingAdapter:::cb {
+    -gateway InternalGatewayClient
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+    +syncBalance(userId)
+    +recordTransaction(params)
+    +recordNftHolding(params)
+    +recordAuditLog(log)
+  }
+  class StubCoreBankingAdapter:::cb {
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+  }
+  ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
+  ICoreBankingAdapter <|.. StubCoreBankingAdapter
+
+  class InternalGatewayClient:::cb {
+    -baseUrl string
+    -secret string
+    -circuitBreaker CircuitBreaker
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+    +recordNftHolding(params)
+    +recordAuditLog(log)
+    +health()
+  }
+  class CircuitBreaker:::cb {
+    -state string
+    -failureThreshold number
+    -successThreshold number
+    -timeout number
+    +execute(fn)
+    +getState()
+    +reset()
+  }
+  KyoboCoreBankingAdapter *-- InternalGatewayClient
+  InternalGatewayClient *-- CircuitBreaker
+
+  class DatabaseClient:::iface {
+    <<interface>>
+    +query(sql, params)
+    +transaction(fn)
+  }
+  class PgDatabaseClient:::cb {
+    -pool Pool
+    +query(sql, params)
+    +transaction(fn)
+  }
+  DatabaseClient <|.. PgDatabaseClient
+
+  class CoreBankingLedgerService:::cb {
+    -db DatabaseClient
+    -coreBanking ICoreBankingAdapter
+    +createMintRequest(params)
+    +updateMintRequest(id, status)
+    +findMintRequest(id)
+    +updateStatus(id, status)
+  }
+  class AuditLogService:::cb {
+    -db DatabaseClient
+    -coreBanking ICoreBankingAdapter
+    +log(event)
+    +query(filter)
+  }
+  class ReconcileService:::cb {
+    -ledger CoreBankingLedgerService
+    -coreBanking ICoreBankingAdapter
+    +reconcile()
+    +detectDiscrepancy()
+  }
+  class KDEPAdapter:::cb {
+    +settle(amount, currency)
+    +getRate()
+  }
+  CoreBankingLedgerService *-- DatabaseClient
+  CoreBankingLedgerService *-- ICoreBankingAdapter
+  AuditLogService *-- DatabaseClient
+  AuditLogService *-- ICoreBankingAdapter
+  ReconcileService *-- CoreBankingLedgerService
+  ReconcileService *-- ICoreBankingAdapter`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// compliance
+// ════════════════════════════════════════════════════════════════════════════════
+D.comp = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef comp  fill:#2a0d1e,stroke:#f778ba,color:#ffb3d9
+
+  class IKYCProvider:::iface {
+    <<interface>>
+    +getStatus(userId)
+    +verify(userId)
+  }
+  class ISMSChecklist:::comp {
+    -rpcUrl string
+    -nftContractAddr string
+    -contractCall fn
+    -queryLatestAuditLog fn
+    +runAll()
+    +getSummary(results)
+  }
+  class InvestorRegistryService:::comp {
+    -kyc IKYCProvider
+    -onchain OnchainClient
+    +registerInvestor(userId)
+    +canAccept(userId, amount)
+    +getRegistry()
+  }
+  class LockupPolicyService:::comp {
+    +getLockupPeriod(tokenId)
+    +isLocked(tokenId, timestamp)
+    +setLockup(tokenId, period)
+  }
+  class PermissiveComplianceAdapter:::comp {
+    +validate(tx)
+    +checkLimits(userId, amount)
+    +screenTransaction(params)
+  }
+  IKYCProvider <|.. InvestorRegistryService
+  ISMSChecklist ..> IKYCProvider : uses
+  InvestorRegistryService *-- IKYCProvider`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// issuer-service
+// ════════════════════════════════════════════════════════════════════════════════
+D.issuer = `classDiagram
+  direction LR
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
+  classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
+  classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
+  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+
+  class WebhookServer:::ee {
+    +on(eventType, handler)
+    +listen()
+    +close()
+  }
+  class ActivityRouter:::is {
+    -issuerService IssuerService
+    -idempotency IdempotencyGuard
+    +register(server)
+  }
+  class IdempotencyGuard:::ee {
+    -store IdempotencyStore
+    +run(key, fn)
+  }
+  class IssuerService:::is {
+    +issueActivityNFT(payload)
+    +handleVaspTxFailed(params)
+    +findPending()
+  }
+  class IssuancePolicyService:::is {
+    +getPolicy(eventType)
+  }
+  class EventConditionService:::is {
+    +evaluate(event, policy)
+  }
+  class ActivityConditionStrategy:::is {
+    +evaluate(event, policy)
+  }
+  class CouponConditionStrategy:::is {
+    +evaluate(event, policy)
+  }
+  class PgIssuanceRequestRepository:::is {
+    +create(req)
+    +findPending()
+    +updateStatus(id, status)
+    +setWalletAddr(id, addr)
+  }
+  class TxStateMachineService:::vasp {
+    +submitMintRequest(req)
+    +updateStatus(txHash, status)
+    +pollStaleRequests()
+  }
+  class IVASPAdapter:::iface {
+    <<interface>>
+    +submitTransaction(params)
+    +screenAddress(addr)
+  }
+  class ExternalVASPAdapter:::vasp {
+    +submitTransaction(params)
+    +screenAddress(addr)
+  }
+  class ICoreBankingAdapter:::iface {
+    <<interface>>
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+  }
+  class KyoboCoreBankingAdapter:::cb {
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+  }
+  class TokenIssuerFactory:::is {
+    +createNFTIssuer(addr, condSvc)
+  }
+  class IssuanceConfirmHandler:::is {
+    +handle(event)
+  }
+  class PgNFTLedgerService:::is {
+    +creditNFT(wallet, tokenId)
+    +getNFTBalance(wallet, tokenId)
+  }
+  IVASPAdapter <|.. ExternalVASPAdapter
+  ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
+  EventConditionService *-- ActivityConditionStrategy
+  EventConditionService *-- CouponConditionStrategy
+  IssuerService *-- IssuancePolicyService
+  IssuerService *-- EventConditionService
+  IssuerService *-- PgIssuanceRequestRepository
+  IssuerService *-- TxStateMachineService
+  IssuerService *-- IVASPAdapter
+  IssuerService *-- ICoreBankingAdapter
+  TxStateMachineService ..> IVASPAdapter : submits TX
+  WebhookServer --> ActivityRouter : dispatches
+  ActivityRouter *-- IssuerService
+  ActivityRouter *-- IdempotencyGuard
+  TokenIssuerFactory ..> IssuerService : creates
+  IssuanceConfirmHandler --> PgIssuanceRequestRepository : CONFIRMED
+  IssuanceConfirmHandler --> PgNFTLedgerService : creditNFT`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Stream Pipeline
+// ════════════════════════════════════════════════════════════════════════════════
+D.stream = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
+  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+
+  class WebhookServer:::ee {
+    +on(eventType, handler)
+    +listen()
+  }
+  class WebhookPublishHandler:::ee {
+    +createHandler()
+  }
+  class IdempotencyGuard:::ee {
+    +run(key, fn)
+  }
+  class RedisStreamPublisher:::ee {
+    +publish(event)
+    +initialize(groupName)
+  }
+  class RedisStreamClient:::iface {
+    <<interface>>
+    +xadd(key, fields)
+    +xgroupCreate(key, group, startId)
+  }
+  class ConsumerGroupPool:::ee {
+    +start()
+    +stop()
+  }
+  class ConsumerGroupWorker:::ee {
+    +start()
+    +stop()
+  }
+  class RedisConsumerClient:::iface {
+    <<interface>>
+    +xreadgroup(group, consumer, streams, count, blockMs)
+    +xack(key, group, ids)
+    +xautoclaim(key, group, consumer, minIdle, startId)
+  }
+  class DLQHandler:::ee {
+    +move(item)
+  }
+  class EventProcessor:::iface {
+    <<interface>>
+    +eventTypes string[]
+    +process(msg)
+  }
+  class NFTIssuedProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class ActivityProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class LedgerService:::iface {
+    <<interface>>
+    +creditNFT(wallet, tokenId)
+    +getNFTBalance(wallet, tokenId)
+  }
+  class PgNFTLedgerService:::is {
+    +creditNFT(wallet, tokenId)
+    +getNFTBalance(wallet, tokenId)
+  }
+  class IActivityIssuer:::iface {
+    <<interface>>
+    +issueActivityNFT(payload)
+  }
+  class IssuerService:::is {
+    +issueActivityNFT(payload)
+  }
+  EventProcessor <|.. NFTIssuedProcessor
+  EventProcessor <|.. ActivityProcessor
+  LedgerService <|.. PgNFTLedgerService
+  IActivityIssuer <|.. IssuerService
+  WebhookServer --> WebhookPublishHandler : routes
+  WebhookPublishHandler *-- RedisStreamPublisher
+  WebhookPublishHandler *-- IdempotencyGuard
+  RedisStreamPublisher *-- RedisStreamClient
+  ConsumerGroupPool *-- ConsumerGroupWorker
+  ConsumerGroupWorker *-- RedisConsumerClient
+  ConsumerGroupWorker *-- EventProcessor
+  ConsumerGroupWorker *-- DLQHandler
+  NFTIssuedProcessor *-- IdempotencyGuard
+  NFTIssuedProcessor *-- LedgerService
+  ActivityProcessor *-- IdempotencyGuard
+  ActivityProcessor *-- IActivityIssuer`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// TX State Machine
+// ════════════════════════════════════════════════════════════════════════════════
+D.tx = `classDiagram
+  direction LR
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
+  classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
+
+  class TxStateMachineService:::vasp {
+    -repo TxRepository
+    -vaspClient VaspTxClient
+    +submitMintRequest(req)
+    +updateStatus(txHash, status)
+    +pollStaleRequests()
+    +addEventListener(fn)
+  }
+  class TxRepository:::iface {
+    <<interface>>
+    +save(tx)
+    +findByTxHash(hash)
+    +updateStatus(id, status)
+    +findPendingOlderThan(ms)
+  }
+  class PgTxRepository:::vasp {
+    -pool Pool
+    +save(tx)
+    +findByTxHash(hash)
+    +updateStatus(id, status)
+    +findPendingOlderThan(ms)
+  }
+  class VaspTxClient:::iface {
+    <<interface>>
+    +submitMint(req)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash)
+  }
+  class VaspTxClientAdapter:::vasp {
+    -vaspAdapter IVASPAdapter
+    +submitMint(req)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash)
+  }
+  class IVASPAdapter:::iface {
+    <<interface>>
+    +submitTransaction(params)
+    +screenAddress(addr)
+  }
+  class ExternalVASPAdapter:::vasp {
+    -baseUrl string
+    -apiKey string
+    +submitTransaction(params)
+  }
+  class KyoboVASPAdapter:::vasp {
+    +submitTransaction(params)
+  }
+  class ICoreBankingAdapter:::iface {
+    <<interface>>
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+    +recordNftHolding(params)
+  }
+  class KyoboCoreBankingAdapter:::cb {
+    -gateway InternalGatewayClient
+    +getUserAccount(userId)
+    +notifyReward(userId, nftId)
+  }
+  class InternalGatewayClient:::cb {
+    -baseUrl string
+    -circuitBreaker CircuitBreaker
+    +getUserAccount(userId)
+    +health()
+  }
+  class CircuitBreaker:::cb {
+    -state string
+    -failureCount number
+    +execute(fn)
+    +getState()
+    +reset()
+  }
+  class CoreBankingLedgerService:::cb {
+    -db DatabaseClient
+    -coreBanking ICoreBankingAdapter
+    +createMintRequest(params)
+    +updateMintRequest(id, status)
+    +findMintRequest(id)
+  }
+  TxRepository <|.. PgTxRepository
+  VaspTxClient <|.. VaspTxClientAdapter
+  IVASPAdapter <|.. ExternalVASPAdapter
+  IVASPAdapter <|.. KyoboVASPAdapter
+  ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
+  TxStateMachineService *-- TxRepository
+  TxStateMachineService *-- VaspTxClient
+  VaspTxClientAdapter *-- IVASPAdapter
+  KyoboCoreBankingAdapter *-- InternalGatewayClient
+  InternalGatewayClient *-- CircuitBreaker
+  CoreBankingLedgerService *-- ICoreBankingAdapter`;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Bootstrap / 의존성 주입 (index.ts)
+// ════════════════════════════════════════════════════════════════════════════════
+D.boot = `classDiagram
+  direction TB
+  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
+  classDef chain fill:#0d2d4a,stroke:#58a6ff,color:#cae8ff
+  classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
+  classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
+  classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
+  classDef comp  fill:#2a0d1e,stroke:#f778ba,color:#ffb3d9
+  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef infra fill:#1a1a1a,stroke:#6e7681,color:#8b949e
+
+  class Redis:::infra {
+    ioredis instance
+  }
+  class Pool:::infra {
+    pg.Pool instance
+  }
+  class EVMAdapter:::chain {
+    rpcUrl RPC_URL
+    chainId CHAIN_ID
+    privateKey OPERATOR_PRIVATE_KEY
+  }
+  class ExternalVASPAdapter:::vasp {
+    baseUrl VASP_API_URL
+    apiKey VASP_API_KEY
+  }
+  class InternalGatewayClient:::cb {
+    baseUrl CORE_BANKING_URL
+    secret CORE_BANKING_SECRET
+  }
+  class KyoboCoreBankingAdapter:::cb {
+    gateway InternalGatewayClient
+  }
+  class RedisIdempotencyStore:::ee {
+    redis Redis
+  }
+  class IdempotencyGuard:::ee {
+    store RedisIdempotencyStore
+  }
+  class DeadLetterQueue:::ee
+  class RetryHandler:::ee {
+    maxAttempts 5
+    initialDelayMs 1000
+    maxDelayMs 30000
+  }
+  class EventConditionService:::is {
+    strategies ActivityConditionStrategy
+  }
+  class ActivityConditionStrategy:::is
+  class TokenIssuerFactory:::is {
+    chainAdapter EVMAdapter
+    vaspAdapter ExternalVASPAdapter
+    coreBanking KyoboCoreBankingAdapter
+    pool Pool
+  }
+  class IssuerService:::is {
+    nftIssuerAddr NFT_ISSUER_ADDR
+  }
+  class NFTIssuedHandler:::ee {
+    contractAddr NFT_CONTRACT_ADDR
+    idempotency IdempotencyGuard
+    retry RetryHandler
+  }
+  class ChainEventListener:::ee {
+    adapter EVMAdapter
+    handlers NFTIssuedHandler + IssuanceConfirmHandler
+    contracts NFT_CONTRACT_ADDR
+  }
+  class RedisStreamPublisher:::ee {
+    streamKey kyobo:events
+  }
+  class WebhookPublishHandler:::ee {
+    publisher RedisStreamPublisher
+    idempotency IdempotencyGuard
+  }
+  class WebhookServer:::ee {
+    port WEBHOOK_PORT
+    secret WEBHOOK_SECRET
+  }
+  class ISMSChecklist:::comp {
+    rpcUrl RPC_URL
+    nftContractAddr NFT_CONTRACT_ADDR
+  }
+  class PgNFTLedgerService:::is {
+    pool Pool
+    contractAddr NFT_CONTRACT_ADDR
+    chainId CHAIN_ID
+  }
+  class NFTIssuedProcessor:::ee {
+    idempotency IdempotencyGuard
+    ledger PgNFTLedgerService
+  }
+  class ActivityProcessor:::ee {
+    issuer IssuerService
+    idempotency IdempotencyGuard
+  }
+  class ConsumerGroupPool:::ee {
+    streamKey kyobo:events
+    nft-consumers NFTIssuedProcessor
+    activity-consumers ActivityProcessor
+  }
+
+  Redis --> RedisIdempotencyStore : injected
+  Pool --> TokenIssuerFactory : injected
+  Pool --> PgNFTLedgerService : injected
+  RedisIdempotencyStore --> IdempotencyGuard : injected
+  DeadLetterQueue --> RetryHandler : injected
+  InternalGatewayClient --> KyoboCoreBankingAdapter : injected
+  ActivityConditionStrategy --> EventConditionService : injected
+  EVMAdapter --> TokenIssuerFactory : injected
+  ExternalVASPAdapter --> TokenIssuerFactory : injected
+  KyoboCoreBankingAdapter --> TokenIssuerFactory : injected
+  TokenIssuerFactory ..> IssuerService : creates
+  IdempotencyGuard --> NFTIssuedHandler : injected
+  RetryHandler --> NFTIssuedHandler : injected
+  EVMAdapter --> ChainEventListener : injected
+  NFTIssuedHandler --> ChainEventListener : injected
+  RedisStreamPublisher --> WebhookPublishHandler : injected
+  IdempotencyGuard --> WebhookPublishHandler : injected
+  WebhookPublishHandler --> WebhookServer : registered
+  IssuerService --> WebhookServer : VASP_TX_FAILED handler
+  IdempotencyGuard --> NFTIssuedProcessor : injected
+  PgNFTLedgerService --> NFTIssuedProcessor : injected
+  IssuerService --> ActivityProcessor : injected
+  IdempotencyGuard --> ActivityProcessor : injected
+  NFTIssuedProcessor --> ConsumerGroupPool : nft-consumers
+  ActivityProcessor --> ConsumerGroupPool : activity-consumers`;
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  darkMode: true,
+  fontFamily: 'Segoe UI, system-ui, sans-serif',
+  fontSize: 13
+});
+
+async function renderAll() {
+  let uid = 0;
+  for (const [key, src] of Object.entries(D)) {
+    const el = document.getElementById('d-' + key);
+    if (!el) continue;
+    try {
+      const { svg } = await mermaid.render('mg-' + (uid++), src);
+      el.innerHTML = svg;
+      el.classList.remove('loading');
+    } catch (err) {
+      el.innerHTML = '<div class="err">Mermaid error:\n' + (err.message || err) + '</div>';
+      el.classList.remove('loading');
+    }
+  }
+}
+document.addEventListener('DOMContentLoaded', renderAll);
+</script>
+</body>
+</html>

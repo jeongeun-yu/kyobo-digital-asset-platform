@@ -17,16 +17,17 @@ import { Pool }                    from 'pg';
 import { EVMAdapter }              from '@kyobo/chain-adapters';
 import { ChainEventListener }      from '@kyobo/event-engine/listener';
 import { WebhookServer, WebhookPublishHandler } from '@kyobo/event-engine/webhook';
-import { IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/webhook';
+import { IdempotencyGuard, RedisIdempotencyStore } from '@kyobo/event-engine/webhook';
 import { RetryHandler, DeadLetterQueue } from '@kyobo/event-engine/webhook';
 import { NFTIssuedHandler }        from '@kyobo/event-engine/handlers';
 import {
   ConsumerGroupPool,
   DLQHandler,
   NFTIssuedProcessor,
-  InMemoryLedgerService,
+  ActivityProcessor,
   RedisStreamPublisher,
 }                                  from '@kyobo/event-engine';
+import { PgNFTLedgerService }      from './infra/PgNFTLedgerService';
 import type { RedisStreamClient }  from '@kyobo/event-engine';
 import { IoRedisAdapter }          from './infra/RedisAdapter';
 import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
@@ -97,8 +98,9 @@ async function bootstrap() {
   const redis        = new Redis(process.env.REDIS_URL!);
   const redisAdapter = new IoRedisAdapter(redis);
 
-  // ── 멱등성 가드 (프로덕션: RedisIdempotencyStore로 교체) ─────────────────────
-  const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
+  // ── 멱등성 가드 ──────────────────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
 
   // ── Retry + DLQ ──────────────────────────────────────────────────────────────
   const dlq   = new DeadLetterQueue();
@@ -147,21 +149,7 @@ async function bootstrap() {
     },
   );
 
-  // ── Webhook 서버 (교보 앱 서버 → 활동 달성 이벤트 수신) ────────────────────
-  const webhookServer = new WebhookServer({
-    port:      Number(process.env.WEBHOOK_PORT),
-    secret:    process.env.WEBHOOK_SECRET!,
-    maxBodyKb: 64,
-  });
-
-  const activityRouter = new ActivityRouter(issuerService, idempotency);
-  activityRouter.register(webhookServer);
-
-  // ── 외부 VASP → NFT_ISSUED 콜백 수신 → Redis Streams 적재 ──────────────────
-  // 외부 VASP가 온체인 TX 확정 후 NFT_ISSUED 웹훅으로 통보
-  // → WebhookPublishHandler가 kyobo:events 스트림에 적재
-  // → ConsumerGroupPool(NFTIssuedProcessor)이 소비 → 내부 원장 업데이트
-  //
+  // ── Redis Streams 발행 클라이언트 ────────────────────────────────────────────
   // IoRedisAdapter는 RedisConsumerClient + DLQRedisClient 전용이므로
   // RedisStreamPublisher에 필요한 xgroupCreate·ping을 redis 인스턴스로 직접 구현
   const streamClient: RedisStreamClient = {
@@ -176,7 +164,35 @@ async function bootstrap() {
   };
   const streamPublisher  = new RedisStreamPublisher(streamClient);
   const webhookPublisher = new WebhookPublishHandler(streamPublisher, idempotency);
+
+  // ── Webhook 서버 ──────────────────────────────────────────────────────────────
+  // 모든 인바운드 Webhook → WebhookPublishHandler → Redis Streams 적재 (단일 경로)
+  //
+  // 내부 인바운드 (교보 앱 서버):
+  //   ACTIVITY_ACHIEVED / COUPON_CLAIM → webhookPublisher → activity-consumers
+  // 외부 VASP 콜백:
+  //   NFT_ISSUED / VASP_TX_FAILED → webhookPublisher → nft-consumers / vasp-consumers
+  //
+  // VASP_TX_FAILED는 ActivityRouter 직접 경로를 유지 (nonce 재사용 방지 목적)
+  const webhookServer = new WebhookServer({
+    port:      Number(process.env.WEBHOOK_PORT),
+    secret:    process.env.WEBHOOK_SECRET!,
+    maxBodyKb: 64,
+  });
+
+  // 내부 인바운드 → Redis Stream
+  webhookServer.on('ACTIVITY_ACHIEVED', webhookPublisher.createHandler());
+  webhookServer.on('COUPON_CLAIM',      webhookPublisher.createHandler());
+
+  // VASP 콜백 → Redis Stream
   webhookServer.on('NFT_ISSUED', webhookPublisher.createHandler());
+
+  // VASP_TX_FAILED: 직접 처리 (실패 TX → issuance_requests FAILED 즉시 전이)
+  // 지연 없이 DB 상태를 갱신해야 하므로 Redis Stream 우회
+  webhookServer.on('VASP_TX_FAILED', async (payload) => {
+    const data = payload.data as { txHash: string; reason?: string };
+    await issuerService.handleVaspTxFailed({ txHash: data.txHash, reason: data.reason });
+  });
 
   // ── ISMS 자동 점검 (주기적 실행) ─────────────────────────────────────────────
   const isms = new ISMSChecklist({
@@ -199,19 +215,20 @@ async function bootstrap() {
     redisAdapter,
     { async sendAlert(msg) { console.error('[DLQ]', msg); } },
   );
-  const ledger = new InMemoryLedgerService(); // M4에서 PostgreSQL 구현체로 교체
+  const ledger = new PgNFTLedgerService(pgPool, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID ?? '11155111'));
 
-  const nftIssuedProcessor = new NFTIssuedProcessor(idempotency, ledger);
+  const nftIssuedProcessor  = new NFTIssuedProcessor(idempotency, ledger);
+  const activityProcessor   = new ActivityProcessor(issuerService, idempotency);
 
-  // 도메인별 Consumer Group 분리 — 프로세서/핸들러 추가 시 여기에 항목 추가
+  // 도메인별 Consumer Group 분리 — 각 그룹이 스트림을 독립적으로 소비
+  // 이벤트 타입이 일치하지 않는 메시지는 ConsumerGroupWorker가 즉시 XACK 처리
   const pool = new ConsumerGroupPool(
     redisAdapter,
     streamDlq,
     { streamKey: 'kyobo:events', batchSize: 10, blockMs: 5_000, minIdleMs: 30_000 },
     [
-      { groupName: 'nft-consumers', consumerId: 'nft-1', processors: [nftIssuedProcessor] },
-      // { groupName: 'activity-consumers', consumerId: 'activity-1', processors: [activityProcessor] },
-      // { groupName: 'coupon-consumers',   consumerId: 'coupon-1',   processors: [couponProcessor]   },
+      { groupName: 'nft-consumers',      consumerId: 'nft-1',      processors: [nftIssuedProcessor] },
+      { groupName: 'activity-consumers', consumerId: 'activity-1', processors: [activityProcessor] },
     ],
   );
 

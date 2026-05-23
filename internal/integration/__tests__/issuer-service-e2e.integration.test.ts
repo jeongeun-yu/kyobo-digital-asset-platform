@@ -21,7 +21,8 @@ import http                      from 'http';
 import crypto                    from 'crypto';
 import { Pool }                  from 'pg';
 import { randomUUID }            from 'crypto';
-import { getPgUrl }              from '../helpers/state';
+import Redis                     from 'ioredis';
+import { getPgUrl, getRedisUrl } from '../helpers/state';
 
 import { TokenIssuerFactory }          from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
@@ -29,7 +30,7 @@ import { ActivityRouter }              from '../../apps/issuer-service/src/api/A
 import { IssuanceConfirmHandler }      from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
 import { PgIssuanceRequestRepository } from '../../apps/issuer-service/src/services/IssuanceRequestRepository';
 
-import { WebhookServer, IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/webhook';
+import { WebhookServer, IdempotencyGuard, RedisIdempotencyStore } from '@kyobo/event-engine/webhook';
 import type { WebhookPayload } from '@kyobo/event-engine/webhook';
 import { StubCoreBankingAdapter } from '@kyobo/core-banking';
 import type { IVASPAdapter, VASPTransactionReceipt, SubmitTransactionParams } from '../../packages/vasp/src/interfaces/IVASPAdapter';
@@ -120,6 +121,7 @@ async function waitFor(
 
 describe('issuer-service E2E — WebhookServer → IssuerService → PostgreSQL', () => {
   let pool:                Pool;
+  let redis:               Redis;
   let webhookServer:       WebhookServer;
   let vasp:                StubVaspAdapter;
   let coreBanking:         StubCoreBankingAdapter;
@@ -127,7 +129,8 @@ describe('issuer-service E2E — WebhookServer → IssuerService → PostgreSQL'
   let confirmHandler:      IssuanceConfirmHandler;
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: getPgUrl() });
+    pool  = new Pool({ connectionString: getPgUrl() });
+    redis = new Redis(getRedisUrl());
 
     // issuance_policies 시드 데이터
     await pool.query(`
@@ -158,7 +161,7 @@ describe('issuer-service E2E — WebhookServer → IssuerService → PostgreSQL'
     confirmHandler = handler;
 
     // 실제 WebhookServer + ActivityRouter
-    const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
+    const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     webhookServer     = new WebhookServer({ port: WEBHOOK_PORT, secret: WEBHOOK_SECRET, maxBodyKb: 64 });
     const router      = new ActivityRouter(issuerService, idempotency);
     router.register(webhookServer);
@@ -168,6 +171,7 @@ describe('issuer-service E2E — WebhookServer → IssuerService → PostgreSQL'
 
   afterAll(async () => {
     await webhookServer.close();
+    await redis.quit().catch(() => {});
     await pool.end();
   });
 
@@ -292,7 +296,7 @@ describe('issuer-service E2E — WebhookServer → IssuerService → PostgreSQL'
 
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
-      return rows.length > 0;
+      return rows.length > 0 && rows[0].status === 'FAILED';
     });
 
     const { rows } = await pool.query('SELECT status, fail_reason FROM issuance_requests');

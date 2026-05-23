@@ -51,21 +51,38 @@ export class TxTransitionBridge {
     const txHash = e.req.txHash;
 
     // ── mint_requests 업데이트 ────────────────────────────────────────────
-    // IssuanceConfirmHandler가 handleMined→handleConfirmed를 연속 호출할 때
-    // bridge 이벤트가 비동기로 처리되어 MINED 핸들러보다 CONFIRMED 핸들러가 먼저
-    // findByTxHash를 실행하는 경우를 대비해 중간 상태 전이를 삽입한다.
+    // IssuanceConfirmHandler가 handleMined→handleConfirmed를 연속 호출하면
+    // MINED·CONFIRMED 두 이벤트가 거의 동시에 발화된다.
+    // 두 _handle() Promise가 concurrent 실행될 때 stale read→중복 전이가 발생하므로
+    // InvalidStateTransitionError를 catch해 멱등 처리한다.
     if (txHash) {
       const ledgerReq = await this.ledgerService.findByTxHash(txHash);
       if (ledgerReq) {
         const cur = ledgerReq.status;
         if (mintStatus === 'MINED' && (cur === 'MINED' || cur === 'CONFIRMED' || cur === 'FINALIZED')) {
-          // CONFIRMED 핸들러가 먼저 MINED까지 처리했으므로 스킵
+          // 이미 MINED 이상 — 스킵
         } else if (mintStatus === 'CONFIRMED' && cur === 'SUBMITTED') {
           // MINED 이벤트 핸들러가 아직 실행 전 — SUBMITTED → MINED → CONFIRMED 순차 처리
-          await this.ledgerService.updateMintRequest(ledgerReq.id, { status: 'MINED', txHash });
-          await this.ledgerService.updateMintRequest(ledgerReq.id, { status: 'CONFIRMED', txHash });
+          // 단, concurrent MINED 핸들러가 먼저 MINED를 설정했을 수 있으므로 catch 처리
+          try {
+            await this.ledgerService.updateMintRequest(ledgerReq.id, { status: 'MINED', txHash });
+          } catch (err: any) {
+            if (err?.name !== 'InvalidStateTransitionError') throw err;
+            // concurrent MINED 핸들러가 이미 MINED 설정 — CONFIRMED 단계로 진행
+          }
+          try {
+            await this.ledgerService.updateMintRequest(ledgerReq.id, { status: 'CONFIRMED', txHash });
+          } catch (err: any) {
+            if (err?.name !== 'InvalidStateTransitionError') throw err;
+            // concurrent 핸들러가 이미 CONFIRMED 설정 — issuance 업데이트로 진행
+          }
         } else {
-          await this.ledgerService.updateMintRequest(ledgerReq.id, { status: mintStatus, txHash });
+          try {
+            await this.ledgerService.updateMintRequest(ledgerReq.id, { status: mintStatus, txHash });
+          } catch (err: any) {
+            if (err?.name !== 'InvalidStateTransitionError') throw err;
+            // concurrent 핸들러가 이미 해당 상태 설정 — 스킵
+          }
         }
       }
     }

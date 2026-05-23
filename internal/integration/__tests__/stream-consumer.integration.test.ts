@@ -15,18 +15,155 @@
 import Redis                       from 'ioredis';
 import { randomUUID }              from 'crypto';
 import { getRedisUrl }             from '../helpers/state';
+
+// ── InMemoryRedis (REDIS_URL 미설정 시 폴백) ──────────────────────────────────
+// TestRedisAdapter가 호출하는 ioredis 메서드와 동일한 시그니처를 구현한다.
+
+class InMemoryRedis {
+  private streams = new Map<string, Array<{ id: string; fields: string[] }>>();
+  private groups  = new Map<string, {
+    lastId: string;
+    pel:    Map<string, { consumer: string; deliveredAt: number; fields: string[] }>;
+  }>();
+  private seq = 0;
+
+  private genId(): string {
+    return `${Date.now()}-${String(this.seq++).padStart(4, '0')}`;
+  }
+
+  private cmpId(a: string, b: string): number {
+    const parse = (s: string) => s.split('-').map(Number) as [number, number];
+    const [at, as_] = parse(a);
+    const [bt, bs]  = parse(b);
+    return at !== bt ? at - bt : as_ - bs;
+  }
+
+  // xadd(key, '*', f1, v1, f2, v2, ...) — TestRedisAdapter.xadd 호출 형식
+  async xadd(key: string, _id: string, ...fieldValues: string[]): Promise<string> {
+    if (!this.streams.has(key)) this.streams.set(key, []);
+    const id = this.genId();
+    this.streams.get(key)!.push({ id, fields: fieldValues });
+    return id;
+  }
+
+  // xreadgroup('GROUP', g, c, 'COUNT', n, 'BLOCK', ms, 'STREAMS', key, '>') — 가변 인자
+  async xreadgroup(...args: unknown[]): Promise<unknown> {
+    let group = '', consumer = '', count = 10, key = '';
+    for (let i = 0; i < args.length; i++) {
+      switch (String(args[i]).toUpperCase()) {
+        case 'GROUP':   group = String(args[++i]); consumer = String(args[++i]); break;
+        case 'COUNT':   count = Number(args[++i]); break;
+        case 'BLOCK':   i++; break;
+        case 'STREAMS': key = String(args[++i]); i++; break; // id('>')는 무시
+      }
+    }
+    const gk = `${key}:${group}`;
+    const gs = this.groups.get(gk);
+    if (!gs) return null;
+
+    const msgs = (this.streams.get(key) ?? [])
+      .filter(m => this.cmpId(m.id, gs.lastId) > 0)
+      .slice(0, count);
+    if (!msgs.length) return null;
+
+    for (const m of msgs) {
+      gs.pel.set(m.id, { consumer, deliveredAt: Date.now(), fields: m.fields });
+      gs.lastId = m.id;
+    }
+    return [[key, msgs.map(m => [m.id, m.fields])]];
+  }
+
+  async xack(key: string, group: string, ...ids: string[]): Promise<number> {
+    const gs = this.groups.get(`${key}:${group}`);
+    if (!gs) return 0;
+    return ids.filter(id => gs.pel.delete(id)).length;
+  }
+
+  // xautoclaim(key, group, consumer, minIdleMs, startId, 'COUNT', count)
+  async xautoclaim(
+    key: string, group: string, consumer: string,
+    minIdleMs: number, startId: string, _kw: string, count: number,
+  ): Promise<unknown> {
+    const gs  = this.groups.get(`${key}:${group}`);
+    if (!gs) return ['0-0', []];
+    const now     = Date.now();
+    const claimed: [string, string[]][] = [];
+    for (const [id, entry] of gs.pel) {
+      if (this.cmpId(id, startId) >= 0 && now - entry.deliveredAt >= minIdleMs) {
+        entry.consumer    = consumer;
+        entry.deliveredAt = now;
+        claimed.push([id, entry.fields]);
+        if (claimed.length >= count) break;
+      }
+    }
+    return ['0-0', claimed];
+  }
+
+  async xrange(key: string, start: string, end: string): Promise<[string, string[]][]> {
+    return (this.streams.get(key) ?? [])
+      .filter(m =>
+        (start === '-' || this.cmpId(m.id, start) >= 0) &&
+        (end   === '+' || this.cmpId(m.id, end)   <= 0),
+      )
+      .map(m => [m.id, m.fields]);
+  }
+
+  async xdel(key: string, ...ids: string[]): Promise<number> {
+    const s = this.streams.get(key);
+    if (!s) return 0;
+    let n = 0;
+    for (const id of ids) {
+      const i = s.findIndex(m => m.id === id);
+      if (i >= 0) { s.splice(i, 1); n++; }
+    }
+    return n;
+  }
+
+  // xgroup('CREATE', key, group, id, 'MKSTREAM')
+  async xgroup(cmd: string, key: string, group: string, id: string, ...rest: string[]): Promise<string> {
+    if (cmd.toUpperCase() !== 'CREATE') throw new Error(`xgroup ${cmd} not supported`);
+    const gk = `${key}:${group}`;
+    if (this.groups.has(gk)) throw new Error('BUSYGROUP Consumer Group name already exists');
+    if (rest.includes('MKSTREAM') && !this.streams.has(key)) this.streams.set(key, []);
+    const stream = this.streams.get(key) ?? [];
+    const lastId = id === '$'
+      ? (stream.length ? stream[stream.length - 1]!.id : '0-0')
+      : id;
+    this.groups.set(gk, { lastId, pel: new Map() });
+    return 'OK';
+  }
+
+  async del(...keys: string[]): Promise<number> {
+    let n = 0;
+    for (const key of keys) {
+      if (this.streams.delete(key)) n++;
+      for (const gk of this.groups.keys()) {
+        if (gk.startsWith(`${key}:`)) this.groups.delete(gk);
+      }
+    }
+    return n;
+  }
+
+  disconnect(): void {}
+}
+
+import { Pool }                     from 'pg';
 import {
   ConsumerGroupPool,
   NFTIssuedProcessor,
-  InMemoryLedgerService,
   DLQHandler,
   IdempotencyGuard,
-  InMemoryIdempotencyStore,
+  RedisIdempotencyStore,
 }                                  from '@kyobo/event-engine';
 import type {
   RedisConsumerClient,
   StreamMessage,
 }                                  from '@kyobo/event-engine';
+import { PgNFTLedgerService }      from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
+import { getPgUrl }                from '../helpers/state';
+
+const TEST_CONTRACT_ADDR = '0x0000000000000000000000000000000000000001';
+const TEST_CHAIN_ID      = 31337;
 
 // ── 테스트용 IoRedis 어댑터 ───────────────────────────────────────────────────
 
@@ -124,26 +261,47 @@ async function waitFor(
 // ── 테스트 픽스처 ─────────────────────────────────────────────────────────────
 
 describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
-  let redis:       Redis;
+  let redis:       Redis | InMemoryRedis;
   let adapter:     TestRedisAdapter;
+  let pool:        Pool;
   let streamKey:   string;
   let dlqKey:      string;
   const GROUP      = 'nft-consumers-integration';
   const CONSUMER   = 'consumer-int-1';
 
   beforeAll(async () => {
-    redis    = new Redis(getRedisUrl());
-    adapter  = new TestRedisAdapter(redis);
-    // 테스트 실행마다 고유 스트림 키 — 클라우드 Redis 간섭 방지
     const ts = Date.now();
     streamKey = `kyobo:events:integration:${ts}`;
     dlqKey    = `${streamKey}:dlq`;
+
+    try {
+      const url = getRedisUrl();
+      redis = new Redis(url);
+      await (redis as Redis).ping();
+      console.log('[stream-consumer] 실제 Redis 연결');
+    } catch {
+      console.warn('[stream-consumer] REDIS_URL 미설정 또는 연결 실패 → InMemoryRedis 폴백');
+      (redis as any)?.disconnect?.();
+      redis = new InMemoryRedis();
+    }
+
+    adapter = new TestRedisAdapter(redis as Redis);
+
+    pool = new Pool({ connectionString: getPgUrl() });
+    // 테스트용 wallet 시드
+    await pool.query(`
+      INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified) VALUES
+        ('user-stream-001', '0xOWNER001', 'MOCK', true),
+        ('user-stream-002', '0xOWNER002', 'MOCK', true),
+        ('user-stream-004', '0xOWNER004', 'MOCK', true)
+      ON CONFLICT (user_id) DO NOTHING
+    `);
   });
 
   afterAll(async () => {
-    // 테스트용 스트림 정리
     await redis.del(streamKey, dlqKey);
     redis.disconnect();
+    await pool.end().catch(() => {});
   });
 
   // 각 테스트 전 Consumer Group 초기화
@@ -158,16 +316,17 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
   // ── [1] 정상 처리 ──────────────────────────────────────────────────────────
 
   it('[1] NFT_ISSUED → ConsumerGroupPool 처리 → LedgerService 잔액 반영', async () => {
-    const ledger      = new InMemoryLedgerService();
-    const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const processor   = new NFTIssuedProcessor(idempotency, ledger);
 
-    const dlq  = new DLQHandler(adapter, { async sendAlert(m) { console.error('[DLQ]', m); } });
-    const pool = new ConsumerGroupPool(adapter, dlq, {
+    const dlq    = new DLQHandler(adapter, { async sendAlert(m) { console.error('[DLQ]', m); } });
+    const cgPool = new ConsumerGroupPool(adapter, dlq, {
       streamKey, batchSize: 10, blockMs: 200, minIdleMs: 60_000,
     }, [{ groupName: GROUP, consumerId: CONSUMER, processors: [processor] }]);
 
-    pool.start().catch(() => {});
+    cgPool.start().catch(() => {});
 
     const requestId = randomUUID();
     const owner     = '0xOWNER001';
@@ -193,30 +352,31 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
     const balance = await ledger.getNFTBalance(owner, tokenId);
     expect(balance).toBe(1);
 
-    pool.stop();
+    cgPool.stop();
   });
 
   // ── [2] 멱등성 ────────────────────────────────────────────────────────────
 
   it('[2] 동일 requestId 중복 발행 → 한 번만 처리 (멱등성 보장)', async () => {
     let processCount = 0;
-    const ledger = new InMemoryLedgerService();
+    const ledger = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
 
     // creditNFT 호출 횟수 추적
     const originalCredit = ledger.creditNFT.bind(ledger);
-    ledger.creditNFT = async (owner, tokenId, amount) => {
+    ledger.creditNFT = async (owner, tokenId, amount, txHash) => {
       processCount++;
-      return originalCredit(owner, tokenId, amount);
+      return originalCredit(owner, tokenId, amount, txHash);
     };
 
-    const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const processor   = new NFTIssuedProcessor(idempotency, ledger);
     const dlq         = new DLQHandler(adapter, { async sendAlert() {} });
-    const pool        = new ConsumerGroupPool(adapter, dlq, {
+    const cgPool      = new ConsumerGroupPool(adapter, dlq, {
       streamKey, batchSize: 10, blockMs: 200, minIdleMs: 60_000,
     }, [{ groupName: GROUP, consumerId: CONSUMER, processors: [processor] }]);
 
-    pool.start().catch(() => {});
+    cgPool.start().catch(() => {});
 
     const requestId = randomUUID();
     const fields = {
@@ -240,23 +400,24 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
 
     expect(processCount).toBe(1);
 
-    pool.stop();
+    cgPool.stop();
   });
 
   // ── [3] DLQ ───────────────────────────────────────────────────────────────
 
   it('[3] 처리 3회 실패 → DLQ 이동 확인', async () => {
-    const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
-    const ledger      = new InMemoryLedgerService();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
     const failProcessor = new AlwaysFailProcessor(idempotency, ledger);
 
     // DLQHandler에 streamKey를 전달해야 dlqKey = streamKey:dlq 로 일치
-    const dlq = new DLQHandler(adapter, { async sendAlert(m) { console.warn('[DLQ alert]', m); } }, streamKey);
-    const pool = new ConsumerGroupPool(adapter, dlq, {
+    const dlq    = new DLQHandler(adapter, { async sendAlert(m) { console.warn('[DLQ alert]', m); } }, streamKey);
+    const cgPool = new ConsumerGroupPool(adapter, dlq, {
       streamKey, batchSize: 10, blockMs: 200, minIdleMs: 60_000,
     }, [{ groupName: GROUP, consumerId: CONSUMER, processors: [failProcessor] }]);
 
-    pool.start().catch(() => {});
+    cgPool.start().catch(() => {});
 
     // _retryCount >= MAX_RETRIES(3) → 첫 수신 즉시 DLQ로 라우팅
     await adapter.xadd(streamKey, {
@@ -280,6 +441,66 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
     expect(dlqMessages[0]!.fields['eventType']).toBe('NFT_ISSUED');
     expect(dlqMessages[0]!.fields['_reason']).toBeTruthy();
 
-    pool.stop();
+    cgPool.stop();
+  });
+
+  // ── [4] XAUTOCLAIM ────────────────────────────────────────────────────────
+
+  it('[4] XAUTOCLAIM — PEL 잔류 메시지 재수신 처리', async () => {
+    // 다른 테스트와 격리된 Consumer Group (timestamp 포함으로 고유 보장)
+    const CLAIM_GROUP    = `${GROUP}-autoclaim-${Date.now()}`;
+    const CRASH_CONSUMER = 'consumer-crash';
+    const NEW_CONSUMER   = 'consumer-reclaim';
+
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
+    const processor   = new NFTIssuedProcessor(idempotency, ledger);
+
+    // '$' 기준 생성 — 이후 추가되는 메시지만 수신
+    await (redis as any).xgroup('CREATE', streamKey, CLAIM_GROUP, '$', 'MKSTREAM');
+
+    // ① 메시지 발행
+    const requestId = randomUUID();
+    const tokenId   = '4004';
+    const owner     = '0xOWNER004';
+    await adapter.xadd(streamKey, {
+      eventType:   'NFT_ISSUED',
+      requestId,
+      txHash:      '0x' + 'dd'.repeat(32),
+      blockNumber: '1002',
+      payload:     JSON.stringify({ tokenId, to: owner, blockNumber: 1002 }),
+      publishedAt: new Date().toISOString(),
+      _retryCount: '0',
+    });
+
+    // ② CRASH_CONSUMER가 XREADGROUP으로 읽음 — XACK 없이 중단 (crash 시뮬레이션)
+    //    메시지가 PEL(Pending Entry List)에 잔류
+    const readResult = await adapter.xreadgroup(
+      CLAIM_GROUP, CRASH_CONSUMER,
+      [{ key: streamKey, id: '>' }],
+      10, 0,
+    );
+    expect(readResult[0]?.messages.length).toBe(1);
+    // XACK 없음 → PEL 잔류 상태
+
+    // ③ minIdleMs(200ms)가 지나도록 대기
+    await new Promise(r => setTimeout(r, 500));
+
+    // ④ NEW_CONSUMER로 ConsumerGroupPool 기동
+    //    minIdleMs=200 → 500ms 이상 idle된 PEL 메시지를 XAUTOCLAIM으로 즉시 재수신
+    const dlq    = new DLQHandler(adapter, { async sendAlert() {} });
+    const cgPool = new ConsumerGroupPool(adapter, dlq, {
+      streamKey, batchSize: 10, blockMs: 100, minIdleMs: 200,
+    }, [{ groupName: CLAIM_GROUP, consumerId: NEW_CONSUMER, processors: [processor] }]);
+
+    cgPool.start().catch(() => {});
+
+    // ⑤ 재수신 후 처리 완료 확인
+    await waitFor(async () => (await ledger.getNFTBalance(owner, tokenId)) > 0);
+
+    expect(await ledger.getNFTBalance(owner, tokenId)).toBe(1);
+
+    cgPool.stop();
   });
 });

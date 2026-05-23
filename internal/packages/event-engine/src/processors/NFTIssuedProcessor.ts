@@ -25,10 +25,8 @@ import { logger } from '../infra/logger';
 // M4에서 구현체 추가. 이 파일에서는 인터페이스만 정의.
 
 export interface LedgerService {
-  creditNFT(owner: string, tokenId: string, amount?: number): Promise<void>;
+  creditNFT(owner: string, tokenId: string, amount?: number, txHash?: string): Promise<void>;
   getNFTBalance(owner: string, tokenId: string): Promise<number>;
-  // TODO(M4): mint_request 상태를 CONFIRMED로 전이
-  // NFTIssued 이벤트 처리 완료 후 호출 — Java 영구 원장 반영이 끝났음을 기록
   updateMintRequestConfirmed?(requestId: string): Promise<void>;
 }
 
@@ -69,8 +67,9 @@ export class NFTIssuedProcessor implements EventProcessor {
     // ── Step 2 + 3: 멱등성 확인 → 원장 업데이트 ───────────────────────────
     const idempotencyKey = `NFTIssued:${requestId}`;
 
+    const txHash = message.fields['txHash'];
     const processed = await this.idempotency.run(idempotencyKey, async () => {
-      await this.ledger.creditNFT(payload.to, payload.tokenId);
+      await this.ledger.creditNFT(payload.to, payload.tokenId, 1, txHash);
 
       // TODO(M4): Java 영구 원장 반영 완료 후 mint_request 상태를 CONFIRMED로 전이
       // 설계: CONFIRMED = "내부 원장 반영 완료" (온체인 확인과 별개)

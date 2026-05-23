@@ -12,7 +12,8 @@ import http                      from 'http';
 import crypto                    from 'crypto';
 import { Pool }                  from 'pg';
 import { randomUUID }            from 'crypto';
-import { getPgUrl }              from '../helpers/state';
+import Redis                     from 'ioredis';
+import { getPgUrl, getRedisUrl } from '../helpers/state';
 
 // ── 실제 서비스 클래스 (프로토타입 패치 대상) ──────────────────────────────────
 import { IssuerService }               from '../../apps/issuer-service/src/services/IssuerService';
@@ -26,7 +27,7 @@ import { TxStateMachineService }       from '../../packages/vasp/src/tx/TxStateM
 import { PgTxRepository }              from '../../packages/vasp/src/tx/PgTxRepository';
 import { LedgerService }               from '../../packages/core-banking/src/ledger/LedgerService';
 
-import { WebhookServer, IdempotencyGuard, InMemoryIdempotencyStore } from '@kyobo/event-engine/webhook';
+import { WebhookServer, IdempotencyGuard, RedisIdempotencyStore } from '@kyobo/event-engine/webhook';
 import { StubCoreBankingAdapter } from '@kyobo/core-banking';
 import type { IVASPAdapter, VASPTransactionReceipt, SubmitTransactionParams } from '../../packages/vasp/src/interfaces/IVASPAdapter';
 import type { IBlockchainAdapter } from '@kyobo/chain-adapters';
@@ -269,6 +270,7 @@ function buildResult(cls: string, method: string, r: any): string {
 
 describe('issuer-service 메서드 콜 트레이스 워크스루', () => {
   let pool:           Pool;
+  let redis:          Redis;
   let webhookServer:  WebhookServer;
   let vasp:           InstrumentedVaspAdapter;
   let coreBanking:    InstrumentedCoreBankingAdapter;
@@ -292,7 +294,8 @@ describe('issuer-service 메서드 콜 트레이스 워크스루', () => {
     patch(LedgerService.prototype,                'createMintRequest',   'LedgerService');
     patch(LedgerService.prototype,                'updateMintRequest',   'LedgerService');
 
-    pool = new Pool({ connectionString: getPgUrl() });
+    pool  = new Pool({ connectionString: getPgUrl() });
+    redis = new Redis(getRedisUrl());
     await pool.query(`
       INSERT INTO issuance_policies (event_type, token_id, amount)
       VALUES ($1, 1001, 1) ON CONFLICT (event_type) DO NOTHING
@@ -315,7 +318,7 @@ describe('issuer-service 메서드 콜 트레이스 워크스루', () => {
     );
     confirmHandler = handler;
 
-    const idempotency  = new IdempotencyGuard(new InMemoryIdempotencyStore());
+    const idempotency  = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     webhookServer      = new WebhookServer({ port: WEBHOOK_PORT, secret: WEBHOOK_SECRET, maxBodyKb: 64 });
     new ActivityRouter(issuerService, idempotency).register(webhookServer);
     await webhookServer.listen();
@@ -327,6 +330,7 @@ describe('issuer-service 메서드 콜 트레이스 워크스루', () => {
       (proto as any)[method] = orig;
     }
     await webhookServer.close();
+    await redis.quit().catch(() => {});
     await pool.end();
   });
 
