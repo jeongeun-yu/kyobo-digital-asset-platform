@@ -53,7 +53,6 @@ import {
 import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }                      from '../../packages/core-banking/src/ledger/PgDatabaseClient';
-import { OutboxWorker }                          from '../../packages/vasp/src/outbox/OutboxWorker';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';
 import {
@@ -330,7 +329,6 @@ let vasp:           IntegrationSepoliaVASPAdapter;
 let controlVasp:    SepoliaVASPAdapter;
 let coreBanking:    PgHybridCoreBankingAdapter;
 let ledgerService:  LedgerService;
-let outboxWorker:   OutboxWorker;
 let webhookServer:  WebhookServer;
 let chainListener:  ChainEventListener;
 let provider:       ethers.JsonRpcProvider;
@@ -457,13 +455,6 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     );
 
     ledgerService = new LedgerService(new PgDatabaseClient(pool), coreBanking);
-    outboxWorker  = new OutboxWorker({
-      query: async (sql: string, params?: unknown[]) => {
-        const res = await pool.query(sql, params as any[]);
-        return res.rows;
-      },
-    });
-
     // ⑦ 서비스 조립
     console.log('\n  [5/6] IssuerService + ChainEventListener + WebhookServer 조립...');
 
@@ -609,7 +600,7 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
       return parseInt(rows[0].cnt, 10) === 0;
     }, 120_000, 'drain previous test').catch(() => {});
 
-    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, outbox_events, user_nft_holdings, audit_log');
+    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log');
   }, 180_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
@@ -737,24 +728,7 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     expect(peRows[0].event_name).toBe('Issued');
     console.log(`  ✔ processed_events  event=${peRows[0].event_name} logIndex=${peRows[0].log_index} block=${peRows[0].block_number}`);
 
-    // ── ⑦ outbox_events 검증 ───────────────────────────────────────────────
-    console.log(`\n  ── outbox_events 검증 ──────────────────────────────────────`);
-    await pool.query(
-      `INSERT INTO outbox_events (type, payload) VALUES ('VASP_SUBMIT_MINT', $1::jsonb)`,
-      [JSON.stringify({ txHash, userId: 'user-sepolia-001', tokenId: TOKEN_ID })],
-    );
-    console.log(`  · outbox INSERT 완료 → processPending() 호출`);
-    const { processed, failed } = await outboxWorker.processPending();
-    console.log(`  · processed=${processed}  failed=${failed}`);
-    expect(processed).toBe(1);
-    expect(failed).toBe(0);
-    const { rows: obRows } = await pool.query(
-      "SELECT status FROM outbox_events WHERE type = 'VASP_SUBMIT_MINT'",
-    );
-    expect(obRows[0].status).toBe('PROCESSED');
-    console.log(`  ✔ outbox_events  ${obRows[0].status}`);
-
-    // ── ⑧ Java internal-ledger: NFT 보유 기록 ─────────────────────────────
+    // ── ⑦ Java internal-ledger: NFT 보유 기록 ─────────────────────────────
     console.log(`\n  ── Java internal-ledger 검증 ───────────────────────────────`);
     const nftRes = await postJavaApi(
       `/api/internal/users/user-sepolia-001/nft-holdings`,

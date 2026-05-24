@@ -241,6 +241,80 @@ KyoboCoreBankingAdapter
 
 ---
 
+## 상태 전이표
+
+### tx_mint_requests — TxStateMachineService (온체인 TX 상태 머신)
+
+가장 세밀한 상태를 추적한다. `VALID_TRANSITIONS` 규칙 외 전이는 `InvalidStatusTransitionError`로 거부된다.
+
+```
+REQUESTED ──submitMintRequest()──→ SUBMITTED
+SUBMITTED ──VASP TX 브로드캐스트──→ PENDING
+PENDING   ──블록 채굴────────────→ MINED
+MINED     ──확인 임계치 도달────→ CONFIRMED
+CONFIRMED ──PoS 2/3+ validator──→ FINALIZED  ← 종단 (절대 불변)
+
+REQUESTED / SUBMITTED ──submit 실패──→ FAILED   ← 종단
+PENDING   / MINED     ──REVERT──────→ FAILED
+PENDING               ──TIMEOUT─────→ (gas bump, 상태 유지)
+MINED                 ──REORG───────→ REORGED → MINED 또는 FAILED
+```
+
+| 상태 | 의미 | 다음 가능 상태 |
+|---|---|---|
+| `REQUESTED` | 요청 생성, VASP 전송 전 | SUBMITTED, FAILED |
+| `SUBMITTED` | VASP에 전달됨, TX hash 미획득 | PENDING, MINED, FAILED |
+| `PENDING` | TX 브로드캐스트됨, 블록 미채굴 | MINED, FAILED |
+| `MINED` | 블록 포함됨, REORG 가능 구간 | CONFIRMED, REORGED, FAILED |
+| `CONFIRMED` | 충분한 블록 확인 → 원장 업데이트 트리거 | FINALIZED |
+| `FINALIZED` | PoS 2/3+ 동의 → 종단 (약 12분, Ethereum PoS) | — |
+| `FAILED` | REVERT 또는 최종 실패 → 종단 | — |
+| `REORGED` | MINED 구간 REORG로 TX 소실, 재처리 대기 | MINED, FAILED |
+
+> 데모 정상 흐름: `REQUESTED → SUBMITTED → MINED → CONFIRMED`
+> (Hardhat은 즉시 채굴이므로 PENDING 생략 가능)
+
+---
+
+### mint_requests — TxTransitionBridge (core-banking 관점)
+
+`tx_mint_requests`의 상태 전이 이벤트를 수신해 동기화한다.
+
+```
+SUBMITTED ──MINED 이벤트────→ MINED
+MINED     ──CONFIRMED 이벤트→ CONFIRMED
+SUBMITTED / MINED ──FAILED──→ FAILED
+```
+
+| 상태 | 의미 |
+|---|---|
+| `SUBMITTED` | TX 제출 직후 초기 상태 |
+| `MINED` | 블록 포함 확인 |
+| `CONFIRMED` | 원장 반영 완료 |
+| `FAILED` | TX 실패 |
+
+---
+
+### issuance_requests — IssuerService (발행 요청 전체 생명주기)
+
+가장 간소화된 상태. 비즈니스 레이어가 보는 최종 결과만 추적한다.
+
+```
+SUBMITTED ──CONFIRMED 이벤트────→ CONFIRMED  ← 종단
+SUBMITTED ──FAILED 이벤트───────→ FAILED     ← 종단
+```
+
+| 상태 | 의미 |
+|---|---|
+| `SUBMITTED` | NFT 발행 요청 제출 완료, 온체인 확정 대기 |
+| `CONFIRMED` | 온체인 확정 완료 — 발행 성공 종단 |
+| `FAILED` | TX REVERT 또는 제출 실패 — 발행 실패 종단 |
+
+> `issuance_requests`는 MINED·PENDING 상태를 거치지 않는다.
+> `tx_mint_requests`가 CONFIRMED 또는 FAILED에 도달할 때 `TxTransitionBridge`가 한 번에 전이시킨다.
+
+---
+
 ## DB 테이블 최종 상태
 
 | 테이블 | 기록 주체 | 내용 |

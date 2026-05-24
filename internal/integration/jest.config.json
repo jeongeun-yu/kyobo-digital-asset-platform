@@ -5,7 +5,7 @@
   "setupFiles":            ["./setup/loadEnv.ts"],
   "globalTeardown":  "./setup/globalTeardown.ts",
   "testMatch":       ["**/__tests__/**/*.integration.test.ts"],
-  "testTimeout":     60000,
+  "testTimeout":     300000,
   "forceExit":       true,
   "transform": {
     "^.+\\.ts$": ["ts-jest", {

@@ -1,7 +1,7 @@
 # MockVASP 통합 테스트 가이드
 
 > **대상**: M5 S29-S30 수강생  
-> **목표**: 실제 스마트 컨트랙트를 배포하고, 8가지 시나리오(NORMAL·REVERT·NO_EMIT·PENDING·REORG + Redis Stream 멱등성·DLQ·XAUTOCLAIM)를 직접 실행하며 issuer-service 전체 파이프라인 — PostgreSQL 9개 테이블·Redis Stream·VASPServer — 이 연동되는 흐름을 확인한다.
+> **목표**: 실제 스마트 컨트랙트를 배포하고, 8가지 시나리오(NORMAL·REVERT·NO_EMIT·PENDING·REORG + Redis Stream 멱등성·DLQ·XAUTOCLAIM)를 직접 실행하며 issuer-service 전체 파이프라인 — PostgreSQL 8개 테이블·Redis Stream·VASPServer — 이 연동되는 흐름을 확인한다.
 
 ---
 
@@ -144,7 +144,7 @@ npx hardhat run scripts/test-anvil-adapter.ts --network localhost
 ## Part 2 — 전체 통합 테스트 (issuer-service + PostgreSQL + Java)
 
 단위 테스트는 컨트랙트만 검증한다.  
-**전체 통합 테스트**는 Webhook → IssuerService → VASP → ChainEventListener → PostgreSQL 9개 테이블 → Java internal-ledger까지 **실제 파이프라인 전체**를 검증한다.
+**전체 통합 테스트**는 Webhook → IssuerService → VASP → ChainEventListener → PostgreSQL 8개 테이블 → Java internal-ledger까지 **실제 파이프라인 전체**를 검증한다.
 
 ### 2-1. 통합 테스트 아키텍처
 
@@ -205,10 +205,10 @@ Handler           (processed_events 기록)
  CONFIRMED 전이)
    │
    ▼
-OutboxWorker → Java internal-ledger
-               ┌──────┴──────┐
-               ▼             ▼
-       user_nft_holdings  audit_log
+Java internal-ledger (TxTransitionBridge 경유)
+   ┌──────┴──────┐
+   ▼             ▼
+user_nft_holdings  audit_log
 ```
 
 **NFT_ISSUED는 VASPServer의 아웃바운드 콜백이다.**  
@@ -234,7 +234,6 @@ WebhookServer에는 두 종류의 요청이 들어오지만 처리 경로는 동
 | `tx_mint_requests` | vasp | 온체인 TX 상태 추적 | [1]~[5] |
 | `user_wallet_mapping` | issuer-service | 사용자 ↔ 지갑 주소 매핑 | [1] |
 | `processed_events` | core-banking | 체인 이벤트 중복 처리 방지 | [1][4][5] |
-| `outbox_events` | vasp | 비동기 아웃박스 큐 | [1] |
 | `user_nft_holdings` | Java internal-ledger | NFT 보유 현황 (영구 원장) | [1] |
 | `audit_log` | Java internal-ledger | 감사 로그 (hash chain 무결성) | [1] |
 
@@ -319,16 +318,15 @@ npm run test:integration -- --testPathPattern=mock-vasp
 
 ### 2-5. 테스트 [1] NORMAL 검증 항목 상세
 
-NORMAL 시나리오는 9개 테이블을 전부 거치는 황금 경로(golden path)다.
+NORMAL 시나리오는 8개 테이블을 전부 거치는 황금 경로(golden path)다.
 
 ```
 ① webhook 202 수신
 ② issuance_requests: REQUESTED → SUBMITTED → CONFIRMED
 ③ user_wallet_mapping: userId로 walletAddr 조회 (PgHybridCoreBankingAdapter)
 ④ processed_events: Issued 이벤트 txHash·logIndex 기록 (중복 방지)
-⑤ outbox_events: PENDING 삽입 → OutboxWorker → PROCESSED
-⑥ user_nft_holdings: Java API POST → DB 기록 확인
-⑦ audit_log: Java API POST → hash chain 무결성 포함 DB 기록 확인
+⑤ user_nft_holdings: Java API POST → DB 기록 확인
+⑥ audit_log: Java API POST → hash chain 무결성 포함 DB 기록 확인
 ```
 
 **[1] 테스트 내 Java API 호출 흐름:**
@@ -542,10 +540,6 @@ Handler          (processed_events 기록)
  CONFIRMED 전이)
               │
               ▼
-        OutboxWorker
-        (outbox_events 처리)
-              │
-              ▼
    PostgreSQL + Java internal-ledger
         (testcontainers)
    ┌──────────┴──────────┐
@@ -638,9 +632,8 @@ npm run test:integration -- --testPathPattern=sepolia
 ④ user_wallet_mapping: userId로 walletAddr 조회
 ⑤ balanceOf: 발행 전 대비 +1 증가 (Sepolia 온체인 확인)
 ⑥ processed_events: Issued 이벤트 txHash·logIndex 기록
-⑦ outbox_events: PENDING → PROCESSED
-⑧ user_nft_holdings: Java API → DB 기록 확인 (chainId=11155111)
-⑨ audit_log: Java API → hash chain 기록 확인
+⑦ user_nft_holdings: Java API → DB 기록 확인 (chainId=11155111)
+⑧ audit_log: Java API → hash chain 기록 확인
 ```
 
 항목 ⑤에서 실제 Sepolia TX의 `balanceOf`를 조회한다.  

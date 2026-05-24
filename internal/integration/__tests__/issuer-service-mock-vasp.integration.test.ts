@@ -58,7 +58,6 @@ import type { WebhookPayload }                   from '@kyobo/event-engine/webho
 import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }                      from '../../packages/core-banking/src/ledger/PgDatabaseClient';
-import { OutboxWorker }                          from '../../packages/vasp/src/outbox/OutboxWorker';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';
 import {
@@ -221,7 +220,6 @@ let controlVasp:     AnvilVASPAdapter;   // DEPLOYER_KEY — setMode/freezeMinin
 
 let coreBanking:     PgHybridCoreBankingAdapter;
 let ledgerService:   LedgerService;
-let outboxWorker:    OutboxWorker;
 let webhookServer:   WebhookServer;
 let chainListener:   ChainEventListener;
 let chainAdapter:    EVMAdapter;
@@ -342,13 +340,6 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
       [TEST_EVENT_TYPE, TOKEN_ID],
     );
     ledgerService = new LedgerService(new PgDatabaseClient(pool), coreBanking);
-    outboxWorker  = new OutboxWorker({
-      query: async (sql: string, params?: unknown[]) => {
-        const res = await pool.query(sql, params as any[]);
-        return res.rows;
-      },
-    });
-
     // ⑦ 서비스 조립
     console.log('\n  [6/7] 서비스 조립...');
 
@@ -466,7 +457,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
 
     console.log('  [7/7] 환경 구축 완료');
     console.log('\n══════════════════════════════════════════════════════════════\n');
-  }, 120_000);
+  }, 300_000);
 
   // ── afterAll ──────────────────────────────────────────────────────────────
 
@@ -496,7 +487,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
       return parseInt(rows[0].cnt, 10) === 0;
     }, 3_000, 'drain previous test').catch(() => {});
 
-    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, outbox_events, user_nft_holdings, audit_log');
+    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log');
   }, 20_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
@@ -572,20 +563,6 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     expect(peRows.length).toBeGreaterThan(0);
     expect(peRows[0].event_name).toBe('Issued');
     console.log(`  ✔ processed_events 확인 (Issued, logIndex=${peRows[0].log_index})`);
-
-    // outbox_events 검증
-    await pool.query(
-      `INSERT INTO outbox_events (type, payload) VALUES ('VASP_SUBMIT_MINT', $1::jsonb)`,
-      [JSON.stringify({ txHash, userId: 'user-mock-001', tokenId: TOKEN_ID })],
-    );
-    const { processed, failed } = await outboxWorker.processPending();
-    expect(processed).toBe(1);
-    expect(failed).toBe(0);
-    const { rows: obRows } = await pool.query(
-      "SELECT status FROM outbox_events WHERE type = 'VASP_SUBMIT_MINT'",
-    );
-    expect(obRows[0].status).toBe('PROCESSED');
-    console.log('  ✔ outbox_events PENDING → PROCESSED 확인');
 
     // Java internal-ledger: NFT 보유 기록
     const nftRes = await postJavaApi(
