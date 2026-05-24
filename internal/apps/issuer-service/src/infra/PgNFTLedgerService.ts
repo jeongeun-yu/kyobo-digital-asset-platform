@@ -39,6 +39,7 @@ export class PgNFTLedgerService implements LedgerService {
                      on_chain_tx = EXCLUDED.on_chain_tx`,
       [userId, BigInt(tokenId), this.contractAddr, this.chainId, amount, txHash],
     );
+    console.log(`[PgNFTLedger] user_nft_holdings 기록 완료  userId=${userId}  tokenId=${tokenId}  amount=${amount}  tx=${txHash.slice(0, 10)}…`);
   }
 
   async getNFTBalance(walletAddr: string, tokenId: string): Promise<number> {

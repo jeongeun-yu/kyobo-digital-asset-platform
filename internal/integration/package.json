@@ -7,7 +7,11 @@
     "test:mock-vasp": "jest --config jest.config.json --runInBand --forceExit --testPathPattern=mock-vasp",
     "test:sepolia": "jest --config jest.config.json --runInBand --forceExit --testPathPattern=sepolia",
     "build:java": "docker build -t kyobo/internal-ledger:test ../internal-ledger",
-    "build:hardhat": "docker build -t kyobo/hardhat-node:test ../../blockchain"
+    "build:hardhat": "docker build -t kyobo/hardhat-node:test ../../blockchain",
+    "demo:start": "npx ts-node --project tsconfig.json local-demo/start.ts",
+    "demo:issue": "npx ts-node --project tsconfig.json local-demo/issue.ts",
+    "demo:start-sepolia": "npx ts-node --project tsconfig.json local-demo/start-sepolia.ts",
+    "demo:issue-sepolia": "npx ts-node --project tsconfig.json local-demo/issue-sepolia.ts"
   },
   "dependencies": {
     "@kyobo/vasp":          "*",

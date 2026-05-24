@@ -143,8 +143,9 @@ async function bootstrap() {
       eventNames: ['Issued'],
     }],
     {
-      // Phase 2+: Redis/DB 기반 스테이트 스토어로 교체 (재시작 내성 — 현재 인메모리로 0 고정)
-      async getLastProcessedBlock() { return 0; },
+      // Phase 2+: Redis/DB 기반 스테이트 스토어로 교체 (재시작 내성)
+      // CHAIN_START_BLOCK: 공개 RPC(Alchemy 등) 사용 시 현재 블록을 주입해 과거 전체 조회 방지
+      async getLastProcessedBlock() { return Number(process.env.CHAIN_START_BLOCK ?? 0); },
       async setLastProcessedBlock(_b: number) {},
     },
   );

@@ -46,9 +46,10 @@ export class TxTransitionBridge {
 
   private async _handle(e: TxTransitionEvent): Promise<void> {
     const mintStatus = TX_TO_MINT[e.to];
-    if (!mintStatus) return; // PENDING 등 매핑 없는 상태 skip
+    if (!mintStatus) return;
 
     const txHash = e.req.txHash;
+    console.log(`[TxTransitionBridge] 전이 이벤트  ${e.from} → ${e.to}  txHash=${txHash?.slice(0, 10) ?? 'none'}…`);
 
     // ── mint_requests 업데이트 ────────────────────────────────────────────
     // IssuanceConfirmHandler가 handleMined→handleConfirmed를 연속 호출하면
@@ -88,14 +89,15 @@ export class TxTransitionBridge {
     }
 
     // ── issuance_requests 업데이트 ────────────────────────────────────────
-    // CONFIRMED: SUBMITTED → CONFIRMED 전이
-    // FAILED:    txHash가 있을 때만 (VASP 실패는 IssuerService가 직접 처리)
     if (txHash && (e.to === 'CONFIRMED' || e.to === 'FAILED')) {
       const issuanceReq = await this.issuanceRepo.findByTxHash(txHash);
       if (issuanceReq && issuanceReq.status === 'SUBMITTED') {
         if (e.to === 'CONFIRMED') {
+          console.log(`[TxTransitionBridge] issuance_requests SUBMITTED → CONFIRMED  id=${issuanceReq.id.slice(0, 8)}…`);
           await this.issuanceRepo.updateStatus(issuanceReq.id, 'CONFIRMED', { txHash });
+          console.log(`[TxTransitionBridge] ✓ issuance_requests CONFIRMED 저장 완료`);
         } else {
+          console.log(`[TxTransitionBridge] issuance_requests SUBMITTED → FAILED  id=${issuanceReq.id.slice(0, 8)}…`);
           await this.issuanceRepo.updateStatus(issuanceReq.id, 'FAILED', {
             failReason: e.req.failReason ?? 'on-chain FAILED',
           });

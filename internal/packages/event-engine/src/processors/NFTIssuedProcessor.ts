@@ -61,10 +61,14 @@ export class NFTIssuedProcessor implements EventProcessor {
 
     // ── Step 2 + 3: 멱등성 확인 → 원장 업데이트 ───────────────────────────
     const idempotencyKey = `NFTIssued:${requestId}`;
-
     const txHash = message.fields['txHash'];
+
+    console.log(`[NFTIssuedProcessor] NFT_ISSUED 수신  to=${payload.to?.slice(0, 10)}…  tokenId=${payload.tokenId}  txHash=${txHash?.slice(0, 10)}…  msgId=${message.id}`);
+
     const processed = await this.idempotency.run(idempotencyKey, async () => {
+      console.log(`[NFTIssuedProcessor] creditNFT 호출 → owner=${payload.to?.slice(0, 10)}…  tokenId=${payload.tokenId}`);
       await this.ledger.creditNFT(payload.to, payload.tokenId, 1, txHash);
+      console.log(`[NFTIssuedProcessor] creditNFT 완료 → user_nft_holdings 기록`);
 
       // TODO: Java 영구 원장 반영 완료 후 mint_request 상태를 CONFIRMED로 전이
       // 설계: CONFIRMED = "내부 원장 반영 완료" (온체인 확인과 별개)

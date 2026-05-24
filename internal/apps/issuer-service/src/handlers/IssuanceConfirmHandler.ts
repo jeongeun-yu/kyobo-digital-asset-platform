@@ -31,17 +31,26 @@ export class IssuanceConfirmHandler implements IEventHandler {
   }
 
   async handle(event: ChainEvent): Promise<void> {
-    const txReq = await this.txRepo.findByTxHash(event.txHash);
-    if (!txReq) return;
-    if (txReq.status === 'CONFIRMED' || txReq.status === 'FINALIZED') return;
+    console.log(`[IssuanceConfirmHandler] Issued 이벤트 수신  txHash=${event.txHash?.slice(0, 10) ?? '(none)'}…  block=${event.blockNumber}`);
 
-    // SUBMITTED → MINED → CONFIRMED 순차 전이
-    // (실제 ChainEventListener는 MINED와 CONFIRMED를 별도 이벤트로 수신하지만,
-    //  온체인 'Issued' 이벤트 수신 시점에는 이미 충분한 블록 확인이 된 것으로 간주)
+    const txReq = await this.txRepo.findByTxHash(event.txHash);
+    if (!txReq) {
+      console.log(`[IssuanceConfirmHandler] tx_mint_requests 미조회 — 스킵 (txHash=${event.txHash.slice(0, 10)}…)`);
+      return;
+    }
+    console.log(`[IssuanceConfirmHandler] tx_mint_requests 조회  id=${txReq.id.slice(0, 8)}…  status=${txReq.status}`);
+
+    if (txReq.status === 'CONFIRMED' || txReq.status === 'FINALIZED') {
+      console.log(`[IssuanceConfirmHandler] 이미 ${txReq.status} — 스킵`);
+      return;
+    }
+
     if (txReq.status === 'SUBMITTED' || txReq.status === 'PENDING') {
+      console.log(`[IssuanceConfirmHandler] handleMined() 호출 → tx_mint_requests SUBMITTED → MINED`);
       await this.txStateMachine.handleMined(txReq.id, event.blockNumber);
     }
     if (txReq.status !== 'FAILED') {
+      console.log(`[IssuanceConfirmHandler] handleConfirmed() 호출 → tx_mint_requests MINED → CONFIRMED`);
       await this.txStateMachine.handleConfirmed(txReq.id);
     }
   }

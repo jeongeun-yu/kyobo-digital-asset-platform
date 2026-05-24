@@ -36,7 +36,7 @@ export class WebhookPublishHandler {
       const idempotencyKey = `webhook:${payload.requestId}`;
 
       const published = await this.idempotency.run(idempotencyKey, async () => {
-        await this.publisher.publish({
+        const msgId = await this.publisher.publish({
           streamKey:   this.streamKey,
           eventType:   payload.eventType,
           payload:     payload.data,
@@ -44,6 +44,7 @@ export class WebhookPublishHandler {
           blockNumber: Number(payload.data['blockNumber'] ?? 0),
           requestId:   payload.requestId,
         });
+        console.log(`[WebhookPublishHandler] XADD → ${this.streamKey}  eventType=${payload.eventType}  msgId=${msgId}  requestId=${payload.requestId.slice(0, 8)}…`);
       });
 
       if (!published) {

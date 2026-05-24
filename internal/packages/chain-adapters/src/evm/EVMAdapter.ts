@@ -182,7 +182,10 @@ export class EVMAdapter implements IBlockchainAdapter {
 
     for (const eventName of eventNames) {
       const listener = async (...args: unknown[]) => {
-        const log = args[args.length - 1] as EventLog;
+        // ethers v6: contract.on() 마지막 인자는 ContractEventPayload
+        // ContractEventPayload.log가 실제 EventLog (transactionHash 포함)
+        const payload = args[args.length - 1] as { log?: EventLog } & EventLog;
+        const log = payload.log ?? payload;
         await handler(this._toChainEvent(eventName, contractAddr, log, args));
       };
       contract.on(eventName, listener);

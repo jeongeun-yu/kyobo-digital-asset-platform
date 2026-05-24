@@ -72,7 +72,10 @@ export class ActivityProcessor implements EventProcessor {
 
     const idempotencyKey = `activity:${requestId}`;
 
+    console.log(`[ActivityProcessor] 처리 시작  userId=${data.userId}  eventType=${data.eventType}  msgId=${message.id}`);
+
     const processed = await this.idempotency.run(idempotencyKey, async () => {
+      console.log(`[ActivityProcessor] issueActivityNFT 호출 → userId=${data.userId}  activityId=${data.activityId}`);
       await this.issuer.issueActivityNFT({
         userId:     data.userId,
         activityId: data.activityId,
@@ -84,6 +87,7 @@ export class ActivityProcessor implements EventProcessor {
           occurredAt: new Date(Number(message.fields['publishedAt'] ?? Date.now())),
         },
       });
+      console.log(`[ActivityProcessor] issueActivityNFT 완료 → issuance_requests SUBMITTED 예정`);
     });
 
     if (!processed) {

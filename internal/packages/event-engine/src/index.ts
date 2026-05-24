@@ -9,7 +9,7 @@ export { ConsumerGroupPool } from './stream/ConsumerGroupPool';
 export type { WorkerGroupConfig } from './stream/ConsumerGroupPool';
 export { DLQHandler }          from './stream/DLQHandler';
 export type { DLQItem, DLQRedisClient } from './stream/DLQHandler';
-export { RedisStreamPublisher, QueueService } from './stream/RedisStreamPublisher';
+export { RedisStreamPublisher } from './stream/RedisStreamPublisher';
 export type { StreamEvent, RedisStreamClient } from './stream/RedisStreamPublisher';
 export { InMemoryLedgerService } from './processors/NFTIssuedProcessor';
 export type { LedgerService } from './processors/NFTIssuedProcessor';
