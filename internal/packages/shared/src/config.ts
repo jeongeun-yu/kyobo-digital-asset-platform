@@ -1,8 +1,8 @@
 /**
- * 실습 환경 설정 로더
+ * 환경 설정 로더
  *
  * 모노레포 루트의 .env 파일을 로드한다.
- * 모든 패키지 실습에서 import { config } from '@kyobo/shared' 로 사용.
+ * 모든 패키지에서 import { config } from '@kyobo/shared' 로 사용.
  *
  * 우선순위: 실제 환경변수 > .env 파일 > 기본값
  */
@@ -45,7 +45,7 @@ export const circleConfig = {
   baseUrl: process.env['CIRCLE_BASE_URL'] ?? 'https://api-sandbox.circle.com',
 } as const;
 
-// ── 실습용 컨트랙트 주소 ──────────────────────────────────────────────────────
+// ── 컨트랙트 주소 ─────────────────────────────────────────────────────────────
 
 export const contractConfig = {
   mockERC1155: process.env['MOCK_CONTRACT_ADDR'] ?? '',

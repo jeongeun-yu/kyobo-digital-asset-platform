@@ -1,15 +1,13 @@
 /**
  * EventConditionService — 이벤트 조건 판단 서비스
  *
- * M5 S30~S31 핵심 개념:
- *
  * Strategy 패턴 적용:
  *   - IConditionStrategy: 조건 판단 인터페이스
  *   - ActivityConditionStrategy: 걷기 달성 조건 (목표 걸음수 초과 여부)
  *   - CouponConditionStrategy: 캠페인 쿠폰 조건 (이벤트 기간·자격 여부)
  *   - EventConditionService.evaluate(): 이벤트 타입에 맞는 전략 선택 + 실행
  *
- * 플러그인 확장성 (S31):
+ * 플러그인 확장성:
  *   새 이벤트 타입 추가 = 새 Strategy 클래스만 추가 → 기존 코드 무변경
  *   registerStrategy() 로 런타임 주입 가능
  *
@@ -18,10 +16,6 @@
  *   eligible:  false → 로그만 기록, 발행 없음
  *   tokenId:   KyoboNFT.encodeTokenId(productCode, eventCode)
  *   amount:    발행 수량 (활동 달성 = 1개)
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S30~S31 (Strategy 패턴 · 플러그인 확장)
  */
 
 import { EventType } from '@kyobo/event-engine';
@@ -54,9 +48,8 @@ export interface IConditionStrategy {
 /**
  * ActivityConditionStrategy — 걷기·건강 활동 달성 조건
  *
- * M5 S30 실습:
- *   - 목표 걸음수(data.steps) ≥ GOAL_STEPS 이면 eligible
- *   - tokenId = encodeTokenId(PRODUCT_WALK, event.eventCode)
+ * 목표 걸음수(data.steps) ≥ GOAL_STEPS 이면 eligible
+ * tokenId = encodeTokenId(PRODUCT_WALK, event.eventCode)
  */
 export class ActivityConditionStrategy implements IConditionStrategy {
   supportedEventTypes = [EventType.WALK_GOAL_MET, EventType.HEALTH_CHECK_DONE];
@@ -88,9 +81,8 @@ export class ActivityConditionStrategy implements IConditionStrategy {
 /**
  * CouponConditionStrategy — 캠페인 쿠폰 조건
  *
- * M5 S30 실습:
- *   - 이벤트 기간 이내 + 사전 자격 목록에 userId 포함 여부 확인
- *   - tokenId = encodeTokenId(PRODUCT_COUPON, event.eventCode)
+ * 이벤트 기간 이내 + 사전 자격 목록에 userId 포함 여부 확인
+ * tokenId = encodeTokenId(PRODUCT_COUPON, event.eventCode)
  */
 export class CouponConditionStrategy implements IConditionStrategy {
   supportedEventTypes = [EventType.COUPON_CLAIM, EventType.CAMPAIGN_REWARD];
@@ -121,10 +113,7 @@ export class CouponConditionStrategy implements IConditionStrategy {
  * EventConditionService
  *
  * 모든 이벤트의 진입점. Strategy를 선택하고 evaluate() 결과를 반환.
- *
- * M5 S31 플러그인 확장:
- *   service.registerStrategy(new NewEventStrategy());
- *   → 기존 코드 변경 없이 새 이벤트 타입 지원
+ * service.registerStrategy(new NewEventStrategy()) 로 런타임 확장 가능.
  */
 export class EventConditionService {
   private readonly strategies: Map<string, IConditionStrategy> = new Map();
@@ -144,10 +133,9 @@ export class EventConditionService {
   /**
    * 이벤트 조건 판단
    *
-   * M5 S30 실습: evaluate 흐름
-   *   1. strategies.get(event.eventType) → 전략 선택
-   *   2. 없으면 UNSUPPORTED_EVENT
-   *   3. strategy.evaluate(event) → ConditionResult
+   * 1. strategies.get(event.eventType) → 전략 선택
+   * 2. 없으면 UNSUPPORTED_EVENT
+   * 3. strategy.evaluate(event) → ConditionResult
    */
   async evaluate(event: ActivityEvent): Promise<ConditionResult> {
     const strategy = this.strategies.get(event.eventType);

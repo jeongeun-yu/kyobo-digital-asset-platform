@@ -11,19 +11,14 @@ import type { IEventHandler } from '../interfaces/IEventHandler';
  *   4. 이벤트 수신 → RedisStreamPublisher.publish() → 202 패턴 반환
  *      → ConsumerGroupWorker가 비동기로 원장/감사로그 처리
  *
- * IBlockchainAdapter 의존 — 체인 교체 시 이 클래스 변경 없음 (M3 S14 핵심).
+ * IBlockchainAdapter 의존 — 체인 교체 시 이 클래스 변경 없음 (DIP).
  *
- * M7 이벤트 파이프라인 연동:
+ * 이벤트 파이프라인:
  *   ChainEventListener → RedisStreamPublisher → Redis Streams
  *                                             ↓
  *                                    ConsumerGroupWorker → LedgerService
  *                                                        → AuditLogService
  *                                    DLQHandler (3회 실패 시)
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 실습: course/exercises/M2/event-listener/src/run-listener.ts  ← 리스너 직접 기동 (M2 S05)
- *       course/exercises/M2/event-listener/src/recover-events.ts ← missed event 복구 (M2 S05)
  */
 export class ChainEventListener {
   private unsubscribers: Array<() => void> = [];

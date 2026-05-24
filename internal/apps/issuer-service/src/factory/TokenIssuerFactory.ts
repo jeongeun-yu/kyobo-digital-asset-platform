@@ -39,9 +39,6 @@ import { IssuanceConfirmHandler }   from '../handlers/IssuanceConfirmHandler';
  *   createSTOIssuer() 추가 시 STOIssuerService(extends IssuerService) 반환
  *   IssuerService 인터페이스 변경 없이 확장 가능.
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S29~S30 (TokenIssuerFactory · 서비스 조립 팩토리)
  */
 export class TokenIssuerFactory {
   constructor(

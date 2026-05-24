@@ -29,7 +29,6 @@
  *   REORG 감지를 위한 블록 해시 비교 로직 필요
  *   RPC 다중화(quorum) 필요
  *
- * Custody Track Session 6 참조: Broadcaster와 Confirmation Tracker 분리
  */
 
 import type { TxAttempt, TxAttemptRepository } from './TxAttempt.js';

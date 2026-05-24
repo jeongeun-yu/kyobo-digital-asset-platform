@@ -1,9 +1,8 @@
 /**
  * WebhookPublishHandler — WebhookServer → RedisStreamPublisher 연결
  *
- * M2 S6 구현 핵심 (2):
- *   WebhookServer에 등록되는 핸들러 팩토리.
- *   서명 검증 통과 후 비동기 실행되는 handler() 의 실제 구현체.
+ * WebhookServer에 등록되는 핸들러 팩토리.
+ * 서명 검증 통과 후 비동기 실행되는 handler() 의 실제 구현체.
  *
  * 역할:
  *   1. IdempotencyGuard로 requestId 중복 차단

@@ -4,8 +4,6 @@ import type { Pool }  from 'pg';
 /**
  * IssuanceRequestRepository — 발행 요청 상태머신 퍼시스턴스
  *
- * M5 S29 핵심 개념:
- *
  * IssuanceStatus 4-state 머신:
  *   REQUESTED → SUBMITTED → CONFIRMED (종단)
  *                         → FAILED    (종단)
@@ -22,9 +20,6 @@ import type { Pool }  from 'pg';
  *   운영: PgIssuanceRequestRepository
  *   테스트: InMemoryIssuanceRequestRepository
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S29 (IssuanceRequestRepository · 발행 요청 상태머신)
  */
 
 // ── 도메인 타입 ───────────────────────────────────────────────────────────────

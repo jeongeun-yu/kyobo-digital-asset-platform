@@ -1,14 +1,12 @@
 /**
  * BulkIssueService — 대량 NFT 발행 오케스트레이션
  *
- * M5 S33~S34 핵심 개념:
- *
- * 배치 분할 전략 (S33):
+ * 배치 분할 전략:
  *   - 전체 userIds를 500건 청크로 분할
  *   - 청크별 독립 requestId → 부분 실패 시 해당 청크만 재처리
  *   - 가스 한도: ~50K gas/건 × 500건 ≈ 25M gas (30M block limit 이내)
  *
- * 부분 실패 처리 정책 (S33):
+ * 부분 실패 처리 정책:
  *   - 실패 청크 → chunkErrors에 기록, 나머지 청크 계속 처리
  *   - 전체 실패가 아닌 이상 BulkJob 자체는 완료로 처리
  *   - 실패 청크 재실행: retryFailedChunks(jobId)
@@ -22,10 +20,6 @@
  *   이벤트 → EventConditionService.evaluate() → eligible == true
  *   → 단건:  TxStateMachineService.submitMintRequest()
  *   → 대량:  BulkIssueService.executeBulkIssue()
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S33~S34 (배치 발행 설계 · 부분 실패 처리)
  */
 
 import { randomUUID } from 'crypto';
@@ -74,11 +68,6 @@ export interface MintSubmitter {
 
 /**
  * BulkIssueService
- *
- * M5 S34 핵심 실습:
- *   executeBulkIssue() 구현 + 1000건 부분 실패 통합 테스트
- *   - 499번째 청크 실패 시나리오 → 나머지 청크 정상 처리 확인
- *   - retryFailedChunks() → 실패 청크만 재처리
  */
 export class BulkIssueService {
   private static readonly CHUNK_SIZE = 500;  // block gas limit 기준
@@ -90,13 +79,6 @@ export class BulkIssueService {
 
   /**
    * 대량 NFT 발행 실행
-   *
-   * M5 S34 실습: executeBulkIssue 흐름
-   *   1. BulkJob 생성 (RUNNING)
-   *   2. userIds를 CHUNK_SIZE로 분할
-   *   3. 청크별 submitMintRequest 병렬 호출
-   *   4. 성공/실패 집계 → Job 상태 업데이트
-   *   5. jobId 반환 (진행률 조회에 사용)
    *
    * @param userIds   발행 대상 userId 배열 (중복 가능 — Idempotency로 방어)
    * @param tokenId   KyoboNFT.encodeTokenId() 결과
@@ -170,9 +152,7 @@ export class BulkIssueService {
   }
 
   /**
-   * 실패 청크 재처리
-   *
-   * M5 S34 실습: PARTIAL_FAILURE 상태 Job에서 실패 청크만 재실행
+   * 실패 청크 재처리 — PARTIAL_FAILURE 상태 Job에서 실패 청크만 재실행
    */
   async retryFailedChunks(jobId: string, userIds: string[]): Promise<void> {
     const job = await this._getOrThrow(jobId);

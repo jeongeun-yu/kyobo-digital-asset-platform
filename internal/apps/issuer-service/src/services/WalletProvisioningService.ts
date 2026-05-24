@@ -1,8 +1,6 @@
 /**
  * WalletProvisioningService — VASP별 지갑 프로비저닝 분기 처리
  *
- * M5 S27 핵심 개념:
- *
  * 단일 진입점 설계:
  *   POST /api/wallet/provision 하나로 VASP 종류와 무관하게 처리.
  *   VASP 타입별 내부 분기 → 상위 레이어(컨트롤러)는 VASP 구현 세부사항 모름.
@@ -22,10 +20,6 @@
  *   WalletProvisioningService → ExternalVaspClient (지갑 획득)
  *                             → WalletMappingService (매핑 조회·저장)
  *                             → AuditLogAdapter? (감사 로그, 선택적)
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S27 (WalletProvisioningService · VASP별 지갑 프로비저닝)
  */
 
 import type { WalletMappingService, VaspType } from './WalletMappingService';

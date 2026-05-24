@@ -1,21 +1,20 @@
 /**
  * RedisStreamPublisher — 온체인 이벤트 → Redis Streams 발행
  *
- * M2 S5~S8 핵심 개념:
- *   1. 202 패턴: 체인 이벤트 수신 즉시 "accepted" 반환, Redis Stream에 비동기 발행
- *      → 처리 지연이 체인 구독 차단하지 않음
+ * 202 패턴: 체인 이벤트 수신 즉시 "accepted" 반환, Redis Stream에 비동기 발행
+ *   → 처리 지연이 체인 구독 차단하지 않음
  *
- *   2. At-least-once 보장:
- *      - Redis XADD → messageId 반환
- *      - DB에 messageId + 상태 기록
- *      - Consumer 장애 후 재시작 시 미처리 메시지 자동 재전달 (PEL)
+ * At-least-once 보장:
+ *   - Redis XADD → messageId 반환
+ *   - DB에 messageId + 상태 기록
+ *   - Consumer 장애 후 재시작 시 미처리 메시지 자동 재전달 (PEL)
  *
- *   3. Consumer Group 구조:
- *      Stream: "kyobo:events"
- *      Group:  "issuer-consumers"
- *      Consumer: consumer-{N} (수평 확장)
+ * Consumer Group 구조:
+ *   Stream: "kyobo:events"
+ *   Group:  "issuer-consumers"
+ *   Consumer: consumer-{N} (수평 확장)
  *
- * Redis Streams 내부 구조 (S7~S8):
+ * Redis Streams 내부 구조:
  *   messageId 형식: "{unix-ms}-{sequence}" (예: 1714000000000-0)
  *   XADD: append-only log (삭제 없음, MAXLEN으로 크기 제한)
  *   XREADGROUP: Consumer Group에서 읽기 + 소유권(PEL) 부여
@@ -100,11 +99,3 @@ export class RedisStreamPublisher {
   }
 }
 
-/**
- * QueueService — RedisStreamPublisher의 커리큘럼용 alias
- *
- * 커리큘럼 M2 S5에서 "QueueService.enqueue(event)"로 언급되는 것이
- * 구현상 RedisStreamPublisher임을 명시.
- * 수강생 혼란 방지를 위한 re-export.
- */
-export { RedisStreamPublisher as QueueService };

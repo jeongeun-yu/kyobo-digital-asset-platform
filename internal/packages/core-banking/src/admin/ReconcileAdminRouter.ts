@@ -9,7 +9,7 @@ interface Router   {
 }
 
 /**
- * ReconcileAdminRouter — Reconcile 관리 API (S54 실습 2)
+ * ReconcileAdminRouter — Reconcile 관리 API
  *
  * 엔드포인트:
  *   GET  /admin/reconcile/history   — 실행 이력 조회
@@ -20,7 +20,7 @@ export function registerReconcileAdminRoutes(
   reconcileAdmin: ReconcileAdminService,
 ): void {
 
-  // ── 실습 2-A: 실행 이력 조회 ──────────────────────────────────
+  // ── 실행 이력 조회 ────────────────────────────────────────────
   router.get('/admin/reconcile/history', async (req: Request, res: Response) => {
     const limit   = Number(req.query['limit'])   || 20;
     const runType = req.query['runType'] as string | undefined;
@@ -29,7 +29,7 @@ export function registerReconcileAdminRoutes(
     res.status(200).json({ history: result });
   });
 
-  // ── 실습 2-B: 수동 reconcile 트리거 ──────────────────────────
+  // ── 수동 reconcile 트리거 ─────────────────────────────────────
   router.post('/admin/reconcile/run', async (req: Request, res: Response) => {
     const { userId, operator, reason } = req.body as {
       userId:   string;

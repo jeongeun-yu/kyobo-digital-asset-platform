@@ -1,27 +1,18 @@
 /**
  * KeyGovernanceService — Gnosis Safe 기반 다중 서명 키 거버넌스
  *
- * M8 S46~S49 핵심 개념:
- *   커리큘럼에서 "MultisigService"로 언급되는 서비스가 이 파일임.
- *   (스켈레톤에서는 키 거버넌스 전체 책임을 담당하므로 KeyGovernanceService로 명명)
- *
- * SafeTx 생명주기 (S47~S48):
+ * SafeTx 생명주기:
  *   proposeTx()     — SafeTx 해시 계산 + DB 저장
  *   addSignature()  — 오프체인 EIP-712 서명 수집
  *   executeTx()     — threshold 확인 → Safe.execTransaction 온체인 실행
  *
- * Travel Rule (S49):
- *   checkTravelRule() — 100만원 이상 NFT 전송 시 TravelRuleRequiredError
+ * Travel Rule:
+ *   100만원 이상 NFT 전송 시 TravelRuleRequiredError
  *   SafeTxParams.travelRuleData 필드에 정보 첨부
  *
  * 의존 방향:
  *   KeyGovernanceService → GnosisSafeClient (온체인 실행)
  *                        → AuditLogService (모든 거버넌스 행위 감사 로그)
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 실습: M8 S46~S49 (Gnosis Safe 멀티시그 · Travel Rule) — 별도 실습 파일 없음
- *       이 파일을 읽고 SafeTx 생명주기(propose → addSignature → execute)를 이해할 것
  */
 
 import { randomUUID } from 'crypto';

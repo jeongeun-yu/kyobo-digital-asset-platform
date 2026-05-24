@@ -11,7 +11,7 @@ import type { LedgerService }              from '../../../../packages/core-banki
 /**
  * IssuerService — NFT 발행 오케스트레이터
  *
- * 발행 파이프라인 (M5 S28~S29):
+ * 발행 파이프라인:
  *   ① 정책 조회   — IssuancePolicyService.getPolicy()          → tokenId·amount·유효기간
  *   ② 조건 판단   — EventConditionService.evaluate()            → eligible 여부
  *   ③ 멱등성 체크  — issuanceRepo.findPending()                 → 중복 요청 방지
@@ -25,9 +25,6 @@ import type { LedgerService }              from '../../../../packages/core-banki
  *   tx_mint_requests  (온체인 TX) — TxStateMachineService 관리
  *   온체인 이벤트 수신 후 issuance_requests가 tx_mint_requests 상태를 따라간다.
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S28~S29 (IssuerService · NFT 발행 오케스트레이터)
  */
 export class IssuerService {
   constructor(private readonly deps: {

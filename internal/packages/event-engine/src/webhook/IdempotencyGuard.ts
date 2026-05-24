@@ -20,10 +20,6 @@
  *   - DB: INSERT + unique constraint (중복 시 예외)
  *   - InMemory: Map.get/set은 동기 연산이므로 await 없이 원자적
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 실습: course/exercises/M2/S09_atleastonce.ts  ← IdempotencyGuard 연동 직접 구현
- *       course/exercises/M3/S16_idempotency.ts  ← requestId Idempotency 심화
  */
 export interface IdempotencyStore {
   /**
