@@ -260,16 +260,16 @@ PENDING               ──TIMEOUT─────→ (gas bump, 상태 유지)
 MINED                 ──REORG───────→ REORGED → MINED 또는 FAILED
 ```
 
-| 상태 | 의미 | 다음 가능 상태 |
-|---|---|---|
-| `REQUESTED` | 요청 생성, VASP 전송 전 | SUBMITTED, FAILED |
-| `SUBMITTED` | VASP에 전달됨, TX hash 미획득 | PENDING, MINED, FAILED |
-| `PENDING` | TX 브로드캐스트됨, 블록 미채굴 | MINED, FAILED |
-| `MINED` | 블록 포함됨, REORG 가능 구간 | CONFIRMED, REORGED, FAILED |
-| `CONFIRMED` | 충분한 블록 확인 → 원장 업데이트 트리거 | FINALIZED |
-| `FINALIZED` | PoS 2/3+ 동의 → 종단 (약 12분, Ethereum PoS) | — |
-| `FAILED` | REVERT 또는 최종 실패 → 종단 | — |
-| `REORGED` | MINED 구간 REORG로 TX 소실, 재처리 대기 | MINED, FAILED |
+| 상태 | 레이어 | 의미 | 다음 가능 상태 |
+|---|---|---|---|
+| `REQUESTED` | VASP | 요청 생성, VASP 전송 전 | SUBMITTED, FAILED |
+| `SUBMITTED` | VASP | VASP에 전달됨, TX hash 미획득 | PENDING, MINED, FAILED |
+| `PENDING` | 블록체인 | TX 브로드캐스트됨, 블록 미채굴 | MINED, FAILED |
+| `MINED` | 블록체인 | 블록 포함됨, REORG 가능 구간 | CONFIRMED, REORGED, FAILED |
+| `CONFIRMED` | 블록체인 | 충분한 블록 확인 → 원장 업데이트 트리거 | FINALIZED |
+| `FINALIZED` | 블록체인 | PoS 2/3+ 동의 → 종단 (약 12분, Ethereum PoS) | — |
+| `FAILED` | 서비스 | REVERT 또는 최종 실패 → 종단 | — |
+| `REORGED` | 블록체인 | MINED 구간 REORG로 TX 소실, 재처리 대기 | MINED, FAILED |
 
 > 데모 정상 흐름: `REQUESTED → SUBMITTED → MINED → CONFIRMED`
 > (Hardhat은 즉시 채굴이므로 PENDING 생략 가능)
@@ -286,12 +286,12 @@ MINED     ──CONFIRMED 이벤트→ CONFIRMED
 SUBMITTED / MINED ──FAILED──→ FAILED
 ```
 
-| 상태 | 의미 |
-|---|---|
-| `SUBMITTED` | TX 제출 직후 초기 상태 |
-| `MINED` | 블록 포함 확인 |
-| `CONFIRMED` | 원장 반영 완료 |
-| `FAILED` | TX 실패 |
+| 상태 | 레이어 | 의미 |
+|---|---|---|
+| `SUBMITTED` | core-banking | TX 제출 직후 초기 상태 |
+| `MINED` | 블록체인 | 블록 포함 확인 |
+| `CONFIRMED` | core-banking | 원장 반영 완료 |
+| `FAILED` | core-banking | TX 실패 |
 
 ---
 
@@ -304,11 +304,11 @@ SUBMITTED ──CONFIRMED 이벤트────→ CONFIRMED  ← 종단
 SUBMITTED ──FAILED 이벤트───────→ FAILED     ← 종단
 ```
 
-| 상태 | 의미 |
-|---|---|
-| `SUBMITTED` | NFT 발행 요청 제출 완료, 온체인 확정 대기 |
-| `CONFIRMED` | 온체인 확정 완료 — 발행 성공 종단 |
-| `FAILED` | TX REVERT 또는 제출 실패 — 발행 실패 종단 |
+| 상태 | 레이어 | 의미 |
+|---|---|---|
+| `SUBMITTED` | 비즈니스 | NFT 발행 요청 제출 완료, 온체인 확정 대기 |
+| `CONFIRMED` | 비즈니스 | 온체인 확정 완료 — 발행 성공 종단 |
+| `FAILED` | 비즈니스 | TX REVERT 또는 제출 실패 — 발행 실패 종단 |
 
 > `issuance_requests`는 MINED·PENDING 상태를 거치지 않는다.
 > `tx_mint_requests`가 CONFIRMED 또는 FAILED에 도달할 때 `TxTransitionBridge`가 한 번에 전이시킨다.

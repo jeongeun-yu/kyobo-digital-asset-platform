@@ -142,6 +142,19 @@ export interface WalletResolver {
   getWalletAddr(userId: string): Promise<string>;
 }
 
+// ── 레이어 레이블 ─────────────────────────────────────────────────────────
+
+const TX_STATUS_LAYER: Record<TxStatus, string> = {
+  REQUESTED: 'VASP',
+  SUBMITTED: 'VASP',
+  PENDING:   '블록체인',
+  MINED:     '블록체인',
+  CONFIRMED: '블록체인',
+  FINALIZED: '블록체인',
+  FAILED:    '서비스',
+  REORGED:   '블록체인',
+};
+
 // ── 유효 전이 규칙 ────────────────────────────────────────────────────────
 
 export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
@@ -409,6 +422,7 @@ export class TxStateMachineService extends EventEmitter {
     }
     await this.repo.updateStatus(req.id, to, extra);
     const updated: MintRequest = { ...req, status: to, ...extra, updatedAt: new Date() };
+    console.log(`[TxStateMachine] ${from}(${TX_STATUS_LAYER[from]}) → ${to}(${TX_STATUS_LAYER[to]})  id=${req.id.slice(0, 8)}…`);
     this.emit('transition', { requestId: req.id, from, to, req: updated } satisfies TxTransitionEvent);
   }
 }
