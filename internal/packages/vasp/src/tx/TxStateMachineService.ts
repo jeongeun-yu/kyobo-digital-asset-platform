@@ -23,7 +23,7 @@
  *   FINALIZED = 2/3+ validator 동의 → 절대 불변 — 종단 상태 (Ethereum PoS 기준 약 12분)
  *
  * pollStaleRequests:
- *   PENDING 30분 초과 건 → VASP API 직접 조회 → 결과별 전이
+ *   PENDING 10분 초과 건 → VASP API 직접 조회 → 결과별 전이
  *   배치 크론으로 실행 (5분 간격 권장)
  *
  * ── Phase별 VASP 지원 범위와 TxStateMachineService 변화 ──────────────────────
@@ -31,7 +31,7 @@
  * Phase 1 (현재):
  *   VaspTxClient = 월렛원 REST API 래퍼
  *   submitMint()          → 월렛원 API 호출 → TX hash 반환
- *   getStatus(txHash)     → 월렛원 API 폴링 → 30분 타임아웃 시 재조회
+ *   getStatus(txHash)     → 월렛원 API 폴링 → 10분 타임아웃 시 재조회
  *   resubmitWithGasBump() → 월렛원 API gas bump 재전송
  *   한계: VASP가 TX 상태를 추상화해서 반환 → REORG·세부 실패 이유 파악 어려움
  *
@@ -147,12 +147,12 @@ export interface WalletResolver {
 const TX_STATUS_LAYER: Record<TxStatus, string> = {
   REQUESTED: 'VASP',
   SUBMITTED: 'VASP',
-  PENDING:   '블록체인',
-  MINED:     '블록체인',
-  CONFIRMED: '블록체인',
-  FINALIZED: '블록체인',
-  FAILED:    '서비스',
-  REORGED:   '블록체인',
+  PENDING:   'BLOCKCHAIN',
+  MINED:     'BLOCKCHAIN',
+  CONFIRMED: 'BLOCKCHAIN',
+  FINALIZED: 'BLOCKCHAIN',
+  FAILED:    'SERVICE',
+  REORGED:   'BLOCKCHAIN',
 };
 
 // ── 유효 전이 규칙 ────────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
  */
 export class TxStateMachineService extends EventEmitter {
   private static readonly GAS_BUMP_PERCENT   = 20;
-  private static readonly STALE_MINUTES      = 30;
+  private static readonly STALE_MINUTES      = 10;
   private static readonly REORG_WAIT_BLOCKS  = 5;
 
   constructor(
@@ -354,10 +354,10 @@ export class TxStateMachineService extends EventEmitter {
   // ── Stale 폴링 ─────────────────────────────────────────────────────────
 
   /**
-   * PENDING 30분 초과 건 → VASP API 직접 조회 → 상태 갱신
+   * PENDING 10분 초과 건 → VASP API 직접 조회 → 상태 갱신
    *
    * 흐름:
-   *   1. DB에서 PENDING + createdAt < now - 30분 목록 조회
+   *   1. DB에서 PENDING + createdAt < now - 10분 목록 조회
    *   2. 건별 vasp.getStatus(txHash) 조회
    *   3. 결과별 전이:
    *      confirmed  → handleConfirmed()  (VASP confirmed = 충분한 블록 확인)
@@ -378,6 +378,8 @@ export class TxStateMachineService extends EventEmitter {
 
         switch (result.status) {
           case 'confirmed':
+            // PENDING → MINED → CONFIRMED (직접 PENDING→CONFIRMED 전이 없음)
+            await this.handleMined(req.id, result.blockNumber ?? 0);
             await this.handleConfirmed(req.id);
             break;
           case 'failed':
