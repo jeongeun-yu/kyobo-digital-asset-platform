@@ -47,6 +47,7 @@ import type { StartedNetwork }                             from 'testcontainers'
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
+import { HttpInternalLedgerClient }             from '../../apps/issuer-service/src/infra/HttpInternalLedgerClient';
 import type { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
@@ -163,29 +164,6 @@ async function waitFor(
   }
 }
 
-function postJavaApi(path: string, body: unknown): Promise<{ status: number; body: string }> {
-  const data = JSON.stringify(body);
-  return new Promise((resolve, reject) => {
-    const target = new URL(javaBaseUrl + path);
-    const req = http.request(
-      {
-        hostname: target.hostname,
-        port:     Number(target.port),
-        path:     target.pathname,
-        method:   'POST',
-        headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-      },
-      res => {
-        let buf = '';
-        res.on('data', (chunk: string) => { buf += chunk; });
-        res.on('end', () => resolve({ status: res.statusCode!, body: buf }));
-      },
-    );
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
-}
 
 async function deployMockVASP(rpcUrl: string): Promise<string> {
   const artifact    = JSON.parse(readFileSync(ARTIFACT_PATH, 'utf-8'));
@@ -381,9 +359,10 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     const conditionSvc  = new EventConditionService([new ActivityConditionStrategy()]);
     const factory       = new TokenIssuerFactory({
       chainAdapter,
-      vaspAdapter: externalVasp,
+      vaspAdapter:           externalVasp,
       coreBanking,
       pool,
+      internalLedgerClient:  new HttpInternalLedgerClient(javaBaseUrl),
     });
     const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
     const { issuerService } = factoryResult;
@@ -548,32 +527,28 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     expect(peRows[0].event_name).toBe('Issued');
     console.log(`  ✔ processed_events 확인 (Issued, logIndex=${peRows[0].log_index})`);
 
-    // Java internal-ledger: NFT 보유 기록
-    const nftRes = await postJavaApi(
-      `/api/internal/users/user-mock-001/nft-holdings`,
-      { tokenId: Number(TOKEN_ID), contractAddr: mockVaspAddr, chainId: 31337, amount: 1, acquiredAt: new Date().toISOString(), onChainTx: txHash },
-    );
-    expect(nftRes.status).toBe(200);
+    // user_nft_holdings — PgNFTLedgerService.creditNFT()가 파이프라인 내 자동 기록
     const { rows: nftRows } = await pool.query(
       'SELECT user_id, token_id, on_chain_tx FROM user_nft_holdings WHERE user_id = $1',
       ['user-mock-001'],
     );
     expect(nftRows).toHaveLength(1);
     expect(String(nftRows[0].token_id)).toBe(TOKEN_ID);
-    console.log('  ✔ user_nft_holdings Java → DB 기록 확인');
+    console.log('  ✔ user_nft_holdings 자동 기록 확인 (creditNFT 경로)');
 
-    // Java internal-ledger: 감사 로그
-    const auditRes = await postJavaApi(
-      `/api/internal/audit-log`,
-      { actor: 'user-mock-001', action: 'NFT_ISSUED', resourceType: 'issuance_request', resourceId: txHash, beforeState: null, afterState: JSON.stringify({ status: 'CONFIRMED', txHash }) },
-    );
-    expect(auditRes.status).toBe(200);
+    // audit_log — TxTransitionBridge CONFIRMED 전이 시 HttpInternalLedgerClient 자동 호출
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
+      );
+      return rows.length > 0;
+    }, 5_000, 'audit_log');
     const { rows: auditRows } = await pool.query(
       "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
     );
     expect(auditRows[0].actor).toBe('user-mock-001');
-    expect(auditRows[0].action).toBe('NFT_ISSUED');
-    console.log('  ✔ audit_log Java → DB 기록 확인');
+    expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
+    console.log('  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → HttpInternalLedgerClient)');
   });
 
   // ── [2] REVERT ──────────────────────────────────────────────────────────────

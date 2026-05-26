@@ -41,6 +41,7 @@ import { GenericContainer, Network, StartedNetwork, Wait } from 'testcontainers'
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
+import { HttpInternalLedgerClient }             from '../../apps/issuer-service/src/infra/HttpInternalLedgerClient';
 import type { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
@@ -283,35 +284,6 @@ async function logRedisStream(redis: Redis, label: string, startMs: number): Pro
   }
 }
 
-function postJavaApi(
-  path: string,
-  body: unknown,
-): Promise<{ status: number; body: string }> {
-  const data = JSON.stringify(body);
-  return new Promise((resolve, reject) => {
-    const target = new URL(javaBaseUrl + path);
-    const req = http.request(
-      {
-        hostname: target.hostname,
-        port:     Number(target.port),
-        path:     target.pathname,
-        method:   'POST',
-        headers:  {
-          'Content-Type':   'application/json',
-          'Content-Length': Buffer.byteLength(data),
-        },
-      },
-      res => {
-        let buf = '';
-        res.on('data', (chunk: string) => { buf += chunk; });
-        res.on('end', () => resolve({ status: res.statusCode!, body: buf }));
-      },
-    );
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
-}
 
 // ── 전역 상태 ─────────────────────────────────────────────────────────────────
 
@@ -488,9 +460,10 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     const conditionSvc = new EventConditionService([new ActivityConditionStrategy()]);
     const factory      = new TokenIssuerFactory({
       chainAdapter,
-      vaspAdapter: vasp,
+      vaspAdapter:           vasp,
       coreBanking,
       pool,
+      internalLedgerClient:  new HttpInternalLedgerClient(javaBaseUrl),
     });
 
     const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
@@ -705,14 +678,10 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     expect(peRows[0].event_name).toBe('Issued');
     console.log(`  ✔ processed_events  event=${peRows[0].event_name} logIndex=${peRows[0].log_index} block=${peRows[0].block_number}`);
 
-    // ── ⑦ Java internal-ledger: NFT 보유 기록 ─────────────────────────────
-    console.log(`\n  ── Java internal-ledger 검증 ───────────────────────────────`);
-    const nftRes = await postJavaApi(
-      `/api/internal/users/user-sepolia-001/nft-holdings`,
-      { tokenId: Number(TOKEN_ID), contractAddr: mockVaspAddr, chainId: 11155111, amount: 1, acquiredAt: new Date().toISOString(), onChainTx: txHash },
-    );
-    console.log(`  · POST /nft-holdings → HTTP ${nftRes.status}`);
-    expect(nftRes.status).toBe(200);
+    // ── ⑦ DB 검증 ────────────────────────────────────────────────────────
+    console.log(`\n  ── DB 검증 ─────────────────────────────────────────────────`);
+
+    // user_nft_holdings — PgNFTLedgerService.creditNFT()가 파이프라인 내 자동 기록
     const { rows: nftRows } = await pool.query(
       'SELECT user_id, token_id, on_chain_tx FROM user_nft_holdings WHERE user_id = $1',
       ['user-sepolia-001'],
@@ -720,21 +689,21 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     expect(nftRows).toHaveLength(1);
     expect(String(nftRows[0].token_id)).toBe(TOKEN_ID);
     expect(nftRows[0].on_chain_tx.toLowerCase()).toBe(txHash.toLowerCase());
-    console.log(`  ✔ user_nft_holdings  token_id=${nftRows[0].token_id} tx=${String(nftRows[0].on_chain_tx).slice(0, 14)}…`);
+    console.log(`  ✔ user_nft_holdings 자동 기록 확인 (creditNFT 경로)  token_id=${nftRows[0].token_id}`);
 
-    const auditRes = await postJavaApi(
-      `/api/internal/audit-log`,
-      { actor: 'user-sepolia-001', action: 'NFT_ISSUED', resourceType: 'issuance_request', resourceId: txHash, beforeState: null, afterState: JSON.stringify({ status: 'CONFIRMED', txHash }) },
-    );
-    console.log(`  · POST /audit-log → HTTP ${auditRes.status}`);
-    expect(auditRes.status).toBe(200);
+    // audit_log — TxTransitionBridge CONFIRMED 전이 시 HttpInternalLedgerClient 자동 호출
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
+      );
+      return rows.length > 0;
+    }, 10_000, 'audit_log');
     const { rows: auditRows } = await pool.query(
       "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
     );
-    expect(auditRows.length).toBeGreaterThan(0);
     expect(auditRows[0].actor).toBe('user-sepolia-001');
-    expect(auditRows[0].action).toBe('NFT_ISSUED');
-    console.log(`  ✔ audit_log  actor=${auditRows[0].actor} action=${auditRows[0].action}`);
+    expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
+    console.log(`  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → HttpInternalLedgerClient)`);
 
     console.log(`\n  ✔ [1] NORMAL 전체 완료 (총 ${elapsed(t0)})`);
   }, 300_000);

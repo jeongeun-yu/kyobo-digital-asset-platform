@@ -20,6 +20,7 @@ import type { TxTransitionEvent, TxStatus } from '../../../../packages/vasp/src/
 import type { TxStateMachineService }        from '../../../../packages/vasp/src/tx/TxStateMachineService';
 import type { LedgerService, MintStatus }    from '../../../../packages/core-banking/src/ledger/LedgerService';
 import type { IIssuanceRequestRepository }   from './IssuanceRequestRepository';
+import type { IInternalLedgerClient }        from '../interfaces/IInternalLedgerClient';
 
 const TX_TO_MINT: Partial<Record<TxStatus, MintStatus>> = {
   SUBMITTED: 'SUBMITTED',
@@ -32,8 +33,9 @@ const TX_TO_MINT: Partial<Record<TxStatus, MintStatus>> = {
 
 export class TxTransitionBridge {
   constructor(
-    private readonly ledgerService: LedgerService,
-    private readonly issuanceRepo:  IIssuanceRequestRepository,
+    private readonly ledgerService:          LedgerService,
+    private readonly issuanceRepo:           IIssuanceRequestRepository,
+    private readonly internalLedgerClient?:  IInternalLedgerClient,
   ) {}
 
   attach(txStateMachine: TxStateMachineService): void {
@@ -96,11 +98,26 @@ export class TxTransitionBridge {
           console.log(`[TxTransitionBridge] issuance_requests SUBMITTED → CONFIRMED  id=${issuanceReq.id.slice(0, 8)}…`);
           await this.issuanceRepo.updateStatus(issuanceReq.id, 'CONFIRMED', { txHash });
           console.log(`[TxTransitionBridge] ✓ issuance_requests CONFIRMED 저장 완료`);
+          this.internalLedgerClient?.recordAuditLog({
+            actor:        issuanceReq.userId,
+            action:       'ISSUANCE_CONFIRMED',
+            resourceType: 'issuance_request',
+            resourceId:   txHash,
+            beforeState:  null,
+            afterState:   { status: 'CONFIRMED', txHash },
+          }).catch(err => console.error('[TxTransitionBridge] audit-log 오류:', err));
         } else {
           console.log(`[TxTransitionBridge] issuance_requests SUBMITTED → FAILED  id=${issuanceReq.id.slice(0, 8)}…`);
-          await this.issuanceRepo.updateStatus(issuanceReq.id, 'FAILED', {
-            failReason: e.req.failReason ?? 'on-chain FAILED',
-          });
+          const failReason = e.req.failReason ?? 'on-chain FAILED';
+          await this.issuanceRepo.updateStatus(issuanceReq.id, 'FAILED', { failReason });
+          this.internalLedgerClient?.recordAuditLog({
+            actor:        issuanceReq.userId,
+            action:       'ISSUANCE_FAILED',
+            resourceType: 'issuance_request',
+            resourceId:   txHash,
+            beforeState:  null,
+            afterState:   { status: 'FAILED', failReason },
+          }).catch(err => console.error('[TxTransitionBridge] audit-log 오류:', err));
         }
       }
     }
