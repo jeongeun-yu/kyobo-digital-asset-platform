@@ -105,7 +105,7 @@ export class IssuerService {
 
     // ── ⑥ TX 위탁 → SUBMITTED ───────────────────────────────────────────
     // TxStateMachineService → tx_mint_requests REQUESTED→SUBMITTED
-    // TxTransitionBridge が 'transition' イベントを受信して mint_requests も SUBMITTED に更新する
+    // TxTransitionBridge가 'transition' 이벤트를 수신하여 mint_requests도 SUBMITTED로 업데이트
     let txHash: string;
     try {
       const result = await this.deps.txStateMachine.submitMintRequest({
