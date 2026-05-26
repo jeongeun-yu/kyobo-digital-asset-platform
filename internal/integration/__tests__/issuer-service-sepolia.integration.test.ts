@@ -41,6 +41,7 @@ import { GenericContainer, Network, StartedNetwork, Wait } from 'testcontainers'
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
+import type { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
   WebhookServer,
@@ -54,6 +55,7 @@ import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }                      from '../../packages/core-banking/src/ledger/PgDatabaseClient';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
+import type { ChainEvent }                       from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';
 import {
   ConsumerGroupPool,
@@ -62,7 +64,6 @@ import {
   ActivityProcessor,
   InMemoryLedgerService,
   RedisStreamPublisher,
-  RedisStreamClient,
   StreamMessage,
 }                                                from '@kyobo/event-engine';
 import { PgNFTLedgerService }                    from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
@@ -334,18 +335,39 @@ let chainListener:  ChainEventListener;
 let provider:       ethers.JsonRpcProvider;
 let chainAdapter:   EVMAdapter;
 let confirmHandler: IssuanceConfirmHandler;
-let fallbackPollInterval: ReturnType<typeof setInterval>;
-
 let redis:          Redis;
 let redisAdapter:   IoRedisAdapter;
 let ledger:         PgNFTLedgerService;
 let consumerPool:   ConsumerGroupPool;
+
 
 // ── AlwaysFailProcessor (DLQ / 재처리 시나리오용) ─────────────────────────────
 
 class AlwaysFailProcessor extends NFTIssuedProcessor {
   async process(_msg: StreamMessage): Promise<void> {
     throw new Error('강제 실패 — DLQ 테스트용');
+  }
+}
+
+// Issued 이벤트 → processed_events 기록 (ChainEventListener 파이프라인용)
+class ProcessedEventHandler implements IEventHandler {
+  readonly eventName    = 'Issued';
+  readonly contractAddr: string;
+
+  constructor(
+    contractAddr:              string,
+    private readonly ledger:   LedgerService,
+  ) {
+    this.contractAddr = contractAddr;
+  }
+
+  async handle(event: ChainEvent): Promise<void> {
+    const safePayload = JSON.parse(
+      JSON.stringify(event.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
+    );
+    await this.ledger.recordProcessedEvent(
+      event.txHash, event.logIndex, event.eventName, BigInt(event.blockNumber), safePayload,
+    ).catch(e => console.error('[ProcessedEventHandler] error:', (e as Error).message));
   }
 }
 
@@ -479,7 +501,7 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     const inMemoryBlockStore = { block: currentBlock };
     chainListener = new ChainEventListener(
       chainAdapter,
-      [confirmHandler],
+      [confirmHandler, new ProcessedEventHandler(mockVaspAddr, ledgerService)],
       [{
         addr:       mockVaspAddr,
         abi:        MOCK_VASP_ABI as unknown[],
@@ -492,52 +514,9 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     );
     await chainListener.start();
 
-    // 폴백 폴링 — Sepolia에서는 queryEvents(eth_getLogs)로 Issued 이벤트 직접 스캔
-    {
-      let fallbackFromBlock = await chainAdapter.getBlockNumber();
-      let fallbackBusy = false;
-      fallbackPollInterval = setInterval(async () => {
-        if (fallbackBusy) return;
-        fallbackBusy = true;
-        try {
-          const toBlock = await chainAdapter.getBlockNumber();
-          if (toBlock <= fallbackFromBlock) return;
-          const events = await chainAdapter.queryEvents(
-            mockVaspAddr, MOCK_VASP_ABI as unknown[], 'Issued',
-            fallbackFromBlock + 1, toBlock,
-          );
-          for (const ev of events) {
-            await confirmHandler.handle(ev).catch(e =>
-              console.error('[fallback] confirmHandler error:', (e as Error).message),
-            );
-            const safePayload = JSON.parse(
-              JSON.stringify(ev.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
-            );
-            await ledgerService.recordProcessedEvent(
-              ev.txHash, ev.logIndex, ev.eventName, BigInt(ev.blockNumber), safePayload,
-            ).catch(e => console.error('[fallback] recordProcessedEvent error:', (e as Error).message));
-          }
-          fallbackFromBlock = toBlock;
-        } catch {
-          // ignore transient RPC errors
-        } finally {
-          fallbackBusy = false;
-        }
-      }, 3_000);  // Sepolia 블록타임 ~12s — 3s 폴링으로 충분
-    }
-
     // Redis Stream: ACTIVITY_ACHIEVED → XADD → ActivityProcessor → IssuerService
-    const streamClient: RedisStreamClient = {
-      async xadd(key, fields) {
-        const flat = Object.entries(fields).flat();
-        return (redis as any).xadd(key, '*', ...flat) as Promise<string>;
-      },
-      async xgroupCreate(key, group, id, mkstream) {
-        await (redis as any).xgroup('CREATE', key, group, id, ...(mkstream ? ['MKSTREAM'] : []));
-      },
-      async ping() { return redis.ping(); },
-    };
-    const streamPublisher  = new RedisStreamPublisher(streamClient);
+    redisAdapter = new IoRedisAdapter(redis);
+    const streamPublisher  = new RedisStreamPublisher(redisAdapter);
     await streamPublisher.initialize('nft-consumers');      // consumer group 생성
     await streamPublisher.initialize('activity-consumers'); // consumer group 생성
 
@@ -555,7 +534,6 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     ledger = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
     const activityProcessor  = new ActivityProcessor(issuerService, idempotency);
     const nftIssuedProcessor = new NFTIssuedProcessor(idempotency, ledger);
-    redisAdapter  = new IoRedisAdapter(redis);
     const streamDlq = new DLQHandler(
       redisAdapter,
       { async sendAlert(msg) { console.error('[DLQ]', msg); } },
@@ -577,7 +555,6 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
   // ── afterAll ──────────────────────────────────────────────────────────────
 
   afterAll(async () => {
-    clearInterval(fallbackPollInterval);
     consumerPool?.stop();
     await webhookServer?.close().catch(() => {});
     await chainListener.stop().catch(() => {});
