@@ -19,7 +19,7 @@ import type {
   WalletInfo,
   TransferRequest,
   TransferResult,
-} from '../interfaces/IVASPAdapter';
+} from '../../packages/vasp/src/interfaces/IVASPAdapter';
 import MOCK_VASP_ABI from './MockVASP.abi.json';
 
 export type MintMode = 'NORMAL' | 'REVERT' | 'NO_EMIT';

@@ -3,7 +3,8 @@
  *
  * 실제 흐름:
  *   HTTP POST → WebhookServer → WebhookPublishHandler → Redis Stream → ActivityProcessor → IssuerService
- *   → IntegrationSepoliaVASPAdapter → MockVASP (Sepolia 테스트넷)
+ *   → ExternalVASPAdapter → VASPServer (HTTP) → MockVASP (Sepolia 테스트넷)
+ *   → VASPServer NFT_ISSUED 콜백 → WebhookServer → Redis Stream → NFTIssuedProcessor
  *   → ChainEventListener (Issued 이벤트) → IssuanceConfirmHandler
  *   → TxStateMachineService → PostgreSQL CONFIRMED
  *
@@ -47,7 +48,6 @@ import { IoRedisAdapter }                        from '../../apps/issuer-service
 import {
   WebhookServer,
   IdempotencyGuard,
-  InMemoryIdempotencyStore,
   RedisIdempotencyStore,
   WebhookPublishHandler,
   WebhookPayload,
@@ -68,18 +68,16 @@ import {
   StreamMessage,
 }                                                from '@kyobo/event-engine';
 import { PgNFTLedgerService }                    from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
-import { SepoliaVASPAdapter }                    from '../../packages/vasp/src/testing/SepoliaVASPAdapter';
-import { ChainVASPAdapterConfig }                from '../../packages/vasp/src/testing/ChainVASPAdapterBase';
-import {
-  VASPTransactionReceipt,
-  SubmitTransactionParams,
-}                                                from '../../packages/vasp/src/interfaces/IVASPAdapter';
+import { SepoliaVASPAdapter }                    from '../vasp-testing/SepoliaVASPAdapter';
+import { VASPServer }                            from '../vasp-testing/VASPServer';
+import { ExternalVASPAdapter }                   from '@kyobo/vasp';
 
-import MOCK_VASP_ABI                             from '../../packages/vasp/src/testing/MockVASP.abi.json';
+import MOCK_VASP_ABI                             from '../vasp-testing/MockVASP.abi.json';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
 const WEBHOOK_PORT    = 19879;          // mock-vasp(19878)과 충돌 방지
+const VASP_PORT       = 19877;          // mock-vasp(19876)과 충돌 방지
 const WEBHOOK_SECRET  = 'sepolia-test-secret-kyobo-32chars!!';
 const TEST_EVENT_TYPE = 'WALK_GOAL_MET';
 
@@ -87,93 +85,6 @@ const TEST_EVENT_TYPE = 'WALK_GOAL_MET';
 const TOKEN_ID    = String(Date.now());
 const TOKEN_ID_BN = BigInt(TOKEN_ID);
 
-// ── IntegrationSepoliaVASPAdapter ─────────────────────────────────────────────
-// TX 확정 후 VASPServer와 동일하게 NFT_ISSUED 콜백을 WebhookServer로 전송
-
-class IntegrationSepoliaVASPAdapter extends SepoliaVASPAdapter {
-  private callbackUrl:    string;
-  private callbackSecret: string;
-
-  constructor(config: ChainVASPAdapterConfig & { callbackUrl: string; callbackSecret: string }) {
-    super(config);
-    this.callbackUrl    = config.callbackUrl;
-    this.callbackSecret = config.callbackSecret;
-  }
-
-  override async submitTransaction(
-    params: SubmitTransactionParams,
-  ): Promise<VASPTransactionReceipt> {
-    const [to, tokenId, amount, rawReason] = params.args;
-    const reasonHex = String(rawReason).startsWith('0x')
-      ? String(rawReason).slice(2)
-      : String(rawReason);
-    const reason32 = ('0x' + reasonHex.padEnd(64, '0').slice(0, 64)) as `0x${string}`;
-
-    const fn = this.mockVasp['issueActivityNFT'] as (
-      to: unknown, tokenId: unknown, amount: unknown, reason: unknown,
-    ) => Promise<ethers.ContractTransactionResponse>;
-    const tx = await fn(to, tokenId, amount, reason32);
-
-    // 즉시 반환 후 비동기로 receipt 대기 → NFT_ISSUED 콜백 전송 (VASPServer와 동일)
-    this._waitAndNotify(tx, params.idempotencyKey ?? tx.hash, String(tokenId), String(to))
-      .catch(e => console.error('[SepoliaVASP] 콜백 오류:', (e as Error).message));
-
-    return { txHash: tx.hash, status: 'submitted', timestamp: Date.now() };
-  }
-
-  private async _waitAndNotify(
-    tx:        ethers.ContractTransactionResponse,
-    requestId: string,
-    tokenId:   string,
-    to:        string,
-  ): Promise<void> {
-    const receipt = await tx.wait(1).catch(() => null);
-    if (!receipt || receipt.status === 0) return;
-
-    const iface     = new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi);
-    const issuedLog = receipt.logs.find(l => {
-      try { return iface.parseLog(l)?.name === 'Issued'; } catch { return false; }
-    });
-    if (!issuedLog) return; // NO_EMIT 모드
-
-    const args = iface.parseLog(issuedLog)!.args;
-    const body = JSON.stringify({
-      eventType: 'NFT_ISSUED',
-      requestId,
-      timestamp: Date.now(),
-      data: {
-        txHash:      tx.hash,
-        blockNumber: receipt.blockNumber,
-        tokenId:     args[1].toString(),
-        to:          args[0],
-        reason:      args[2],
-      },
-    });
-    const sig = crypto.createHmac('sha256', this.callbackSecret).update(body).digest('hex');
-
-    const url = new URL(this.callbackUrl);
-    await new Promise<void>((resolve, reject) => {
-      const req = http.request(
-        {
-          hostname: url.hostname,
-          port:     Number(url.port || 80),
-          path:     url.pathname || '/',
-          method:   'POST',
-          headers:  {
-            'Content-Type':      'application/json',
-            'Content-Length':    Buffer.byteLength(body),
-            'x-kyobo-signature': sig,
-          },
-        },
-        res => { res.resume(); res.on('end', resolve); },
-      );
-      req.on('error', reject);
-      req.write(body);
-      req.end();
-    });
-    console.log(`[SepoliaVASP] NFT_ISSUED 콜백 전송 완료 (requestId=${requestId.slice(0, 8)}…)`);
-  }
-}
 
 // ── PgHybridCoreBankingAdapter ────────────────────────────────────────────────
 
@@ -298,7 +209,7 @@ let javaBaseUrl:    string;
 let redisContainer: { getHost(): string; getMappedPort(port: number): number; stop(): Promise<unknown> };
 let pool:           Pool;
 
-let vasp:           IntegrationSepoliaVASPAdapter;
+let vaspServer:     VASPServer;
 let controlVasp:    SepoliaVASPAdapter;
 let coreBanking:    PgHybridCoreBankingAdapter;
 let ledgerService:  LedgerService;
@@ -417,15 +328,18 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
     javaBaseUrl = `http://${javaContainer.getHost()}:${javaContainer.getMappedPort(8080)}`;
     console.log(`  [3/6] Java 컨테이너 준비 완료 → ${javaBaseUrl}`);
 
-    // ⑤ VASP 어댑터 초기화
-    console.log('\n  [4/6] SepoliaVASPAdapter 초기화...');
-    vasp = new IntegrationSepoliaVASPAdapter({
+    // ⑤ VASPServer 기동 (ExternalVASPAdapter 호출 대상)
+    console.log('\n  [4/6] VASPServer 기동...');
+    vaspServer = new VASPServer({
+      port:           VASP_PORT,
       rpcUrl:         sepoliaRpc,
-      privateKey:     OPERATOR_PRIVATE_KEY,
-      mockVaspAddr:   mockVaspAddr,
+      signerKey:      OPERATOR_PRIVATE_KEY,
+      contractAddr:   mockVaspAddr,
       callbackUrl:    `http://localhost:${WEBHOOK_PORT}`,
       callbackSecret: WEBHOOK_SECRET,
     });
+    await vaspServer.start();
+    console.log(`  [4/6] VASPServer 준비 완료 → :${VASP_PORT}`);
 
     // controlVasp: DEPLOYER_KEY — setMode 전용 (OPERATOR와 nonce 분리)
     controlVasp = new SepoliaVASPAdapter({
@@ -457,10 +371,15 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
       chainId: '11155111',
     });
 
+    const externalVasp = new ExternalVASPAdapter({
+      baseUrl: `http://localhost:${VASP_PORT}`,
+      apiKey:  'test-api-key',
+    });
+
     const conditionSvc = new EventConditionService([new ActivityConditionStrategy()]);
     const factory      = new TokenIssuerFactory({
       chainAdapter,
-      vaspAdapter:           vasp,
+      vaspAdapter:           externalVasp,
       coreBanking,
       pool,
       internalLedgerClient:  new HttpInternalLedgerClient(javaBaseUrl),
@@ -529,6 +448,7 @@ describe('issuer-service Sepolia 통합 테스트 — 3가지 시나리오', () 
 
   afterAll(async () => {
     consumerPool?.stop();
+    await vaspServer?.stop().catch(() => {});
     await webhookServer?.close().catch(() => {});
     await chainListener.stop().catch(() => {});
     await redis.quit().catch(() => {});

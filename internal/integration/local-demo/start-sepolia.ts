@@ -29,7 +29,7 @@ import crypto               from 'crypto';
 import dotenv               from 'dotenv';
 import { Pool }             from 'pg';
 import Redis                from 'ioredis';
-import { VASPServer }       from '../../packages/vasp/src/testing/VASPServer';
+import { VASPServer }       from '../vasp-testing/VASPServer';
 
 // ── 루트 .env 로드 ────────────────────────────────────────────────────────────
 

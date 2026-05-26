@@ -1,7 +1,6 @@
 # MockVASP 통합 테스트 가이드
 
-> **대상**: M5 S29-S30 수강생  
-> **목표**: 실제 스마트 컨트랙트를 배포하고, 8가지 시나리오(NORMAL·REVERT·NO_EMIT·PENDING·REORG + Redis Stream 멱등성·DLQ·XAUTOCLAIM)를 직접 실행하며 issuer-service 전체 파이프라인 — PostgreSQL 8개 테이블·Redis Stream·VASPServer — 이 연동되는 흐름을 확인한다.
+> **목표**: 실제 스마트 컨트랙트를 배포하고, 9가지 시나리오(NORMAL·REVERT·NO_EMIT·PENDING·REORG + Redis Stream 멱등성·DLQ·XAUTOCLAIM + pollStaleRequests)를 직접 실행하며 issuer-service 전체 파이프라인 — PostgreSQL 8개 테이블·Redis Stream·VASPServer — 이 연동되는 흐름을 확인한다.
 
 ---
 
@@ -195,12 +194,12 @@ MockVASP 컨트랙트
    │   WebhookPublishHandler → Redis Stream (nft-consumers 경유)
    │
    ▼
-ChainEventListener (폴백 경로 — Issued 이벤트 폴링)
+ChainEventListener (Issued 이벤트 폴링)
    │
-   ┌──┴──┐
-   ▼     ▼
-IssuanceConfirm   fallback 폴링
-Handler           (processed_events 기록)
+   ┌──┴──────────────────────┐
+   ▼                         ▼
+IssuanceConfirm    ProcessedEventHandler
+Handler            (processed_events 기록)
 (issuance_requests
  CONFIRMED 전이)
    │
@@ -220,9 +219,9 @@ WebhookServer에는 두 종류의 요청이 들어오지만 처리 경로는 동
 
 두 이벤트 타입 모두 `webhookPublisher.createHandler()`로 등록되어 `WebhookServer → WebhookPublishHandler → Redis Stream` 경로를 동일하게 거친다.
 
-**이중 확인 경로**  
-① VASPServer 콜백 → WebhookServer → Redis Stream → NFTIssuedProcessor → InMemoryLedger (주 경로)  
-② ChainEventListener → IssuanceConfirmHandler → issuance_requests CONFIRMED (폴백 경로)
+**ChainEventListener 핸들러 체인**  
+① IssuanceConfirmHandler → issuance_requests CONFIRMED 전이 + TxTransitionBridge → Java internal-ledger  
+② ProcessedEventHandler → processed_events 기록 (중복 이벤트 방지)
 
 ### 2-2. 사용 DB 테이블 전체 목록
 
@@ -269,8 +268,8 @@ docker images | findstr "kyobo/"
 ### 2-4. 통합 테스트 실행
 
 ```bash
-cd internal
-npm run test:integration -- --testPathPattern=mock-vasp
+cd internal/integration
+npm run test:mock-vasp
 ```
 
 **예상 출력:**
@@ -303,7 +302,7 @@ npm run test:integration -- --testPathPattern=mock-vasp
 ══════════════════════════════════════════════════════════════
 
   PASS __tests__/issuer-service-mock-vasp.integration.test.ts
-    issuer-service 통합 테스트 — VASPServer + Redis Stream + 8가지 시나리오
+    issuer-service 통합 테스트 — VASPServer + Redis Stream + 9가지 시나리오
       ✔ [1] NORMAL — 정상 발행 → VASPServer NFT_ISSUED 콜백 → Redis Stream → ledger + CONFIRMED
       ✔ [2] REVERT — TX revert → VASPServer 500 → ExternalVASPAdapter throws → FAILED
       ✔ [3] NO_EMIT — mint 성공, Issued 이벤트 없음 → VASPServer 콜백 없음 → SUBMITTED 유지
@@ -312,8 +311,9 @@ npm run test:integration -- --testPathPattern=mock-vasp
       ✔ [stream-2] 동일 requestId 중복 주입 → 멱등성 보장 (한 번만 처리)
       ✔ [stream-3] retryCount >= 3 → DLQ 이동 확인
       ✔ [stream-4] XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
+      ✔ [poll-1] pollStaleRequests — SUBMITTED TX → PENDING 조작 → getTransferStatus(VASPServer) → CONFIRMED
 
-  Tests: 8 passed, 8 total
+  Tests: 9 passed, 9 total
 ```
 
 ### 2-5. 테스트 [1] NORMAL 검증 항목 상세
@@ -343,14 +343,37 @@ POST /api/internal/users/user-mock-001/nft-holdings
   onChainTx: "0xabc123..."
 }
 
-// 감사 로그
+// 감사 로그 — issuance_requests 상태 전이마다 기록 (IssuerService + TxTransitionBridge)
+// ① REQUESTED: IssuerService.issueActivityNFT() — 발행 요청 생성 직후
 POST /api/internal/audit-log
 {
   actor: "user-mock-001",
-  action: "NFT_ISSUED",
+  action: "ISSUANCE_REQUESTED",
+  resourceType: "issuance_request",
+  resourceId: "<req.id>",
+  beforeState: null,
+  afterState: "{\"status\":\"REQUESTED\",\"eventType\":\"WALK_GOAL_MET\",\"tokenId\":\"1001\"}"
+}
+
+// ② SUBMITTED: IssuerService.issueActivityNFT() — TX 위탁 성공 직후
+POST /api/internal/audit-log
+{
+  actor: "user-mock-001",
+  action: "ISSUANCE_SUBMITTED",
+  resourceType: "issuance_request",
+  resourceId: "<req.id>",
+  beforeState: "{\"status\":\"REQUESTED\"}",
+  afterState: "{\"status\":\"SUBMITTED\",\"txHash\":\"0xabc123...\"}"
+}
+
+// ③ CONFIRMED: TxTransitionBridge — 온체인 확정 이벤트 수신 후
+POST /api/internal/audit-log
+{
+  actor: "user-mock-001",
+  action: "ISSUANCE_CONFIRMED",
   resourceType: "issuance_request",
   resourceId: "0xabc123...",
-  beforeState: null,
+  beforeState: "{\"status\":\"SUBMITTED\",\"txHash\":\"0xabc123...\"}",
   afterState: "{\"status\":\"CONFIRMED\",\"txHash\":\"0xabc123...\"}"
 }
 ```
@@ -503,65 +526,92 @@ Sepolia 시나리오 전부 통과 ✔
 #### 아키텍처
 
 ```
-HTTP Webhook (ACTIVITY_ACHIEVED)
-    │
-    ▼
-WebhookServer ──→ WebhookPublishHandler
-                       │
-                       │ XADD "kyobo:events"
-                       ▼
-                  Redis Stream (testcontainers)
-                       │
-                       │ XREADGROUP (activity-consumers)
-                       ▼
-               ActivityProcessor
-                       │
-                       ▼
-                 IssuerService
-                       │
-              ┌────────┴────────┐
-              ▼                 ▼
-  IntegrationSepoliaVASP  PgHybridCoreBankingAdapter
-  Adapter (OPERATOR_KEY)  (user_wallet_mapping DB 조회)
-              │
-              ▼
-        MockVASP 컨트랙트
-        (Sepolia 테스트넷 — 고정 주소)
-              │
-              ▼
-       ChainEventListener
-       (Issued 이벤트 폴링, 3초 간격)
-              │
-       ┌──────┴──────┐
-       ▼             ▼
-IssuanceConfirm  fallback 폴링
-Handler          (processed_events 기록)
+  교보 앱 서버
+  ACTIVITY_ACHIEVED (인바운드)
+        │
+        ▼
+   WebhookServer (:19879)
+        │
+        ▼
+  WebhookPublishHandler
+        │ XADD "kyobo:events"
+        ▼
+   Redis Stream (testcontainers)
+        │
+   ┌────┴────────────────┐
+   │ XREADGROUP          │ XREADGROUP
+   ▼                     ▼
+activity-consumers    nft-consumers
+(ActivityProcessor)   (NFTIssuedProcessor)
+   │                     │
+   ▼                     ▼
+IssuerService        PgNFTLedgerService
+   │
+   ▼
+ExternalVASPAdapter
+(아웃바운드: POST /transactions)
+   │
+   ▼
+VASPServer (:19877)          ←── 테스트 프로세스 내 실행
+서명 · 브로드캐스트 (Sepolia RPC)
+   │
+   ▼
+MockVASP 컨트랙트
+(Sepolia 테스트넷 — 고정 주소)
+   │
+   ├─→ TX 확정
+   │       │
+   │       ▼
+   │   VASPServer가 NFT_ISSUED 콜백 아웃바운드 전송
+   │       │ POST http://localhost:19879
+   │       ▼
+   │   WebhookServer (:19879)
+   │       │
+   │       ▼
+   │   WebhookPublishHandler → Redis Stream (nft-consumers 경유)
+   │
+   ▼
+ChainEventListener (Issued 이벤트 폴링, 3초 간격)
+   │
+   ┌──┴──────────────────────┐
+   ▼                         ▼
+IssuanceConfirm    ProcessedEventHandler
+Handler            (processed_events 기록)
 (issuance_requests
  CONFIRMED 전이)
-              │
-              ▼
-   PostgreSQL + Java internal-ledger
-        (testcontainers)
-   ┌──────────┴──────────┐
-   ▼                     ▼
-user_nft_holdings     audit_log
+   │
+   ▼
+Java internal-ledger (TxTransitionBridge 경유)
+   ┌──────┴──────┐
+   ▼             ▼
+user_nft_holdings  audit_log
 ```
 
-> Sepolia는 VASPServer(HTTP)가 없다. `IntegrationSepoliaVASPAdapter`가 직접 체인에 TX를 전송하므로 NFT_ISSUED 콜백 경로가 없다. Redis Stream은 `ACTIVITY_ACHIEVED` 인바운드 경로와 stream-* 독립 시나리오에 사용된다.
+> mock-vasp 테스트와 구조가 동일하다. VASPServer가 Sepolia RPC에 연결되어 실제 테스트넷에 TX를 전송하고, 확정 후 NFT_ISSUED 콜백을 WebhookServer로 보낸다. 포트만 다르다 (VASPServer :19877, WebhookServer :19879).
 
 #### mock-vasp 대비 핵심 차이
+
+두 테스트는 **파이프라인 구조가 동일**하다. VASPServer → WebhookServer → Redis Stream → ChainEventListener 경로 모두 같다. 차이는 **인프라와 시나리오 범위**다.
 
 | 항목 | mock-vasp (로컬) | Sepolia 통합 테스트 |
 |---|---|---|
 | 블록체인 | Hardhat 컨테이너 (즉시 채굴) | Sepolia 테스트넷 (~12초/블록) |
-| VASP 경로 | ExternalVASPAdapter → VASPServer(HTTP) | IntegrationSepoliaVASPAdapter (직접 체인) |
-| NFT_ISSUED 콜백 | VASPServer → WebhookServer → Redis Stream | 없음 (ChainEventListener 폴백만 동작) |
+| VASP 경로 | ExternalVASPAdapter → VASPServer :19876 | ExternalVASPAdapter → VASPServer :19877 |
+| NFT_ISSUED 콜백 | VASPServer → WebhookServer :19878 | VASPServer → WebhookServer :19879 |
 | 컨트랙트 | 매 실행마다 fresh deploy | 고정 주소 (`SEPOLIA_MOCK_VASP_ADDR`) |
 | TOKEN_ID | `'1001'` 고정 | `Date.now()` 동적 생성 |
-| 온체인 시나리오 | 8개 (5 + stream 3) | 6개 (3 + stream 3) |
-| 폴백 폴링 간격 | 300ms | 3,000ms |
+| 가스비 | 무료 (로컬) | Sepolia ETH 필요 |
+| ChainEventListener 폴링 | 300ms | 3,000ms |
 | CONFIRMED 대기 | 최대 40초 | 최대 3분 |
-| Redis | testcontainers | testcontainers |
+| PENDING 시나리오 | ✅ (`evm_setAutomine`) | ❌ 공개 노드 지원 안 함 |
+| REORG 시나리오 | ✅ (`evm_snapshot`) | ❌ 공개 노드 지원 안 함 |
+| poll-1 시나리오 | ✅ (pollStaleRequests) | ❌ |
+| 총 시나리오 | 9개 (5 + stream 3 + poll 1) | 6개 (3 + stream 3) |
+| Etherscan 확인 | ❌ | ✅ 실제 TX 브라우저 확인 |
+
+**mock-vasp의 강점**: 블록체인을 완전히 제어할 수 있다. `evm_setAutomine(false)`로 블록을 멈추고, `evm_snapshot/evm_revert`로 체인을 롤백하는 등 실서비스에서는 불가능한 극단 시나리오를 재현할 수 있다.
+
+**Sepolia의 강점**: 실제 퍼블릭 노드에서 TX가 브로드캐스트되고 블록에 포함된다. Etherscan에서 TX를 직접 확인할 수 있고, 실운영 환경과 동일한 블록 확정 흐름을 검증한다.
 
 **TOKEN_ID를 동적 생성하는 이유**: Sepolia의 고정 컨트랙트에는 이전 실행에서 발행된 토큰이 누적된다. 실행마다 `Date.now()` 기반의 새로운 TOKEN_ID를 쓰면 이전 잔액과 무관하게 `balanceOf` 증분(+1)을 검증할 수 있다.
 
@@ -570,13 +620,6 @@ user_nft_holdings     audit_log
 ```bash
 cd internal/integration
 npm run test:sepolia
-```
-
-또는
-
-```bash
-cd internal
-npm run test:integration -- --testPathPattern=sepolia
 ```
 
 > 실행 전 Docker Desktop이 실행 중이어야 한다. (PostgreSQL·Java·Redis 컨테이너 기동)  
@@ -700,8 +743,8 @@ XACK 전에 Consumer가 죽으면 PEL에 잔류 → XAUTOCLAIM으로 다른 Cons
 ### 4-2. 테스트 파일 및 실행
 
 ```bash
-cd internal
-npm run test:integration -- --testPathPattern=stream-consumer
+cd internal/integration
+npm run test:stream-consumer
 ```
 
 > `REDIS_URL` 미설정 시 `InMemoryRedis`로 자동 폴백 — Docker 없이도 실행 가능.
@@ -828,5 +871,5 @@ logs[1] Issued (교보 비즈니스 이벤트)
 | Redis Stream (멱등성·DLQ·XAUTOCLAIM) | ❌ | ✅ (stream-2~4) | ❌ | ✅ (stream-2~4) | ✅ (독립 4가지) |
 | NFT_ISSUED 콜백 경로 | ❌ | ✅ VASPServer→Stream | ❌ | ❌ | ❌ |
 | 오프라인 실행 | ✅ | ❌ (Docker 필요) | ❌ | ❌ (Docker 필요) | ✅ (InMemory 폴백) |
-| 총 시나리오 수 | 5 (스크립트) | 8 | 3 (스크립트) | 6 | 4 |
+| 총 시나리오 수 | 5 (스크립트) | 9 | 3 (스크립트) | 6 | 4 |
 | 강의 데모 용도 | 컨트랙트 설명 | 서비스 설계 전체 | 실운영 TX 시각화 | 실운영 유사 E2E | 이벤트 버스 신뢰성 |

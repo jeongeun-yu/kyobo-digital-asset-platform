@@ -10,9 +10,9 @@ import type {
   MintRequest,
   TxStatus,
   WalletResolver,
-} from '../tx/TxStateMachineService';
+} from '../../packages/vasp/src/tx/TxStateMachineService';
 
-import { InvalidStateTransitionError } from '../recovery/VaspRecoveryService';
+import { InvalidStateTransitionError } from '../../packages/vasp/src/recovery/VaspRecoveryService';
 export { InvalidStateTransitionError };
 
 // ── InMemoryLedger (VaspRecoveryService 의존성) ───────────────────────────

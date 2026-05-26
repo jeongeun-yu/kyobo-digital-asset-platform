@@ -24,7 +24,7 @@ import crypto                    from 'crypto';
 import { Pool }                  from 'pg';
 import Redis                     from 'ioredis';
 import { ethers }                from 'ethers';
-import { VASPServer }            from '../../packages/vasp/src/testing/VASPServer';
+import { VASPServer }            from '../vasp-testing/VASPServer';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 

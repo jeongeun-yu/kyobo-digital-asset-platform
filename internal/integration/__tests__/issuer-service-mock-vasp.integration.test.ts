@@ -75,10 +75,10 @@ import {
 import { PgNFTLedgerService }                    from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
 import type { StreamMessage }  from '@kyobo/event-engine';
 import { ExternalVASPAdapter }                   from '@kyobo/vasp';
-import { AnvilVASPAdapter }                      from '../../packages/vasp/src/testing/AnvilVASPAdapter';
-import { VASPServer }                            from '../../packages/vasp/src/testing/VASPServer';
+import { AnvilVASPAdapter }                      from '../vasp-testing/AnvilVASPAdapter';
+import { VASPServer }                            from '../vasp-testing/VASPServer';
 import { TxStateMachineService }                 from '../../packages/vasp/src/tx/TxStateMachineService';
-import MOCK_VASP_ABI                             from '../../packages/vasp/src/testing/MockVASP.abi.json';
+import MOCK_VASP_ABI                             from '../vasp-testing/MockVASP.abi.json';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
