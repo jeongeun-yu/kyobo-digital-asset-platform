@@ -8,17 +8,16 @@ import type { IEventHandler } from '../interfaces/IEventHandler';
  *   1. 시작 시 DB의 마지막 처리 블록 조회
  *   2. queryEvents()로 missed event 먼저 처리 (재시작 안전성)
  *   3. subscribeEvents()로 실시간 구독 시작
- *   4. 이벤트 수신 → RedisStreamPublisher.publish() → 202 패턴 반환
- *      → ConsumerGroupWorker가 비동기로 원장/감사로그 처리
+ *   4. 이벤트 수신 → _dispatch() → 등록된 IEventHandler.handle() 직접 호출
+ *      (RedisStreamPublisher 미사용 — 핸들러가 직접 상태 전이 처리)
  *
  * IBlockchainAdapter 의존 — 체인 교체 시 이 클래스 변경 없음 (DIP).
  *
  * 이벤트 파이프라인:
- *   ChainEventListener → RedisStreamPublisher → Redis Streams
- *                                             ↓
- *                                    ConsumerGroupWorker → LedgerService
- *                                                        → AuditLogService
- *                                    DLQHandler (3회 실패 시)
+ *   ChainEventListener → _dispatch() → IEventHandler (IssuanceConfirmHandler 등)
+ *                                                    → TxStateMachineService
+ *                                                    → TxTransitionBridge → LedgerService
+ *                                                                         → issuance_requests
  */
 export class ChainEventListener {
   private unsubscribers: Array<() => void> = [];

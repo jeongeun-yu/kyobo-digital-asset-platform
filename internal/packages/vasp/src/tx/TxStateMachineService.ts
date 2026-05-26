@@ -3,7 +3,8 @@
  *
  * 상태 전이도:
  *   REQUESTED ──submitMintRequest()──→ SUBMITTED
- *   SUBMITTED ──VASP 컨트랙트 호출──→ PENDING
+ *   SUBMITTED ──VASP TX 브로드캐스트──→ PENDING
+ *   SUBMITTED ──온체인 이벤트 직접──→ MINED   (VASP가 PENDING 없이 바로 채굴 확인 시)
  *   PENDING   ──블록 채굴──────────→ MINED
  *   MINED     ──확인 임계치 도달──→ CONFIRMED
  *   CONFIRMED ──PoS 2/3+ 동의─────→ FINALIZED   ← 종단
@@ -246,8 +247,9 @@ export class TxStateMachineService extends EventEmitter {
   // ── TX 콜백 핸들러 ─────────────────────────────────────────────────────
 
   /**
-   * VASP Webhook: TX가 블록에 포함됨 → MINED 전이
-   * Finalized 확인은 ChainEventListener가 별도 수행
+   * TX가 블록에 포함됨 → MINED 전이
+   * 호출 경로: VASP Webhook, ChainEventListener Issued 이벤트, pollStaleRequests confirmed
+   * PENDING 또는 SUBMITTED 상태에서만 전이 (그 외 상태는 early return)
    */
   async handleMined(requestId: string, blockNumber: number): Promise<void> {
     const req = await this._getOrThrow(requestId);
