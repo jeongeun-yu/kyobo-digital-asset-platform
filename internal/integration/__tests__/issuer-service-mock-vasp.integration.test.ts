@@ -70,7 +70,7 @@ import {
   RedisStreamPublisher,
 }                                                from '@kyobo/event-engine';
 import { PgNFTLedgerService }                    from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
-import type { RedisStreamClient, StreamMessage }  from '@kyobo/event-engine';
+import type { StreamMessage }  from '@kyobo/event-engine';
 import { ExternalVASPAdapter }                   from '@kyobo/vasp';
 import { AnvilVASPAdapter }                      from '../../packages/vasp/src/testing/AnvilVASPAdapter';
 import { VASPServer }                            from '../../packages/vasp/src/testing/VASPServer';
@@ -413,17 +413,8 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     }
 
     // Redis Stream: NFT_ISSUED 콜백 → XADD → ConsumerGroupWorker → ledger
-    const streamClient: RedisStreamClient = {
-      async xadd(key, fields) {
-        const flat = Object.entries(fields).flat();
-        return (redis as any).xadd(key, '*', ...flat) as Promise<string>;
-      },
-      async xgroupCreate(key, group, id, mkstream) {
-        await (redis as any).xgroup('CREATE', key, group, id, ...(mkstream ? ['MKSTREAM'] : []));
-      },
-      async ping() { return redis.ping(); },
-    };
-    const streamPublisher = new RedisStreamPublisher(streamClient);
+    redisAdapter = new IoRedisAdapter(redis);
+    const streamPublisher = new RedisStreamPublisher(redisAdapter);
     await streamPublisher.initialize('nft-consumers');       // consumer group 생성
     await streamPublisher.initialize('activity-consumers');  // consumer group 생성
 
@@ -443,7 +434,6 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     ledger = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
     const nftIssuedProcessor  = new NFTIssuedProcessor(idempotency, ledger);
     const activityProcessor   = new ActivityProcessor(issuerService, idempotency);
-    redisAdapter  = new IoRedisAdapter(redis);
     const streamDlq     = new DLQHandler(
       redisAdapter,
       { async sendAlert(msg) { console.error('[DLQ]', msg); } },

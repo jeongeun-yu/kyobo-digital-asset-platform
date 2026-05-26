@@ -1,12 +1,12 @@
 /**
  * IoRedisAdapter — ioredis → event-engine 인터페이스 어댑터
  *
- * RedisConsumerClient + DLQRedisClient 두 인터페이스를 모두 구현.
- * ConsumerGroupWorker / DLQHandler 에 주입하여 사용한다.
+ * RedisConsumerClient + DLQRedisClient + RedisStreamClient 세 인터페이스를 모두 구현.
+ * ConsumerGroupWorker / DLQHandler / RedisStreamPublisher 에 주입하여 사용한다.
  */
 
 import type Redis from 'ioredis';
-import type { RedisConsumerClient, StreamMessage } from '@kyobo/event-engine';
+import type { RedisConsumerClient, StreamMessage, RedisStreamClient } from '@kyobo/event-engine';
 import type { DLQRedisClient } from '@kyobo/event-engine';
 
 function parseFields(raw: string[]): Record<string, string> {
@@ -22,7 +22,7 @@ function parseFields(raw: string[]): Record<string, string> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRedis = any;
 
-export class IoRedisAdapter implements RedisConsumerClient, DLQRedisClient {
+export class IoRedisAdapter implements RedisConsumerClient, DLQRedisClient, RedisStreamClient {
   constructor(private readonly r: Redis) {}
 
   // ── RedisConsumerClient ───────────────────────────────────────────────────
@@ -94,5 +94,15 @@ export class IoRedisAdapter implements RedisConsumerClient, DLQRedisClient {
 
   async xdel(key: string, ...ids: string[]): Promise<number> {
     return this.r.xdel(key, ...ids);
+  }
+
+  // ── RedisStreamClient ─────────────────────────────────────────────────────
+
+  async xgroupCreate(key: string, group: string, id: string, mkstream: boolean): Promise<void> {
+    await (this.r as AnyRedis).xgroup('CREATE', key, group, id, ...(mkstream ? ['MKSTREAM'] : []));
+  }
+
+  async ping(): Promise<string> {
+    return this.r.ping();
   }
 }
