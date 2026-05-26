@@ -17,7 +17,7 @@ import crypto from 'crypto';
 export function computeHmac(payload: string, secret: string): string {
   // TODO: crypto.createHmac을 사용해 HMAC-SHA256 서명을 계산하고 hex 문자열로 반환하라
   //   힌트: crypto.createHmac('sha256', secret).update(Buffer.from(payload)).digest('hex')
-  throw new Error('NOT IMPLEMENTED');
+  return crypto.createHmac('sha256', secret).update(Buffer.from(payload)).digest('hex');
 }
 
 const payload = JSON.stringify({

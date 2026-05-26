@@ -79,8 +79,10 @@ export abstract class ChainVASPAdapterBase implements IVASPAdapter {
     throw new Error(`${this.constructor.name}: transfer not implemented`);
   }
 
-  async getTransferStatus(_txHash: string): Promise<TransferResult> {
-    throw new Error(`${this.constructor.name}: getTransferStatus not implemented`);
+  async getTransferStatus(txHash: string): Promise<TransferResult> {
+    const receipt = await this.provider.getTransactionReceipt(txHash);
+    if (!receipt) return { txHash, status: 'pending' };
+    return { txHash, status: receipt.status === 1 ? 'completed' : 'failed' };
   }
 
   // ── MockVASP 시나리오 제어 (Anvil·Sepolia 공통) ──────────────────────────

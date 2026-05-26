@@ -137,6 +137,284 @@ IssuerService ──depends on──→ IBlockchainAdapter (interface)
 
 ---
 
+### 실제 운영 코드의 주입 경로
+
+"DI 한 줄"이 실제 코드에서 어떻게 생겼는지 확인한다.  
+파일: `internal/apps/issuer-service/src/index.ts`
+
+**① 구체 구현체 생성 — index.ts:67**
+
+```typescript
+const chainAdapter = new EVMAdapter({
+  rpcUrl:     process.env.RPC_URL!,
+  chainId:    process.env.CHAIN_ID!,
+  privateKey: process.env.OPERATOR_PRIVATE_KEY!,
+});
+```
+
+`EVMAdapter`가 여기에만 등장한다. 이 한 줄이 Phase 3에서 `XRPLAdapter`나 `ChainAdapterFactory.createFromEnv()`로 교체되는 지점이다.
+
+**② Factory 생성자에 주입 — index.ts:120**
+
+```typescript
+const factory = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool });
+```
+
+`TokenIssuerFactory`의 생성자 타입 시그니처:
+
+```typescript
+// TokenIssuerFactory.ts:44
+constructor(
+  private readonly deps: {
+    chainAdapter: IBlockchainAdapter;   // ← 타입은 인터페이스
+    vaspAdapter:  IVASPAdapter;
+    coreBanking:  ICoreBankingAdapter;
+    pool:         Pool;
+  },
+) {}
+```
+
+`EVMAdapter` 인스턴스가 `IBlockchainAdapter` 타입으로 받아진다. Factory 내부는 구체 클래스 이름을 모른다.
+
+**③ IssuerService까지 전달 — TokenIssuerFactory.ts:84**
+
+```typescript
+const issuerService = new IssuerService({
+  chainAdapter: this.deps.chainAdapter,   // ← IBlockchainAdapter 그대로 전달
+  vaspAdapter:  this.deps.vaspAdapter,
+  coreBanking:  this.deps.coreBanking,
+  // ...
+});
+```
+
+`IssuerService` 생성자도 인터페이스 타입으로 받는다:
+
+```typescript
+// IssuerService.ts:31
+constructor(private readonly deps: {
+  chainAdapter: IBlockchainAdapter;
+  // ...
+}) {}
+```
+
+**④ ChainEventListener에도 직접 주입 — index.ts:138**
+
+```typescript
+const eventListener = new ChainEventListener(
+  chainAdapter,                               // ← IBlockchainAdapter
+  [nftIssuedHandler, issuanceConfirmHandler],
+);
+```
+
+`ChainEventListener`는 `subscribeEvents` / `queryEvents` 를 통해 온체인 이벤트를 수신한다. 역시 인터페이스만 알고 있다.
+
+**전체 흐름 정리**
+
+```
+index.ts
+  └─ new EVMAdapter(...)                        ← 구체 클래스는 여기서만
+       │
+       ├─→ new TokenIssuerFactory({ chainAdapter })
+       │         └─→ factory.createNFTIssuer()
+       │                  └─→ new IssuerService({ chainAdapter })
+       │                            (IBlockchainAdapter 인터페이스로 사용)
+       │
+       └─→ new ChainEventListener(chainAdapter)
+                 (IBlockchainAdapter.subscribeEvents / queryEvents 호출)
+```
+
+Phase 3에서 XRPL로 전환 시 변경점:
+
+```typescript
+// index.ts 67번 줄 한 줄만 교체
+// Before:
+const chainAdapter = new EVMAdapter({ rpcUrl, chainId, privateKey });
+
+// After:
+const chainAdapter = new XRPLAdapter({ wsUrl, seed });
+// 또는
+const chainAdapter = ChainAdapterFactory.createFromEnv('XRPL');
+```
+
+`TokenIssuerFactory`, `IssuerService`, `ChainEventListener` — 세 클래스 모두 수정 없음.
+
+---
+
+### Factory Pattern — "만드는 책임"의 분리
+
+위 흐름에서 `TokenIssuerFactory`가 하는 일을 보면 패턴이 보인다.
+
+**Strategy Pattern** (섹션 2에서 다룬 것): "어떻게 **사용**할지"를 인터페이스 뒤로 감춘다.  
+**Factory Pattern**: "어떻게 **만들지**"를 별도 클래스로 분리한다.
+
+```
+비유: 자동차 공장과 운전자
+
+  운전자(IssuerService)는 운전법만 안다.
+  차가 어떻게 조립됐는지(엔진 제조사, 나사 규격) 관심 없다.
+
+  공장(TokenIssuerFactory)은 조립만 책임진다.
+  엔진(EVMAdapter), 차대(VaspAdapter), 계기판(IssuancePolicyService)…
+  모두 여기서 끼워 맞추고 완성된 차를 건네준다.
+```
+
+`TokenIssuerFactory.createNFTIssuer()` 내부를 보면:
+
+```typescript
+// TokenIssuerFactory.ts
+createNFTIssuer() {
+  const policyRepo    = new PgIssuancePolicyRepository(this.deps.pool);
+  const policyService = new IssuancePolicyService(policyRepo);
+  const txRepo        = new PgTxRepository(this.deps.pool);
+  const vaspClient    = new VaspTxClientAdapter(this.deps.vaspAdapter);
+  const stateMachine  = new TxStateMachineService(txRepo, vaspClient);
+  const ledger        = new LedgerService(this.deps.pool);
+  const bridge        = new TxTransitionBridge(stateMachine, ledger);
+
+  return new IssuerService({
+    chainAdapter: this.deps.chainAdapter,
+    policyService, stateMachine, ledger, bridge,
+    // ...
+  });
+}
+```
+
+`IssuerService`를 호출하는 쪽(`index.ts`)은 이 조립 과정을 전혀 모른다. `factory.createNFTIssuer()` 한 줄만 호출하면 된다.
+
+**Factory Pattern이 주는 것:**
+
+| 역할 | 담당 클래스 | 알고 있는 것 |
+|---|---|---|
+| 어댑터 생성 | `ChainAdapterFactory` | EVM / XRPL / Circle / UTXO 구체 클래스 |
+| 서비스 조립 | `TokenIssuerFactory` | 의존성 그래프 전체 |
+| 사용 | `IssuerService` | `IBlockchainAdapter` 인터페이스만 |
+| 진입점 | `index.ts` | 어댑터 선택 + Factory 호출만 |
+
+세 역할이 분리되기 때문에 Phase 3 전환 시 `index.ts:67` 한 줄만 바꾸면 전체 체인이 교체된다.
+
+---
+
+### ChainAdapterFactory — 어댑터 선택 책임의 분리
+
+우리 프로젝트에는 Factory가 두 개 있다. 역할이 다르다.
+
+```
+ChainAdapterFactory   ← "어떤 어댑터를 만들지" 결정
+TokenIssuerFactory    ← "서비스 전체를 어떻게 조립할지" 결정
+```
+
+`ChainAdapterFactory`는 `chain-adapters` 패키지 안에 있다:
+
+```typescript
+// ChainAdapterFactory.ts
+static create(config: AdapterConfig): IBlockchainAdapter {
+  switch (config.chainType) {
+    case 'EVM':    return new EVMAdapter({ rpcUrl, chainId, privateKey });
+    case 'XRPL':   return new XRPLAdapter();
+    case 'CIRCLE': return new CircleAdapter();
+    case 'UTXO':   return new UTXOAdapter();
+    default: throw new UnsupportedChainError(config.chainType);
+  }
+}
+
+// 환경변수 기반 자동 생성
+static createFromEnv(chainType: ChainType): IBlockchainAdapter {
+  return ChainAdapterFactory.create({
+    chainType,
+    rpcUrl:     process.env['EVM_RPC_URL']    ?? 'http://localhost:8545',
+    chainId:    process.env['EVM_CHAIN_ID']   ?? '31337',
+    privateKey: process.env['EVM_SIGNER_KEY'] ?? undefined,
+  });
+}
+```
+
+`switch` 분기가 `ChainAdapterFactory` 안에 갇혀 있다. `index.ts`나 `IssuerService`는 이 분기를 모른다.
+
+**`default: never` 패턴**이 중요하다:
+
+```typescript
+default: {
+  const _exhaustive: never = config.chainType;  // 컴파일 타임 체크
+  throw new UnsupportedChainError(_exhaustive);
+}
+```
+
+`ChainType`에 새 체인을 추가하면 TypeScript가 이 `default` 분기에서 컴파일 에러를 발생시킨다. `switch` 분기를 추가하지 않으면 빌드가 안 된다. **누락 방지를 타입 시스템이 강제**한다.
+
+**두 Factory의 계층 관계:**
+
+```
+index.ts
+  ├─ ChainAdapterFactory.createFromEnv('EVM')
+  │    └─ new EVMAdapter(...)  →  IBlockchainAdapter 반환
+  │
+  └─ new TokenIssuerFactory({ chainAdapter })
+       └─ factory.createNFTIssuer()
+            └─ new IssuerService({ chainAdapter, ... })
+```
+
+Phase 3 전환:
+
+```typescript
+// index.ts 한 줄만 바꾼다
+// Before:
+const chainAdapter = ChainAdapterFactory.createFromEnv('EVM');
+
+// After:
+const chainAdapter = ChainAdapterFactory.createFromEnv('XRPL');
+```
+
+`TokenIssuerFactory`도, `IssuerService`도, `ChainEventListener`도 변경 없음.
+
+| Factory | 위치 | 결정하는 것 |
+|---|---|---|
+| `ChainAdapterFactory` | `chain-adapters/src/` | EVM / XRPL / Circle / UTXO 중 선택 |
+| `TokenIssuerFactory` | `issuer-service/src/factory/` | IssuerService 의존성 그래프 조립 |
+
+---
+
+### 이 프로젝트에서 Strategy Pattern이 쓰이는 곳
+
+`IBlockchainAdapter`만의 이야기가 아니다. 이 프로젝트 전체 설계 원칙이다.
+
+| 인터페이스 | 구현체 | 사용하는 서비스 | 등장 모듈 |
+|---|---|---|---|
+| `IBlockchainAdapter` | EVMAdapter / XRPLAdapter / CircleAdapter / UTXOAdapter | IssuerService, ChainEventListener | **S14 (지금)** |
+| `IVASPAdapter` | ExternalVASPAdapter / KyoboVASPAdapter | IssuerService, TxStateMachineService | S13 |
+| `IEventHandler` | NFTIssuedHandler / NFTTransferredHandler / NFTBurnedHandler | ChainEventListener | S14~S15 |
+| `ICoreBankingAdapter` | KyoboCoreBankingAdapter / StubCoreBankingAdapter | IssuerService, ReconcileService | M4 |
+| `IReconcileService` | ReconcileService | Admin API | M4 |
+| `ISignerService` | (Phase 3 미구현 — HSM/MPC 예정) | — | Phase 3 |
+
+S13에서 `IVASPAdapter`, M4에서 `ICoreBankingAdapter`를 봤을 때 "인터페이스에만 의존한다"는 구조가 반복됐다. 그게 모두 Strategy Pattern이다.
+
+**Decorator Pattern과의 결합**
+
+`IBlockchainAdapter`를 구현한 것이 EVMAdapter만이 아니다. 데코레이터도 같은 인터페이스를 구현한다:
+
+```
+EVMAdapter (구체 구현)
+  └─ RetryAdapterDecorator     ← IBlockchainAdapter를 implements
+       └─ LoggingAdapterDecorator  ← IBlockchainAdapter를 implements
+```
+
+`IssuerService`는 어떤 레이어가 감싸져 있는지 모른다. 인터페이스만 보고 호출한다. 로깅과 재시도 로직을 비즈니스 코드에 섞지 않아도 되는 이유다.
+
+```typescript
+// 사용하는 쪽은 어떻게 감싸졌는지 모름
+constructor(private readonly deps: { chainAdapter: IBlockchainAdapter }) {}
+
+// 조립하는 쪽(index.ts)에서만 결정
+const chainAdapter =
+  new LoggingAdapterDecorator(
+    new RetryAdapterDecorator(
+      new EVMAdapter({ rpcUrl, chainId, privateKey })
+    )
+  );
+```
+
+---
+
 ## 3. 파라미터 인터페이스 — 왜 별도로 분리하는가
 
 체인마다 발행에 필요한 파라미터 구성이 다를 수 있다. 하나의 인터페이스로 묶어두면 어댑터가 필요한 필드만 쓰고 나머지는 무시하면 된다.
@@ -305,15 +583,27 @@ export interface ChainEvent {
 
   체인 이벤트 원본
        │
-       ▼ EVMAdapter._toChainEvent() 내부 파싱
-  ChainEvent.args = { from: '0x...', tokenId: 1001n, amount: 1n }
+       ▼ EVMAdapter._toChainEvent()
+         ← internal/packages/chain-adapters/src/evm/EVMAdapter.ts:217
+         log.fragment.inputs.forEach((input, i) => {
+           named[input.name] = log.args?.[i];  // ABI input name → named field 변환
+         });
+         return { ..., args: named, raw: log };
+  ChainEvent.args = { to: '0x...', tokenId: 1001n, amount: 1n }
   ChainEvent.raw  = <EthersEventLog 원본 보존>
        │
-       ▼ IssuerService는 args만 사용
-  const { from, tokenId, amount } = event.args
+       ├─▶ IssuanceConfirmHandler.handle(event)
+       │     ← internal/apps/issuer-service/src/handlers/IssuanceConfirmHandler.ts:33
+       │     event.txHash      → tx_mint_requests 조회
+       │     event.blockNumber → handleMined() 호출
+       │     (event.args 미사용 — txHash로 충분)
+       │
+       └─▶ ledgerService.recordProcessedEvent(ev.txHash, ..., ev.args, ...)
+             ← internal/integration/__tests__/issuer-service-mock-vasp.integration.test.ts:402
+             ev.args → JSON 직렬화 후 processed_events 페이로드로 저장
 
-  → IssuerService에 체인 전용 코드 없음
-  → XRPL로 교체해도 args 구조는 동일 → IssuerService 변경 없음 ✅
+  → 핸들러에 ethers.js / EVM 전용 코드 없음
+  → XRPL로 교체해도 ChainEvent 구조 동일 → 핸들러 변경 없음 ✅
 ```
 
 ---
@@ -462,15 +752,139 @@ Phase 3 (글로벌 확장): CircleAdapter
 
 | 개념 | 핵심 |
 |---|---|
-| EVM 고착화 리스크 | 체인 전용 개념(gasUsed, Log, topics)이 비즈니스 로직에 스며들면 교체 비용 폭발 |
-| Strategy Pattern | IssuerService → 인터페이스만 의존, 구현체는 DI |
-| TransactionReceipt | `gasUsed?` optional — XRPL 등 가스 없는 체인 대응 |
-| ChainEvent.raw | 원본 보존용, 어댑터 외부에서 파싱 금지 |
-| subscribeEvents | `Promise<() => void>` 반환 — unsubscribe 함수 직접 반환 |
-| queryEvents | Finalized 범위만 — REORG 안전한 missed event 복구 |
-| XRPL 1:1 매핑 불가 | NFTokenCreateOffer + NFTokenAcceptOffer → 어댑터가 내부에서 묶음 |
+| EVM 고착화 리스크 | 체인 전용 개념이 비즈니스 로직에 스며들면 체인 교체 시 전체 수정 |
+| Strategy Pattern | 비즈니스 코드는 인터페이스만 의존 — 어댑터 교체는 DI 한 줄 |
+| 두 Factory의 역할 | ChainAdapterFactory = 어댑터 생성, TokenIssuerFactory = 서비스 조립 — 책임 분리 |
+| ChainEvent.args / raw | 어댑터 내부에서 raw 파싱 → named args 변환. 외부에서 raw 직접 파싱 금지 |
+| subscribeEvents + queryEvents | 실시간 수신(Push) + 재시작 복구(Pull) 이중 채널 — 둘 다 있어야 유실 없음 |
+| XRPL 1:1 매핑 불가 | 체인 고유 개념의 차이를 어댑터가 내부에서 흡수 — 상위 레이어는 모름 |
+| 추상화의 조건 | 체인 교체가 실제 로드맵에 있을 때 장점이 비용을 초과. 근거 없으면 오버엔지니어링 |
+| 멀티체인 동시 운영 | 교체가 아닌 추가 — 레지스트리로 어댑터 관리, 비즈니스 코드 변경 없음 (Phase 2+) |
 
 **S15 예고:** 인터페이스를 배웠으니 이제 실제 EVMAdapter 구현을 분석한다. ethers.js v6 기반으로 sendTransaction이 TransactionReceipt로 어떻게 변환되는지, subscribeEvents가 어떻게 unsubscribe 함수를 반환하는지, 그리고 XRPLAdapter stub과 직접 교체 시뮬레이션을 실습한다.
+
+---
+
+## 9-1. 멀티체인 동시 운영 — ChainAdapterRegistry
+
+섹션 9는 Phase별로 어댑터를 **교체**하는 전략이다. 그런데 Phase 2+에서는 교체가 아니라 **동시 운영**이 필요한 상황이 생긴다.
+
+```
+단일 체인 (Phase 1):
+  NFT 발행 → Ethereum 한 체인
+
+동시 운영 (Phase 2+):
+  활동 NFT      → Ethereum (ERC-1155)
+  국내 이전 포인트 → XRPL (국내 규제 대응)
+  글로벌 정산   → Circle ARC (USDC/CCTP)
+  → 세 어댑터가 같은 서비스 안에서 동시 동작
+```
+
+#### ChainAdapterRegistry — 레지스트리 패턴
+
+단일 어댑터 대신 **chainId를 키로 어댑터를 관리하는 레지스트리**를 도입한다.
+
+```typescript
+// chain-adapters/src/ChainAdapterRegistry.ts
+export class ChainAdapterRegistry {
+  private readonly adapters = new Map<string, IBlockchainAdapter>();
+
+  register(adapter: IBlockchainAdapter): void {
+    this.adapters.set(adapter.chainId, adapter);
+  }
+
+  get(chainId: string): IBlockchainAdapter {
+    const adapter = this.adapters.get(chainId);
+    if (!adapter) throw new UnsupportedChainError(chainId);
+    return adapter;
+  }
+
+  getAll(): IBlockchainAdapter[] {
+    return [...this.adapters.values()];
+  }
+}
+```
+
+#### index.ts — 멀티 어댑터 조립
+
+```typescript
+// Phase 2+ — 어댑터를 교체가 아닌 추가
+const registry = new ChainAdapterRegistry();
+registry.register(new EVMAdapter({ rpcUrl: EVM_RPC, chainId: '1' }));
+registry.register(new XRPLAdapter({ wsUrl: XRPL_WS }));
+// Phase 2.5: registry.register(new CircleAdapter({ apiKey: CIRCLE_KEY }));
+
+// issuance_policies 테이블에 chain_id 컬럼 추가 필요
+// { event_type: 'WALK_GOAL_MET', token_id: 1001, chain_id: '1'           }
+// { event_type: 'INVEST_DONE',   token_id: 2001, chain_id: 'xrpl-mainnet' }
+```
+
+#### IssuerService 라우팅 — 정책 기반
+
+IssuerService 자체는 `IBlockchainAdapter` 하나만 받는 구조를 그대로 유지한다. **TokenIssuerFactory가 정책별 체인에 맞는 어댑터를 꺼내 IssuerService를 체인 수만큼 생성**한다.
+
+```typescript
+// TokenIssuerFactory — 체인별로 IssuerService 독립 생성
+createNFTIssuers(conditionSvc: EventConditionService) {
+  return registry.getAll().map(adapter => ({
+    chainId:  adapter.chainId,
+    issuer:   this._buildIssuer(adapter, conditionSvc),
+    // IssuerService 코드 변경 없음 — adapter만 달라질 뿐
+  }));
+}
+```
+
+```
+issuance_policies.chain_id = '1'           → EVMAdapter IssuerService 호출
+issuance_policies.chain_id = 'xrpl-mainnet' → XRPLAdapter IssuerService 호출
+IssuerService 비즈니스 로직 변경 없음
+```
+
+#### ChainEventListener — 체인 수만큼 독립 실행
+
+```typescript
+// 레지스트리에 등록된 모든 체인에 대해 독립 리스너 생성
+const listeners = registry.getAll().map(adapter =>
+  new ChainEventListener(
+    adapter,
+    [confirmHandler],
+    contractsByChain[adapter.chainId],
+  )
+);
+
+await Promise.all(listeners.map(l => l.start()));
+
+// GracefulShutdown — 모든 리스너 정지
+process.on('SIGTERM', async () => {
+  await Promise.all(listeners.map(l => l.stop()));
+});
+```
+
+```
+EVMAdapter  subscribeEvents('Issued') ─→ IssuanceConfirmHandler ─→ tx_mint_requests (chain_id='1')
+XRPLAdapter subscribeEvents('Issued') ─→ IssuanceConfirmHandler ─→ tx_mint_requests (chain_id='xrpl-mainnet')
+
+IssuanceConfirmHandler 코드 변경 없음 — tx_mint_requests에 chain_id 컬럼만 추가
+```
+
+#### Phase 1 → Phase 2 동시 운영 전환 시 변경 범위
+
+```
+변경 필요:
+  □ issuance_policies  : chain_id 컬럼 추가
+  □ tx_mint_requests   : chain_id 컬럼 추가
+  □ index.ts           : ChainAdapterRegistry 조립 (어댑터 추가)
+  □ TokenIssuerFactory : registry 기반 다중 IssuerService 생성
+
+변경 불필요:
+  ✅ IssuerService 비즈니스 로직
+  ✅ TxStateMachineService
+  ✅ IssuanceConfirmHandler
+  ✅ ChainEventListener 클래스 (인스턴스 수만 늘어남)
+  ✅ LedgerService / TxTransitionBridge
+```
+
+**핵심:** `IBlockchainAdapter` 추상화가 단일 체인 전환뿐 아니라 다중 체인 동시 운영도 지원한다. IssuerService는 어댑터가 하나든 열 개든 모른다.
 
 ---
 

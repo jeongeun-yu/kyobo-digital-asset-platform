@@ -14,6 +14,8 @@
  *   [6] 종단 상태 보호 — FAILED 이후 전이 시도 → throw
  *   [7] 멱등성 — findPending으로 중복 요청 감지
  *   [8] findByTxHash 조회
+ *   [9] Webhook NFT_ISSUED → NFTIssuedProcessor — creditNFT + updateMintRequestConfirmed
+ *       → TxStatus·MintStatus·IssuanceStatus 세 레이어 동시 CONFIRMED 전이
  */
 
 import { Pool }                    from 'pg';
@@ -29,14 +31,21 @@ import { TxTransitionBridge }      from '../../apps/issuer-service/src/services/
 import { LedgerService }           from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }        from '../../packages/core-banking/src/ledger/PgDatabaseClient';
 import { StubCoreBankingAdapter }  from '@kyobo/core-banking';
+import { PgNFTLedgerService }      from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
+import {
+  NFTIssuedProcessor,
+  IdempotencyGuard,
+  InMemoryIdempotencyStore,
+}                                  from '@kyobo/event-engine';
 
 const TX_HASH = '0xaabbcc0000000000000000000000000000000000000000000000000000000001';
 
 describe('IssuanceStatus 상태 전이 — PgIssuanceRequestRepository', () => {
-  let pool:    Pool;
-  let repo:    PgIssuanceRequestRepository;
-  let txRepo:  PgTxRepository;
-  let handler: IssuanceConfirmHandler;
+  let pool:           Pool;
+  let repo:           PgIssuanceRequestRepository;
+  let txRepo:         PgTxRepository;
+  let txStateMachine: TxStateMachineService;
+  let handler:        IssuanceConfirmHandler;
 
   beforeAll(() => {
     pool = new Pool({ connectionString: getPgUrl() });
@@ -48,7 +57,7 @@ describe('IssuanceStatus 상태 전이 — PgIssuanceRequestRepository', () => {
       async getStatus()            { return { status: 'pending' as const }; },
       async resubmitWithGasBump()  { return { txHash: '0x0' }; },
     };
-    const txStateMachine = new TxStateMachineService(txRepo, stubVasp);
+    txStateMachine = new TxStateMachineService(txRepo, stubVasp);
     const ledgerService  = new LedgerService(new PgDatabaseClient(pool), new StubCoreBankingAdapter());
     const bridge         = new TxTransitionBridge(ledgerService, repo);
     bridge.attach(txStateMachine);
@@ -60,7 +69,7 @@ describe('IssuanceStatus 상태 전이 — PgIssuanceRequestRepository', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests');
+    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, user_nft_holdings');
   });
 
   // ── [1] 생성 ──────────────────────────────────────────────────────────────
@@ -233,5 +242,98 @@ describe('IssuanceStatus 상태 전이 — PgIssuanceRequestRepository', () => {
     const found = await repo.findByTxHash(TX_HASH);
     expect(found).not.toBeNull();
     expect(found!.userId).toBe('user-008b');
+  });
+
+  // ── [9] Webhook NFT_ISSUED 경로 ──────────────────────────────────────────────
+  //
+  // 검증 대상: NFTIssuedProcessor.process()
+  //   → creditNFT (user_nft_holdings)
+  //   → updateMintRequestConfirmed → TxStateMachineService.handleMined + handleConfirmed
+  //   → TxTransitionBridge 'transition' 이벤트
+  //     → mint_requests CONFIRMED
+  //     → issuance_requests CONFIRMED
+  //
+  // ChainEventListener 없이 Webhook 경로만으로 세 레이어 동시 CONFIRMED 전이 확인.
+
+  it('[9] Webhook NFT_ISSUED → NFTIssuedProcessor — creditNFT + 세 상태 레이어 동시 CONFIRMED', async () => {
+    const WEBHOOK_TX_HASH  = '0x' + 'f9'.repeat(32);
+    const WALLET_ADDR      = '0xWEBHOOK090909090909090909090909090909';
+    const WEBHOOK_TOKEN_ID = '9001';
+    const txRequestId      = randomUUID();
+    const mintRequestId    = randomUUID();
+    const now              = new Date();
+
+    // ① user_wallet_mapping — creditNFT의 _resolveUserId 조회 대상
+    await pool.query(
+      `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
+       VALUES ('user-webhook-009', $1, 'MOCK', true) ON CONFLICT (user_id) DO NOTHING`,
+      [WALLET_ADDR],
+    );
+
+    // ② tx_mint_requests: SUBMITTED (TxStateMachineService 조회 대상)
+    await txRepo.save({
+      id: txRequestId, userId: 'user-webhook-009',
+      tokenId: BigInt(WEBHOOK_TOKEN_ID), amount: BigInt(1),
+      status: 'SUBMITTED', txHash: WEBHOOK_TX_HASH,
+      retryCount: 0, createdAt: now, updatedAt: now,
+    });
+
+    // ③ mint_requests: SUBMITTED + txHash (TxTransitionBridge → ledgerService.findByTxHash 대상)
+    await pool.query(
+      `INSERT INTO mint_requests (id, user_id, policy_id, status, tx_hash, created_at, updated_at)
+       VALUES ($1, 'user-webhook-009', 'policy-webhook', 'SUBMITTED', $2, NOW(), NOW())`,
+      [mintRequestId, WEBHOOK_TX_HASH],
+    );
+
+    // ④ issuance_requests: SUBMITTED + txHash (TxTransitionBridge → issuanceRepo.findByTxHash 대상)
+    const issuanceReq = await repo.create({
+      userId: 'user-webhook-009', eventType: 'WALK_10000',
+      tokenId: BigInt(WEBHOOK_TOKEN_ID), amount: BigInt(1),
+      walletAddr: WALLET_ADDR, status: 'REQUESTED', txHash: null, failReason: null,
+    });
+    await repo.updateStatus(issuanceReq.id, 'SUBMITTED', { txHash: WEBHOOK_TX_HASH });
+
+    // ⑤ NFTIssuedProcessor 구성 — PgNFTLedgerService에 txStateMachine + txRepo 주입
+    const webhookLedger = new PgNFTLedgerService(
+      pool, '0xCONTRACT', 31337, txStateMachine, txRepo,
+    );
+    const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
+    const processor   = new NFTIssuedProcessor(idempotency, webhookLedger);
+
+    // ⑥ NFT_ISSUED 스트림 메시지 직접 처리
+    await processor.process({
+      id: '1-0',
+      fields: {
+        eventType:   'NFT_ISSUED',
+        requestId:   txRequestId,
+        txHash:      WEBHOOK_TX_HASH,
+        payload:     JSON.stringify({ tokenId: WEBHOOK_TOKEN_ID, to: WALLET_ADDR, blockNumber: 5000 }),
+        publishedAt: new Date().toISOString(),
+        _retryCount: '0',
+      },
+    });
+
+    // TxTransitionBridge EventEmitter 비동기 처리 대기
+    await new Promise(r => setTimeout(r, 300));
+
+    // ⑦ TxStatus CONFIRMED 확인 (tx_mint_requests)
+    const txReq = await txRepo.findById(txRequestId);
+    expect(txReq!.status).toBe('CONFIRMED');
+
+    // ⑧ MintStatus CONFIRMED 확인 (mint_requests)
+    const { rows: mintRows } = await pool.query(
+      'SELECT status FROM mint_requests WHERE id = $1', [mintRequestId],
+    );
+    expect(mintRows[0]!.status).toBe('CONFIRMED');
+
+    // ⑨ IssuanceStatus CONFIRMED 확인 (issuance_requests)
+    const issuanceResult = await repo.findById(issuanceReq.id);
+    expect(issuanceResult!.status).toBe('CONFIRMED');
+
+    // ⑩ user_nft_holdings creditNFT 확인
+    const { rows: holdingRows } = await pool.query(
+      `SELECT amount FROM user_nft_holdings WHERE user_id = 'user-webhook-009'`,
+    );
+    expect(Number(holdingRows[0]!.amount)).toBe(1);
   });
 });

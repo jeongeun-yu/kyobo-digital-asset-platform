@@ -21,7 +21,7 @@
  *   Sepolia 테스트넷 전용 — 메인넷 배포 절대 금지.
  */
 
-import { ethers } from 'hardhat';
+import { ethers, run } from 'hardhat';
 
 async function main() {
   const signers = await ethers.getSigners();
@@ -46,6 +46,25 @@ async function main() {
   const addr = await mock.getAddress();
   console.log('\n── 배포 완료 ─────────────────────────────────');
   console.log(`MOCK_CONTRACT_ADDR=${addr}`);
+
+  console.log('\nEtherscan verify 중... (10초 대기)');
+  await new Promise(r => setTimeout(r, 10000));
+  try {
+    await run('verify:verify', {
+      address: addr,
+      constructorArguments: [],
+    });
+    console.log('✓ Etherscan verify 완료');
+    console.log(`  https://sepolia.etherscan.io/address/${addr}#code`);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('Already Verified')) {
+      console.log('✓ 이미 verify된 컨트랙트');
+    } else {
+      console.warn('⚠ verify 실패 (수동으로 재시도 가능):', msg);
+    }
+  }
+
   console.log('\n.env에 위 주소 추가 후 S15 실습 실행:');
   console.log('  EVM_RPC_URL=https://rpc.sepolia.org');
   console.log('  EVM_CHAIN_ID=11155111');

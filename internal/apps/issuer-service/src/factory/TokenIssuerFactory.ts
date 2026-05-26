@@ -60,6 +60,7 @@ export class TokenIssuerFactory {
     issuerService:       IssuerService;
     confirmHandler:      IssuanceConfirmHandler;
     txStateMachine:      TxStateMachineService;
+    txRepo:              PgTxRepository;
   } {
     const policyRepo     = new PgIssuancePolicyRepository(this.deps.pool);
     const policyService  = new IssuancePolicyService(policyRepo);
@@ -93,7 +94,7 @@ export class TokenIssuerFactory {
       ledgerService,
     });
 
-    return { issuerService, confirmHandler, txStateMachine };
+    return { issuerService, confirmHandler, txStateMachine, txRepo };
   }
 
   /**

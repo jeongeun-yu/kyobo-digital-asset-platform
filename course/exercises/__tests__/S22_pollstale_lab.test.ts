@@ -1,15 +1,16 @@
 /**
- * S22 채점 — pollStaleRequests 구현 + 3종 복구 통합 테스트
+ * S22 채점 — pollStaleRequests 통합 테스트
  *
  * S22_pollstale_lab.ts 는 export가 없으므로 TxStateMachineService를
  * @kyobo/vasp 에서 import하여 채점한다.
  *
  * 채점 기준:
- *   · handleTimeout(requestId) 후 PENDING 유지 + retryCount 증가
- *   · handleConfirmed + handleFinalized 순서 호출 → FINALIZED 전이
- *   · pollStaleRequests: VASP 'failed' → FAILED 전이
+ *   · pollStaleRequests: VASP 'failed' → FAILED 전이 + failReason 저장
  *   · pollStaleRequests: VASP 'not_found' → FAILED 전이
+ *   · pollStaleRequests: VASP 'confirmed' → CONFIRMED 전이 (콜백 차단 E2E)
+ *   · Idempotency: CONFIRMED 건은 pollStaleRequests가 재처리하지 않음
  *   · Bulkhead: 한 건 에러가 전체 배치를 멈추지 않음
+ *   · handleTimeout: PENDING 유지 + retryCount 증가 + gas bump
  */
 
 import type { TxRepository, VaspTxClient, WalletResolver, MintRequest, TxStatus } from '@kyobo/vasp';
@@ -207,7 +208,65 @@ describe('S22 채점 — pollStaleRequests 통합 테스트', () => {
     });
   });
 
-  describe('[5] Bulkhead — 한 건 에러가 전체 배치를 멈추지 않음', () => {
+  describe('[3] pollStaleRequests — VASP confirmed → CONFIRMED 전이 (콜백 차단 E2E)', () => {
+    it('Webhook 없이 pollStaleRequests가 CONFIRMED 전이시킨다', async () => {
+      const repo = new InMemoryTxRepository();
+      const vasp = new MockVaspTxClient();
+      const svc  = new TxStateMachineService(repo, vasp, wallet);
+      await repo.save(makeStalePendingRequest('req-s22-cb-e2e', '0xfa11edaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'));
+      vasp.setNextStatus('0xfa11edaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', { status: 'confirmed', blockNumber: 12400 });
+      const { processed } = await svc.pollStaleRequests();
+      expect(processed).toBe(1);
+      const r = await repo.findById('req-s22-cb-e2e');
+      expect(r?.status).toBe('CONFIRMED');
+    });
+
+    it('pollStaleRequests: pending → skip (processed에 포함되지 않음)', async () => {
+      const repo = new InMemoryTxRepository();
+      const vasp = new MockVaspTxClient();
+      const svc  = new TxStateMachineService(repo, vasp, wallet);
+      await repo.save(makeStalePendingRequest('req-s22-pending-skip', '0xfa11edbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'));
+      vasp.setNextStatus('0xfa11edbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', { status: 'pending' });
+      const { processed } = await svc.pollStaleRequests();
+      expect(processed).toBe(0);
+    });
+  });
+
+  describe('[4] Idempotency — CONFIRMED 건은 폴링이 재처리하지 않음', () => {
+    it('CONFIRMED 상태 건은 findPendingOlderThan에서 제외된다', async () => {
+      const repo = new InMemoryTxRepository();
+      const vasp = new MockVaspTxClient();
+      const svc  = new TxStateMachineService(repo, vasp, wallet);
+      const staleDate = new Date(Date.now() - 35 * 60_000);
+      await repo.save({
+        id: 'req-idempotent', userId: 'user-idempotent',
+        tokenId: 1n, amount: 1n,
+        status: 'CONFIRMED', txHash: '0xfa11edcccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        retryCount: 0, createdAt: staleDate, updatedAt: new Date(),
+      });
+      const { processed } = await svc.pollStaleRequests();
+      expect(processed).toBe(0);
+      const r = await repo.findById('req-idempotent');
+      expect(r?.status).toBe('CONFIRMED');
+    });
+
+    it('FAILED 상태 건도 재처리되지 않는다', async () => {
+      const repo = new InMemoryTxRepository();
+      const vasp = new MockVaspTxClient();
+      const svc  = new TxStateMachineService(repo, vasp, wallet);
+      const staleDate = new Date(Date.now() - 35 * 60_000);
+      await repo.save({
+        id: 'req-idem-failed', userId: 'user-idem-failed',
+        tokenId: 1n, amount: 1n,
+        status: 'FAILED', txHash: '0xfa11eddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+        retryCount: 0, createdAt: staleDate, updatedAt: new Date(),
+      });
+      const { processed } = await svc.pollStaleRequests();
+      expect(processed).toBe(0);
+    });
+  });
+
+  describe('[6] Bulkhead — 한 건 에러가 전체 배치를 멈추지 않음', () => {
     it('pollStaleRequests 전체가 throw되지 않는다', async () => {
       const repo  = new InMemoryTxRepository();
       const vasp  = new MockVaspTxClient();

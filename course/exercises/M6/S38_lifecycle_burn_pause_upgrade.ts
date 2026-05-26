@@ -116,7 +116,18 @@ export class KyoboNFTLifecycle {
    * from === '' → mint, to === '' → burn, 나머지 → transfer
    */
   private _update(_from: string, _to: string): void {
-    return undefined as never;
+    const isBurn = (_to === '');
+    if (this.burnPauseExempt) {
+      // 정책 B: burn은 Pause 중에도 허용, 그 외는 차단
+      if (!isBurn && this.state === 'PAUSED') {
+        throw new Error('EnforcedPause: contract is paused');
+      }
+    } else {
+      // 정책 A: Pause 중 모든 작업 차단
+      if (this.state === 'PAUSED') {
+        throw new Error('EnforcedPause: contract is paused');
+      }
+    }
   }
 
   // ── 발행 ────────────────────────────────────────────────────────────
@@ -148,7 +159,17 @@ export class KyoboNFTLifecycle {
    *   6. balance.amount === amount이면 항목 제거 (splice), 아니면 amount 차감
    */
   burn(_caller: string, _from: string, _tokenId: bigint, _amount: bigint): void {
-    return undefined as never;
+    this.requireRole('MINTER_ROLE', _caller);
+    this._update(_from, '');
+    const idx = this.balances.findIndex(b => b.owner === _from && b.tokenId === _tokenId);
+    if (idx === -1) throw new Error('KyoboNFT: token not found');
+    const balance = this.balances[idx]!;
+    if (balance.amount < _amount) throw new Error('KyoboNFT: insufficient balance for burn');
+    if (balance.amount === _amount) {
+      this.balances.splice(idx, 1);
+    } else {
+      balance.amount -= _amount;
+    }
   }
 
   // ── 전송 ────────────────────────────────────────────────────────────
@@ -191,7 +212,8 @@ export class KyoboNFTLifecycle {
    *   2. this.state = 'UPGRADED'
    */
   authorizeUpgrade(_caller: string, _newImpl: string): void {
-    return undefined as never;
+    this.requireRole('UPGRADER_ROLE', _caller);
+    this.state = 'UPGRADED';
   }
 
   // ── 조회 ────────────────────────────────────────────────────────────

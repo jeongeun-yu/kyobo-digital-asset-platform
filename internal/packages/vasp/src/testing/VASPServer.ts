@@ -6,9 +6,10 @@
  * TX 확정 후 내부 WebhookServer로 NFT_ISSUED 콜백을 전송한다.
  *
  * 엔드포인트:
- *   POST /transactions   — TX 서명·브로드캐스트 (ExternalVASPAdapter 호출 대상)
- *   POST /admin/mode     — MockVASP 컨트랙트 모드 전환 (테스트 시나리오 제어)
- *   GET  /admin/mode     — 현재 모드 조회
+ *   POST /transactions      — TX 서명·브로드캐스트 (ExternalVASPAdapter 호출 대상)
+ *   GET  /transfers/:txHash — TX 상태 조회 (ExternalVASPAdapter.getTransferStatus 호출 대상)
+ *   POST /admin/mode        — MockVASP 컨트랙트 모드 전환 (테스트 시나리오 제어)
+ *   GET  /admin/mode        — 현재 모드 조회
  */
 
 import http   from 'http';
@@ -31,11 +32,13 @@ export interface VASPServerConfig {
 }
 
 export class VASPServer {
-  private readonly server:   http.Server;
-  private readonly provider: ethers.JsonRpcProvider;
-  private readonly signer:   ethers.Wallet;
-  private readonly contract: ethers.Contract;
-  private readonly cfg:      VASPServerConfig;
+  private readonly server:     http.Server;
+  private readonly provider:   ethers.JsonRpcProvider;
+  private readonly signer:     ethers.Wallet;
+  private readonly contract:   ethers.Contract;
+  private readonly cfg:        VASPServerConfig;
+  // txHash → 'pending' | 'completed' | 'failed' — GET /transfers/:txHash 응답용
+  private readonly txStatuses = new Map<string, 'pending' | 'completed' | 'failed'>();
 
   constructor(config: VASPServerConfig) {
     this.cfg      = config;
@@ -73,6 +76,9 @@ export class VASPServer {
 
     if (req.method === 'POST' && req.url === '/transactions') {
       await this._handleSubmit(body, res);
+    } else if (req.method === 'GET' && req.url?.startsWith('/transfers/')) {
+      const txHash = req.url.slice('/transfers/'.length);
+      this._handleGetTransferStatus(txHash, res);
     } else if (req.method === 'POST' && req.url === '/admin/mode') {
       await this._handleSetMode(body, res);
     } else if (req.method === 'GET' && req.url === '/admin/mode') {
@@ -127,6 +133,7 @@ export class VASPServer {
     }
 
     // 즉시 202 반환 — ExternalVASPAdapter는 txHash를 받아 DB에 SUBMITTED로 기록
+    this.txStatuses.set(tx.hash, 'pending');  // GET /transfers/:txHash 응답 준비
     res.writeHead(202, { 'Content-Type': 'application/json' }).end(
       JSON.stringify({ txHash: tx.hash, status: 'submitted', timestamp: Date.now() }),
     );
@@ -150,6 +157,7 @@ export class VASPServer {
       receipt = await tx.wait(1);
     } catch (err) {
       // tx.wait()가 revert exception을 던지는 경우 (드물지만 방어)
+      this.txStatuses.set(tx.hash, 'failed');
       await this._postCallback('NFT_FAILED', requestId, {
         txHash: tx.hash,
         reason: (err as Error).message,
@@ -158,12 +166,16 @@ export class VASPServer {
     }
 
     if (!receipt || receipt.status === 0) {
+      this.txStatuses.set(tx.hash, 'failed');
       await this._postCallback('NFT_FAILED', requestId, {
         txHash: tx.hash,
         reason: 'transaction reverted',
       });
       return;
     }
+
+    // TX 온체인 확정 — Issued 이벤트 여부와 무관하게 completed
+    this.txStatuses.set(tx.hash, 'completed');
 
     // Issued 이벤트 파싱
     const iface     = new ethers.Interface(MOCK_VASP_ABI as ethers.InterfaceAbi);
@@ -172,7 +184,7 @@ export class VASPServer {
     });
 
     if (!issuedLog) {
-      // NO_EMIT 모드: TX 성공, 이벤트 없음 → 콜백 없음
+      // NO_EMIT 모드: TX 성공, 이벤트 없음 → 콜백 없음 (txStatuses는 'completed' 유지)
       console.log(`[VASPServer] NO_EMIT — tx ${tx.hash} 확정, Issued 이벤트 없음`);
       return;
     }
@@ -217,6 +229,21 @@ export class VASPServer {
       req.end();
     });
     console.log(`[VASPServer] ${eventType} 콜백 전송 완료 (requestId=${requestId.slice(0, 8)}…)`);
+  }
+
+  // ── GET /transfers/:txHash ────────────────────────────────────────────────
+  // ExternalVASPAdapter.getTransferStatus(txHash) 호출 대상
+  // pollStaleRequests → VaspTxClientAdapter.getStatus → ExternalVASPAdapter → 이 엔드포인트
+
+  private _handleGetTransferStatus(txHash: string, res: http.ServerResponse): void {
+    const status = this.txStatuses.get(txHash);
+    if (!status) {
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'transfer not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ txHash, status, fee: '0' }));
   }
 
   // ── POST /admin/mode ───────────────────────────────────────────────────────

@@ -125,7 +125,19 @@ export function simulateVulnerableBurn(
   callCount: { value: number },
   maxReentrancy: number,
 ): BurnResult {
-  return undefined as never;
+  const balance = balances.get(attacker) ?? 0;
+  if (balance <= 0) return 'success';
+
+  // [❌ 취약한 순서] Interactions 먼저 — 상태 차감 전에 재진입 허용
+  if (callCount.value < maxReentrancy) {
+    callCount.value++;
+    simulateVulnerableBurn(balances, attacker, callCount, maxReentrancy);
+  }
+
+  // [❌ 너무 늦은 Effects] 재귀 호출 후 잔액 차감
+  balances.set(attacker, (balances.get(attacker) ?? 0) - 1);
+
+  return callCount.value >= maxReentrancy ? 'reentrancy_exploited' : 'success';
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -149,7 +161,22 @@ export function simulateSafeBurn(
   callCount: { value: number },
   maxReentrancy: number,
 ): { success: boolean; burnedCount: number } {
-  return undefined as never;
+  // Check
+  const balance = balances.get(attacker) ?? 0;
+  if (balance <= 0) return { success: false, burnedCount: 0 };
+
+  // [✅ Effects 먼저] 잔액을 즉시 차감 (재진입 전에 상태 반영)
+  balances.set(attacker, balance - 1);
+
+  // [✅ Interactions 나중에] 재진입 시도: callCount만 증가, 실제 소각은 이미 차감됐으므로 무시
+  if (callCount.value < maxReentrancy) {
+    callCount.value++;
+    // 재진입 시도: 이미 Effects가 반영됐으므로 재진입 내부에서는 소각 불가 (잔액 확인만 시뮬레이션)
+    // 실제 Solidity에서는 balance가 0으로 설정된 후 외부 호출 → 재진입 시 balance=0 → 추가 인출 불가
+    // 이 시뮬레이션에서는 재진입 콜백만 수행하고 실제 소각은 무시한다 (교육 목적)
+  }
+
+  return { success: true, burnedCount: 1 };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -167,7 +194,7 @@ export function checkWithTxOrigin(
   _msgSender: string, // 현재 함수를 직접 호출한 주소 (컨트랙트일 수 있음)
   owner: string,
 ): boolean {
-  return undefined as never;
+  return txOrigin === owner;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -185,7 +212,7 @@ export function checkWithMsgSender(
   msgSender: string,  // 직접 호출한 주소 — 컨트랙트이면 권한 없음
   owner: string,
 ): boolean {
-  return undefined as never;
+  return msgSender === owner;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -200,7 +227,16 @@ export function checkWithMsgSender(
 // ────────────────────────────────────────────────────────────────────────
 
 export function classifyFindings(findings: SlitherFinding[]): Record<SlitherSeverity, SlitherFinding[]> {
-  return undefined as never;
+  const result: Record<SlitherSeverity, SlitherFinding[]> = {
+    HIGH:          [],
+    MEDIUM:        [],
+    LOW:           [],
+    INFORMATIONAL: [],
+  };
+  for (const finding of findings) {
+    result[finding.severity].push(finding);
+  }
+  return result;
 }
 
 // ────────────────────────────────────────────────────────────────────────

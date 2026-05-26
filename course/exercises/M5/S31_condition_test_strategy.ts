@@ -87,7 +87,18 @@ export class ActivityConditionStrategy implements IConditionStrategy {
   private static readonly GOAL_STEPS          = 10_000;
 
   async evaluate(event: ActivityEvent): Promise<ConditionResult> {
-    return undefined as never;
+    if (event.eventType === 'WALK_GOAL_MET') {
+      const steps = Number(event.data['steps'] ?? 0);
+      if (steps < ActivityConditionStrategy.GOAL_STEPS) {
+        return { eligible: false, reason: `steps ${steps} < goal ${ActivityConditionStrategy.GOAL_STEPS}` };
+      }
+      const tokenId = (ActivityConditionStrategy.PRODUCT_WALK << ActivityConditionStrategy.PRODUCT_CODE_SHIFT) | BigInt(event.eventCode);
+      return { eligible: true, tokenId, amount: 1n };
+    }
+
+    // HEALTH_CHECK_DONE — 완료 여부만 체크, steps 무관
+    const tokenId = (ActivityConditionStrategy.PRODUCT_HEALTH << ActivityConditionStrategy.PRODUCT_CODE_SHIFT) | BigInt(event.eventCode);
+    return { eligible: true, tokenId, amount: 1n };
   }
 }
 
@@ -111,7 +122,12 @@ export class CouponConditionStrategy implements IConditionStrategy {
   constructor(private readonly eligibilityChecker: { isEligible(userId: string, eventType: string): Promise<boolean> }) {}
 
   async evaluate(event: ActivityEvent): Promise<ConditionResult> {
-    return undefined as never;
+    const eligible = await this.eligibilityChecker.isEligible(event.userId, event.eventType);
+    if (!eligible) {
+      return { eligible: false, reason: 'user not in eligibility list' };
+    }
+    const tokenId = (CouponConditionStrategy.PRODUCT_COUPON << CouponConditionStrategy.PRODUCT_CODE_SHIFT) | BigInt(event.eventCode);
+    return { eligible: true, tokenId, amount: 1n };
   }
 }
 
@@ -135,7 +151,12 @@ export class PremiumConditionStrategy implements IConditionStrategy {
   constructor(private readonly threshold: bigint) {}
 
   async evaluate(event: ActivityEvent): Promise<ConditionResult> {
-    return undefined as never;
+    const amount = BigInt(Number(event.data['amount'] ?? 0));
+    if (amount < this.threshold) {
+      return { eligible: false, reason: `amount ${amount} < threshold ${this.threshold}` };
+    }
+    const tokenId = (PremiumConditionStrategy.PRODUCT_PREMIUM << PremiumConditionStrategy.PRODUCT_CODE_SHIFT) | BigInt(event.eventCode);
+    return { eligible: true, tokenId, amount: 1n };
   }
 }
 

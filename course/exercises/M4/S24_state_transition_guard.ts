@@ -83,13 +83,13 @@ export class MintRequestNotFoundError extends Error {
 export class LedgerService {
   // TODO: 아래 VALID_TRANSITIONS의 각 상태에 허용되는 다음 상태 배열을 채우세요.
   private static readonly VALID_TRANSITIONS: Record<MintStatus, MintStatus[]> = {
-    REQUESTED: [], // TODO: ['SUBMITTED', 'FAILED']
-    SUBMITTED: [], // TODO: ['MINED', 'FAILED']
-    MINED:     [], // TODO: ['CONFIRMED', 'REORGED', 'FAILED']
-    CONFIRMED: [], // TODO: ['FINALIZED']
-    FINALIZED: [], // 종단 — PoS 절대 불변
+    REQUESTED: ['SUBMITTED', 'FAILED'],
+    SUBMITTED: ['MINED', 'FAILED'],
+    MINED:     ['FINALIZED', 'REORGED', 'FAILED'],
+    CONFIRMED: ['FINALIZED'],
+    FINALIZED: ['CONFIRMED'], // 이벤트 순서 역전(FINALIZED 후 NFTIssued 이벤트 수신) 허용
     FAILED:    [], // 종단 — 재발행하려면 새 요청 필요
-    REORGED:   [], // TODO: ['MINED', 'FAILED']
+    REORGED:   ['MINED', 'FAILED'],
   };
 
   private mintRequests = new Map<string, MintRequest>();
@@ -144,7 +144,32 @@ export class LedgerService {
       errorMsg?: string;
     },
   ): Promise<MintRequest> {
-    return undefined as never;
+    const current = this.mintRequests.get(requestId);
+    if (!current) throw new MintRequestNotFoundError(requestId);
+
+    const allowed = LedgerService.VALID_TRANSITIONS[current.status];
+    if (!allowed.includes(patch.status)) {
+      throw new InvalidStateTransitionError(current.status, patch.status);
+    }
+
+    if (patch.status === 'SUBMITTED' && !patch.txHash) {
+      throw new Error('txHash is required for SUBMITTED transition');
+    }
+    if (patch.status === 'CONFIRMED' && patch.tokenId === undefined) {
+      throw new Error('tokenId is required for CONFIRMED transition');
+    }
+
+    const updated: MintRequest = {
+      ...current,
+      status:      patch.status,
+      txHash:      patch.txHash      !== undefined ? patch.txHash      : current.txHash,
+      tokenId:     patch.tokenId     !== undefined ? patch.tokenId     : current.tokenId,
+      blockNumber: patch.blockNumber !== undefined ? patch.blockNumber : current.blockNumber,
+      errorMsg:    patch.errorMsg    !== undefined ? patch.errorMsg    : current.errorMsg,
+      updatedAt:   new Date(),
+    };
+    this.mintRequests.set(requestId, updated);
+    return { ...updated };
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -164,7 +189,13 @@ export class LedgerService {
     blockNumber: bigint,
     payload: unknown,
   ): Promise<ProcessedEventResult> {
-    return undefined as never;
+    const isDuplicate = this.processedEvents.some(
+      e => e.txHash === txHash && e.logIndex === logIndex,
+    );
+    if (isDuplicate) return { skipped: true };
+    const id = ++this.eventSeq;
+    this.processedEvents.push({ txHash, logIndex, id });
+    return { skipped: false, id };
   }
 
   // ── addHolding (완성 제공) ───────────────────────────────────────────
@@ -196,7 +227,16 @@ export async function handleNFTIssued(
   ledger: LedgerService,
   event: { txHash: string; logIndex: number; blockNumber: bigint; tokenId: bigint; userId: string; policyId: string; requestId: string },
 ): Promise<{ processed: boolean }> {
-  return undefined as never;
+  const result = await ledger.recordProcessedEvent(event.txHash, event.logIndex, 'NFTIssued', event.blockNumber, {});
+  if (result.skipped) return { processed: false };
+
+  await ledger.updateMintRequest(event.requestId, {
+    status: 'CONFIRMED',
+    tokenId: event.tokenId,
+    txHash: event.txHash,
+  });
+  await ledger.addHolding(event.userId, event.tokenId, event.policyId);
+  return { processed: true };
 }
 
 // ────────────────────────────────────────────────────────────────────────

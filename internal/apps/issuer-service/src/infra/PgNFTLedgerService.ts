@@ -10,12 +10,15 @@
 
 import type { Pool } from 'pg';
 import type { LedgerService } from '@kyobo/event-engine';
+import type { TxStateMachineService, TxRepository } from '../../../../packages/vasp/src/tx/TxStateMachineService';
 
 export class PgNFTLedgerService implements LedgerService {
   constructor(
-    private readonly pool:         Pool,
-    private readonly contractAddr: string,
-    private readonly chainId:      number,
+    private readonly pool:            Pool,
+    private readonly contractAddr:    string,
+    private readonly chainId:         number,
+    private readonly txStateMachine?: TxStateMachineService,
+    private readonly txRepo?:         TxRepository,
   ) {}
 
   async creditNFT(
@@ -53,6 +56,16 @@ export class PgNFTLedgerService implements LedgerService {
       [userId, BigInt(tokenId), this.contractAddr, this.chainId],
     );
     return Number(rows[0]?.['balance'] ?? 0);
+  }
+
+  async updateMintRequestConfirmed(requestId: string, blockNumber?: number): Promise<void> {
+    if (!this.txStateMachine || !this.txRepo) return;
+    const req = await this.txRepo.findById(requestId);
+    if (!req || req.status === 'CONFIRMED' || req.status === 'FINALIZED' || req.status === 'FAILED') return;
+    if (req.status === 'SUBMITTED' || req.status === 'PENDING') {
+      await this.txStateMachine.handleMined(requestId, blockNumber ?? 0);
+    }
+    await this.txStateMachine.handleConfirmed(requestId);
   }
 
   private async _resolveUserId(walletAddr: string): Promise<string | null> {

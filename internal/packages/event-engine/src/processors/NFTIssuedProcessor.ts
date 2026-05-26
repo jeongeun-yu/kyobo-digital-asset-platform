@@ -22,7 +22,7 @@ import { logger } from '../infra/logger';
 export interface LedgerService {
   creditNFT(owner: string, tokenId: string, amount?: number, txHash?: string): Promise<void>;
   getNFTBalance(owner: string, tokenId: string): Promise<number>;
-  updateMintRequestConfirmed?(requestId: string): Promise<void>;
+  updateMintRequestConfirmed?(requestId: string, blockNumber?: number): Promise<void>;
 }
 
 export interface FinalizedBlockProvider {
@@ -69,11 +69,7 @@ export class NFTIssuedProcessor implements EventProcessor {
       console.log(`[NFTIssuedProcessor] creditNFT 호출 → owner=${payload.to?.slice(0, 10)}…  tokenId=${payload.tokenId}`);
       await this.ledger.creditNFT(payload.to, payload.tokenId, 1, txHash);
       console.log(`[NFTIssuedProcessor] creditNFT 완료 → user_nft_holdings 기록`);
-
-      // TODO: Java 영구 원장 반영 완료 후 mint_request 상태를 CONFIRMED로 전이
-      // 설계: CONFIRMED = "내부 원장 반영 완료" (온체인 확인과 별개)
-      // 구현 시 아래 호출 추가:
-      //   await this.ledger.updateMintRequestConfirmed?.(requestId);
+      await this.ledger.updateMintRequestConfirmed?.(requestId, payload.blockNumber);
     });
 
     if (!processed) {

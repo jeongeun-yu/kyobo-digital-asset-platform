@@ -1,26 +1,18 @@
 /**
- * S22 실습 — pollStaleRequests 구현 + 3종 복구 통합 테스트
+ * S22 실습 — pollStaleRequests 통합 테스트
  *
- * 강의 노트: M3_S22_pollstale_integration.md
+ * 모든 시나리오의 진입점은 pollStaleRequests() 다.
+ * 핸들러(handleFailed, handleConfirmed 등)를 직접 호출하는 건
+ * 단위 테스트이며 이 실습의 범위가 아니다.
  *
- * 실행 방법 (루트에서): npm run exercise:s22
- *
- * 실제 동작 기준:
- *   pollStaleRequests() — PENDING 30분+ 건 배치 조회 후 결과별 분기
- *     · VASP 'failed'    → handleFailed() (FAILED 전이)
- *     · VASP 'not_found' → handleFailed() (FAILED 전이)
- *     · VASP 'confirmed' → handleFinalized() — 단, req.status가 MINED여야 전이됨
- *     · VASP 'pending'   → 대기 (업데이트 없음)
- *
- *   handleTimeout() — mempool stuck 감지 시 별도 크론에서 호출
- *     · PENDING + txHash 있으면 gas bump 재전송 + retryCount++
- *
- * 목표:
- *   [1] FAILED 시나리오: VASP 'failed' → FAILED 전이 (pollStaleRequests 경로)
- *   [2] NOT_FOUND 시나리오: VASP 'not_found' → FAILED 전이 (pollStaleRequests 경로)
- *   [3] CONFIRMED 시나리오: MINED → FINALIZED → CONFIRMED (handleFinalized + handleConfirmed 직접 경로)
- *   [4] TIMEOUT 시나리오: PENDING → gas bump + retryCount++ (handleTimeout 직접 경로)
- *   [5] 오류 격리(Bulkhead): 한 건 에러가 전체 배치를 멈추지 않음
+ * 실행 방법 (루트에서):
+ *   npm run exercise:s22      → 전체 실행
+ *   npm run exercise:s22:1    → [1] REVERT
+ *   npm run exercise:s22:2    → [2] NOT_FOUND
+ *   npm run exercise:s22:3    → [3] 콜백 차단 E2E
+ *   npm run exercise:s22:4    → [4] TIMEOUT
+ *   npm run exercise:s22:5    → [5] Idempotency
+ *   npm run exercise:s22:6    → [6] Bulkhead
  */
 
 import type {
@@ -32,9 +24,7 @@ import type {
 } from '@kyobo/vasp';
 import { TxStateMachineService } from '@kyobo/vasp';
 
-// ────────────────────────────────────────────────────────────────────────
-// In-memory TxRepository
-// ────────────────────────────────────────────────────────────────────────
+// ── InMemoryTxRepository ──────────────────────────────────────────────────────
 
 class InMemoryTxRepository implements TxRepository {
   private store = new Map<string, MintRequest>();
@@ -47,11 +37,7 @@ class InMemoryTxRepository implements TxRepository {
     return this.store.get(id) ?? null;
   }
 
-  async updateStatus(
-    id: string,
-    status: TxStatus,
-    extra?: Partial<MintRequest>,
-  ): Promise<void> {
+  async updateStatus(id: string, status: TxStatus, extra?: Partial<MintRequest>): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) return;
     this.store.set(id, { ...existing, ...extra, status, updatedAt: new Date() });
@@ -65,23 +51,19 @@ class InMemoryTxRepository implements TxRepository {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Mock VaspTxClient
-// ────────────────────────────────────────────────────────────────────────
+// ── MockVaspTxClient ──────────────────────────────────────────────────────────
 
 type VaspStatusResult = Awaited<ReturnType<VaspTxClient['getStatus']>>;
 
 class MockVaspTxClient implements VaspTxClient {
-  private statusMap = new Map<string, VaspStatusResult>();
+  private statusMap  = new Map<string, VaspStatusResult>();
   private gasBumpLog: string[] = [];
 
   setNextStatus(txHash: string, result: VaspStatusResult): void {
     this.statusMap.set(txHash, result);
   }
 
-  async submitMint(params: {
-    to: string; tokenId: bigint; amount: bigint; requestId: string;
-  }): Promise<{ txHash: string }> {
+  async submitMint(params: { to: string; tokenId: bigint; amount: bigint; requestId: string }): Promise<{ txHash: string }> {
     const raw = Buffer.from(params.requestId).toString('hex');
     return { txHash: `0x${raw.repeat(Math.ceil(64 / raw.length)).slice(0, 64)}` };
   }
@@ -91,7 +73,7 @@ class MockVaspTxClient implements VaspTxClient {
   }
 
   async resubmitWithGasBump(txHash: string, gasBumpPercent: number): Promise<{ txHash: string }> {
-    const t = Date.now().toString(16);
+    const t       = Date.now().toString(16);
     const newHash = `0x${t.repeat(Math.ceil(64 / t.length)).slice(0, 64)}`;
     this.gasBumpLog.push(`${txHash} → ${newHash} (+${gasBumpPercent}%)`);
     return { txHash: newHash };
@@ -100,9 +82,7 @@ class MockVaspTxClient implements VaspTxClient {
   getGasBumpLog(): string[] { return this.gasBumpLog; }
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Mock WalletResolver
-// ────────────────────────────────────────────────────────────────────────
+// ── MockWalletResolver ────────────────────────────────────────────────────────
 
 class MockWalletResolver implements WalletResolver {
   async getWalletAddr(userId: string): Promise<string> {
@@ -110,17 +90,10 @@ class MockWalletResolver implements WalletResolver {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// 헬퍼
-// ────────────────────────────────────────────────────────────────────────
+// ── 테스트 데이터 팩토리 ──────────────────────────────────────────────────────
 
-function check(label: string, pass: boolean) {
-  console.log(`${pass ? '  ✅' : '  ❌'} ${label}`);
-  if (!pass) process.exitCode = 1;
-}
-
-function makeStalePendingRequest(id: string, txHash: string): MintRequest {
-  const staleDate = new Date(Date.now() - 35 * 60_000); // 35분 전 (stale 기준 30분 초과)
+function makeStalePending(id: string, txHash: string): MintRequest {
+  const staleDate = new Date(Date.now() - 35 * 60_000);
   return {
     id, userId: `user-${id}`, tokenId: 1n, amount: 1n,
     status: 'PENDING', txHash, retryCount: 0,
@@ -128,168 +101,182 @@ function makeStalePendingRequest(id: string, txHash: string): MintRequest {
   };
 }
 
-function makeRequest(id: string, txHash: string, status: TxStatus): MintRequest {
-  const now = new Date(Date.now() - 35 * 60_000);
-  return {
-    id, userId: `user-${id}`, tokenId: 1n, amount: 1n,
-    status, txHash, retryCount: 0,
-    createdAt: now, updatedAt: now,
-  };
-}
+// ── 섹션 함수 ─────────────────────────────────────────────────────────────────
 
-// ────────────────────────────────────────────────────────────────────────
-// 실습 진입점
-// ────────────────────────────────────────────────────────────────────────
-
-(async () => {
-  console.log('=== S22: pollStaleRequests 통합 테스트 ===\n');
-
-  // ── 공유 인프라 ──────────────────────────────────────────────────────
+async function section1(): Promise<void> {
+  console.log('[1] REVERT — pollStaleRequests() → VASP failed → FAILED 전이');
   const repo   = new InMemoryTxRepository();
   const vasp   = new MockVaspTxClient();
   const wallet = new MockWalletResolver();
   const svc    = new TxStateMachineService(repo, vasp, wallet);
 
-  // ══════════════════════════════════════════════════════════════════════
-  // [검증 1] FAILED — VASP 'failed' → pollStaleRequests → FAILED 전이
-  // ══════════════════════════════════════════════════════════════════════
-  console.log('[검증 1] FAILED 시나리오: VASP failed → PENDING → FAILED');
+  const req = makeStalePending('req-revert', '0xfa11ed1111111111111111111111111111111111111111111111111111111111');
+  await repo.save(req);
+  vasp.setNextStatus(req.txHash!, { status: 'failed', revertReason: 'ERC1155: mint to zero address' });
 
-  const reqFailed = makeStalePendingRequest('req-failed', '0xfa11ed11111111111111111111111111111111111111111111111111111111fa');
-  await repo.save(reqFailed);
-  vasp.setNextStatus('0xfa11ed11111111111111111111111111111111111111111111111111111111fa', { status: 'failed', revertReason: 'ERC1155: mint to zero address' });
+  const { processed } = await svc.pollStaleRequests();
 
-  await svc.pollStaleRequests();
+  const result = await repo.findById('req-revert');
+  console.log('  processed :', processed);
+  console.log('  status    :', result?.status);
+  console.log('  failReason:', result?.failReason);
+}
 
-  const r1 = await repo.findById('req-failed');
-  check(`상태: ${r1?.status} (기대: FAILED)`, r1?.status === 'FAILED');
-  check(`failReason 저장: "${r1?.failReason}"`, !!r1?.failReason);
+async function section2(): Promise<void> {
+  console.log('[2] NOT_FOUND — pollStaleRequests() → VASP not_found → FAILED 전이');
+  const repo   = new InMemoryTxRepository();
+  const vasp   = new MockVaspTxClient();
+  const wallet = new MockWalletResolver();
+  const svc    = new TxStateMachineService(repo, vasp, wallet);
 
-  // ══════════════════════════════════════════════════════════════════════
-  // [검증 2] NOT_FOUND — VASP 'not_found' → FAILED 전이
-  // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[검증 2] NOT_FOUND 시나리오: VASP not_found → FAILED');
+  const req = makeStalePending('req-notfound', '0xfa11ed2222222222222222222222222222222222222222222222222222222222');
+  await repo.save(req);
+  vasp.setNextStatus(req.txHash!, { status: 'not_found' });
 
-  const repo2 = new InMemoryTxRepository();
-  const vasp2 = new MockVaspTxClient();
-  const svc2  = new TxStateMachineService(repo2, vasp2, wallet);
+  const { processed } = await svc.pollStaleRequests();
 
-  const reqNotFound = makeStalePendingRequest('req-notfound', '0xfa11ed22222222222222222222222222222222222222222222222222222222fa');
-  await repo2.save(reqNotFound);
-  vasp2.setNextStatus('0xfa11ed22222222222222222222222222222222222222222222222222222222fa', { status: 'not_found' });
+  const result = await repo.findById('req-notfound');
+  console.log('  processed :', processed);
+  console.log('  status    :', result?.status);
+  console.log('  failReason:', result?.failReason);
+}
 
-  await svc2.pollStaleRequests();
+async function section3(): Promise<void> {
+  console.log('[3] 콜백 차단 E2E — Webhook 없이 pollStaleRequests()로 CONFIRMED 도달');
+  console.log('    (이게 pollStaleRequests가 존재하는 이유)');
+  const repo   = new InMemoryTxRepository();
+  const vasp   = new MockVaspTxClient();
+  const wallet = new MockWalletResolver();
+  const svc    = new TxStateMachineService(repo, vasp, wallet);
 
-  const r2 = await repo2.findById('req-notfound');
-  check(`상태: ${r2?.status} (기대: FAILED)`, r2?.status === 'FAILED');
-  check(`failReason에 'not found' 포함`, r2?.failReason?.includes('not found') ?? false);
+  // Webhook이 오지 않은 상황 — 35분 전 PENDING 그대로
+  const req = makeStalePending('req-no-callback', '0xfa11ed3333333333333333333333333333333333333333333333333333333333');
+  await repo.save(req);
 
-  // ══════════════════════════════════════════════════════════════════════
-  // [검증 3] FINALIZED — MINED → CONFIRMED → FINALIZED (2단계 전이)
-  //
-  // 핵심 포인트:
-  //   pollStaleRequests는 PENDING 건만 조회한다.
-  //   handleConfirmed()는 req.status === 'MINED' 인 경우에만 CONFIRMED로 전이한다.
-  //   handleFinalized()는 req.status === 'CONFIRMED' 인 경우에만 FINALIZED로 전이한다.
-  //   → MINED → CONFIRMED → FINALIZED 순서를 반드시 지켜야 한다.
-  // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[검증 3] FINALIZED 시나리오: MINED → handleConfirmed → CONFIRMED → handleFinalized → FINALIZED');
-  console.log('  (pollStaleRequests는 PENDING 조회 전용 — CONFIRMED/FINALIZED는 별도 경로)');
+  // VASP API는 confirmed 응답 대기 중
+  vasp.setNextStatus(req.txHash!, { status: 'confirmed', blockNumber: 12400 });
 
-  const repo3 = new InMemoryTxRepository();
-  const svc3  = new TxStateMachineService(repo3, new MockVaspTxClient(), wallet);
+  // 크론이 pollStaleRequests 실행
+  const { processed } = await svc.pollStaleRequests();
 
-  const reqMined = makeRequest('req-mined', '0xfa11ed33333333333333333333333333333333333333333333333333333333fa', 'MINED');
-  await repo3.save(reqMined);
+  const result = await repo.findById('req-no-callback');
+  console.log('  processed :', processed);
+  console.log('  status    :', result?.status, '← Webhook 없이 CONFIRMED 도달');
+}
 
-  await svc3.handleConfirmed('req-mined');  // MINED → CONFIRMED
-  await svc3.handleFinalized('req-mined');  // CONFIRMED → FINALIZED
+async function section4(): Promise<void> {
+  console.log('[4] TIMEOUT — polling에서 pending은 skip, handleTimeout으로 gas bump');
+  const repo   = new InMemoryTxRepository();
+  const vasp   = new MockVaspTxClient();
+  const wallet = new MockWalletResolver();
+  const svc    = new TxStateMachineService(repo, vasp, wallet);
 
-  const r3 = await repo3.findById('req-mined');
-  check(`상태: ${r3?.status} (기대: FINALIZED)`, r3?.status === 'FINALIZED');
+  const req = makeStalePending('req-timeout', '0xfa11ed5555555555555555555555555555555555555555555555555555555555');
+  await repo.save(req);
 
-  // PENDING에서 handleConfirmed 호출 시 무시됨을 확인 (방어 로직)
-  const repo3b = new InMemoryTxRepository();
-  const svc3b  = new TxStateMachineService(repo3b, new MockVaspTxClient(), wallet);
-  const reqPending = makeRequest('req-pending-skip', '0xfa11ed44444444444444444444444444444444444444444444444444444444fa', 'PENDING');
-  await repo3b.save(reqPending);
-  await svc3b.handleConfirmed('req-pending-skip'); // PENDING은 MINED 아님 → 조용히 무시
-  const r3b = await repo3b.findById('req-pending-skip');
-  check(`PENDING에서 handleConfirmed 호출 → 상태 유지: ${r3b?.status}`, r3b?.status === 'PENDING');
+  // VASP: 아직 pending — pollStaleRequests는 skip
+  vasp.setNextStatus(req.txHash!, { status: 'pending' });
+  const { processed: skipped } = await svc.pollStaleRequests();
+  const afterPoll = await repo.findById('req-timeout');
+  console.log('  [polling] processed:', skipped, '(pending → skip)');
+  console.log('  [polling] status   :', afterPoll?.status, '← 그대로 PENDING');
 
-  // ══════════════════════════════════════════════════════════════════════
-  // [검증 4] TIMEOUT — PENDING에서 handleTimeout 직접 호출 → gas bump
-  //
-  // 핵심 포인트:
-  //   pollStaleRequests의 'pending' 분기는 "계속 대기 (업데이트 없음)".
-  //   gas bump(handleTimeout)는 mempool 모니터링 크론이 별도로 호출한다.
-  // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[검증 4] TIMEOUT 시나리오: PENDING → handleTimeout → gas bump + retryCount++');
-  console.log('  (handleTimeout은 pollStaleRequests와 독립적인 크론에서 호출)');
+  // TIMEOUT 감지 → handleTimeout 호출 (별도 크론 또는 updatedAt 비교)
+  await svc.handleTimeout('req-timeout');
+  const afterTimeout = await repo.findById('req-timeout');
+  console.log('  [timeout] status    :', afterTimeout?.status, '← 여전히 PENDING (재전송 중)');
+  console.log('  [timeout] retryCount:', afterTimeout?.retryCount);
+  console.log('  [timeout] gasBumpLog:', vasp.getGasBumpLog());
+}
 
-  const repo4 = new InMemoryTxRepository();
-  const vasp4 = new MockVaspTxClient();
-  const svc4  = new TxStateMachineService(repo4, vasp4, wallet);
+async function section5(): Promise<void> {
+  console.log('[5] Idempotency — CONFIRMED 건은 pollStaleRequests가 재처리하지 않음');
+  const repo   = new InMemoryTxRepository();
+  const vasp   = new MockVaspTxClient();
+  const wallet = new MockWalletResolver();
+  const svc    = new TxStateMachineService(repo, vasp, wallet);
 
-  const reqTimeout = makeRequest('req-timeout', '0xfa11ed55555555555555555555555555555555555555555555555555555555fa', 'PENDING');
-  await repo4.save(reqTimeout);
+  // 이미 콜백으로 CONFIRMED 처리된 건
+  const staleDate = new Date(Date.now() - 35 * 60_000);
+  await repo.save({
+    id: 'req-done', userId: 'user-done', tokenId: 1n, amount: 1n,
+    status: 'CONFIRMED', txHash: '0xfa11ed6666666666666666666666666666666666666666666666666666666666',
+    retryCount: 0,
+    createdAt: staleDate,
+    updatedAt: new Date(),  // 최근 업데이트 (이미 처리됨)
+  });
 
-  await svc4.handleTimeout('req-timeout');
+  // pollStaleRequests: findPendingOlderThan → CONFIRMED 제외 → 조회 0건
+  const { processed } = await svc.pollStaleRequests();
+  const result = await repo.findById('req-done');
+  console.log('  processed:', processed, '← 0이어야 함 (이미 처리된 건 무시)');
+  console.log('  status   :', result?.status, '← CONFIRMED 그대로 유지');
+}
 
-  const r4 = await repo4.findById('req-timeout');
-  check(`상태 유지: ${r4?.status} (기대: PENDING)`, r4?.status === 'PENDING');
-  check(`retryCount 증가: ${r4?.retryCount}`, (r4?.retryCount ?? 0) >= 1);
+async function section6(): Promise<void> {
+  console.log('[6] Bulkhead — 한 건 에러가 전체 배치를 멈추지 않음');
+  const repo   = new InMemoryTxRepository();
+  const vasp   = new MockVaspTxClient();
+  const wallet = new MockWalletResolver();
+  const svc    = new TxStateMachineService(repo, vasp, wallet);
 
-  const gasBumpLog = vasp4.getGasBumpLog();
-  check(`gas bump 호출: ${gasBumpLog.length}건`, gasBumpLog.length === 1);
-  if (gasBumpLog.length > 0) console.log(`  → ${gasBumpLog[0]}`);
+  const errReq  = makeStalePending('iso-error',  '0xfa11ed7777777777777777777777777777777777777777777777777777777777');
+  const failReq1 = makeStalePending('iso-fail-1', '0xfa11ed8888888888888888888888888888888888888888888888888888888888');
+  const failReq2 = makeStalePending('iso-fail-2', '0xfa11ed9999999999999999999999999999999999999999999999999999999999');
+  await repo.save(errReq);
+  await repo.save(failReq1);
+  await repo.save(failReq2);
 
-  // ══════════════════════════════════════════════════════════════════════
-  // [검증 5] 오류 격리(Bulkhead) — 한 건 에러가 전체 배치를 멈추지 않음
-  // ══════════════════════════════════════════════════════════════════════
-  console.log('\n[검증 5] 오류 격리(Bulkhead): 한 건 에러 시 나머지 배치 계속 처리');
+  vasp.setNextStatus(failReq1.txHash!, { status: 'failed', revertReason: 'revert A' });
+  vasp.setNextStatus(failReq2.txHash!, { status: 'failed', revertReason: 'revert B' });
 
-  const repo5   = new InMemoryTxRepository();
-  const vasp5   = new MockVaspTxClient();
-  const svc5    = new TxStateMachineService(repo5, vasp5, wallet);
-
-  const iso1 = makeStalePendingRequest('iso-error',  '0xfa11ed66666666666666666666666666666666666666666666666666666666fa');
-  const iso2 = makeStalePendingRequest('iso-fail-1', '0xfa11ed77777777777777777777777777777777777777777777777777777777fa');
-  const iso3 = makeStalePendingRequest('iso-fail-2', '0xfa11ed88888888888888888888888888888888888888888888888888888888fa');
-  await repo5.save(iso1);
-  await repo5.save(iso2);
-  await repo5.save(iso3);
-
-  vasp5.setNextStatus('0xfa11ed77777777777777777777777777777777777777777777777777777777fa', { status: 'failed', revertReason: 'revert A' });
-  vasp5.setNextStatus('0xfa11ed88888888888888888888888888888888888888888888888888888888fa', { status: 'failed', revertReason: 'revert B' });
-
-  // iso-error 건만 getStatus에서 throw
-  const origGetStatus = vasp5.getStatus.bind(vasp5);
-  vasp5.getStatus = async (txHash: string) => {
-    if (txHash === '0xfa11ed66666666666666666666666666666666666666666666666666666666fa') throw new Error('VASP API 타임아웃 시뮬레이션');
+  const origGetStatus = vasp.getStatus.bind(vasp);
+  vasp.getStatus = async (txHash: string) => {
+    if (txHash === errReq.txHash) throw new Error('VASP API 타임아웃 시뮬레이션');
     return origGetStatus(txHash);
   };
 
   let didThrow = false;
   try {
-    await svc5.pollStaleRequests();
+    await svc.pollStaleRequests();
   } catch {
     didThrow = true;
   }
 
-  check('pollStaleRequests 전체가 throw되지 않음 (Bulkhead)', !didThrow);
+  const r1 = await repo.findById('iso-fail-1');
+  const r2 = await repo.findById('iso-fail-2');
+  console.log('  pollStaleRequests throw:', didThrow, '← false이어야 함');
+  console.log('  iso-fail-1 status      :', r1?.status, '← FAILED');
+  console.log('  iso-fail-2 status      :', r2?.status, '← FAILED');
+  console.log('  iso-error → 다음 크론 주기에 재처리');
+}
 
-  const isoFail1 = await repo5.findById('iso-fail-1');
-  const isoFail2 = await repo5.findById('iso-fail-2');
-  check(`에러 건 옆 iso-fail-1: ${isoFail1?.status} (기대: FAILED)`, isoFail1?.status === 'FAILED');
-  check(`에러 건 옆 iso-fail-2: ${isoFail2?.status} (기대: FAILED)`, isoFail2?.status === 'FAILED');
+// ── 진입점 ────────────────────────────────────────────────────────────────────
 
-  // ── 정리 ─────────────────────────────────────────────────────────────
-  console.log('\n=== S22 실습 완료 ===');
-  console.log(process.exitCode ? '❌ 일부 검증 실패' : '✅ 전체 통과');
-  console.log('\n핵심 정리:');
-  console.log('  1. pollStaleRequests: PENDING 30분+ 배치 조회 → failed/not_found → FAILED 전이');
-  console.log('  2. handleConfirmed: MINED → CONFIRMED / handleFinalized: CONFIRMED → FINALIZED (반드시 순서 준수)');
-  console.log('  3. handleTimeout: pollStaleRequests와 독립 — mempool 크론이 별도 호출');
-  console.log('  4. Bulkhead: try-catch per item → 한 건 실패가 전체 배치 중단 방지');
+const SECTIONS: Record<string, () => Promise<void>> = {
+  '1': section1,
+  '2': section2,
+  '3': section3,
+  '4': section4,
+  '5': section5,
+  '6': section6,
+};
+
+(async () => {
+  const arg = process.argv[2];
+
+  if (arg && SECTIONS[arg]) {
+    console.log(`=== S22: 섹션 [${arg}] ===\n`);
+    await SECTIONS[arg]!();
+  } else {
+    console.log('=== S22: pollStaleRequests 통합 테스트 ===\n');
+    for (const fn of Object.values(SECTIONS)) {
+      try {
+        await fn();
+      } catch (err) {
+        console.log(' ', (err as Error).message);
+      }
+      console.log();
+    }
+  }
 })();

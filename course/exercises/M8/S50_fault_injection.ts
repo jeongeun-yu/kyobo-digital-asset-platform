@@ -152,7 +152,23 @@ export async function withExponentialBackoff<T>(
   fn: () => Promise<T>,
   opts: RetryOptions,
 ): Promise<T> {
-  return undefined as never;
+  let lastError: Error = new Error('Unknown error');
+  const baseDelay = opts.baseDelayMs ?? 0;
+
+  for (let attempt = 1; attempt <= opts.maxRetries + 1; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err as Error;
+      opts.onRetry?.(attempt, lastError);
+      if (attempt <= opts.maxRetries && baseDelay > 0) {
+        const delay = baseDelay * Math.pow(2, attempt - 1);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 // ─── IssuerService (지수 백오프 + DLQ) ────────────────────────────────────────
@@ -184,7 +200,29 @@ export class MockIssuerService {
   async issueSingleWithRetry(params: {
     to: string; tokenId: bigint; amount: bigint; requestId: string; maxRetries: number;
   }): Promise<{ success: boolean; txId?: string }> {
-    return undefined as never;
+    try {
+      const result = await withExponentialBackoff(
+        () => this.vaspApi.mint({
+          to:        params.to,
+          tokenId:   params.tokenId,
+          amount:    params.amount,
+          requestId: params.requestId,
+        }),
+        {
+          maxRetries:  params.maxRetries,
+          baseDelayMs: this.baseDelayMs,
+          onRetry: (attempt, err) => {
+            console.log(`[Retry ${attempt}] ${err.message}`);
+          },
+        },
+      );
+      await this.ledger.updateStatus(params.requestId, 'SUBMITTED', { vaspTxId: result.txId });
+      return { success: true, txId: result.txId };
+    } catch (err) {
+      await this.ledger.updateStatus(params.requestId, 'FAILED');
+      await this.dlq.push(params.requestId, (err as Error).message);
+      return { success: false };
+    }
   }
 }
 

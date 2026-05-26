@@ -92,7 +92,11 @@ export class SimulatedGnosisSafe {
    *   - ethers.keccak256(encodedData)
    */
   domainSeparator(): string {
-    return undefined as never;
+    const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
+      ['bytes32', 'uint256', 'address'],
+      [DOMAIN_TYPEHASH, this.chainId, this.address],
+    );
+    return ethers.keccak256(encoded);
   }
 
   /**
@@ -109,7 +113,26 @@ export class SimulatedGnosisSafe {
    *   - EIP-712 최종: keccak256(concat(['0x1901', domainSeparator, structHash]))
    */
   getTransactionHash(params: SafeTxParams): string {
-    return undefined as never;
+    const dataHash = ethers.keccak256(params.data);
+    const structEncoded = ethers.AbiCoder.defaultAbiCoder().encode(
+      ['bytes32','address','uint256','bytes32','uint8','uint256','uint256','uint256','address','address','uint256'],
+      [
+        SAFE_TX_TYPEHASH,
+        params.to,
+        params.value,
+        dataHash,
+        params.operation,
+        params.safeTxGas    ?? 0n,
+        params.baseGas      ?? 0n,
+        params.gasPrice     ?? 0n,
+        params.gasToken     ?? ethers.ZeroAddress,
+        params.refundReceiver ?? ethers.ZeroAddress,
+        params.nonce        ?? this._nonce,
+      ],
+    );
+    const structHash = ethers.keccak256(structEncoded);
+    const domainSep  = this.domainSeparator();
+    return ethers.keccak256(ethers.concat(['0x1901', domainSep, structHash]));
   }
 
   /**
@@ -118,7 +141,7 @@ export class SimulatedGnosisSafe {
    * 힌트: ethers.recoverAddress(txHash, signature)
    */
   verifySignature(txHash: string, signature: string): string {
-    return undefined as never;
+    return ethers.recoverAddress(txHash, signature);
   }
 
   /**
@@ -137,7 +160,26 @@ export class SimulatedGnosisSafe {
     params: SafeTxParams,
     signatures: Array<{ signer: string; signature: string }>,
   ): { txHash: string; success: boolean } {
-    return undefined as never;
+    const safeTxHash = this.getTransactionHash(params);
+    const validSigners = new Set<string>();
+
+    for (const { signer, signature } of signatures) {
+      try {
+        const recovered = this.verifySignature(safeTxHash, signature);
+        if (recovered.toLowerCase() === signer.toLowerCase() && this._owners.includes(signer)) {
+          validSigners.add(signer.toLowerCase());
+        }
+      } catch {
+        // 서명 검증 실패 — 무시
+      }
+    }
+
+    if (validSigners.size < this._threshold) {
+      throw new Error(`GS020: Insufficient signatures. Got ${validSigners.size}, required ${this._threshold}`);
+    }
+
+    this._nonce++;
+    return { txHash: `0x${randomBytes(32).toString('hex')}`, success: true };
   }
 
   // swapOwner TX 데이터 생성 (제공됨 — 수정 불필요)

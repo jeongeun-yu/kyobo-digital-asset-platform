@@ -13,7 +13,7 @@
  *   ChainEventListener (Issued 이벤트 폴링) → IssuanceConfirmHandler
  *   → TxStateMachineService → PostgreSQL issuance_requests CONFIRMED
  *
- * 8가지 시나리오:
+ * 9가지 시나리오:
  *   [1] NORMAL    : 정상 발행 → NFT_ISSUED 콜백 → Redis Stream → ledger + CONFIRMED
  *   [2] REVERT    : TX revert → VASPServer 500 → IssuerService FAILED
  *   [3] NO_EMIT   : mint 성공, Issued 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
@@ -22,6 +22,7 @@
  *   [stream-2]    : 중복 requestId → 멱등성 보장 (Redis Stream 독립 검증)
  *   [stream-3]    : retryCount >= 3 → DLQ 이동
  *   [stream-4]    : XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
+ *   [poll-1]      : pollStaleRequests — PENDING 10분 초과 → GET /transfers/:txHash → CONFIRMED
  *
  * 인프라:
  *   - Hardhat 로컬 노드 (Docker) — MockVASP 컨트랙트 배포
@@ -73,6 +74,7 @@ import type { RedisStreamClient, StreamMessage }  from '@kyobo/event-engine';
 import { ExternalVASPAdapter }                   from '@kyobo/vasp';
 import { AnvilVASPAdapter }                      from '../../packages/vasp/src/testing/AnvilVASPAdapter';
 import { VASPServer }                            from '../../packages/vasp/src/testing/VASPServer';
+import { TxStateMachineService }                 from '../../packages/vasp/src/tx/TxStateMachineService';
 import MOCK_VASP_ABI                             from '../../packages/vasp/src/testing/MockVASP.abi.json';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
@@ -230,6 +232,7 @@ let ledger:          PgNFTLedgerService;   // Redis Stream → NFTIssuedProcesso
 let consumerPool:    ConsumerGroupPool;
 
 let redisAdapter:    IoRedisAdapter;
+let txStateMachine:  TxStateMachineService;
 let fallbackPollInterval: ReturnType<typeof setInterval>;
 
 // ── AlwaysFailProcessor (DLQ / 재처리 시나리오용) ─────────────────────────────
@@ -362,6 +365,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
     const { issuerService } = factoryResult;
     confirmHandler = factoryResult.confirmHandler;
+    txStateMachine = factoryResult.txStateMachine;
 
     // ChainEventListener — 폴백 경로 (issuance_requests CONFIRMED)
     const inMemoryBlockStore = { block: 0 };
@@ -977,6 +981,77 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
 
     claimPool.stop();
     await (redis as any).del(claimKey, `${claimKey}:dlq`);
+  });
+
+  // ── [poll-1] pollStaleRequests ───────────────────────────────────────────
+
+  it('[poll-1] pollStaleRequests — SUBMITTED TX → PENDING 조작 → getTransferStatus(VASPServer) → CONFIRMED', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [poll-1] pollStaleRequests: PENDING 10분 초과 → vasp.getStatus → CONFIRMED');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    // NO_EMIT: TX 온체인 확정, Issued 이벤트 없음 → VASPServer 콜백 없음
+    // → issuance_requests SUBMITTED, tx_mint_requests SUBMITTED 유지
+    // → VASPServer.txStatuses.set(txHash, 'completed') 는 수행됨
+    await controlVasp.setMode('NO_EMIT');
+
+    const statusCode = await postWebhook(makePayload({
+      eventType: 'ACTIVITY_ACHIEVED',
+      data: { userId: 'user-mock-001', activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
+    }));
+    expect(statusCode).toBe(202);
+
+    // tx_mint_requests SUBMITTED + txHash 확보
+    let txHash = '';
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT tx_hash FROM tx_mint_requests WHERE status = 'SUBMITTED' AND tx_hash IS NOT NULL",
+      );
+      if (rows.length > 0 && rows[0].tx_hash) { txHash = rows[0].tx_hash as string; return true; }
+      return false;
+    }, 20_000, 'SUBMITTED in tx_mint_requests');
+    console.log(`  · tx_hash=${txHash.slice(0, 18)}…`);
+
+    // VASPServer _waitAndNotify 완료 대기 (receipt 처리 → txStatuses='completed')
+    await new Promise(r => setTimeout(r, 2_000));
+
+    // DB 조작: SUBMITTED → PENDING + created_at을 11분 전으로 설정
+    // (실제로는 mempool 체류 시나리오를 재현)
+    await pool.query(
+      "UPDATE tx_mint_requests SET status = 'PENDING', created_at = NOW() - INTERVAL '11 minutes' WHERE status = 'SUBMITTED'",
+    );
+    console.log('  · tx_mint_requests → PENDING (created_at -11분 조작)');
+
+    // pollStaleRequests 호출:
+    //   findPendingOlderThan(10) → PENDING 10분 초과 건 발견
+    //   vasp.getStatus(txHash)   → VaspTxClientAdapter → ExternalVASPAdapter
+    //                            → GET /transfers/:txHash → VASPServer 'completed'
+    //                            → VaspTxClientAdapter: 'completed' → 'confirmed'
+    //   handleMined(id, 0)       → PENDING → MINED
+    //   handleConfirmed(id)      → MINED → CONFIRMED
+    const pollResult = await txStateMachine.pollStaleRequests();
+    expect(pollResult.processed).toBe(1);
+    console.log(`  · pollStaleRequests processed=${pollResult.processed}`);
+
+    // tx_mint_requests CONFIRMED 확인
+    const { rows: txRows } = await pool.query(
+      'SELECT status FROM tx_mint_requests WHERE tx_hash = $1',
+      [txHash],
+    );
+    expect(txRows[0]?.status).toBe('CONFIRMED');
+    console.log(`  ✔ tx_mint_requests CONFIRMED (pollStaleRequests → getTransferStatus 경로)`);
+
+    // TxTransitionBridge → issuance_requests CONFIRMED 확인
+    await waitFor(async () => {
+      const { rows } = await pool.query('SELECT status FROM issuance_requests');
+      return rows[0]?.status === 'CONFIRMED';
+    }, 5_000, 'issuance_requests CONFIRMED');
+    const { rows: isRows } = await pool.query('SELECT status FROM issuance_requests');
+    expect(isRows[0]?.status).toBe('CONFIRMED');
+    console.log('  ✔ issuance_requests CONFIRMED (TxTransitionBridge 경유)');
+
+    await controlVasp.setMode('NORMAL');
+    console.log('  · setMode(NORMAL) 복원 완료');
   });
 
 });

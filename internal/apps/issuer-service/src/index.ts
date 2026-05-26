@@ -121,6 +121,8 @@ async function bootstrap() {
   const {
     issuerService,
     confirmHandler: issuanceConfirmHandler,
+    txStateMachine,
+    txRepo,
   } = factory.createNFTIssuer(process.env.NFT_ISSUER_ADDR!, conditionService);
 
   // ── 온체인 이벤트 리스너 ──────────────────────────────────────────────────────
@@ -216,7 +218,7 @@ async function bootstrap() {
     redisAdapter,
     { async sendAlert(msg) { console.error('[DLQ]', msg); } },
   );
-  const ledger = new PgNFTLedgerService(pgPool, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID ?? '11155111'));
+  const ledger = new PgNFTLedgerService(pgPool, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID ?? '11155111'), txStateMachine, txRepo);
 
   const nftIssuedProcessor  = new NFTIssuedProcessor(idempotency, ledger);
   const activityProcessor   = new ActivityProcessor(issuerService, idempotency);

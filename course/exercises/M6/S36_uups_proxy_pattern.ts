@@ -79,15 +79,19 @@ export class ImplementationV1 {
   constructor(private readonly storage: Storage) {}
 
   initialize(_admin: string): void {
-    return undefined as never;
+    if (this.storage[0] !== undefined) {
+      throw new Error('InvalidInitialization: already initialized');
+    }
+    this.storage[0] = _admin;
+    this.storage[1] = false;
   }
 
   getAdmin(): string | undefined {
-    return undefined as never;
+    return this.storage[0] as string | undefined;
   }
 
   isPaused(): boolean {
-    return undefined as never;
+    return (this.storage[1] as boolean) ?? false;
   }
 }
 
@@ -111,20 +115,23 @@ export class ImplementationV2 {
 
   // 기존 슬롯 레이아웃 완전 유지
   getAdmin(): string | undefined {
-    return undefined as never;
+    return this.storage[0] as string | undefined;
   }
 
   isPaused(): boolean {
-    return undefined as never;
+    return (this.storage[1] as boolean) ?? false;
   }
 
   // v2 신규 기능: slot 2에 새 변수 (끝에 추가)
   initializeV2(_baseUri: string): void {
-    return undefined as never;
+    if (this.storage[2] !== undefined) {
+      throw new Error('InvalidInitialization: v2 already initialized');
+    }
+    this.storage[2] = _baseUri;
   }
 
   getBaseUri(): string | undefined {
-    return undefined as never;
+    return this.storage[2] as string | undefined;
   }
 }
 
@@ -160,7 +167,7 @@ export class VulnerableImpl {
 
   /** initializer modifier 없음 — 재호출 가능! */
   initialize(_admin: string): void {
-    return undefined as never;
+    this.admin = _admin;
   }
 
   getAdmin(): string | null { return this.admin; }
@@ -172,7 +179,11 @@ export class SafeImpl {
 
   /** initializer modifier 있음 — 한 번만 실행 보장 */
   initialize(_admin: string): void {
-    return undefined as never;
+    if (this.initialized) {
+      throw new Error('InvalidInitialization: already initialized');
+    }
+    this.initialized = true;
+    this.admin = _admin;
   }
 
   getAdmin(): string | null { return this.admin; }

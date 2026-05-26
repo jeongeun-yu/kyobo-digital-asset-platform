@@ -167,6 +167,87 @@ read-only 인스턴스가 실수로 TX를 전송하려 할 때 즉시 명시적 
 
 ## 4. ABI란 무엇인가
 
+### Solidity → 블록체인 배포까지의 흐름
+
+ABI가 어디서 나오는지 이해하려면 먼저 스마트컨트랙트가 배포되는 과정을 봐야 한다.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  1. 개발자가 Solidity 코드 작성 (.sol)                            │
+│                                                                  │
+│     contract KyoboNFT {                                          │
+│       function mint(address to, uint256 id, uint256 amount) ...  │
+│       function burn(address from, uint256 id, uint256 amount) .. │
+│       event NFTIssued(address to, uint256 id, uint256 amount)    │
+│     }                                                            │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │   solc 컴파일러      │  ← Solidity → EVM 기계어로 변환
+              └──────────┬──────────┘
+                         │
+            ┌────────────┴─────────────┐
+            │                          │
+            ▼                          ▼
+┌───────────────────────┐   ┌──────────────────────────────────────┐
+│  Bytecode (기계어)     │   │  ABI (JSON 명세서)                    │
+│                        │   │                                      │
+│  6080604052348015...   │   │  [                                   │
+│  (사람이 읽을 수 없음)  │   │    {                                 │
+│                        │   │      "name": "mint",                 │
+│  함수명·파라미터명      │   │      "inputs": [                     │
+│  → 모두 사라짐          │   │        { "name": "to",              │
+│                        │   │          "type": "address" },        │
+│                        │   │        { "name": "id",              │
+│                        │   │          "type": "uint256" }         │
+│                        │   │      ]                               │
+└──────────┬────────────┘   │    }                                 │
+           │                │  ]                                   │
+           │                └──────────────┬───────────────────────┘
+           │                               │
+           ▼                               ▼
+  ┌────────────────────┐      ┌────────────────────────────────┐
+  │  배포 트랜잭션       │      │  개발자 / SDK 에 배포           │
+  │  (data: bytecode)  │      │  (ethers.js, web3.js 등이 사용) │
+  └──────────┬─────────┘      └────────────────────────────────┘
+             │
+             ▼
+  ┌────────────────────────────────────────┐
+  │  이더리움 블록체인                       │
+  │                                        │
+  │  컨트랙트 주소 생성: 0xKyoboNFT...      │
+  │  bytecode → 해당 주소에 영구 저장        │
+  │  (이제 EVM이 실행 가능한 상태)            │
+  └────────────────────────────────────────┘
+             │
+             ▼
+  ┌────────────────────────────────────────────────────────────┐
+  │  외부에서 함수 호출 시                                        │
+  │                                                            │
+  │  ethers.js + ABI + 컨트랙트 주소                            │
+  │       │                                                    │
+  │       ├─ ABI로 calldata 인코딩                              │
+  │       │    mint("0xAlice", 1001, 1)                        │
+  │       │    → 0xa9059cbb 000...Alice 000...1001 000...1     │
+  │       │                                                    │
+  │       └─ TX 전송 → 컨트랙트가 calldata 해석 → 실행          │
+  └────────────────────────────────────────────────────────────┘
+```
+
+**핵심 포인트:**
+
+| | Bytecode | ABI |
+|---|---|---|
+| **저장 위치** | 블록체인 온체인 | 오프체인 (개발자 보관) |
+| **역할** | EVM이 실행하는 실제 코드 | 함수명·파라미터 타입 명세 |
+| **사람이 읽을 수 있나** | ❌ (기계어) | ✅ (JSON) |
+| **없으면** | 컨트랙트 실행 불가 | 외부에서 호출 방법을 모름 |
+
+컴파일 후 Bytecode에는 `mint`, `burn` 같은 **함수명이 사라진다**. EVM은 함수 선택자(4바이트 해시)로만 구분한다. ABI가 없으면 어떤 4바이트가 어떤 함수인지, 어떤 타입의 인자를 넣어야 하는지 알 수 없다.
+
+---
+
 ABI(Application Binary Interface)는 **스마트컨트랙트와 외부 코드가 소통하는 방식을 정의한 명세서**다.
 
 ```
@@ -181,13 +262,90 @@ ABI(Application Binary Interface)는 **스마트컨트랙트와 외부 코드가
   → ABI 없이 TX 호출 = 컨트랙트가 calldata를 해석 불가
 ```
 
+**calldata란 무엇인가:**
+
+EVM 트랜잭션을 전송할 때 함께 보내는 "어떤 함수를, 어떤 인자로 실행하라"는 명령어 데이터다.
+
+```
+일반 ETH 전송:
+  to:   0xAlice
+  value: 1 ETH
+  data:  (없음)
+
+스마트컨트랙트 함수 호출:
+  to:   0xKyoboNFT (컨트랙트 주소)
+  value: 0
+  data:  0xa9059cbb            ← 함수 선택자 4바이트 (함수 시그니처의 keccak256 앞 4바이트)
+         000000...0xAlice      ← 첫 번째 인자 (address to)
+         000000...000003E9     ← 두 번째 인자 (tokenId = 1001)
+         000000...0000001      ← 세 번째 인자 (amount = 1)
+```
+
+이 `data` 필드 전체가 calldata다. ethers.js가 `contract.mint('0xAlice', 1001n, 1n)` 호출을 받으면 ABI를 기반으로 이 바이트열을 자동 생성해서 TX `data` 필드에 삽입한다.
+
+**ABI 없이 calldata를 만들 수 없는 이유:**
+
+```
+ABI 없음 → 함수 시그니처 모름
+         → 함수 선택자(4바이트) 계산 불가
+         → 인자 타입 모름 → 바이트 인코딩 불가
+         → calldata 생성 불가 → 컨트랙트 호출 불가
+```
+
 **Human-readable ABI (ethers.js 형식):**
 
-```typescript
-// 전체 JSON ABI 대신 함수 시그니처 문자열로 표현 가능
-'function mint(address to, uint256 id, uint256 amount)'
+solc 컴파일러가 출력하는 원래 ABI는 JSON 오브젝트 배열이다:
 
-// ethers.js가 이를 파싱해서 calldata 인코딩/디코딩
+```json
+[
+  {
+    "name": "mint",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "to",     "type": "address" },
+      { "name": "id",     "type": "uint256" },
+      { "name": "amount", "type": "uint256" }
+    ],
+    "outputs": []
+  },
+  {
+    "name": "NFTIssued",
+    "type": "event",
+    "inputs": [
+      { "name": "to",      "type": "address", "indexed": true  },
+      { "name": "tokenId", "type": "uint256", "indexed": true  },
+      { "name": "amount",  "type": "uint256", "indexed": false }
+    ]
+  }
+]
+```
+
+함수 하나에 오브젝트 하나. 필드가 많고 장황하다.
+
+ethers.js는 동일한 정보를 **함수 시그니처 문자열**로 대신 표현할 수 있도록 지원한다:
+
+```typescript
+const ERC1155_ABI = [
+  'function mint(address to, uint256 id, uint256 amount)',
+  'function burn(address from, uint256 id, uint256 amount)',
+  'event NFTIssued(address indexed to, uint256 indexed tokenId, uint256 amount)',
+]
+```
+
+ethers.js가 이 문자열을 파싱해서 내부적으로 JSON ABI와 동일한 구조로 변환한다. 결과는 같고 코드는 훨씬 짧아진다.
+
+이 형식은 **ethers.js 전용**이다. web3.js 등 다른 라이브러리는 지원하지 않고 JSON ABI만 받는다.
+
+**섹션 4 → 섹션 5 연결:**
+
+```
+섹션 4: ABI 개념 설명 (컴파일러가 뱉는 JSON ABI)
+         ↓
+         "근데 우리 코드에서는 이 긴 JSON을 쓰지 않는다"
+         ↓
+섹션 5: ERC1155_ABI = ['function mint(...)']
+         → ethers.js Human-readable ABI 형식으로 동일한 정보를 표현
 ```
 
 최소 ABI를 쓰는 이유: 어댑터가 호출하는 함수만 선언 → 나머지는 관심 없음.
@@ -212,11 +370,81 @@ const ERC1155_ABI = [
 
 ---
 
-## 4. mintNFT / mintNFTBatch / burnNFT
+## 6. EVMAdapter 메서드 전체 — Phase별 사용 구분
 
-> Phase 1 실습 주의: `mintNFT` / `sendTransaction`은 **Phase 3 실습 대상**이다.  
-> Phase 1에서는 privateKey 없이 read-only 모드로 동작하므로 이 메서드를 호출하면 에러가 발생한다.  
-> Phase 1 실습에서는 `queryEvents` / `getReceipt` (read-only 경로)만 사용한다.
+EVMAdapter가 구현하는 메서드를 Phase 기준으로 먼저 정리한다.
+
+| 메서드 | Phase 1 | Phase 1 이후 | 역할 |
+|---|---|---|---|
+| `isConnected()` | ✅ 사용 | ✅ 사용 | RPC 연결 확인 |
+| `getBlockNumber()` | ✅ 사용 | ✅ 사용 | 현재 블록 번호 조회 |
+| `getReceipt(txHash)` | ✅ 사용 | ✅ 사용 | TX 상태 폴링 (PENDING → MINED) |
+| `subscribeEvents(...)` | ✅ 사용 | ✅ 사용 | 온체인 이벤트 실시간 구독 |
+| `queryEvents(...)` | ✅ 사용 | ✅ 사용 | 블록 범위 이벤트 배치 조회 |
+| `mintNFT(...)` | ❌ 미사용 | ✅ 사용 | NFT 발행 (privateKey 필요) |
+| `mintNFTBatch(...)` | ❌ 미사용 | ✅ 사용 | NFT 일괄 발행 (privateKey 필요) |
+| `burnNFT(...)` | ❌ 미사용 | ✅ 사용 | NFT 소각 (privateKey 필요) |
+| `sendTransaction(...)` | ❌ 미사용 | ✅ 사용 | 컨트랙트 함수 직접 호출 |
+
+Phase 1에서 TX 서명·발행은 월렛원(VASP)이 담당한다. EVMAdapter는 **이벤트 감지·상태 확인** 역할만 한다.
+
+```
+Phase 1 EVMAdapter 담당:
+
+  isConnected()      → RPC 살아있는지 헬스체크
+  getBlockNumber()   → 현재 블록 번호 (Lag 모니터링)
+  subscribeEvents()  → 온체인 NFTIssued 이벤트 실시간 수신
+  queryEvents()      → 구독 누락 이벤트 배치 복구
+  getReceipt()       → VASP가 브로드캐스트한 TX 상태 폴링
+
+Phase 1 EVMAdapter 미담당 (월렛원이 처리):
+
+  mintNFT()          → TX 서명 + 브로드캐스트
+  burnNFT()          → TX 서명 + 브로드캐스트
+  sendTransaction()  → 위 두 함수의 실제 TX 전송 로직
+```
+
+### Phase 1에서 사용하는 함수
+
+```typescript
+// EVMAdapter.ts:55
+async isConnected(): Promise<boolean> {
+  try {
+    await this.provider.getBlockNumber();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// EVMAdapter.ts:62
+async getBlockNumber(): Promise<number> {
+  return this.provider.getBlockNumber();
+}
+```
+
+`isConnected()`는 `getBlockNumber()`를 한 번 호출해보고 응답이 오면 연결된 것으로 판단한다. 별도의 ping API가 없기 때문이다.
+
+```typescript
+// EVMAdapter.ts:67
+async getBalance(
+  contractAddr: string,
+  owner: string,
+  tokenId: bigint,
+): Promise<bigint> {
+  const iface    = new Interface(ERC1155_ABI);
+  const contract = new Contract(contractAddr, iface, this.provider);
+  return contract.balanceOf(owner, tokenId) as Promise<bigint>;
+}
+```
+
+`getBalance()`는 provider(read-only)로 컨트랙트의 `balanceOf`를 조회한다. wallet 없이도 호출 가능하다.
+
+---
+
+### mintNFT / mintNFTBatch / burnNFT (Phase 3)
+
+> Phase 1에서는 privateKey 없이 read-only 모드로 동작하므로 이 메서드를 호출하면 에러가 발생한다.
 
 ```typescript
 // EVMAdapter.ts:82
@@ -257,7 +485,7 @@ S13에서 설계한 `requestId`는 컨트랙트 calldata에 포함시키는 것�
 
 ---
 
-## 5. sendTransaction — TX 전송의 핵심
+## 7. sendTransaction — TX 전송의 핵심
 
 > Phase 1: privateKey가 없으면 이 메서드는 `'EVMAdapter: read-only mode, no private key'` 에러를 던진다.  
 > Phase 1에서는 `vaspAdapter.submitTransaction()` 으로 대체된다.  
@@ -340,7 +568,7 @@ MINED 감지 시 → MINED 전이 → PoS finality 확보 → FINALIZED → CONF
 
 ---
 
-## 6. getReceipt — PENDING 상태 추적
+## 8. getReceipt — PENDING 상태 추적
 
 ```typescript
 // EVMAdapter.ts:158
@@ -370,6 +598,27 @@ getReceipt(txHash) = { status: 'success' | 'failed' }
 
 S13의 `TxStateMachineService`가 이 null을 PENDING으로 해석하고 TIMEOUT 타이머를 관리한다 (S14 설계 연계).
 
+### Phase 1에서도 getReceipt()는 쓸 수 있다
+
+Phase 1에서 TX 상태를 확인하는 방법이 두 가지다.
+
+```
+① VaspTxClient.getStatus(txHash)   → 월렛원 API 폴링    (현재 TxStateMachineService가 사용 중)
+② EVMAdapter.getReceipt(txHash)    → RPC 노드 직접 조회 (보조 수단)
+```
+
+둘 다 txHash만 있으면 동작한다. 월렛원이 txHash를 반환한 순간부터 ②도 즉시 사용 가능하다.
+
+현재 Phase 1에서는 ①만 쓰지만, ②를 보조 수단으로 추가하면 장점이 있다:
+
+```
+월렛원 API 장애 → VaspTxClient.getStatus() 응답 없음
+                → EVMAdapter.getReceipt()로 체인 직접 조회
+                → TX 상태 확인 가능 → 장애 전파 차단
+```
+
+Phase 2에서 ChainEventListener를 병행하는 것도 같은 이유다 — VASP 폴링 의존도를 낮추고 체인 직접 관측 경로를 확보하는 것.
+
 ### sendTransaction vs getReceipt 비교
 
 | | `sendTransaction` | `getReceipt` |
@@ -380,7 +629,7 @@ S13의 `TxStateMachineService`가 이 null을 PENDING으로 해석하고 TIMEOUT
 
 ---
 
-## 7. 이벤트 구독 패턴 — 어떻게 온체인 이벤트를 실시간으로 받는가
+## 9. 이벤트 구독 패턴 — 어떻게 온체인 이벤트를 실시간으로 받는가
 
 블록체인은 이벤트를 "push"하지 않는다. 우리가 WebSocket으로 연결해서 "pull"하거나 폴링한다.
 
@@ -407,7 +656,7 @@ ethers.js WebSocket 구독 흐름:
   → GracefulShutdown 시간 초과
 ```
 
-## 7. subscribeEvents — 실시간 구독 + unsubscribe 반환
+## 10. subscribeEvents — 실시간 구독 + unsubscribe 반환
 
 ```typescript
 // EVMAdapter.ts:173
@@ -461,11 +710,44 @@ process.on('SIGTERM', async () => {
 });
 ```
 
+**Graceful Shutdown이란:**
+
+서비스를 즉시 강제 종료하지 않고, 처리 중인 작업을 마무리한 뒤 안전하게 종료하는 것이다.
+
+```
+강제 종료 (kill -9):
+  WebSocket 구독 해제 없이 프로세스 사망
+  → 핸들러가 응답 없는 소켓에 이벤트를 보내려 함
+  → 메모리 누수 / 에러 로그 폭발 / 연결 TIME_WAIT 누적
+
+Graceful Shutdown (SIGTERM):
+  ① 새 요청 수신 중단
+  ② unsubscribe() → WebSocket 구독 해제
+  ③ 진행 중인 이벤트 처리 완료 대기
+  ④ DB 커넥션 반환, 소켓 닫기
+  ⑤ 프로세스 종료
+```
+
+금융 시스템에서 특히 중요한 이유:
+
+```
+TX 전송 중 강제 종료
+  → DB 상태: SUBMITTED (기록됨)
+  → 실제 TX: 브로드캐스트 완료 or 미완료 — 불확실
+  → 재시작 시 중복 전송 위험
+
+Graceful Shutdown
+  → TX 처리 완료 또는 명시적 실패 기록 후 종료
+  → 상태 일관성 보장
+```
+
+`kubectl rolling update`, `docker stop`, `PM2 restart` 모두 내부적으로 SIGTERM을 먼저 보내고 일정 시간 후 SIGKILL을 보낸다. Graceful Shutdown 핸들러가 그 시간 안에 정리를 마쳐야 한다.
+
 `_fromBlock` 파라미터가 `_`로 시작하는 이유: ethers.js WebSocket 방식에서는 `fromBlock`을 직접 지정할 수 없다 (WebSocket 연결 시점부터 수신). missed event 복구는 `queryEvents()`가 담당한다.
 
 ---
 
-## 8. queryEvents — Finalized 범위 missed event 복구
+## 11. queryEvents — Finalized 범위 missed event 복구
 
 ```typescript
 // EVMAdapter.ts:197
@@ -508,7 +790,7 @@ Finalized 블록 기준 queryEvents
 
 ---
 
-## 9. _toChainEvent — 체인 원본 → ChainEvent 변환
+## 12. _toChainEvent — 체인 원본 → ChainEvent 변환
 
 ```typescript
 // EVMAdapter.ts:216
@@ -561,7 +843,7 @@ ChainEvent.args = { to: '0xAlice...', tokenId: 1001n, amount: 1n }
 
 ---
 
-## 10. XRPLAdapter Stub + 교체 시뮬레이션
+## 13. XRPLAdapter Stub + 교체 시뮬레이션
 
 ### Stub 구조
 

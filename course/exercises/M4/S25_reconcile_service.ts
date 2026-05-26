@@ -86,7 +86,32 @@ export class ReconcileService {
   // ────────────────────────────────────────────────────────────────────────
 
   async reconcile(): Promise<ReconcileResult> {
-    return undefined as never;
+    const [onchainSupply, bankBalance] = await Promise.all([
+      this.onchain.getTotalSupply(),
+      this.onchain.getCustodyAccountBalance(),
+    ]);
+    const disparity = onchainSupply - bankBalance;
+    const tolerance = 1n;
+    const isHealthy = disparity >= -tolerance && disparity <= tolerance;
+
+    if (!isHealthy) {
+      const absDisparity = disparity < 0n ? -disparity : disparity;
+      const severity: 'warn' | 'critical' = absDisparity >= 1_000_000n ? 'critical' : 'warn';
+      await this.alerter.fire(
+        `Reconcile disparity detected: onchainSupply=${onchainSupply} bankBalance=${bankBalance} disparity=${disparity}`,
+        severity,
+      );
+    }
+
+    const result: ReconcileResult = {
+      onchainSupply,
+      bankBalance,
+      disparity,
+      isHealthy,
+      timestamp: Date.now(),
+    };
+    this.lastResult = result;
+    return result;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -97,7 +122,7 @@ export class ReconcileService {
   // ────────────────────────────────────────────────────────────────────────
 
   getLastResult(): ReconcileResult | null {
-    return undefined as never;
+    return this.lastResult;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -117,7 +142,40 @@ export class ReconcileService {
   // ────────────────────────────────────────────────────────────────────────
 
   async reconcileNftHoldings(userId: string): Promise<NftReconcileResult> {
-    return undefined as never;
+    const userAddress = await this.ledger.getWalletAddress(userId);
+    if (!userAddress) throw new Error(`Wallet address not found for user: ${userId}`);
+
+    const ledgerHoldings = await this.ledger.getHoldings(userId);
+    const discrepancies: Array<{ userId: string; tokenId: bigint; type: 'LEDGER_ONLY' | 'ONCHAIN_ONLY' }> = [];
+
+    // 원장에 있지만 온체인에 없는 것 확인
+    for (const tokenId of ledgerHoldings) {
+      const balance = await this.onchain.balanceOf(userAddress, tokenId);
+      if (balance === 0n) {
+        discrepancies.push({ userId, tokenId, type: 'LEDGER_ONLY' });
+      }
+    }
+
+    // 온체인에 있지만 원장에 없는 것 확인
+    const onchainHoldings = await this.onchain.getNftHoldings(userAddress);
+    const ledgerSet = new Set<string>(ledgerHoldings.map(t => t.toString()));
+    for (const tokenId of onchainHoldings) {
+      if (!ledgerSet.has(tokenId.toString())) {
+        discrepancies.push({ userId, tokenId, type: 'ONCHAIN_ONLY' });
+      }
+    }
+
+    const isHealthy = discrepancies.length === 0;
+
+    if (!isHealthy) {
+      const severity: 'warn' | 'critical' = discrepancies.length >= 10 ? 'critical' : 'warn';
+      await this.alerter.fire(
+        `NFT holdings discrepancy for user ${userId}: ${discrepancies.length} discrepancies`,
+        severity,
+      );
+    }
+
+    return { isHealthy, discrepancies, checkedAt: Date.now() };
   }
 
   // ────────────────────────────────────────────────────────────────────────
