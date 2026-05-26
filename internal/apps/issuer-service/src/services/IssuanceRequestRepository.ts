@@ -13,7 +13,7 @@ import type { Pool }  from 'pg';
  *   SUBMITTED  — VASP 위탁 성공 후
  *   FAILED     — 지갑 조회·AML·VASP 실패 시
  *
- * CONFIRMED는 VASP Webhook 핸들러가 처리 (IssuerService 범위 밖).
+ * CONFIRMED는 TxTransitionBridge가 처리 — TxStatus CONFIRMED 전이 이벤트 수신 시 (IssuerService 범위 밖).
  *
  * DIP 적용:
  *   IssuerService → IIssuanceRequestRepository (인터페이스)

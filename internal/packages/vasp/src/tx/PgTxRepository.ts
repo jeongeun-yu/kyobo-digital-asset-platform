@@ -100,10 +100,7 @@ export class PgTxRepository implements TxRepository {
     );
   }
 
-  /**
-   * PENDING 상태이면서 minutes 분 이상 경과한 요청 조회
-   * FOR UPDATE SKIP LOCKED — 다중 인스턴스 중복 처리 방지
-   */
+  /** txHash로 단건 조회 — 온체인 이벤트 핸들러에서 tx_mint_requests 찾을 때 사용 */
   async findByTxHash(txHash: string): Promise<MintRequest | null> {
     const res = await this.pool.query<DbRow>(
       'SELECT * FROM tx_mint_requests WHERE tx_hash = $1 LIMIT 1',
@@ -113,6 +110,10 @@ export class PgTxRepository implements TxRepository {
     return this._toModel(res.rows[0]!);
   }
 
+  /**
+   * PENDING 상태이면서 minutes 분 이상 경과한 요청 조회
+   * FOR UPDATE SKIP LOCKED — 다중 인스턴스 중복 처리 방지
+   */
   async findPendingOlderThan(minutes: number): Promise<MintRequest[]> {
     const res = await this.pool.query<DbRow>(
       `SELECT * FROM tx_mint_requests
