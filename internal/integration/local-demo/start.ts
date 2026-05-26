@@ -324,6 +324,7 @@ async function main() {
     VASP_API_KEY:          VASP_API_KEY,
     CORE_BANKING_URL:      `http://localhost:${JAVA_STUB_PORT}`,
     CORE_BANKING_SECRET:   CORE_BANKING_SEC,
+    INTERNAL_LEDGER_URL:   `http://localhost:${JAVA_STUB_PORT}`,
     WEBHOOK_SECRET,
     WEBHOOK_PORT:          String(WEBHOOK_PORT),
     REDIS_URL,

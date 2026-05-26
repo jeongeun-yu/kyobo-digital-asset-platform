@@ -63,6 +63,7 @@ export class TokenIssuerFactory {
     confirmHandler:      IssuanceConfirmHandler;
     txStateMachine:      TxStateMachineService;
     txRepo:              PgTxRepository;
+    ledgerService:       LedgerService;
   } {
     const policyRepo     = new PgIssuancePolicyRepository(this.deps.pool);
     const policyService  = new IssuancePolicyService(policyRepo);
@@ -85,18 +86,19 @@ export class TokenIssuerFactory {
     const confirmHandler = new IssuanceConfirmHandler(nftIssuerAddr, txRepo, txStateMachine);
 
     const issuerService  = new IssuerService({
-      chainAdapter:     this.deps.chainAdapter,
-      vaspAdapter:      this.deps.vaspAdapter,
-      coreBanking:      this.deps.coreBanking,
+      chainAdapter:          this.deps.chainAdapter,
+      vaspAdapter:           this.deps.vaspAdapter,
+      coreBanking:           this.deps.coreBanking,
       nftIssuerAddr,
       policyService,
       conditionService,
       issuanceRepo,
       txStateMachine,
       ledgerService,
+      internalLedgerClient:  this.deps.internalLedgerClient,
     });
 
-    return { issuerService, confirmHandler, txStateMachine, txRepo };
+    return { issuerService, confirmHandler, txStateMachine, txRepo, ledgerService };
   }
 
   /**

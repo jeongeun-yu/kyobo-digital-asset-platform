@@ -18,8 +18,6 @@ import { EVMAdapter }              from '@kyobo/chain-adapters';
 import { ChainEventListener }      from '@kyobo/event-engine/listener';
 import { WebhookServer, WebhookPublishHandler } from '@kyobo/event-engine/webhook';
 import { IdempotencyGuard, RedisIdempotencyStore } from '@kyobo/event-engine/webhook';
-import { RetryHandler, DeadLetterQueue } from '@kyobo/event-engine/webhook';
-import { NFTIssuedHandler }        from '@kyobo/event-engine/handlers';
 import {
   ConsumerGroupPool,
   DLQHandler,
@@ -28,7 +26,6 @@ import {
   RedisStreamPublisher,
 }                                  from '@kyobo/event-engine';
 import { PgNFTLedgerService }      from './infra/PgNFTLedgerService';
-import type { RedisStreamClient }  from '@kyobo/event-engine';
 import { IoRedisAdapter }          from './infra/RedisAdapter';
 import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
 // Phase 3 전환 시: ExternalVASPAdapter → KyoboVASPAdapter 로 교체
@@ -40,6 +37,8 @@ import { TokenIssuerFactory }      from './factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from './services/EventConditionService';
 import { ActivityRouter }          from './api/ActivityRouter';
 import { IssuanceConfirmHandler }  from './handlers/IssuanceConfirmHandler';
+import { ProcessedEventHandler }   from './handlers/ProcessedEventHandler';
+import { HttpInternalLedgerClient } from './infra/HttpInternalLedgerClient';
 import { PgIssuanceRequestRepository } from './services/IssuanceRequestRepository';
 import NFTIssuerABI                from './abi/NFTIssuer.json';
 
@@ -102,13 +101,6 @@ async function bootstrap() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
 
-  // ── Retry + DLQ ──────────────────────────────────────────────────────────────
-  const dlq   = new DeadLetterQueue();
-  const retry = new RetryHandler(
-    { maxAttempts: 5, initialDelayMs: 1000, maxDelayMs: 30000, backoffFactor: 2 },
-    dlq,
-  );
-
   // ── 조건 서비스 (Strategy 등록) ───────────────────────────────────────────────
   const conditionService = new EventConditionService([
     new ActivityConditionStrategy(),
@@ -117,28 +109,22 @@ async function bootstrap() {
   ]);
 
   // ── 발행 서비스 (Factory 경유 — policyService·issuanceRepo 자동 주입) ─────────
-  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool });
+  const internalLedgerClient = process.env.INTERNAL_LEDGER_URL
+    ? new HttpInternalLedgerClient(process.env.INTERNAL_LEDGER_URL)
+    : undefined;
+  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool, internalLedgerClient });
   const {
     issuerService,
     confirmHandler: issuanceConfirmHandler,
     txStateMachine,
     txRepo,
+    ledgerService,
   } = factory.createNFTIssuer(process.env.NFT_ISSUER_ADDR!, conditionService);
 
   // ── 온체인 이벤트 리스너 ──────────────────────────────────────────────────────
-  const nftIssuedHandler = new NFTIssuedHandler(
-    process.env.NFT_CONTRACT_ADDR!,
-    idempotency,
-    retry,
-    {
-      coreBankingWebhookUrl: `${process.env.CORE_BANKING_URL}/webhooks/nft`,
-      webhookSecret:          process.env.CORE_BANKING_SECRET!,
-    },
-  );
-
   const eventListener = new ChainEventListener(
     chainAdapter,
-    [nftIssuedHandler, issuanceConfirmHandler],
+    [issuanceConfirmHandler, new ProcessedEventHandler(process.env.NFT_CONTRACT_ADDR!, ledgerService)],
     [{
       addr:       process.env.NFT_CONTRACT_ADDR!,
       abi:        NFTIssuerABI,
@@ -153,19 +139,7 @@ async function bootstrap() {
   );
 
   // ── Redis Streams 발행 클라이언트 ────────────────────────────────────────────
-  // IoRedisAdapter는 RedisConsumerClient + DLQRedisClient 전용이므로
-  // RedisStreamPublisher에 필요한 xgroupCreate·ping을 redis 인스턴스로 직접 구현
-  const streamClient: RedisStreamClient = {
-    async xadd(key, fields) {
-      const flat = Object.entries(fields).flat();
-      return (redis as any).xadd(key, '*', ...flat) as Promise<string>;
-    },
-    async xgroupCreate(key, group, id, mkstream) {
-      await (redis as any).xgroup('CREATE', key, group, id, ...(mkstream ? ['MKSTREAM'] : []));
-    },
-    async ping() { return redis.ping(); },
-  };
-  const streamPublisher  = new RedisStreamPublisher(streamClient);
+  const streamPublisher  = new RedisStreamPublisher(redisAdapter);
   const webhookPublisher = new WebhookPublishHandler(streamPublisher, idempotency);
 
   // ── Webhook 서버 ──────────────────────────────────────────────────────────────
