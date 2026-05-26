@@ -47,6 +47,7 @@ import type { StartedNetwork }                             from 'testcontainers'
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
+import type { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
   WebhookServer,
@@ -60,6 +61,7 @@ import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }                      from '../../packages/core-banking/src/ledger/PgDatabaseClient';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
+import type { ChainEvent }                       from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';
 import {
   ConsumerGroupPool,
@@ -233,13 +235,34 @@ let consumerPool:    ConsumerGroupPool;
 
 let redisAdapter:    IoRedisAdapter;
 let txStateMachine:  TxStateMachineService;
-let fallbackPollInterval: ReturnType<typeof setInterval>;
 
 // ── AlwaysFailProcessor (DLQ / 재처리 시나리오용) ─────────────────────────────
 
 class AlwaysFailProcessor extends NFTIssuedProcessor {
   async process(_msg: StreamMessage): Promise<void> {
     throw new Error('강제 실패 — DLQ 테스트용');
+  }
+}
+
+// Issued 이벤트 → processed_events 기록 (ChainEventListener 파이프라인용)
+class ProcessedEventHandler implements IEventHandler {
+  readonly eventName    = 'Issued';
+  readonly contractAddr: string;
+
+  constructor(
+    contractAddr:                  string,
+    private readonly ledger:       LedgerService,
+  ) {
+    this.contractAddr = contractAddr;
+  }
+
+  async handle(event: ChainEvent): Promise<void> {
+    const safePayload = JSON.parse(
+      JSON.stringify(event.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
+    );
+    await this.ledger.recordProcessedEvent(
+      event.txHash, event.logIndex, event.eventName, BigInt(event.blockNumber), safePayload,
+    ).catch(e => console.error('[ProcessedEventHandler] error:', (e as Error).message));
   }
 }
 
@@ -367,11 +390,11 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     confirmHandler = factoryResult.confirmHandler;
     txStateMachine = factoryResult.txStateMachine;
 
-    // ChainEventListener — 폴백 경로 (issuance_requests CONFIRMED)
+    // ChainEventListener — 폴백 경로 (issuance_requests CONFIRMED + processed_events 기록)
     const inMemoryBlockStore = { block: 0 };
     chainListener = new ChainEventListener(
       chainAdapter,
-      [confirmHandler],
+      [confirmHandler, new ProcessedEventHandler(mockVaspAddr, ledgerService)],
       [{ addr: mockVaspAddr, abi: MOCK_VASP_ABI as unknown[], eventNames: ['Issued'] }],
       {
         async getLastProcessedBlock() { return inMemoryBlockStore.block; },
@@ -379,38 +402,6 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
       },
     );
     await chainListener.start();
-
-    // 폴백 폴링 (contract.on() 미발화 대비)
-    {
-      let fallbackFromBlock = await chainAdapter.getBlockNumber();
-      let fallbackBusy = false;
-      fallbackPollInterval = setInterval(async () => {
-        if (fallbackBusy) return;
-        fallbackBusy = true;
-        try {
-          const toBlock = await chainAdapter.getBlockNumber();
-          if (toBlock <= fallbackFromBlock) return;
-          const events = await chainAdapter.queryEvents(
-            mockVaspAddr, MOCK_VASP_ABI as unknown[], 'Issued',
-            fallbackFromBlock + 1, toBlock,
-          );
-          for (const ev of events) {
-            await confirmHandler.handle(ev).catch(e =>
-              console.error('[fallback] confirmHandler error:', (e as Error).message),
-            );
-            const safePayload = JSON.parse(
-              JSON.stringify(ev.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
-            );
-            await ledgerService.recordProcessedEvent(
-              ev.txHash, ev.logIndex, ev.eventName, BigInt(ev.blockNumber), safePayload,
-            ).catch(e => console.error('[fallback] recordProcessedEvent error:', (e as Error).message));
-          }
-          fallbackFromBlock = toBlock;
-        } catch { /* ignore transient RPC errors */ } finally {
-          fallbackBusy = false;
-        }
-      }, 300);
-    }
 
     // Redis Stream: NFT_ISSUED 콜백 → XADD → ConsumerGroupWorker → ledger
     redisAdapter = new IoRedisAdapter(redis);
@@ -456,7 +447,6 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
   // ── afterAll ──────────────────────────────────────────────────────────────
 
   afterAll(async () => {
-    clearInterval(fallbackPollInterval);
     consumerPool?.stop();
     await webhookServer.close().catch(() => {});
     await chainListener.stop().catch(() => {});
