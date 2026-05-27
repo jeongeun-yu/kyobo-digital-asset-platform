@@ -1,8 +1,8 @@
-import type { Pool }                 from 'pg';
-import type { IBlockchainAdapter }  from '@kyobo/chain-adapters';
-import type { IVASPAdapter }        from '@kyobo/vasp';
-import type { ICoreBankingAdapter } from '@kyobo/core-banking';
-import type { IdempotencyGuard }    from '@kyobo/event-engine/webhook';
+import type { Pool }                    from 'pg';
+import type { IBlockchainAdapter }     from '@kyobo/chain-adapters';
+import type { IVASPAdapter }           from '@kyobo/vasp';
+import type { ICoreBankingAdapter }    from '@kyobo/core-banking';
+import type { IInternalLedgerClient }  from '../interfaces/IInternalLedgerClient';
 import { IssuerService }            from '../services/IssuerService';
 import {
   IssuancePolicyService,
@@ -10,6 +10,13 @@ import {
 }                                   from '../services/IssuancePolicyService';
 import { PgIssuanceRequestRepository } from '../services/IssuanceRequestRepository';
 import { EventConditionService }    from '../services/EventConditionService';
+import { TxStateMachineService }    from '../../../../packages/vasp/src/tx/TxStateMachineService';
+import { PgTxRepository }           from '../../../../packages/vasp/src/tx/PgTxRepository';
+import { VaspTxClientAdapter }      from '../../../../packages/vasp/src/tx/VaspTxClientAdapter';
+import { LedgerService }            from '../../../../packages/core-banking/src/ledger/LedgerService';
+import { PgDatabaseClient }         from '../../../../packages/core-banking/src/ledger/PgDatabaseClient';
+import { TxTransitionBridge }       from '../services/TxTransitionBridge';
+import { IssuanceConfirmHandler }   from '../handlers/IssuanceConfirmHandler';
 
 /**
  * TokenIssuerFactory — 토큰 유형별 IssuerService 생성 팩토리
@@ -33,18 +40,15 @@ import { EventConditionService }    from '../services/EventConditionService';
  *   createSTOIssuer() 추가 시 STOIssuerService(extends IssuerService) 반환
  *   IssuerService 인터페이스 변경 없이 확장 가능.
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S29~S30 (TokenIssuerFactory · 서비스 조립 팩토리)
  */
 export class TokenIssuerFactory {
   constructor(
     private readonly deps: {
-      chainAdapter: IBlockchainAdapter;
-      vaspAdapter:  IVASPAdapter;
-      coreBanking:  ICoreBankingAdapter;
-      idempotency:  IdempotencyGuard;
-      pool:         Pool;
+      chainAdapter:          IBlockchainAdapter;
+      vaspAdapter:           IVASPAdapter;
+      coreBanking:           ICoreBankingAdapter;
+      pool:                  Pool;
+      internalLedgerClient?: IInternalLedgerClient;
     },
   ) {}
 
@@ -54,21 +58,47 @@ export class TokenIssuerFactory {
    * @param nftIssuerAddr   배포된 NFTIssuer 컨트랙트 주소
    * @param conditionService 전략이 등록된 EventConditionService 인스턴스
    */
-  createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService): IssuerService {
-    const policyRepo    = new PgIssuancePolicyRepository(this.deps.pool);
-    const policyService = new IssuancePolicyService(policyRepo);
-    const issuanceRepo  = new PgIssuanceRequestRepository(this.deps.pool);
+  createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService): {
+    issuerService:       IssuerService;
+    confirmHandler:      IssuanceConfirmHandler;
+    txStateMachine:      TxStateMachineService;
+    txRepo:              PgTxRepository;
+    ledgerService:       LedgerService;
+  } {
+    const policyRepo     = new PgIssuancePolicyRepository(this.deps.pool);
+    const policyService  = new IssuancePolicyService(policyRepo);
+    const issuanceRepo   = new PgIssuanceRequestRepository(this.deps.pool);
 
-    return new IssuerService({
-      chainAdapter:     this.deps.chainAdapter,
-      vaspAdapter:      this.deps.vaspAdapter,
-      coreBanking:      this.deps.coreBanking,
-      idempotency:      this.deps.idempotency,
+    // TxStatus 추적 (tx_mint_requests)
+    const txRepo         = new PgTxRepository(this.deps.pool);
+    const vaspTxClient   = new VaspTxClientAdapter(this.deps.vaspAdapter, nftIssuerAddr);
+    const txStateMachine = new TxStateMachineService(txRepo, vaspTxClient);
+
+    // MintStatus 추적 (mint_requests) — LedgerService
+    const dbClient       = new PgDatabaseClient(this.deps.pool);
+    const ledgerService  = new LedgerService(dbClient, this.deps.coreBanking);
+
+    // TxTransitionBridge: TxStatus 전이 → MintStatus·IssuanceStatus 동기화
+    const bridge         = new TxTransitionBridge(ledgerService, issuanceRepo, this.deps.internalLedgerClient);
+    bridge.attach(txStateMachine);
+
+    // IssuanceConfirmHandler: 온체인 이벤트 → TxStateMachineService 경유 전이
+    const confirmHandler = new IssuanceConfirmHandler(nftIssuerAddr, txRepo, txStateMachine);
+
+    const issuerService  = new IssuerService({
+      chainAdapter:          this.deps.chainAdapter,
+      vaspAdapter:           this.deps.vaspAdapter,
+      coreBanking:           this.deps.coreBanking,
       nftIssuerAddr,
       policyService,
       conditionService,
       issuanceRepo,
+      txStateMachine,
+      ledgerService,
+      internalLedgerClient:  this.deps.internalLedgerClient,
     });
+
+    return { issuerService, confirmHandler, txStateMachine, txRepo, ledgerService };
   }
 
   /**

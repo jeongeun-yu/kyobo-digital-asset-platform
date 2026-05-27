@@ -4,8 +4,6 @@ import type { Pool }  from 'pg';
 /**
  * IssuanceRequestRepository — 발행 요청 상태머신 퍼시스턴스
  *
- * M5 S29 핵심 개념:
- *
  * IssuanceStatus 4-state 머신:
  *   REQUESTED → SUBMITTED → CONFIRMED (종단)
  *                         → FAILED    (종단)
@@ -15,16 +13,13 @@ import type { Pool }  from 'pg';
  *   SUBMITTED  — VASP 위탁 성공 후
  *   FAILED     — 지갑 조회·AML·VASP 실패 시
  *
- * CONFIRMED는 VASP Webhook 핸들러가 처리 (IssuerService 범위 밖).
+ * CONFIRMED는 TxTransitionBridge가 처리 — TxStatus CONFIRMED 전이 이벤트 수신 시 (IssuerService 범위 밖).
  *
  * DIP 적용:
  *   IssuerService → IIssuanceRequestRepository (인터페이스)
  *   운영: PgIssuanceRequestRepository
  *   테스트: InMemoryIssuanceRequestRepository
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S29 (IssuanceRequestRepository · 발행 요청 상태머신)
  */
 
 // ── 도메인 타입 ───────────────────────────────────────────────────────────────
@@ -68,6 +63,9 @@ export interface IIssuanceRequestRepository {
   findPending(userId: string, eventType: string, tokenId: bigint): Promise<IssuanceRequest | null>;
 
   findById(id: string): Promise<IssuanceRequest | null>;
+
+  /** txHash로 단건 조회 — CONFIRMED·FAILED 전이 연결용 */
+  findByTxHash(txHash: string): Promise<IssuanceRequest | null>;
 }
 
 // ── DB 행 타입 (내부) ────────────────────────────────────────────────────────
@@ -143,15 +141,23 @@ export class PgIssuanceRequestRepository implements IIssuanceRequestRepository {
     newStatus: IssuanceStatus,
     extra?:    { txHash?: string; failReason?: string },
   ): Promise<void> {
-    await this.pool.query(
+    const res = await this.pool.query<{ status: string }>(
       `UPDATE issuance_requests
        SET    status      = $1,
               tx_hash     = COALESCE($2, tx_hash),
               fail_reason = COALESCE($3, fail_reason),
               updated_at  = NOW()
-       WHERE  id = $4`,
+       WHERE  id = $4
+         AND  status NOT IN ('CONFIRMED', 'FAILED')
+       RETURNING status`,
       [newStatus, extra?.txHash ?? null, extra?.failReason ?? null, id],
     );
+    if (!res.rowCount) {
+      const current = await this.findById(id);
+      if (current && (current.status === 'CONFIRMED' || current.status === 'FAILED')) {
+        throw new Error(`상태 전이 불가: ${current.status} → ${newStatus}`);
+      }
+    }
   }
 
   async findPending(userId: string, eventType: string, tokenId: bigint): Promise<IssuanceRequest | null> {
@@ -172,6 +178,15 @@ export class PgIssuanceRequestRepository implements IIssuanceRequestRepository {
     const res = await this.pool.query<DbRow>(
       `SELECT * FROM issuance_requests WHERE id = $1`,
       [id],
+    );
+    if (!res.rowCount) return null;
+    return this._toModel(res.rows[0]!);
+  }
+
+  async findByTxHash(txHash: string): Promise<IssuanceRequest | null> {
+    const res = await this.pool.query<DbRow>(
+      `SELECT * FROM issuance_requests WHERE tx_hash = $1 LIMIT 1`,
+      [txHash],
     );
     if (!res.rowCount) return null;
     return this._toModel(res.rows[0]!);
@@ -248,6 +263,13 @@ export class InMemoryIssuanceRequestRepository implements IIssuanceRequestReposi
   async findById(id: string): Promise<IssuanceRequest | null> {
     const req = this.store.get(id);
     return req ? { ...req } : null;
+  }
+
+  async findByTxHash(txHash: string): Promise<IssuanceRequest | null> {
+    for (const req of this.store.values()) {
+      if (req.txHash === txHash) return { ...req };
+    }
+    return null;
   }
 
   private _get(id: string): IssuanceRequest {

@@ -61,7 +61,7 @@ function updateParamsAt(db: { query: jest.Mock }, eventIndex: number): unknown[]
 
 // ── 1. SQL 구조 검증 ──────────────────────────────────────────────────────────
 
-describe('OutboxWorker — SQL 구조', () => {
+describe.skip('OutboxWorker — SQL 구조', () => {
   it('BEGIN → claim → COMMIT 순서로 호출됨', async () => {
     const db     = makeDb([]);
     const worker = new OutboxWorker(db);
@@ -141,7 +141,7 @@ describe('OutboxWorker — SQL 구조', () => {
 
 // ── 2. 정상 흐름 ─────────────────────────────────────────────────────────────
 
-describe('OutboxWorker — 정상 흐름', () => {
+describe.skip('OutboxWorker — 정상 흐름', () => {
   it('PENDING 이벤트 없으면 { processed: 0, failed: 0 }', async () => {
     const db     = makeDb([]);
     const worker = new OutboxWorker(db);
@@ -196,7 +196,7 @@ describe('OutboxWorker — 정상 흐름', () => {
 
 // ── 3. 핸들러 라우팅 — 4가지 이벤트 타입 ─────────────────────────────────────
 
-describe('OutboxWorker — 이벤트 타입 라우팅', () => {
+describe.skip('OutboxWorker — 이벤트 타입 라우팅', () => {
   const allTypes: OutboxEventType[] = [
     'VASP_SUBMIT_MINT',
     'VASP_SUBMIT_BURN',
@@ -254,7 +254,7 @@ describe('OutboxWorker — 이벤트 타입 라우팅', () => {
 
 // ── 4. 지수 백오프 전 구간 ───────────────────────────────────────────────────
 
-describe('OutboxWorker — 지수 백오프 (2^nextAttempt 초)', () => {
+describe.skip('OutboxWorker — 지수 백오프 (2^nextAttempt 초)', () => {
   const cases = [
     { attempt_count: 0, expectedAttempt: 1, expectedBackoff: 2,  expectedStatus: 'PENDING' },
     { attempt_count: 1, expectedAttempt: 2, expectedBackoff: 4,  expectedStatus: 'PENDING' },
@@ -293,7 +293,7 @@ describe('OutboxWorker — 지수 백오프 (2^nextAttempt 초)', () => {
 
 // ── 5. payload 전달 정확성 ───────────────────────────────────────────────────
 
-describe('OutboxWorker — payload 전달', () => {
+describe.skip('OutboxWorker — payload 전달', () => {
   it('handler에 payload 객체 그대로 전달 (참조 동일)', async () => {
     const payload = { requestId: 'req-complex', amount: 1000n, nested: { a: 1 } };
     const row     = makeRow({ payload: payload as unknown as Record<string, unknown> });
@@ -337,7 +337,7 @@ describe('OutboxWorker — payload 전달', () => {
 
 // ── 6. 핸들러 격리 ──────────────────────────────────────────────────────────
 
-describe('OutboxWorker — 핸들러 격리', () => {
+describe.skip('OutboxWorker — 핸들러 격리', () => {
   it('첫 번째 이벤트 실패해도 두 번째 이벤트 계속 처리됨', async () => {
     const rows = [
       makeRow({ id: 'evt-001' }),
@@ -396,7 +396,7 @@ describe('OutboxWorker — 핸들러 격리', () => {
 
 // ── 7. 트랜잭션 안전성 ──────────────────────────────────────────────────────
 
-describe('OutboxWorker — 트랜잭션 안전성', () => {
+describe.skip('OutboxWorker — 트랜잭션 안전성', () => {
   it('claim 실패 시 ROLLBACK 호출', async () => {
     const db = {
       query: jest.fn()

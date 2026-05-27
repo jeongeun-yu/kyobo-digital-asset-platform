@@ -1,11 +1,10 @@
 /**
  * TxStateMachineService — 비동기 TX 상태 관리
  *
- * M3 S13~S22 핵심 개념:
- *
  * 상태 전이도:
  *   REQUESTED ──submitMintRequest()──→ SUBMITTED
- *   SUBMITTED ──VASP 컨트랙트 호출──→ PENDING
+ *   SUBMITTED ──VASP TX 브로드캐스트──→ PENDING
+ *   SUBMITTED ──온체인 이벤트 직접──→ MINED   (VASP가 PENDING 없이 바로 채굴 확인 시)
  *   PENDING   ──블록 채굴──────────→ MINED
  *   MINED     ──확인 임계치 도달──→ CONFIRMED
  *   CONFIRMED ──PoS 2/3+ 동의─────→ FINALIZED   ← 종단
@@ -13,19 +12,19 @@
  *   MINED/PENDING ──REVERT──────→ FAILED
  *   MINED/PENDING ──TIMEOUT─────→ gas bump 재전송
  *
- * 3종 비정상 전이 (S18~S20):
+ * 3종 비정상 전이:
  *   REVERT  : 즉시 FAILED + reason 저장. 복구 없음.
  *   TIMEOUT : mempool stuck → gas bump 재전송 → PENDING 유지
  *   REORG   : MINED TX 소실(FINALIZED 전) → REORGED → 5블록 대기 → VASP 재조회 → MINED or FAILED
  *             FINALIZED 이후 REORG 불가 (PoS 절대 불변)
  *
- * MINED / CONFIRMED / FINALIZED 구분 (S13 핵심):
+ * MINED / CONFIRMED / FINALIZED 구분:
  *   MINED     = 블록 포함됨, REORG 가능 구간
- *   CONFIRMED = 충분한 블록 확인 → 원장 업데이트 (M7 ConsumerGroupWorker 연계)
+ *   CONFIRMED = 충분한 블록 확인 → 원장 업데이트 (ConsumerGroupWorker 연계)
  *   FINALIZED = 2/3+ validator 동의 → 절대 불변 — 종단 상태 (Ethereum PoS 기준 약 12분)
  *
- * pollStaleRequests (S22):
- *   PENDING 30분 초과 건 → VASP API 직접 조회 → 결과별 전이
+ * pollStaleRequests:
+ *   PENDING 10분 초과 건 → VASP API 직접 조회 → 결과별 전이
  *   배치 크론으로 실행 (5분 간격 권장)
  *
  * ── Phase별 VASP 지원 범위와 TxStateMachineService 변화 ──────────────────────
@@ -33,7 +32,7 @@
  * Phase 1 (현재):
  *   VaspTxClient = 월렛원 REST API 래퍼
  *   submitMint()          → 월렛원 API 호출 → TX hash 반환
- *   getStatus(txHash)     → 월렛원 API 폴링 → 30분 타임아웃 시 재조회
+ *   getStatus(txHash)     → 월렛원 API 폴링 → 10분 타임아웃 시 재조회
  *   resubmitWithGasBump() → 월렛원 API gas bump 재전송
  *   한계: VASP가 TX 상태를 추상화해서 반환 → REORG·세부 실패 이유 파악 어려움
  *
@@ -51,11 +50,6 @@
  *   pollStaleRequests()   → ConfirmationTracker가 대체 (루프 분리)
  *   교체 방식: VaspTxClient 인터페이스 유지 → CustodyVaspTxClient 등 신규 구현체 주입
  *              (ExternalVaspTxClient 교체, TxStateMachineService 코드 수정 없음)
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 실습: course/exercises/M3/S13_tx_statemachine.ts  ← 상태 전이 직접 구현
- *       course/exercises/M4/S22_pollstale_lab.ts     ← pollStale + 복구 통합
  */
 
 import { randomUUID }  from 'crypto';
@@ -102,6 +96,7 @@ export interface TxTransitionEvent {
 export interface TxRepository {
   save(req: MintRequest): Promise<void>;
   findById(id: string): Promise<MintRequest | null>;
+  findByTxHash(txHash: string): Promise<MintRequest | null>;
   updateStatus(
     id: string,
     status: TxStatus,
@@ -148,6 +143,19 @@ export interface WalletResolver {
   getWalletAddr(userId: string): Promise<string>;
 }
 
+// ── 레이어 레이블 ─────────────────────────────────────────────────────────
+
+const TX_STATUS_LAYER: Record<TxStatus, string> = {
+  REQUESTED: 'VASP',
+  SUBMITTED: 'VASP',
+  PENDING:   'BLOCKCHAIN',
+  MINED:     'BLOCKCHAIN',
+  CONFIRMED: 'BLOCKCHAIN',
+  FINALIZED: 'BLOCKCHAIN',
+  FAILED:    'SERVICE',
+  REORGED:   'BLOCKCHAIN',
+};
+
 // ── 유효 전이 규칙 ────────────────────────────────────────────────────────
 
 export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
@@ -166,13 +174,6 @@ export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
 /**
  * TxStateMachineService
  *
- * M4 핵심 학습 포인트:
- *   1. 왜 상태머신이 필요한가 — sendTransaction은 즉시 확정되지 않음
- *      네트워크 지연·REVERT·REORG 모두 별도 처리 필요
- *   2. Idempotency — requestId 기반, 같은 요청 중복 전송 시 1개만 발행
- *   3. TIMEOUT/REORG 복구 전략은 비즈니스에 따라 다름 — 자동 재전송 vs 수동 확인
- */
-/**
  * Observer 사용 예:
  *   txService.on('transition', (e: TxTransitionEvent) => {
  *     if (e.to === 'CONFIRMED') ledger.recordHolding(e.req);
@@ -181,13 +182,13 @@ export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
  */
 export class TxStateMachineService extends EventEmitter {
   private static readonly GAS_BUMP_PERCENT   = 20;
-  private static readonly STALE_MINUTES      = 30;
+  private static readonly STALE_MINUTES      = 10;
   private static readonly REORG_WAIT_BLOCKS  = 5;
 
   constructor(
     private readonly repo:   TxRepository,
     private readonly vasp:   VaspTxClient,
-    private readonly wallet: WalletResolver,
+    private readonly wallet?: WalletResolver,
   ) {
     super();
   }
@@ -195,9 +196,9 @@ export class TxStateMachineService extends EventEmitter {
   // ── REQUESTED → SUBMITTED ───────────────────────────────────────────────
 
   /**
-   * @notice NFT 발행 요청 생성 + VASP 전송
+   * NFT 발행 요청 생성 + VASP 전송
    *
-   * M3 S13 실습: submitMintRequest 흐름
+   * 흐름:
    *   1. UUID requestId 생성 (Idempotency key)
    *   2. DB INSERT (REQUESTED)
    *   3. walletResolver.getWalletAddr(userId)
@@ -207,10 +208,11 @@ export class TxStateMachineService extends EventEmitter {
    * @returns requestId (이후 상태 조회에 사용)
    */
   async submitMintRequest(params: {
-    userId:  string;
-    tokenId: bigint;
-    amount:  bigint;
-  }): Promise<string> {
+    userId:      string;
+    tokenId:     bigint;
+    amount:      bigint;
+    walletAddr?: string;  // 제공 시 WalletResolver 호출 생략 (IssuerService가 KYC 후 전달)
+  }): Promise<{ requestId: string; txHash: string }> {
     const { userId, tokenId, amount } = params;
 
     const id  = randomUUID();
@@ -230,24 +232,24 @@ export class TxStateMachineService extends EventEmitter {
     await this.repo.save(req);
 
     try {
-      const walletAddr  = await this.wallet.getWalletAddr(userId);
-      const { txHash }  = await this.vasp.submitMint({
+      const walletAddr = params.walletAddr ?? await this.wallet!.getWalletAddr(userId);
+      const { txHash } = await this.vasp.submitMint({
         to: walletAddr, tokenId, amount, requestId: id,
       });
       await this._transition(req, 'SUBMITTED', { txHash });
+      return { requestId: id, txHash };
     } catch (err) {
       await this._transition(req, 'FAILED', { failReason: `submit failed: ${String(err)}` });
       throw err;
     }
-
-    return id;
   }
 
   // ── TX 콜백 핸들러 ─────────────────────────────────────────────────────
 
   /**
-   * VASP Webhook: TX가 블록에 포함됨 → MINED 전이
-   * Finalized 확인은 ChainEventListener가 별도 수행
+   * TX가 블록에 포함됨 → MINED 전이
+   * 호출 경로: VASP Webhook, ChainEventListener Issued 이벤트, pollStaleRequests confirmed
+   * PENDING 또는 SUBMITTED 상태에서만 전이 (그 외 상태는 early return)
    */
   async handleMined(requestId: string, blockNumber: number): Promise<void> {
     const req = await this._getOrThrow(requestId);
@@ -261,7 +263,7 @@ export class TxStateMachineService extends EventEmitter {
    * ConsumerGroupWorker에서 이 메서드 호출 후 원장 업데이트
    *
    * MINED 상태에서만 전이.
-   * M7 연계: CONFIRMED 전이 후 LedgerService.recordHolding(+1)
+   * CONFIRMED 전이 후 LedgerService.recordHolding(+1)
    */
   async handleConfirmed(requestId: string): Promise<void> {
     const req = await this._getOrThrow(requestId);
@@ -293,12 +295,12 @@ export class TxStateMachineService extends EventEmitter {
     await this._transition(req, 'FAILED', { failReason: reason });
   }
 
-  // ── TIMEOUT 처리 (S22) ──────────────────────────────────────────────────
+  // ── TIMEOUT 처리 ──────────────────────────────────────────────────────────
 
   /**
    * TX가 mempool에서 일정 시간 미채굴 → gas bump 재전송
    *
-   * M3 S20 실습: handleTimeout 흐름
+   * 흐름:
    *   1. PENDING 상태 확인
    *   2. vasp.resubmitWithGasBump(txHash, 20%) → 새 txHash
    *   3. DB UPDATE (PENDING, newTxHash, retryCount++)
@@ -317,13 +319,13 @@ export class TxStateMachineService extends EventEmitter {
     await this.repo.updateStatus(req.id, 'PENDING', { txHash: newTxHash, retryCount: req.retryCount + 1 });
   }
 
-  // ── REORG 처리 (S20) ───────────────────────────────────────────────────
+  // ── REORG 처리 ────────────────────────────────────────────────────────────
 
   /**
    * MINED 상태 TX가 REORG로 소실 → REORGED 전이
    *
-   * M3 S20 실습: handleReorg 흐름
-   *   1. MINED → REORGED 전이  ← FINALIZED 이전에만 REORG 가능
+   * 흐름:
+   *   1. MINED → REORGED 전이 (FINALIZED 이전에만 REORG 가능)
    *   2. REORG_WAIT_BLOCKS 블록 대기 (ChainEventListener에서 호출)
    *   3. vasp.getStatus() 재조회
    *   4. 결과: mined → MINED 복귀 / not_found → FAILED
@@ -351,13 +353,13 @@ export class TxStateMachineService extends EventEmitter {
     await new Promise(r => setTimeout(r, blocks * 12_000)); // PoS ~12s/block
   }
 
-  // ── Stale 폴링 (S23) ───────────────────────────────────────────────────
+  // ── Stale 폴링 ─────────────────────────────────────────────────────────
 
   /**
-   * PENDING 30분 초과 건 → VASP API 직접 조회 → 상태 갱신
+   * PENDING 10분 초과 건 → VASP API 직접 조회 → 상태 갱신
    *
-   * M4 S23 실습: pollStaleRequests 흐름
-   *   1. DB에서 PENDING + createdAt < now - 30분 목록 조회
+   * 흐름:
+   *   1. DB에서 PENDING + createdAt < now - 10분 목록 조회
    *   2. 건별 vasp.getStatus(txHash) 조회
    *   3. 결과별 전이:
    *      confirmed  → handleConfirmed()  (VASP confirmed = 충분한 블록 확인)
@@ -378,6 +380,8 @@ export class TxStateMachineService extends EventEmitter {
 
         switch (result.status) {
           case 'confirmed':
+            // PENDING → MINED → CONFIRMED (직접 PENDING→CONFIRMED 전이 없음)
+            await this.handleMined(req.id, result.blockNumber ?? 0);
             await this.handleConfirmed(req.id);
             break;
           case 'failed':
@@ -422,6 +426,7 @@ export class TxStateMachineService extends EventEmitter {
     }
     await this.repo.updateStatus(req.id, to, extra);
     const updated: MintRequest = { ...req, status: to, ...extra, updatedAt: new Date() };
+    console.log(`[TxStateMachine] ${from}(${TX_STATUS_LAYER[from]}) → ${to}(${TX_STATUS_LAYER[to]})  id=${req.id.slice(0, 8)}…`);
     this.emit('transition', { requestId: req.id, from, to, req: updated } satisfies TxTransitionEvent);
   }
 }

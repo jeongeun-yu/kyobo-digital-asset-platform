@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "compile": "npx hardhat compile",
-    "test": "npx hardhat test",
-    "node": "npx hardhat node --hostname 0.0.0.0",
-    "node:local": "npx hardhat node",
-    "deploy:local": "npx hardhat run scripts/deploy/deploy-rewards.ts --network localhost",
-    "deploy:sepolia": "npx hardhat run scripts/deploy/deploy-rewards.ts --network sepolia",
-    "deploy:securities:local": "npx hardhat run scripts/deploy/deploy-securities.ts --network localhost"
+    "compile": "node node_modules/hardhat/internal/cli/cli.js compile",
+    "test": "node node_modules/hardhat/internal/cli/cli.js test",
+    "node": "node node_modules/hardhat/internal/cli/cli.js node --hostname 0.0.0.0",
+    "node:local": "node node_modules/hardhat/internal/cli/cli.js node",
+    "deploy:local": "node node_modules/hardhat/internal/cli/cli.js run scripts/deploy/deploy-rewards.ts --network localhost",
+    "deploy:sepolia": "node node_modules/hardhat/internal/cli/cli.js run scripts/deploy/deploy-rewards.ts --network sepolia",
+    "deploy:securities:local": "node node_modules/hardhat/internal/cli/cli.js run scripts/deploy/deploy-securities.ts --network localhost"
   },
   "devDependencies": {
     "hardhat": "^2.22.0",

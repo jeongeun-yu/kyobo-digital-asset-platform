@@ -24,8 +24,6 @@ export type MintStatus = 'REQUESTED' | 'SUBMITTED' | 'MINED' | 'CONFIRMED' | 'FI
 //          CONFIRMED 시 Java 영구 원장에서 잔액 관리.
 // Phase 3: 교보 자체 VASP 운영 시 출금 승인 즉시 RESERVE로 잠가야 함.
 //
-// Custody Track Session 2 참조: Internal Ledger 4단계 잔액 모델
-//
 //   Available  출금 가능한 실제 잔액 (사용자에게 보이는 잔액)
 //   Reserved   출금 요청 승인(W3_APPROVED) 시 잠긴 금액 — 이중 인출 방지
 //   Pending    TX 브로드캐스트 후 온체인 확정 대기 중
@@ -120,6 +118,26 @@ export class LedgerService {
     );
     if (rows.length === 0) return null;
 
+    const r = rows[0]!;
+    return {
+      id:        r['id'] as string,
+      userId:    r['user_id'] as string,
+      policyId:  r['policy_id'] as string,
+      status:    r['status'] as MintStatus,
+      txHash:    r['tx_hash'] as string | undefined,
+      tokenId:   r['token_id'] ? BigInt(r['token_id'] as string) : undefined,
+      errorMsg:  r['error_msg'] as string | undefined,
+      createdAt: new Date(r['created_at'] as string),
+      updatedAt: new Date(r['updated_at'] as string),
+    };
+  }
+
+  async findByTxHash(txHash: string): Promise<MintRequest | null> {
+    const { rows } = await this.db.query(
+      'SELECT * FROM mint_requests WHERE tx_hash = $1 LIMIT 1',
+      [txHash],
+    );
+    if (rows.length === 0) return null;
     const r = rows[0]!;
     return {
       id:        r['id'] as string,

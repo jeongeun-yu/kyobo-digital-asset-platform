@@ -77,7 +77,11 @@ export interface RegressionTestResult {
 // ────────────────────────────────────────────────────────────────────────
 
 export function buildStorageV1(): StorageLayout {
-  return undefined as never;
+  return [
+    { index: 0, varName: '_balances', value: new Map([['0xaaaa111111111111111111111111111111111111', 100]]) },
+    { index: 1, varName: '_baseURI',  value: 'https://api.kyobo.com/nft/' },
+    { index: 2, varName: '_paused',   value: false },
+  ];
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -105,7 +109,22 @@ export function buildStorageV2Bad(v1Storage: StorageLayout): {
   hasCollision: boolean;
   corruptedVars: string[];
 } {
-  return undefined as never;
+  const v2Layout: StorageLayout = [
+    { index: 0, varName: '_insertedFirst', value: 0 },
+    { index: 1, varName: '_balances',      value: null },
+    { index: 2, varName: '_baseURI',       value: null },
+    { index: 3, varName: '_paused',        value: null },
+  ];
+
+  const corruptedVars: string[] = [];
+  for (const v2Slot of v2Layout) {
+    const v1Slot = v1Storage.find(s => s.index === v2Slot.index);
+    if (v1Slot && v1Slot.varName !== v2Slot.varName) {
+      corruptedVars.push(`slot[${v2Slot.index}]: v1=${v1Slot.varName}, v2=${v2Slot.varName}`);
+    }
+  }
+
+  return { layout: v2Layout, hasCollision: corruptedVars.length > 0, corruptedVars };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -129,7 +148,22 @@ export function buildStorageV2Good(v1Storage: StorageLayout): {
   hasCollision: boolean;
   corruptedVars: string[];
 } {
-  return undefined as never;
+  const v2Layout: StorageLayout = [
+    { index: 0, varName: '_balances', value: v1Storage[0]!.value },
+    { index: 1, varName: '_baseURI',  value: v1Storage[1]!.value },
+    { index: 2, varName: '_paused',   value: v1Storage[2]!.value },
+    { index: 3, varName: '_newVar',   value: '' },
+  ];
+
+  const corruptedVars: string[] = [];
+  for (const v2Slot of v2Layout) {
+    const v1Slot = v1Storage.find(s => s.index === v2Slot.index);
+    if (v1Slot && v1Slot.varName !== v2Slot.varName) {
+      corruptedVars.push(`slot[${v2Slot.index}]: v1=${v1Slot.varName}, v2=${v2Slot.varName}`);
+    }
+  }
+
+  return { layout: v2Layout, hasCollision: corruptedVars.length > 0, corruptedVars };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -162,19 +196,30 @@ export class InitializerGuard {
   private _initialized = 0;
 
   constructor() {
-    return undefined as never;
+    // _disableInitializers() 효과: 직접 배포 시 재초기화 방지
+    this._initialized = 255;
   }
 
   static createViaProxy(): InitializerGuard {
-    return undefined as never;
+    const instance = Object.create(InitializerGuard.prototype) as InitializerGuard;
+    (instance as any)._initialized = 0;
+    return instance;
   }
 
-  initialize(adminAddress: string): { success: boolean; error?: string } {
-    return undefined as never;
+  initialize(_adminAddress: string): { success: boolean; error?: string } {
+    if (this._initialized >= 1) {
+      return { success: false, error: 'InvalidInitialization: already initialized' };
+    }
+    this._initialized = 1;
+    return { success: true };
   }
 
-  initializeV2(baseURI: string, maxSupply: number): { success: boolean; error?: string } {
-    return undefined as never;
+  initializeV2(_baseURI: string, _maxSupply: number): { success: boolean; error?: string } {
+    if (this._initialized >= 2) {
+      return { success: false, error: 'InvalidInitialization: V2 already initialized' };
+    }
+    this._initialized = 2;
+    return { success: true };
   }
 
   getInitializedVersion(): number { return this._initialized; }
@@ -210,11 +255,31 @@ export class GnosisSafeSimulator {
   public upgradeHistory: Array<{ txId: string; newImpl: string; executedAt: Date }> = [];
 
   proposeTx(txId: string, newImplementation: string, description: string): PendingTransaction {
-    return undefined as never;
+    const tx: PendingTransaction = {
+      id: txId,
+      description,
+      newImplementation,
+      signatures: new Set(),
+      threshold: 2,
+      executed: false,
+    };
+    this.pendingTxs.set(txId, tx);
+    return tx;
   }
 
   sign(txId: string, signer: SignerType): { signed: boolean; currentCount: number } {
-    return undefined as never;
+    const tx = this.pendingTxs.get(txId);
+    if (!tx) throw new Error(`Transaction ${txId} not found`);
+    if (tx.executed) throw new Error(`Transaction ${txId} already executed`);
+
+    tx.signatures.add(signer);
+
+    if (tx.signatures.size >= tx.threshold && !tx.executed) {
+      tx.executed = true;
+      this.upgradeHistory.push({ txId, newImpl: tx.newImplementation, executedAt: new Date() });
+    }
+
+    return { signed: true, currentCount: tx.signatures.size };
   }
 
   getPendingTx(txId: string): PendingTransaction | undefined {

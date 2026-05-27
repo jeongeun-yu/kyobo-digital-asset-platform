@@ -78,7 +78,14 @@ export class EVMStorage {
 // ────────────────────────────────────────────────────────────────────────
 
 export function buildV1Layout(): EVMStorage {
-  return undefined as never;
+  const storage = new EVMStorage();
+  storage.define(0, 'ERC1155Upgradeable._uri',               'string');
+  storage.define(1, 'ERC1155Upgradeable._balances',          'mapping(uint256 => mapping(address => uint256))');
+  storage.define(2, 'ERC1155Upgradeable._operatorApprovals', 'mapping(address => mapping(address => bool))');
+  storage.define(3, 'AccessControlUpgradeable._roles',       'mapping(bytes32 => RoleData)');
+  storage.define(4, 'PausableUpgradeable._paused',           'bool');
+  storage.define(5, 'UUPSUpgradeable (internal)',            'bytes32');
+  return storage;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -94,7 +101,10 @@ export function buildV1Layout(): EVMStorage {
 // ────────────────────────────────────────────────────────────────────────
 
 export function buildV2SafeLayout(): EVMStorage {
-  return undefined as never;
+  const storage = buildV1Layout();
+  storage.define(6, '_baseTokenURI',      'string');
+  storage.define(7, '_maxSupplyPerToken', 'uint256');
+  return storage;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -172,17 +182,26 @@ export class InitializationVersionTracker {
 
   /** initializer = reinitializer(1) */
   initialize(_admin: string): void {
-    return undefined as never;
+    if (this._initialized >= 1) {
+      throw new Error('InvalidInitialization: already initialized (>= 1)');
+    }
+    this._initialized = 1;
   }
 
   /** reinitializer(2) */
   initializeV2(_baseUri: string, _maxSupply: number): void {
-    return undefined as never;
+    if (this._initialized >= 2) {
+      throw new Error('InvalidInitialization: already initialized (>= 2)');
+    }
+    this._initialized = 2;
   }
 
   /** reinitializer(3) */
   initializeV3(_newFeature: string): void {
-    return undefined as never;
+    if (this._initialized >= 3) {
+      throw new Error('InvalidInitialization: already initialized (>= 3)');
+    }
+    this._initialized = 3;
   }
 
   getVersion(): number { return this._initialized; }
@@ -218,7 +237,27 @@ export function checkStorageLayoutCompatibility(
   v1Slots: number[],
   v2Slots: Array<{ slot: number; variable: string }>,
 ): StorageLayoutCheckResult {
-  return undefined as never;
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const v1MaxSlot = Math.max(...v1Slots);
+  const v1SlotSet = new Set(v1Slots);
+
+  for (const entry of v2Slots) {
+    // 슬롯이 v1 범위 이내인데 v1에서 이미 사용 중이면 충돌 (변수가 밀림)
+    // 또는 v1 범위 이내인데 v1에 없는 빈 슬롯에 삽입된 경우도 충돌
+    if (entry.slot <= v1MaxSlot) {
+      // v1에 있든 없든, v1 범위 이내 슬롯에 새 변수 추가 = 충돌
+      errors.push(
+        `New storage layout is incompatible: "${entry.variable}" at slot ${entry.slot} conflicts with existing layout`,
+      );
+    }
+  }
+
+  return {
+    compatible: errors.length === 0,
+    errors,
+    warnings,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────

@@ -1,10 +1,6 @@
 /**
  * NFTIssuedProcessor — NFT 발행 이벤트 소비자 처리기
  *
- * M2 S12 핵심 구현:
- *   ConsumerGroupWorker가 kyobo:events 스트림에서 꺼낸 NFT_ISSUED 메시지를
- *   Finalized 체크 → 멱등성 확인 → 원장 업데이트 순서로 처리.
- *
  * 처리 순서 (At-least-once 불변 규칙):
  *   1. Finalized 체크 — 미확정 블록이면 XACK 없이 return → PEL 잔류 → 재처리
  *   2. IdempotencyGuard.run() — requestId 중복이면 스킵 + XACK (Worker가 처리)
@@ -12,8 +8,8 @@
  *   (XACK는 ConsumerGroupWorker._handleWithRetry() 에서 처리 — 이 클래스는 호출하지 않음)
  *
  * LedgerService:
- *   M2에서는 InMemoryLedgerService (실습·테스트용).
- *   M4에서 PostgreSQL + Knex 구현체로 교체 예정.
+ *   현재 InMemoryLedgerService (개발·테스트용).
+ *   프로덕션에서는 PostgreSQL + Knex 구현체로 교체.
  */
 
 import { type EventProcessor, type StreamMessage, DeferredProcessingError } from '../stream/ConsumerGroupWorker';
@@ -22,14 +18,11 @@ import { EventType } from '../EventTypes';
 import { logger } from '../infra/logger';
 
 // ── LedgerService 인터페이스 ─────────────────────────────────────────────────
-// M4에서 구현체 추가. 이 파일에서는 인터페이스만 정의.
 
 export interface LedgerService {
-  creditNFT(owner: string, tokenId: string, amount?: number): Promise<void>;
+  creditNFT(owner: string, tokenId: string, amount?: number, txHash?: string): Promise<void>;
   getNFTBalance(owner: string, tokenId: string): Promise<number>;
-  // TODO(M4): mint_request 상태를 CONFIRMED로 전이
-  // NFTIssued 이벤트 처리 완료 후 호출 — Java 영구 원장 반영이 끝났음을 기록
-  updateMintRequestConfirmed?(requestId: string): Promise<void>;
+  updateMintRequestConfirmed?(requestId: string, blockNumber?: number): Promise<void>;
 }
 
 export interface FinalizedBlockProvider {
@@ -68,14 +61,15 @@ export class NFTIssuedProcessor implements EventProcessor {
 
     // ── Step 2 + 3: 멱등성 확인 → 원장 업데이트 ───────────────────────────
     const idempotencyKey = `NFTIssued:${requestId}`;
+    const txHash = message.fields['txHash'];
+
+    console.log(`[NFTIssuedProcessor] NFT_ISSUED 수신  to=${payload.to?.slice(0, 10)}…  tokenId=${payload.tokenId}  txHash=${txHash?.slice(0, 10)}…  msgId=${message.id}`);
 
     const processed = await this.idempotency.run(idempotencyKey, async () => {
-      await this.ledger.creditNFT(payload.to, payload.tokenId);
-
-      // TODO(M4): Java 영구 원장 반영 완료 후 mint_request 상태를 CONFIRMED로 전이
-      // 설계: CONFIRMED = "내부 원장 반영 완료" (온체인 확인과 별개)
-      // 구현 시 아래 호출 추가:
-      //   await this.ledger.updateMintRequestConfirmed?.(requestId);
+      console.log(`[NFTIssuedProcessor] creditNFT 호출 → owner=${payload.to?.slice(0, 10)}…  tokenId=${payload.tokenId}`);
+      await this.ledger.creditNFT(payload.to, payload.tokenId, 1, txHash);
+      console.log(`[NFTIssuedProcessor] creditNFT 완료 → user_nft_holdings 기록`);
+      await this.ledger.updateMintRequestConfirmed?.(requestId, payload.blockNumber);
     });
 
     if (!processed) {
@@ -85,7 +79,7 @@ export class NFTIssuedProcessor implements EventProcessor {
 }
 
 // ── InMemoryLedgerService ────────────────────────────────────────────────────
-// M2 실습·테스트용. M4에서 PostgreSQL 구현체로 교체.
+// 개발·테스트용. 프로덕션에서는 PostgreSQL 구현체로 교체.
 
 export class InMemoryLedgerService implements LedgerService {
   readonly holdings = new Map<string, number>();

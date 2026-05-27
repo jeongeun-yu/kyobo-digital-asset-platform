@@ -1,7 +1,7 @@
 /**
  * AdapterDecorator — Decorator Pattern 베이스
  *
- * M3 S17 연계: IBlockchainAdapter를 감싸는 Decorator 베이스 클래스.
+ * IBlockchainAdapter를 감싸는 Decorator 베이스 클래스.
  * 모든 메서드를 그대로 위임 — 서브클래스는 필요한 메서드만 오버라이드.
  *
  * 체인: adapter → LoggingAdapterDecorator → RetryAdapterDecorator → 실제 호출

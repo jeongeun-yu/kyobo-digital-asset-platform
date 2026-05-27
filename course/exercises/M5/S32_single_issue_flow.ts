@@ -139,7 +139,54 @@ export class IssuerService {
     activityId: string;
     oracleData: OracleData;
   }): Promise<{ txHash: string }> {
-    return undefined as never;
+    const { userId, activityId, oracleData } = params;
+
+    // 1. 계정 조회 + status 검증
+    const account = await this.deps.coreBanking.getUserAccount(userId);
+    if (!account) throw new Error(`user not found: ${userId}`);
+    if (account.status !== 'active') {
+      throw new Error(`account not active: ${userId} (status: ${account.status})`);
+    }
+
+    // 2. 멱등성 체크
+    const idempotencyResult = await this.deps.idempotency.check(activityId);
+    if (idempotencyResult.processed) {
+      throw new Error(`already processed: ${activityId}`);
+    }
+
+    // 3. AML 스크리닝
+    const aml = await this.deps.vaspAdapter.screenAddress(account.walletAddr);
+    if (aml.flagged) {
+      throw new Error(`AML flagged: ${aml.reason ?? 'blacklisted address'}`);
+    }
+
+    // 4. 컨트랙트 호출
+    const receipt = await this.deps.chainAdapter.sendTransaction({
+      contractAddr: this.deps.nftIssuerAddr,
+      method: 'issueActivityNFT',
+      args: [
+        account.walletAddr,
+        `0x${Buffer.from(activityId).toString('hex').padEnd(64, '0').slice(0, 64)}`,
+        oracleData,
+      ],
+    });
+    if (receipt.status === 'failed') {
+      throw new Error(`tx failed: ${receipt.txHash}`);
+    }
+
+    // 5. 멱등성 기록
+    await this.deps.idempotency.record(activityId);
+
+    // 6. CoreBanking 알림 (fire-and-forget)
+    this.deps.coreBanking.notifyReward({
+      userId,
+      rewardType: 'ACTIVITY_NFT',
+      tokenId: activityId,
+      txHash: receipt.txHash,
+      issuedAt: receipt.timestamp,
+    }).catch(err => console.error('[IssuerService] CoreBanking notify failed:', err));
+
+    return { txHash: receipt.txHash };
   }
 }
 

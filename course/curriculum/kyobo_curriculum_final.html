@@ -244,11 +244,12 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
     <tr><td style="color:#34d399;font-weight:800">M2</td><td style="color:#94a3b8">DMZ 이벤트 파이프라인</td><td style="color:#475569">S5~S12</td><td style="color:#64748b;font-size:11px">202 패턴 · Consumer Group · DLQ · Finalized</td><td><span class="out g">DMZ 파이프라인</span></td></tr>
     <tr><td style="color:#f87171;font-weight:800">M3</td><td style="color:#94a3b8">TX 상태머신</td><td style="color:#475569">S13, S16~S19</td><td style="color:#64748b;font-size:11px">TX 상태머신 · Idempotency · REVERT/TIMEOUT/REORG 복구 전략</td><td><span class="out g">TX 상태머신</span></td></tr>
     <tr><td style="color:#fbbf24;font-weight:800">M4</td><td style="color:#94a3b8">내부 원장 + 감사 로그</td><td style="color:#475569">S23~S26</td><td style="color:#64748b;font-size:11px">전이 가드 · 멱등키 · SHA-256 체인 · Reconcile</td><td><span class="out g">원장+감사로그</span></td></tr>
-    <tr><td style="color:#f87171;font-weight:800">M3b</td><td style="color:#94a3b8">VASP 추상화 <span style="color:#ef444460;font-size:11px">(VASP 확정 후)</span></td><td style="color:#475569">S14, S15, S20~S22</td><td style="color:#64748b;font-size:11px">IBlockchainAdapter · 멀티체인 전환 · 복구 핸들러 구현 · VASP 이중 채널</td><td><span class="out g">VASP 연동</span></td></tr>
     <tr><td style="color:#60a5fa;font-weight:800">M5</td><td style="color:#94a3b8">비즈니스 로직 레이어</td><td style="color:#475569">S27~S34</td><td style="color:#64748b;font-size:11px">지갑 매핑 · 조건 판단 → 단건 요청 → 벌크 오케스트레이션</td><td><span class="out g">비즈니스 로직</span></td></tr>
+    <tr><td style="color:#f87171;font-weight:800">M3b</td><td style="color:#94a3b8">VASP 추상화 <span style="color:#ef444460;font-size:11px">(VASP 확정 후)</span></td><td style="color:#475569">S14, S15, S20~S22</td><td style="color:#64748b;font-size:11px">IBlockchainAdapter · 멀티체인 전환 · 복구 핸들러 구현 · VASP 이중 채널</td><td><span class="out g">VASP 연동</span></td></tr>
+    <tr><td style="color:#fbbf24;font-weight:800">Phase1</td><td style="color:#94a3b8">Phase 1 통합 테스트</td><td style="color:#475569">S50~S53</td><td style="color:#64748b;font-size:11px">통합 환경 구성 · E2E 정상 경로 · 장애 주입 3종 · 감사 로그 무결성 · 데모</td><td><span class="out gold">Phase 1 Prototype</span></td></tr>
     <tr><td style="color:#a78bfa;font-weight:800">M6</td><td style="color:#94a3b8">ERC-1155 NFT 컨트랙트 완전 구현</td><td style="color:#475569">S35~S40</td><td style="color:#64748b;font-size:11px">UUPS+AccessControl · tokenId · mintBatch · Sepolia 배포</td><td><span class="out g">KyoboNFT.sol</span></td></tr>
     <tr><td style="color:#2dd4bf;font-weight:800">M7</td><td style="color:#94a3b8">보안 감사 + 업그레이드 운영</td><td style="color:#475569">S41~S44</td><td style="color:#64748b;font-size:11px">Slither HIGH/MEDIUM 제거 · Storage layout · v2 업그레이드</td><td><span class="out g">감사 통과 v2</span></td></tr>
-    <tr><td style="color:#fbbf24;font-weight:800">M8</td><td style="color:#94a3b8">키 거버넌스 + Phase 1 통합</td><td style="color:#475569">S45~S50</td><td style="color:#64748b;font-size:11px">EIP-712 SafeTx · Travel Rule · E2E 통합 · 장애 주입</td><td><span class="out gold">Phase 1 Prototype</span></td></tr>
+    <tr><td style="color:#fbbf24;font-weight:800">M8</td><td style="color:#94a3b8">키 거버넌스 + Travel Rule</td><td style="color:#475569">S45~S49</td><td style="color:#64748b;font-size:11px">EIP-712 SafeTx · Gnosis Safe 2-of-3 · MultisigService · Travel Rule</td><td><span class="out gold">키 거버넌스</span></td></tr>
   </tbody>
 </table>
 
@@ -869,6 +870,80 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
   </div>
 </div>
 
+<div class="chap"><span class="chap-num">Chapter 3c</span><span class="chap-title">Phase 1 통합 테스트 — E2E + 장애 주입 + 프로토타입 완성</span><div class="chap-line"></div><span class="chap-badge">4세션 · 4h</span></div>
+<!-- ══ Phase 1 통합 테스트 ══ -->
+<div class="mod m8">
+  <div class="mod-hd"><div class="mn" style="font-size:13px;letter-spacing:-.5px">Phase1</div><div><div class="mt">Phase 1 통합 테스트 — E2E + 장애 주입 + 프로토타입 완성</div><div class="mm">4세션 · S50~S53 · 4시간</div></div><div class="mb-badge"><span class="out gold">Phase 1 Prototype 완성</span></div></div>
+  <div class="mod-body">
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S50</span><span class="st">통합 테스트 환경 구성 — Mock-VASP 하네스 + 테스트 데이터 셋업</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb"><div class="lbl lec">강의 15분</div><ul class="il">
+          <li>Phase 1 전체 흐름 최종 확인 — 앱 이벤트→조건→요청→VASP→온체인→DMZ→원장→감사 로그. 각 모듈 연결 지점</li>
+          <li>통합 테스트 전략 — Mock-VASP(로컬), Sepolia(실 네트워크) 환경 분리. 각 환경의 목적과 한계</li>
+        </ul></div>
+        <div class="sb"><div class="lbl lab">실습 40분</div><ul class="il">
+          <li>Mock-VASP 서버 기동 + Docker Compose 통합 환경 확인 — PostgreSQL, Redis, Mock-VASP, issuer-service 연결 검증</li>
+          <li>테스트 픽스처 구성 — 사용자 지갑 매핑, 초기 원장 상태, issuance_requests 시드 데이터</li>
+          <li>E2E 첫 실행 — 앱 이벤트 1건 → NFT 발행 → 원장 업데이트 → 감사 로그 생성 전체 1회 완주</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">통합 환경 전체 기동 + 컨테이너 간 통신 확인</span><span class="ci">E2E 정상 경로 1회 완주</span></div></div>
+      </div>
+    </div>
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S51</span><span class="st">장애 주입 1 — VASP 중단·타임아웃·REVERT 복구 검증</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb"><div class="lbl lec">강의 10분</div><ul class="il">
+          <li>장애 주입 원칙 — 실제 운영 장애 유형 3종. Mock-VASP의 <span class="c">setMode(REVERT|TIMEOUT|NORMAL)</span> API로 시뮬레이션</li>
+        </ul></div>
+        <div class="sb"><div class="lbl lab">실습 45분</div><ul class="il">
+          <li>VASP REVERT 주입 — <span class="c">setMode(REVERT)</span> → 요청 실패 → RetryHandler 백오프 재시도 → <span class="c">setMode(NORMAL)</span> → 정상 복귀 확인</li>
+          <li>VASP TIMEOUT 주입 — 응답 지연 → 타임아웃 감지 → DLQ 적재 → 수동 재처리 경로 확인</li>
+          <li>TX REVERT 주입 — 컨트랙트 revert → issuance_requests FAILED 전이 + 감사 로그 기록 확인</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">REVERT → 재시도 후 정상 복귀</span><span class="ci">TIMEOUT → DLQ 적재 확인</span><span class="ci">TX revert → FAILED 전이 + 감사 로그</span></div></div>
+      </div>
+    </div>
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S52</span><span class="st">장애 주입 2·3 — Reorg 원장 롤백 + Consumer 강제 재시작</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb"><div class="lbl lab">실습 55분</div><ul class="il">
+          <li>Reorg 시뮬레이션 — Hardhat로 블록 재편성 유발 → ChainEventListener REORG 감지 → 원장 롤백 → 재확인 후 CONFIRMED 전이</li>
+          <li>Consumer 강제 종료 — 처리 중 Consumer 프로세스 kill → 재시작 후 XPENDING 재처리 → 중복 NFT 발행 없음 확인 (Idempotency Guard)</li>
+          <li>Redis Streams 장애 — Redis 재시작 → Consumer Group 재연결 + 메시지 유실 없음 확인</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk">완료 기준</div><div class="cr"><span class="ci">Reorg → 원장 롤백 + 재확인 후 CONFIRMED</span><span class="ci">Consumer 재시작 → 중복 발행 없음</span><span class="ci">Redis 재시작 → 메시지 유실 없음</span></div></div>
+      </div>
+    </div>
+
+    <div class="sess">
+      <div class="sess-hd"><span class="sn">S53</span><span class="st">감사 로그 무결성 검증 + 프로토타입 데모 리허설</span><span class="stm">1h</span></div>
+      <div class="sess-body">
+        <div class="sb"><div class="lbl lab">실습 55분</div><ul class="il">
+          <li>감사 로그 체인 무결성 검증 — SHA-256 해시 체인 일관성 확인, 임의 레코드 삭제·수정 시 무결성 위반 감지</li>
+          <li>Sepolia E2E 1회 — 실 네트워크에서 앱 이벤트 → NFT 발행 → 원장 완주 (가스비·블록 확인 포함)</li>
+          <li>프로토타입 데모 리허설 — 처음부터 끝까지 1회 발표 흐름으로 진행</li>
+        </ul></div>
+        <div class="sb" style="grid-column:1/-1"><div class="lbl chk" style="color:#f87171">Phase 1 Prototype 완성 조건 — 전부 통과해야 프로토타입</div>
+          <div class="cr" style="margin-top:8px">
+            <span class="ci">앱 이벤트 → NFT 발행 → 원장 E2E 전체 동작</span>
+            <span class="ci">VASP 장애 → 복구 후 정상 복귀</span>
+            <span class="ci">Reorg → 원장 롤백 + 재확인</span>
+            <span class="ci">Consumer 장애 → 중복 없이 재처리</span>
+            <span class="ci">감사 로그 체인 무결성 통과</span>
+            <span class="ci">1-of-3 서명 대형 TX 불가</span>
+            <span class="ci">Travel Rule 100만원 동작</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <div class="chap"><span class="chap-num">Chapter 4</span><span class="chap-title">온체인 — 컨트랙트 + 보안</span><div class="chap-line"></div><span class="chap-badge">M6~M7 · 10h</span></div>
 <!-- ══ M6 ══ -->
 <div class="mod m6">
@@ -1054,10 +1129,10 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
   </div>
 </div>
 
-<div class="chap"><span class="chap-num">Chapter 5</span><span class="chap-title">키 거버넌스 + Phase 1 통합</span><div class="chap-line"></div><span class="chap-badge">M8 · 6h</span></div>
+<div class="chap"><span class="chap-num">Chapter 5</span><span class="chap-title">키 거버넌스 + Travel Rule</span><div class="chap-line"></div><span class="chap-badge">M8 · 5h</span></div>
 <!-- ══ M8 ══ -->
 <div class="mod m8">
-  <div class="mod-hd"><div class="mn">M8</div><div><div class="mt">키 거버넌스 + Phase 1 통합 + 프로토타입 완성</div><div class="mm">6세션 · S45~S50 · 6시간</div></div><div class="mb-badge"><span class="out gold">Phase 1 Prototype 완성</span></div></div>
+  <div class="mod-hd"><div class="mn">M8</div><div><div class="mt">키 거버넌스 + Travel Rule</div><div class="mm">5세션 · S45~S49 · 5시간</div></div><div class="mb-badge"><span class="out gold">키 거버넌스 완성</span></div></div>
   <div class="mod-body">
 
     <div class="sess">
@@ -1145,37 +1220,11 @@ body{font-family:'Segoe UI',sans-serif;background:#080d1a;color:#e2e8f0;line-hei
       </div>
     </div>
 
-    <div class="sess">
-      <div class="sess-hd"><span class="sn">S50</span><span class="st">Phase 1 전체 시스템 통합과 장애 주입 기반 복원력 검증</span><span class="stm">1h</span></div>
-      <div class="sess-body">
-        <div class="sb"><div class="lbl lec">10분</div><ul class="il">
-          <li>Phase 1 전체 흐름 최종 확인 — 앱 이벤트→조건→요청→VASP→온체인→DMZ→원장→감사 로그. 각 모듈 연결 지점</li>
-        </ul></div>
-        <div class="sb"><div class="lbl lab">45분</div><ul class="il">
-          <li>정상 E2E — 앱 이벤트 1건 → NFT 발행 → 원장 업데이트 → 감사 로그 생성 전체 1회 완주</li>
-          <li>장애 주입 1: VASP 중단 → 백오프 재시도 → 복구 후 정상 복귀</li>
-          <li>장애 주입 2: Reorg 시뮬레이션 → 원장 롤백 → 재확인 후 CONFIRMED</li>
-          <li>장애 주입 3: Consumer 강제 종료 → 재시작 후 중복 없이 재처리</li>
-          <li>프로토타입 데모 리허설 — 처음부터 끝까지 1회</li>
-        </ul></div>
-        <div class="sb" style="grid-column:1/-1"><div class="lbl chk" style="color:#f87171">Phase 1 Prototype 완성 조건 — 전부 통과해야 프로토타입</div>
-          <div class="cr" style="margin-top:8px">
-            <span class="ci">앱 이벤트 → NFT 발행 → 원장 E2E 전체 동작</span>
-            <span class="ci">VASP 장애 → 복구 후 정상 복귀</span>
-            <span class="ci">Reorg → 원장 롤백 + 재확인</span>
-            <span class="ci">Consumer 장애 → 중복 없이 재처리</span>
-            <span class="ci">감사 로그 체인 무결성 통과</span>
-            <span class="ci">1-of-3 서명 대형 TX 불가</span>
-            <span class="ci">Travel Rule 100만원 동작</span>
-          </div>
-        </div>
-      </div>
-
   </div>
 </div>
 
 
 </div>
-<div class="footer">교보생명 디지털 자산 관리 시스템 구현 실무 — Phase 1 최종 커리큘럼 v2 · 8모듈 · 50세션 × 1시간 · 총 50시간 · 4세션/일 × 13일</div>
+<div class="footer">교보생명 디지털 자산 관리 시스템 구현 실무 — Phase 1 최종 커리큘럼 v2 · 8모듈 + Phase1 통합 · 53세션 × 1시간 · 총 53시간 · 4세션/일 × 14일</div>
 </body>
 </html>

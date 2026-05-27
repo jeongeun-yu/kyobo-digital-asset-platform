@@ -1,25 +1,19 @@
 /**
  * WalletMappingService — 사용자 ↔ 지갑 주소 매핑 관리 (1:1)
  *
- * M5 S27~S29 핵심 개념:
- *
- * 설계 문제 (S28):
+ * 설계:
  *   교보생명 내부 userId와 블록체인 walletAddr는 다른 식별자 공간.
  *   Phase 1: userId당 하나의 walletAddr만 허용 (UNIQUE user_id).
  *
- * 지갑 소유권 증명 (S29):
+ * 지갑 소유권 증명:
  *   EIP-191 서명 검증 — 사용자가 private key 보유 증명
  *   메시지: "Kyobo Digital Asset Wallet: {userId}:{nonce}"
  *   서명 → ecrecover → 복원 주소 == walletAddr 이면 소유 증명
  *   (교보 custodial 지갑은 이 단계 불필요 — VASP가 보관)
  *
- * VASP별 분기 (S27):
+ * VASP별 분기:
  *   VaspType.EXTERNAL → ExternalVaspClient.getWalletAddr(userId)
  *   VaspType.KYOBO    → ExternalVaspClient.createWallet(userId) (Phase 4)
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S27~S29 (지갑 프로비저닝 · 매핑 설계 · EIP-191 서명)
  */
 
 import { createHash } from 'crypto';
@@ -106,11 +100,10 @@ export class WalletMappingService {
    * 지갑 소유권 증명 — EIP-191 서명 검증.
    * 성공 시 해당 지갑의 verified=true로 갱신.
    *
-   * M5 S29 실습:
-   *   1. 메시지 = "Kyobo Digital Asset Wallet: {userId}:{nonce}"
-   *   2. sigVerifier.recoverAddress(message, signature) → 복원 주소
-   *   3. 복원 주소 == walletAddr → 소유 증명 완료
-   *   4. DB UPDATE verified = true
+   * 1. 메시지 = "Kyobo Digital Asset Wallet: {userId}:{nonce}"
+   * 2. sigVerifier.recoverAddress(message, signature) → 복원 주소
+   * 3. 복원 주소 == walletAddr → 소유 증명 완료
+   * 4. DB UPDATE verified = true
    *
    * 교보 custodial 지갑은 VASP가 private key 보관 → 이 단계 불필요
    * 자기관리형(non-custodial) 사용자 지갑 등록 시 필요

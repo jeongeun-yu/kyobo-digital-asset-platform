@@ -1,0 +1,36 @@
+{
+  "name": "@kyobo/integration-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test:integration": "jest --config jest.config.json --runInBand --forceExit",
+    "test:mock-vasp": "jest --config jest.config.json --runInBand --forceExit --testPathPattern=mock-vasp",
+    "test:sepolia": "jest --config jest.config.json --runInBand --forceExit --testPathPattern=sepolia",
+    "build:java": "docker build -t kyobo/internal-ledger:test ../internal-ledger",
+    "build:hardhat": "docker build -t kyobo/hardhat-node:test ../../blockchain",
+    "demo:start": "npx ts-node --project tsconfig.json local-demo/start.ts",
+    "demo:issue": "npx ts-node --project tsconfig.json local-demo/issue.ts",
+    "demo:start-sepolia": "npx ts-node --project tsconfig.json local-demo/start-sepolia.ts",
+    "demo:issue-sepolia": "npx ts-node --project tsconfig.json local-demo/issue-sepolia.ts",
+    "demo:scenario": "npx ts-node --project tsconfig.json local-demo/scenario.ts",
+    "demo:scenario-sepolia": "npx ts-node --project tsconfig.json local-demo/scenario-sepolia.ts"
+  },
+  "dependencies": {
+    "@kyobo/vasp":          "*",
+    "@kyobo/event-engine":  "*",
+    "@kyobo/core-banking":  "*",
+    "@kyobo/chain-adapters": "*"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^10.0.0",
+    "dotenv":          "^16.0.0",
+    "testcontainers":  "^10.0.0",
+    "@types/jest":     "^29.5.0",
+    "@types/pg":       "^8.20.0",
+    "ioredis":         "^5.10.1",
+    "jest":            "^29.7.0",
+    "pg":              "^8.21.0",
+    "ts-jest":         "^29.1.0",
+    "typescript":      "^5.4.0"
+  }
+}

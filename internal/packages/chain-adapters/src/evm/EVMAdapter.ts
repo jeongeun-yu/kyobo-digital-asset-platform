@@ -26,24 +26,17 @@ const ERC1155_ABI = [
 /**
  * EVMAdapter — IBlockchainAdapter EVM 구현체 (Ethereum / Polygon)
  *
- * M3 S15 핵심:
- *   IBlockchainAdapter 인터페이스만 구현하면 XRPL/Circle 교체 시
- *   상위 레이어(IssuerService, ChainEventListener) 코드 변경 없음.
+ * IBlockchainAdapter 인터페이스만 구현하면 XRPL/Circle 교체 시
+ * 상위 레이어(IssuerService, ChainEventListener) 코드 변경 없음.
  *
  * 보안 원칙:
  *   - 내부망 private RPC 노드만 연결 (public RPC 절대 금지)
  *   - RPC URL / private key 환경 변수 주입 (코드 하드코딩 금지)
  *   - privateKey 없으면 read-only 모드 (이벤트 구독 전용)
  *
- * Missed event 복구 (M7):
+ * Missed event 복구:
  *   재시작 시 DB에 저장된 마지막 처리 블록부터 queryEvents()로 보충
  *   Finalized 블록 범위만 queryEvents → 재조정 공격(REORG) 안전
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 (M3 S15 실습 포인트 2개 있음)
- * 실습: course/exercises/M3/S15_evm_lab.ts    ← EVMAdapter mintNFT 직접 구현
- *       course/exercises/M3/S14_multichain_adapter.ts ← Strategy 패턴 체인 교체
- * 실습 포인트: mintNFT() (line 88), mintNFTBatch() (line 103) — M4 S17 실습 참고
  */
 export class EVMAdapter implements IBlockchainAdapter {
   readonly chainId:   string;
@@ -86,8 +79,6 @@ export class EVMAdapter implements IBlockchainAdapter {
    * @dev NFTIssuer.issueNFT() 컨트랙트 호출 래퍼
    */
   async mintNFT(params: MintParams): Promise<TransactionReceipt> {
-    // M4 S17 실습: sendTransaction으로 컨트랙트 mint 호출
-    //   TX 상태머신: SUBMITTED → (여기서) → MINED → CONFIRMED → FINALIZED / FAILED
     return this.sendTransaction({
       contractAddr: params.contractAddr,
       abi:          ERC1155_ABI,
@@ -101,7 +92,6 @@ export class EVMAdapter implements IBlockchainAdapter {
    * @dev 500건 초과 시 BulkIssuerService.ts에서 청크 분할 후 호출
    */
   async mintNFTBatch(params: MintBatchParams): Promise<TransactionReceipt> {
-    // M4 S17 실습: mintBatch 호출 + 가스 소비량 측정
     return this.sendTransaction({
       contractAddr: params.contractAddr,
       abi:          ERC1155_ABI,
@@ -192,7 +182,10 @@ export class EVMAdapter implements IBlockchainAdapter {
 
     for (const eventName of eventNames) {
       const listener = async (...args: unknown[]) => {
-        const log = args[args.length - 1] as EventLog;
+        // ethers v6: contract.on() 마지막 인자는 ContractEventPayload
+        // ContractEventPayload.log가 실제 EventLog (transactionHash 포함)
+        const payload = args[args.length - 1] as { log?: EventLog } & EventLog;
+        const log = payload.log ?? payload;
         await handler(this._toChainEvent(eventName, contractAddr, log, args));
       };
       contract.on(eventName, listener);

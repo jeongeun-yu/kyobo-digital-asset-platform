@@ -1,4 +1,4 @@
-﻿# M3 S22 — pollStaleRequests 구현 + 3종 복구 통합 테스트
+# M3 S22 — pollStaleRequests 구현 + 3종 복구 통합 테스트
 
 > **[Phase 1 — 현재 구현]** 이 모듈은 VASP(월렛원) 위탁 아키텍처를 기반으로 합니다.  
 > **Phase 1 맥락:** `pollStaleRequests()`는 VASP Webhook 수신 지연 시 보완 복구 수단입니다. `IBlockchainAdapter.getReceipt()`를 read-only로 호출하여 on-chain 상태를 확인합니다.
@@ -75,7 +75,7 @@ pollStaleRequests 배치 처리:
 
 #### 0-3. M3 전체 아키텍처 최종 조감도
 
-S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈에 본다.
+S13~S22(M3) + M4/M5에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈에 본다.
 
 ```
   [사용자 요청]
@@ -84,11 +84,13 @@ S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈�
   IssuerService.submitMintRequest()          ← S13
        │
        ├── DB: mint_requests (REQUESTED)
+       ├── audit_log INSERT (MINT_REQUESTED)  ← M4 S26
        │
        ▼
   VaspClient.submit()                        ← S13
        │
        ├── DB: mint_requests (SUBMITTED → PENDING)
+       ├── audit_log INSERT (STATUS_SUBMITTED) ← M4 S26
        │
        ▼
   EVMAdapter / XRPLAdapter (IBlockchainAdapter)  ← S14, S15
@@ -97,7 +99,13 @@ S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈�
        │
        ├──[채널 A: Webhook Push]─────────────────── S21
        │       │
-       │  WebhookReceiver → Redis XADD → ConsumerGroupWorker
+       │  WebhookReceiver ──[HMAC 검증]──────────── M2 S8
+       │       │
+       │  Redis XADD → ConsumerGroupWorker          ← M2 S9~S12
+       │       │                  │
+       │       │            [반복 실패 시]
+       │       │                  ▼
+       │       │             DLQ (Dead Letter Queue) ← M2 S11
        │       │
        │  TxStateMachineService.handleConfirmed()
        │
@@ -108,14 +116,14 @@ S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈�
           ┌────┴──────────────────────────┐
           │                               │
           ▼                               ▼
-    vasp.getStatus()              (PENDING 30분 미만)
+    vasp.getStatus()              (PENDING 10분 미만)
           │                          → skip
           ├── confirmed → handleConfirmed()
           ├── failed    → handleFailed()      ← S18 (REVERT)
           ├── not_found → handleFailed()
           ├── pending   → skip (계속 대기)
           │                     │
-          │               [30분 초과 pending]
+          │               [10분 초과 pending]
           │                     │
           │               handleTimeout()     ← S20 (gas bump)
           │
@@ -127,26 +135,43 @@ S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈�
           │                     │
       MINED 복귀            FAILED 전이
   (confirmation 재시작)
-  
-  [모든 상태 전이]
+
+  [모든 상태 전이마다]
+       │
+       ├── audit_log INSERT (TX 상태 전이 기록)   ← M4 S26
+       │       └── SHA-256 체인으로 봉인 (prevChecksum)
        │
        ▼
   IdempotencyGuard (requestId 기반)           ← S16
        │
        ▼
-  LedgerService 이벤트 발행
+  LedgerService.confirmMint()                 ← M4 S23, S24
+       │
+       ├── user_nft_holdings INSERT (ON CONFLICT DO NOTHING)
+       └── audit_log INSERT (STATUS_CONFIRMED)  ← M4 S26
+
+  ConsumerGroupWorker → NFTIssuedProcessor    ← M2, M4
        │
        ▼
-  ConsumerGroupWorker → NFTIssuedProcessor
-       │
-       ▼
-  user_nft_holdings +1 (M4)
+  user_nft_holdings 최신화 (M4 S23)
 
   ───────────────────────────────────────────────────
   오류 복구 레이어:
   VaspRecoveryService                         ← S18, S20
     - retryWithBackoff (지수 백오프 + Jitter)  ← S17
     - handleTxRevert / handleReorg / handleTimeout
+
+  ───────────────────────────────────────────────────
+  정합성 보장 레이어:
+  ReconcileService (주기 실행)                ← M4 S25
+    - user_nft_holdings ↔ 온체인 상태 대조
+    - 불일치 감지 → 알림 (수동 개입 대상)
+    - 직접 수정 금지 — 온체인이 기준
+
+  AuditLogService                             ← M4 S26
+    - Append-only, UPDATE/DELETE 차단 (RLS)
+    - SHA-256 체인 검증: verifyChain()
+    - 규제 보존: 가상자산이용자보호법 §15 (5년)
   ───────────────────────────────────────────────────
 ```
 
@@ -158,7 +183,7 @@ S13~S22에서 구현한 모든 컴포넌트가 어떻게 연결되는지 한눈�
 // TxStateMachineService.ts:289
 async pollStaleRequests(): Promise<{ processed: number }> {
   const stale = await this.repo.findPendingOlderThan(
-    TxStateMachineService.STALE_MINUTES,  // 30분
+    TxStateMachineService.STALE_MINUTES,  // 10분
   );
   let processed = 0;
 

@@ -1,7 +1,7 @@
 /**
  * ChainAdapterFactory — Factory Pattern
  *
- * M3 S14 연계: 체인 타입에 따라 적절한 어댑터 인스턴스를 생성.
+ * 체인 타입에 따라 적절한 어댑터 인스턴스를 생성.
  * 상위 레이어(IssuerService)는 ChainAdapterFactory.create() 한 줄로
  * 체인 교체 완료 — switch/if 분기 코드 상위 레이어에 없음.
  *

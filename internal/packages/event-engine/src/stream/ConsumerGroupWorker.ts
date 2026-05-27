@@ -1,19 +1,17 @@
 /**
  * ConsumerGroupWorker — Redis Streams Consumer Group 처리 워커
  *
- * M2 S9~S12 핵심 개념:
+ * At-least-once 처리 보장 흐름:
+ *   1. XREADGROUP → messageId + 소유권(PEL) 취득
+ *   2. 비즈니스 로직 처리 (원장 업데이트, 감사 로그)
+ *   3. XACK → PEL에서 제거 = "처리 완료"
+ *   Consumer 장애 → 재시작 후 XAUTOCLAIM으로 미처리 메시지 재수신
  *
- *   At-least-once 처리 보장 흐름:
- *     1. XREADGROUP → messageId + 소유권(PEL) 취득
- *     2. 비즈니스 로직 처리 (원장 업데이트, 감사 로그)
- *     3. XACK → PEL에서 제거 = "처리 완료"
- *     Consumer 장애 → 재시작 후 XAUTOCLAIM으로 미처리 메시지 재수신
+ * DLQ 정책:
+ *   3회 실패 → DLQHandler.move() 호출 → Dead Letter Stream
+ *   수동 재큐잉: DLQ 스트림 → 다시 kyobo:events XADD
  *
- *   DLQ 정책 (S11):
- *     3회 실패 → DLQHandler.move() 호출 → Dead Letter Stream
- *     수동 재큐잉: DLQ 스트림 → 다시 kyobo:events XADD
- *
- *   수평 확장:
+ * 수평 확장:
  *     Consumer 인스턴스 N개 → 같은 그룹, 각기 다른 consumerId
  *     Redis가 메시지 분배 (라운드 로빈 아님, 먼저 XREADGROUP 호출한 쪽이 소유)
  *
@@ -22,11 +20,6 @@
  *                       → AuditLogService (감사 로그)
  *                       → DLQHandler (실패 처리)
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 실습: course/exercises/M2/S09_atleastonce.ts   ← At-least-once 직접 구현
- *       course/exercises/M2/S11_dlq.ts            ← DLQ 이동 로직 구현
- *       course/exercises/M2/S12_e2e.ts            ← 전체 파이프라인 통합
  */
 
 import type { DLQHandler, DLQItem } from './DLQHandler';

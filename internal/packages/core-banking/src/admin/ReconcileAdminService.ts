@@ -28,9 +28,9 @@ export interface ReconcileRunResult {
 // ── ReconcileAdminService ────────────────────────────────────
 
 /**
- * ReconcileAdminService — Reconcile 운영 레이어 (S54)
+ * ReconcileAdminService — Reconcile 운영 레이어
  *
- * S25 ReconcileService는 단일 사용자 검증 로직만 가진다.
+ * ReconcileService는 단일 사용자 검증 로직만 가진다.
  * 이 서비스는 "언제, 누구를, 어떻게 실행하는가"를 담당한다.
  *
  * 실행 유형:
@@ -46,7 +46,7 @@ export class ReconcileAdminService {
     private readonly notifier:         NotifierAdapter,
   ) {}
 
-  // ── 이력 조회 (Router 2-A 지원) ──────────────────────────────
+  // ── 이력 조회 ────────────────────────────────────────────────
   async getHistory(limit: number, runType?: string): Promise<Record<string, unknown>[]> {
     const conditions: string[] = [];
     const params: unknown[]    = [];
@@ -71,7 +71,7 @@ export class ReconcileAdminService {
     return rows;
   }
 
-  // ── 실습 1-A: Hourly Reconcile ───────────────────────────────
+  // ── Hourly Reconcile ─────────────────────────────────────────
   async runHourlyReconcile(): Promise<ReconcileRunResult> {
     const start = Date.now();
     const runAt = new Date();
@@ -85,7 +85,7 @@ export class ReconcileAdminService {
     return this._runReconcileForUsers(userIds, 'HOURLY', start, runAt);
   }
 
-  // ── 실습 1-B: Daily Reconcile ────────────────────────────────
+  // ── Daily Reconcile ──────────────────────────────────────────
   async runDailyReconcile(): Promise<ReconcileRunResult> {
     const start = Date.now();
     const runAt = new Date();
@@ -98,7 +98,7 @@ export class ReconcileAdminService {
     return this._runReconcileForUsers(userIds, 'DAILY', start, runAt);
   }
 
-  // ── 실습 1-C: Manual Reconcile ───────────────────────────────
+  // ── Manual Reconcile ─────────────────────────────────────────
   async runManualReconcile(userId: string, operator: string): Promise<ReconcileRunResult> {
     const start = Date.now();
     const runAt = new Date();
@@ -170,7 +170,7 @@ export class ReconcileAdminService {
     return runResult;
   }
 
-  // ── 실습 1-D: 불일치 알림 ────────────────────────────────────
+  // ── 불일치 알림 ──────────────────────────────────────────────
   private async _sendMismatchAlert(
     mismatchCount: number,
     runType:       string,

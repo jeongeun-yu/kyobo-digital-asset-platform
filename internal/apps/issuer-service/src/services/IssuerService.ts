@@ -1,41 +1,44 @@
 import type { IBlockchainAdapter }        from '@kyobo/chain-adapters';
 import type { IVASPAdapter }               from '@kyobo/vasp';
 import type { ICoreBankingAdapter }        from '@kyobo/core-banking';
-import type { IdempotencyGuard }           from '@kyobo/event-engine/webhook';
 import type { ActivityEvent }              from './EventConditionService';
 import { EventConditionService }           from './EventConditionService';
 import { IssuancePolicyService }           from './IssuancePolicyService';
 import type { IIssuanceRequestRepository } from './IssuanceRequestRepository';
-import NFT_ISSUER_ABI                      from '../abi/NFTIssuer.json';
+import { TxStateMachineService }           from '../../../../packages/vasp/src/tx/TxStateMachineService';
+import type { LedgerService }              from '../../../../packages/core-banking/src/ledger/LedgerService';
+import type { IInternalLedgerClient }      from '../interfaces/IInternalLedgerClient';
 
 /**
  * IssuerService — NFT 발행 오케스트레이터
  *
- * 발행 파이프라인 (M5 S28~S29):
- *   ① 정책 조회   — IssuancePolicyService.getPolicy()  → tokenId·amount·유효기간
- *   ② 조건 판단  — EventConditionService.evaluate()   → eligible 여부
- *   ③ 멱등성 체크 — issuanceRepo.findPending()         → 중복 요청 방지
- *   ④ REQUESTED  — issuanceRepo.create()
- *   ⑤ KYC/AML   — coreBanking + vaspAdapter           → 실패 시 FAILED
- *   ⑥ VASP 위탁  — vaspAdapter.submitTransaction()    → SUBMITTED / 실패 시 FAILED
+ * 발행 파이프라인:
+ *   ① 정책 조회   — IssuancePolicyService.getPolicy()          → tokenId·amount·유효기간
+ *   ② 조건 판단   — EventConditionService.evaluate()            → eligible 여부
+ *   ③ 멱등성 체크  — issuanceRepo.findPending()                 → 중복 요청 방지
+ *   ④ REQUESTED   — issuanceRepo.create()
+ *   ⑤ KYC/AML    — coreBanking + vaspAdapter.screenAddress()   → 실패 시 FAILED
+ *   ⑥ TX 위탁     — txStateMachine.submitMintRequest()          → tx_mint_requests REQUESTED→SUBMITTED
+ *                   issuanceRepo SUBMITTED / 실패 시 FAILED
  *
- * CONFIRMED 전이는 VASP Webhook 핸들러 담당 (이 서비스 범위 밖).
- * 이 서비스는 체인·VASP·CoreBanking 구현을 모른다 (인터페이스만 참조).
+ * 레이어 책임 분리:
+ *   issuance_requests (내부 원장) — IssuerService 관리
+ *   tx_mint_requests  (온체인 TX) — TxStateMachineService 관리
+ *   온체인 이벤트 수신 후 issuance_requests가 tx_mint_requests 상태를 따라간다.
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S28~S29 (IssuerService · NFT 발행 오케스트레이터)
  */
 export class IssuerService {
   constructor(private readonly deps: {
-    chainAdapter:     IBlockchainAdapter;
-    vaspAdapter:      IVASPAdapter;
-    coreBanking:      ICoreBankingAdapter;
-    idempotency:      IdempotencyGuard;
-    nftIssuerAddr:    string;
-    policyService:    IssuancePolicyService;
-    conditionService: EventConditionService;
-    issuanceRepo:     IIssuanceRequestRepository;
+    chainAdapter:          IBlockchainAdapter;
+    vaspAdapter:           IVASPAdapter;
+    coreBanking:           ICoreBankingAdapter;
+    nftIssuerAddr:         string;
+    policyService:         IssuancePolicyService;
+    conditionService:      EventConditionService;
+    issuanceRepo:          IIssuanceRequestRepository;
+    txStateMachine:        TxStateMachineService;
+    ledgerService:         LedgerService;
+    internalLedgerClient?: IInternalLedgerClient;
   }) {}
 
   /**
@@ -70,7 +73,8 @@ export class IssuerService {
     }
 
     // ── ④ 발행 요청 생성 → REQUESTED ─────────────────────────────────
-    const req = await this.deps.issuanceRepo.create({
+    // issuance_requests(IssuanceStatus) + mint_requests(MintStatus) 동시 생성
+    const req        = await this.deps.issuanceRepo.create({
       userId,
       eventType:  event.eventType,
       tokenId:    policy.tokenId,
@@ -80,6 +84,15 @@ export class IssuerService {
       txHash:     null,
       failReason: null,
     });
+    this.deps.internalLedgerClient?.recordAuditLog({
+      actor:        userId,
+      action:       'ISSUANCE_REQUESTED',
+      resourceType: 'issuance_request',
+      resourceId:   req.id,
+      beforeState:  null,
+      afterState:   { status: 'REQUESTED', eventType: event.eventType, tokenId: String(policy.tokenId) },
+    }).catch(err => console.error('[IssuerService] audit-log 오류:', err));
+    const ledgerReq  = await this.deps.ledgerService.createMintRequest(userId, String(policy.id));
 
     // ── ⑤ KYC / AML / 지갑 조회 — 실패 → FAILED + throw ─────────────
     let walletAddr: string;
@@ -94,38 +107,59 @@ export class IssuerService {
       walletAddr = account.walletAddr;
       await this.deps.issuanceRepo.setWalletAddr(req.id, walletAddr);
     } catch (err) {
-      await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason: (err as Error).message });
+      const failReason = (err as Error).message;
+      await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
+      await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
+      this.deps.internalLedgerClient?.recordAuditLog({
+        actor:        userId,
+        action:       'ISSUANCE_FAILED',
+        resourceType: 'issuance_request',
+        resourceId:   req.id,
+        beforeState:  { status: 'REQUESTED' },
+        afterState:   { status: 'FAILED', failReason },
+      }).catch(e => console.error('[IssuerService] audit-log 오류:', e));
       throw err;
     }
 
-    // ── ⑥ VASP 위탁 → SUBMITTED — 실패 → FAILED + throw ─────────────
-    // issuer-service(내부망)는 TX를 직접 서명하지 않는다.
-    // VASP가 서명·브로드캐스트 후 NFT_ISSUED Webhook으로 결과를 통보한다 (비동기 완료).
+    // ── ⑥ TX 위탁 → SUBMITTED ───────────────────────────────────────────
+    // TxStateMachineService → tx_mint_requests REQUESTED→SUBMITTED
+    // TxTransitionBridge가 'transition' 이벤트를 수신하여 mint_requests도 SUBMITTED로 업데이트
     let txHash: string;
     try {
-      const vaspReceipt = await this.deps.vaspAdapter.submitTransaction({
-        contractAddr:   this.deps.nftIssuerAddr,
-        abi:            NFT_ISSUER_ABI,
-        method:         'mint',
-        args: [
-          walletAddr,
-          policy.tokenId.toString(),
-          policy.amount.toString(),
-          `0x${Buffer.from(activityId).toString('hex').padEnd(64, '0')}`,
-        ],
-        idempotencyKey: activityId,
+      const result = await this.deps.txStateMachine.submitMintRequest({
+        userId,
+        tokenId:    BigInt(policy.tokenId),
+        amount:     BigInt(policy.amount),
+        walletAddr,
       });
-
-      if (vaspReceipt.status === 'failed') throw new Error(`VASP TX failed: ${vaspReceipt.txHash}`);
-
-      txHash = vaspReceipt.txHash;
+      txHash = result.txHash;
       await this.deps.issuanceRepo.updateStatus(req.id, 'SUBMITTED', { txHash });
+      // mint_requests SUBMITTED: TxTransitionBridge의 'transition' 이벤트 핸들러가 담당
+      // (txHash가 설정된 후 이벤트가 발행되므로 bridge에서 findByTxHash 가능)
+      // 단, SUBMITTED 전이 이벤트 시점에 mint_requests.tx_hash가 아직 없으므로 직접 업데이트
+      await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'SUBMITTED', txHash });
+      this.deps.internalLedgerClient?.recordAuditLog({
+        actor:        userId,
+        action:       'ISSUANCE_SUBMITTED',
+        resourceType: 'issuance_request',
+        resourceId:   req.id,
+        beforeState:  { status: 'REQUESTED' },
+        afterState:   { status: 'SUBMITTED', txHash },
+      }).catch(e => console.error('[IssuerService] audit-log 오류:', e));
     } catch (err) {
-      await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason: (err as Error).message });
+      const failReason = (err as Error).message;
+      await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
+      await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
+      this.deps.internalLedgerClient?.recordAuditLog({
+        actor:        userId,
+        action:       'ISSUANCE_FAILED',
+        resourceType: 'issuance_request',
+        resourceId:   req.id,
+        beforeState:  { status: 'REQUESTED' },
+        afterState:   { status: 'FAILED', failReason },
+      }).catch(e => console.error('[IssuerService] audit-log 오류:', e));
       throw err;
     }
-
-    // Phase 3 전환 시 ⑥ 블록을 chainAdapter.sendTransaction()으로 교체 (자체 Custody 인가 취득 후)
 
     // ── CoreBanking 보상 알림 (fire-and-forget) ───────────────────────
     // 알림 실패가 발행 결과에 영향 주지 않음.
@@ -139,5 +173,27 @@ export class IssuerService {
     }).catch(err => console.error('[IssuerService] CoreBanking notify failed:', err));
 
     return { requestId: req.id, eligible: true, txHash, tokenId: policy.tokenId.toString() };
+  }
+
+  /**
+   * VASP TX 실패 결과 수신 → IssuanceStatus FAILED 전이
+   *
+   * VASP가 TX를 브로드캐스트했으나 온체인에서 REVERT되거나
+   * 타임아웃·네트워크 오류로 최종 실패한 경우 호출된다.
+   * SUBMITTED 상태인 요청만 FAILED로 전이한다 (이미 CONFIRMED된 경우 무시).
+   */
+  async handleVaspTxFailed(params: { txHash: string; reason?: string }): Promise<void> {
+    const req = await this.deps.issuanceRepo.findByTxHash(params.txHash);
+    if (!req || req.status !== 'SUBMITTED') return;
+    const failReason = params.reason ?? 'VASP TX failed on-chain';
+    await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
+    this.deps.internalLedgerClient?.recordAuditLog({
+      actor:        req.userId,
+      action:       'ISSUANCE_FAILED',
+      resourceType: 'issuance_request',
+      resourceId:   params.txHash,
+      beforeState:  { status: 'SUBMITTED', txHash: params.txHash },
+      afterState:   { status: 'FAILED', failReason },
+    }).catch(e => console.error('[IssuerService] audit-log 오류:', e));
   }
 }

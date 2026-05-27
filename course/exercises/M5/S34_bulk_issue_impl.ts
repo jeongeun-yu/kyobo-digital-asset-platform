@@ -167,7 +167,11 @@ export class BulkIssueService {
    * 배열을 size 단위로 청크 분할
    */
   _chunk<T>(arr: T[], size: number): T[][] {
-    return undefined as never;
+    const result: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      result.push(arr.slice(i, i + size));
+    }
+    return result;
   }
 
   /** 배치 발행 실행 — jobId 즉시 반환, 청크 처리 후 상태 업데이트 */
@@ -176,7 +180,45 @@ export class BulkIssueService {
     tokenId: bigint;
     amount?: bigint;
   }): Promise<string> {
-    return undefined as never;
+    const { userIds, tokenId, amount = 1n } = params;
+    const chunks = this._chunk(userIds, BulkIssueService.CHUNK_SIZE);
+    const jobId = randomUUID();
+    const job: BulkJob = {
+      id: jobId,
+      tokenId,
+      totalUsers: userIds.length,
+      totalChunks: chunks.length,
+      doneChunks: 0,
+      status: 'RUNNING',
+      chunkErrors: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await this.jobRepo.save(job);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]!;
+      try {
+        const requestIds = await Promise.all(
+          chunk.map(userId => this.submitter.submitMintRequest({ userId, tokenId, amount })),
+        );
+        job.doneChunks++;
+        job.chunkErrors.push({ chunkIndex: i, requestIds, status: 'success' });
+        await this.jobRepo.update(jobId, { doneChunks: job.doneChunks, chunkErrors: job.chunkErrors, updatedAt: new Date() });
+      } catch (err) {
+        job.chunkErrors.push({ chunkIndex: i, requestIds: [], status: 'failed', error: String(err) });
+        await this.jobRepo.update(jobId, { chunkErrors: job.chunkErrors, updatedAt: new Date() });
+      }
+    }
+
+    const failedCount = job.chunkErrors.filter(c => c.status === 'failed').length;
+    const finalStatus: BulkJobStatus =
+      failedCount === 0             ? 'COMPLETED'      :
+      failedCount === chunks.length ? 'FAILED'         :
+                                      'PARTIAL_FAILURE';
+
+    await this.jobRepo.update(jobId, { status: finalStatus, updatedAt: new Date() });
+    return jobId;
   }
 
   /**
@@ -184,7 +226,37 @@ export class BulkIssueService {
    * PARTIAL_FAILURE → 모든 청크 성공 시 COMPLETED 전환
    */
   async retryFailedChunks(jobId: string, userIds: string[]): Promise<void> {
-    return undefined as never;
+    const job = await this.jobRepo.findById(jobId);
+    if (!job) throw new Error(`Job not found: ${jobId}`);
+
+    const failedChunkIndices = job.chunkErrors
+      .filter(c => c.status === 'failed')
+      .map(c => c.chunkIndex);
+
+    const allChunks = this._chunk(userIds, BulkIssueService.CHUNK_SIZE);
+
+    for (const chunkIdx of failedChunkIndices) {
+      const chunk = allChunks[chunkIdx];
+      if (!chunk) continue;
+      try {
+        const requestIds = await Promise.all(
+          chunk.map(userId => this.submitter.submitMintRequest({ userId, tokenId: job.tokenId, amount: 1n })),
+        );
+        const entry = job.chunkErrors.find(c => c.chunkIndex === chunkIdx)!;
+        entry.status = 'success';
+        entry.requestIds = requestIds;
+        delete entry.error;
+      } catch (err) {
+        console.error(`[BulkIssueService] retryFailedChunks chunk ${chunkIdx} failed:`, String(err));
+      }
+    }
+
+    const remainingFailed = job.chunkErrors.filter(c => c.status === 'failed').length;
+    await this.jobRepo.update(jobId, {
+      status: remainingFailed === 0 ? 'COMPLETED' : 'PARTIAL_FAILURE',
+      chunkErrors: job.chunkErrors,
+      updatedAt: new Date(),
+    });
   }
 
   /** 진행률 조회 — 운영자 폴링 엔드포인트 (완성 코드 — 수정 불필요) */

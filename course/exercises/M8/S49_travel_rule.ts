@@ -91,7 +91,28 @@ export const TRAVEL_RULE_THRESHOLD = BigInt(1_000_000);
  *   - 특금법 §8의4: "이상(>=)" — "초과(>)" 아님! 경계값 주의
  */
 export function checkTravelRule(amount: bigint, travelRuleData?: TravelRuleData | null): void {
-  return undefined as never;
+  if (amount < TRAVEL_RULE_THRESHOLD) return;
+
+  // 100만원 이상: travelRuleData 필수
+  if (!travelRuleData) {
+    throw new TravelRuleRequiredError(amount);
+  }
+
+  if (!travelRuleData.originatorName?.trim()) {
+    throw new Error('Travel Rule: originatorName required');
+  }
+  if (!travelRuleData.beneficiaryName?.trim()) {
+    throw new Error('Travel Rule: beneficiaryName required');
+  }
+  if (!travelRuleData.originatorVasp?.trim()) {
+    throw new Error('Travel Rule: originatorVasp required');
+  }
+  if (!travelRuleData.beneficiaryVasp?.trim()) {
+    throw new Error('Travel Rule: beneficiaryVasp required');
+  }
+  if (travelRuleData.currency !== 'KRW') {
+    throw new Error(`Travel Rule: currency must be KRW, got ${travelRuleData.currency}`);
+  }
 }
 
 // ─── proposeTx 통합 시뮬레이션 ────────────────────────────────────────────────

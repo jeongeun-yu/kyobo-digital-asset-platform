@@ -8,6 +8,7 @@ export { KyoboVASPAdapter }     from './internal/KyoboVASPAdapter';
 // ── TX 상태머신 ───────────────────────────────────────────────────────────────
 export type { TxRepository, VaspTxClient, WalletResolver, MintRequest, TxStatus, TxTransitionEvent } from './tx/TxStateMachineService';
 export { TxStateMachineService, MintRequestNotFoundError, InvalidStatusTransitionError } from './tx/TxStateMachineService';
+export { PgTxRepository } from './tx/PgTxRepository';
 
 // ── TX 하위 컴포넌트 (Phase 3) ────────────────────────────────────────────────
 export { Broadcaster }          from './tx/Broadcaster';
@@ -34,11 +35,3 @@ export { WhitelistAddressService } from './governance/WhitelistAddressService';
 export { VaspRecoveryService, InvalidStateTransitionError } from './recovery/VaspRecoveryService';
 export type { RecoveryResult }  from './recovery/VaspRecoveryService';
 
-// ── 실습용 테스트 헬퍼 ────────────────────────────────────────────────────────
-export {
-  InMemoryLedger,
-  MockVaspClient,
-  MockNotifier,
-  InMemoryTxRepository,
-  MockWalletResolver,
-} from './testing/mocks';

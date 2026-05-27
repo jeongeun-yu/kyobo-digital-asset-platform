@@ -110,7 +110,31 @@ export class LedgerService {
   // ────────────────────────────────────────────────────────────────────────
 
   async createMintRequest(userId: string, policyId: string): Promise<MintRequest> {
-    return undefined as never;
+    const requestId = randomUUID();
+    const now = new Date();
+    const req: MintRequest = {
+      requestId,
+      userId,
+      policyId,
+      status: 'REQUESTED',
+      txHash: null,
+      tokenId: null,
+      blockNumber: null,
+      errorMsg: null,
+      retryCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.mintRequests.set(requestId, req);
+    await this._appendAuditLog({
+      actor: 'system:IssuerService',
+      action: 'MINT_REQUESTED',
+      resourceType: 'mint_request',
+      resourceId: requestId,
+      beforeState: null,
+      afterState: { status: 'REQUESTED', userId, policyId },
+    });
+    return { ...req };
   }
 
   async getMintRequest(requestId: string): Promise<MintRequest | null> {
@@ -141,7 +165,24 @@ export class LedgerService {
       errorMsg?: string;
     },
   ): Promise<void> {
-    return undefined as never;
+    const req = this.mintRequests.get(requestId);
+    if (!req) throw new Error(`MintRequest not found: ${requestId}`);
+    const before = { status: req.status };
+    req.status = status;
+    req.updatedAt = new Date();
+    if (extra?.txHash !== undefined) req.txHash = extra.txHash;
+    if (extra?.tokenId !== undefined) req.tokenId = extra.tokenId;
+    if (extra?.blockNumber !== undefined) req.blockNumber = extra.blockNumber;
+    if (extra?.errorMsg !== undefined) req.errorMsg = extra.errorMsg;
+    this.mintRequests.set(requestId, req);
+    await this._appendAuditLog({
+      actor: 'system',
+      action: `STATUS_${status}`,
+      resourceType: 'mint_request',
+      resourceId: requestId,
+      beforeState: before,
+      afterState: { status, ...extra },
+    });
   }
 
   // ── processed_events — ON CONFLICT DO NOTHING 시뮬레이션 ──────────────
@@ -165,7 +206,15 @@ export class LedgerService {
     blockNumber: bigint,
     payload: unknown,
   ): Promise<ProcessedEventResult> {
-    return undefined as never;
+    const isDuplicate = this.processedEvents.some(
+      e => e.txHash === txHash && e.logIndex === logIndex,
+    );
+    if (isDuplicate) {
+      return { skipped: true };
+    }
+    const id = ++this.processedEventSeq;
+    this.processedEvents.push({ id, txHash, logIndex, eventName, blockNumber, payload, processedAt: new Date() });
+    return { skipped: false, id };
   }
 
   // ── user_nft_holdings — UNIQUE (userId, tokenId) 중복 방어 ─────────────
@@ -182,7 +231,12 @@ export class LedgerService {
   // ────────────────────────────────────────────────────────────────────────
 
   async addHolding(userId: string, tokenId: bigint, policyId: string): Promise<void> {
-    return undefined as never;
+    const isDuplicate = this.userNftHoldings.some(
+      h => h.userId === userId && h.tokenId === tokenId,
+    );
+    if (isDuplicate) return;
+    const id = ++this.holdingSeq;
+    this.userNftHoldings.push({ id, userId, tokenId, policyId, acquiredAt: new Date() });
   }
 
   async getHoldings(userId: string): Promise<UserNftHolding[]> {
@@ -211,7 +265,14 @@ export class LedgerService {
     beforeState: unknown | null;
     afterState: unknown;
   }): Promise<void> {
-    return undefined as never;
+    const { actor, action, resourceType, resourceId, beforeState, afterState } = params;
+    const id = ++this.auditSeq;
+    const eventTime = new Date();
+    const safeStringify = (v: unknown) =>
+      JSON.stringify(v, (_k, val) => (typeof val === 'bigint' ? val.toString() : val));
+    const raw = [eventTime.toISOString(), actor, action, resourceId, safeStringify(afterState)].join('');
+    const checksum = createHash('sha256').update(raw, 'utf8').digest('hex');
+    this.auditLog.push({ id, eventTime, actor, action, resourceType, resourceId, beforeState, afterState, checksum });
   }
 
   getAuditLog(): AuditLogEntry[] {

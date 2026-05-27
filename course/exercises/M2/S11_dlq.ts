@@ -58,7 +58,9 @@ const GROUP_NAME = 's11-consumers';
  */
 function classifyItem(item: DLQItem): 'requeue' | 'drop' | 'hold' {
   // TODO: item.reason을 보고 'requeue' | 'drop' | 'hold' 중 하나를 반환하세요
-  throw new Error('TODO: classifyItem 구현 필요');
+  if (item.reason.includes('timeout')) return 'requeue';
+  if (item.reason.includes('permanently')) return 'drop';
+  return 'hold';
 }
 
 // ── TODO ②: 아래 처리 루프를 완성하세요 ──────────────────────────
@@ -73,11 +75,13 @@ async function processClassified(
     if (action === 'requeue') {
       // TODO: dlqHandler.requeueMessage(item.messageId) 호출 후 결과 출력
       // 힌트: const { newMessageId } = await dlqHandler.requeueMessage(...)
-      throw new Error('TODO: requeue 구현 필요');
+      const { newMessageId } = await dlqHandler.requeueMessage(item.messageId);
+      console.log(`  ♻  REQUEUE ${tag} → newMessageId: ${newMessageId}`);
     } else if (action === 'drop') {
       // TODO: dlqHandler.drop(item.messageId) 호출
       // 힌트: drop()은 DLQ에서 메시지를 영구 삭제합니다
-      throw new Error('TODO: drop 구현 필요');
+      await dlqHandler.drop(item.messageId);
+      console.log(`  🗑  DROP   ${tag} → DLQ에서 영구 삭제`);
     } else {
       console.log(`  ⏸  HOLD   ${tag} → 코드 수정 후 재판단 필요`);
     }

@@ -65,7 +65,31 @@ export interface DeploymentResult {
  * 힌트: 각 step의 description에 위 키워드가 포함되어야 테스트가 통과한다.
  */
 export function simulateUUPSDeployment(adminAddress: string): DeploymentResult {
-  return undefined as never;
+  const implementationAddress = '0x1234567890123456789012345678901234567890';
+  const proxyAddress          = '0xabcDEF1234567890abcdef1234567890AbCDeF12';
+  return {
+    proxyAddress,
+    implementationAddress,
+    deployedAt: new Date().toISOString(),
+    adminAddress,
+    steps: [
+      {
+        step: 1,
+        description: 'Implementation 컨트랙트 배포 — KyoboNFT 바이트코드 → Sepolia',
+        txHash: '0xaaaa000000000000000000000000000000000000000000000000000000000001',
+      },
+      {
+        step: 2,
+        description: 'ERC1967Proxy 배포 — Implementation 주소를 인자로 전달',
+        txHash: '0xaaaa000000000000000000000000000000000000000000000000000000000002',
+      },
+      {
+        step: 3,
+        description: `initialize(${adminAddress}) 호출 via delegatecall → Proxy storage에 역할 등록`,
+        txHash: '0xaaaa000000000000000000000000000000000000000000000000000000000003',
+      },
+    ],
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -107,7 +131,11 @@ export interface ProxyAddressJson {
  *   }
  */
 export function buildProxyAddressJson(result: DeploymentResult): ProxyAddressJson {
-  return undefined as never;
+  return {
+    proxy:      result.proxyAddress,
+    impl:       result.implementationAddress,
+    deployedAt: result.deployedAt,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -131,7 +159,26 @@ export function buildProxyAddressJson(result: DeploymentResult): ProxyAddressJso
  * 힌트: 빈 문자열('')로 섹션 구분하면 줄 수를 맞추기 쉽다.
  */
 export function generatePostDeployChecklist(proxyAddress: string, adminAddress: string, rpcUrl: string): string[] {
-  return undefined as never;
+  const MINTER_ROLE_HASH = '0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6';
+  return [
+    '# 1. 역할 확인 (hasRole)',
+    `cast call ${proxyAddress} "hasRole(bytes32,address)(bool)" ${MINTER_ROLE_HASH} ${adminAddress} --rpc-url ${rpcUrl}`,
+    '',
+    '# 2. tokenId 인코딩 확인 (encodeTokenId)',
+    `cast call ${proxyAddress} "encodeTokenId(uint64,uint64)(uint256)" 1 42 --rpc-url ${rpcUrl}`,
+    '',
+    '# 3. ERC-1967 슬롯에서 Implementation 주소 읽기',
+    `cast storage ${proxyAddress} ${ERC1967_SLOTS.IMPLEMENTATION} --rpc-url ${rpcUrl}`,
+    '',
+    '# 4. Etherscan: Implementation 검증',
+    `npx hardhat verify --network sepolia <IMPL_ADDR>`,
+    '',
+    '# 5. Etherscan: Proxy 검증',
+    `npx hardhat verify --network sepolia ${proxyAddress}`,
+    '',
+    '# 6. Etherscan Read as Proxy 탭',
+    `https://sepolia.etherscan.io/address/${proxyAddress}#readProxyContract`,
+  ];
 }
 
 // ────────────────────────────────────────────────────────────────────────

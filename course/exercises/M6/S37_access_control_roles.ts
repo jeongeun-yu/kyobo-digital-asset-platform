@@ -86,15 +86,21 @@ export class KyoboNFTSimulator {
   private readonly tokens: NFTToken[] = [];
 
   constructor(adminAddress: string) {
-    return undefined as never;
+    // DEFAULT_ADMIN_ROLE, MINTER_ROLE, PAUSER_ROLE, UPGRADER_ROLE 모두 adminAddress에 부여
+    const allRoles: Role[] = ['DEFAULT_ADMIN_ROLE', 'MINTER_ROLE', 'PAUSER_ROLE', 'UPGRADER_ROLE'];
+    for (const role of allRoles) {
+      this._grantRole(role, adminAddress);
+    }
   }
 
   grantRole(caller: string, role: Role, account: string): void {
-    return undefined as never;
+    this._requireRole('DEFAULT_ADMIN_ROLE', caller);
+    this._grantRole(role, account);
   }
 
   revokeRole(caller: string, role: Role, account: string): void {
-    return undefined as never;
+    this._requireRole('DEFAULT_ADMIN_ROLE', caller);
+    this._revokeRole(role, account);
   }
 
   hasRole(role: Role, account: string): boolean {
@@ -111,27 +117,45 @@ export class KyoboNFTSimulator {
   }
 
   private _requireRole(role: Role, caller: string): void {
-    return undefined as never;
+    if (!this.hasRole(role, caller)) {
+      throw new Error(`AccessControlUnauthorizedAccount: ${caller} does not have role ${role}`);
+    }
   }
 
   private _requireNotPaused(): void {
-    return undefined as never;
+    if (this.paused) {
+      throw new Error('EnforcedPause: contract is paused');
+    }
   }
 
   mint(caller: string, to: string, tokenId: bigint, amount: bigint): void {
-    return undefined as never;
+    this._requireRole('MINTER_ROLE', caller);
+    this._requireNotPaused();
+    if (amount <= 0n) throw new Error('KyoboNFT: zero amount');
+    this.tokens.push({ owner: to, tokenId, amount });
   }
 
   mintBatch(caller: string, to: string[], tokenIds: bigint[], amounts: bigint[]): void {
-    return undefined as never;
+    this._requireRole('MINTER_ROLE', caller);
+    this._requireNotPaused();
+    if (to.length !== tokenIds.length || tokenIds.length !== amounts.length) {
+      throw new Error('KyoboNFT: length mismatch');
+    }
+    for (let i = 0; i < to.length; i++) {
+      this.tokens.push({ owner: to[i]!, tokenId: tokenIds[i]!, amount: amounts[i]! });
+    }
   }
 
   pause(caller: string): void {
-    return undefined as never;
+    this._requireRole('PAUSER_ROLE', caller);
+    if (this.paused) throw new Error('ExpectedPause: already paused');
+    this.paused = true;
   }
 
   unpause(caller: string): void {
-    return undefined as never;
+    this._requireRole('PAUSER_ROLE', caller);
+    if (!this.paused) throw new Error('ExpectedPause: not paused');
+    this.paused = false;
   }
 
   isPaused(): boolean { return this.paused; }

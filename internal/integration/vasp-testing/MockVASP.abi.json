@@ -1,0 +1,73 @@
+[
+  {
+    "type": "function",
+    "name": "setMode",
+    "inputs": [{ "name": "_mode", "type": "uint8" }],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRevertReason",
+    "inputs": [{ "name": "reason", "type": "string" }],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mode",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint8" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "revertReason",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "string" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "issueActivityNFT",
+    "inputs": [
+      { "name": "to",      "type": "address" },
+      { "name": "tokenId", "type": "uint256" },
+      { "name": "amount",  "type": "uint256" },
+      { "name": "reason",  "type": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mint",
+    "inputs": [
+      { "name": "to",      "type": "address" },
+      { "name": "tokenId", "type": "uint256" },
+      { "name": "amount",  "type": "uint256" },
+      { "name": "reason",  "type": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "balanceOf",
+    "inputs": [
+      { "name": "account", "type": "address" },
+      { "name": "id",      "type": "uint256" }
+    ],
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "Issued",
+    "inputs": [
+      { "name": "to",      "type": "address", "indexed": true },
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "reason",  "type": "bytes32", "indexed": false }
+    ]
+  }
+]

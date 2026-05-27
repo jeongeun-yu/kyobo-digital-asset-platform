@@ -21,7 +21,6 @@
  *   TX 수 증가 시 Broadcaster(빠른 루프)와 Tracker(느린 루프)가
  *   같은 루프에서 실행되면 서로 간섭. 타임스케일이 다른 두 루프는 분리.
  *
- * Custody Track Session 6 참조: Broadcaster와 Confirmation Tracker 분리
  */
 
 import type { TxAttempt, TxAttemptRepository } from './TxAttempt.js';

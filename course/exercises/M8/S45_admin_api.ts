@@ -170,7 +170,11 @@ export interface RequestContext {
  */
 export function requireRole(requiredRole: string) {
   return (ctx: RequestContext): void => {
-    return undefined as never;
+    if (!ctx.user.roles.includes(requiredRole)) {
+      const err = new Error(`Unauthorized: ${requiredRole} required`) as Error & { statusCode: number };
+      (err as any).statusCode = 401;
+      throw err;
+    }
   };
 }
 
@@ -200,7 +204,17 @@ export class AdminController {
    *   5. { success: true, txHash: tx.hash } 반환
    */
   async pauseContract(ctx: RequestContext, reason = ''): Promise<{ success: boolean; txHash: string }> {
-    return undefined as never;
+    requireRole('ADMIN_ROLE')(ctx);
+    const tx = await this.contract.pause();
+    await tx.wait();
+    await this.auditLog.log({
+      actor: ctx.user.id,
+      action: 'CONTRACT_PAUSED',
+      resourceType: 'CONTRACT',
+      resourceId: '0xKyoboNFT',
+      afterState: { paused: true, reason },
+    });
+    return { success: true, txHash: tx.hash };
   }
 
   /**
@@ -213,7 +227,17 @@ export class AdminController {
    *   4. { success: true, txHash: tx.hash } 반환
    */
   async unpauseContract(ctx: RequestContext): Promise<{ success: boolean; txHash: string }> {
-    return undefined as never;
+    requireRole('ADMIN_ROLE')(ctx);
+    const tx = await this.contract.unpause();
+    await tx.wait();
+    await this.auditLog.log({
+      actor: ctx.user.id,
+      action: 'CONTRACT_UNPAUSED',
+      resourceType: 'CONTRACT',
+      resourceId: '0xKyoboNFT',
+      afterState: { paused: false },
+    });
+    return { success: true, txHash: tx.hash };
   }
 
   /**
@@ -227,7 +251,20 @@ export class AdminController {
    *   4. { mismatchCount, totalChecked, severity } 반환
    */
   async triggerReconcile(ctx: RequestContext): Promise<{ mismatchCount: number; totalChecked: number; severity: string }> {
-    return undefined as never;
+    requireRole('ADMIN_ROLE')(ctx);
+    const result = await this.reconcileService.reconcile();
+    await this.auditLog.log({
+      actor: ctx.user.id,
+      action: 'RECONCILE_TRIGGERED',
+      resourceType: 'RECONCILE',
+      resourceId: 'global',
+      afterState: { mismatchCount: result.mismatches.length, totalChecked: result.totalChecked },
+    });
+    return {
+      mismatchCount: result.mismatches.length,
+      totalChecked:  result.totalChecked,
+      severity:      result.severity,
+    };
   }
 
   /**
@@ -238,7 +275,8 @@ export class AdminController {
    *   2. this.db.queryIssuanceStats() 호출 후 결과 반환
    */
   async getIssuanceStats(ctx: RequestContext): Promise<IssuanceStats> {
-    return undefined as never;
+    requireRole('ADMIN_ROLE')(ctx);
+    return this.db.queryIssuanceStats();
   }
 
   /**
@@ -257,7 +295,18 @@ export class AdminController {
     address: string,
     role: string,
   ): Promise<{ success: boolean; txHash: string }> {
-    return undefined as never;
+    requireRole('ADMIN_ROLE')(ctx);
+    const roleHash = ethers.id(role);
+    const tx = await this.contract.grantRole(roleHash, address);
+    await tx.wait();
+    await this.auditLog.log({
+      actor: ctx.user.id,
+      action: 'ROLE_GRANTED',
+      resourceType: 'ROLE',
+      resourceId: address,
+      afterState: { role, address },
+    });
+    return { success: true, txHash: tx.hash };
   }
 
   /**
@@ -276,7 +325,18 @@ export class AdminController {
     address: string,
     role: string,
   ): Promise<{ success: boolean; txHash: string }> {
-    return undefined as never;
+    requireRole('ADMIN_ROLE')(ctx);
+    const roleHash = ethers.id(role);
+    const tx = await this.contract.revokeRole(roleHash, address);
+    await tx.wait();
+    await this.auditLog.log({
+      actor: ctx.user.id,
+      action: 'ROLE_REVOKED',
+      resourceType: 'ROLE',
+      resourceId: address,
+      afterState: { role, address },
+    });
+    return { success: true, txHash: tx.hash };
   }
 }
 

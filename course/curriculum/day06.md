@@ -148,6 +148,40 @@ async pollStaleRequests(): Promise<void> {
 
 ---
 
+## M3 마무리 — TX 상태머신 테스트 실행 (강의 5분 + 실습 10분)
+
+### 강의 (5분)
+
+M3에서 구현한 TX 상태머신과 pollStaleRequests가 실제 PostgreSQL과 맞게 동작하는지 확인한다.
+
+`tx-status.integration.test.ts` — `TxStateMachineService` + `PgTxRepository`만 올린다. VASP는 테스트 전용 페이크(`ControlledVaspClient`)로 교체하므로 블록체인 없이 실행된다.
+
+| 테스트 | 검증 항목 |
+|---|---|
+| `[2]` SUBMITTED → MINED → CONFIRMED → FINALIZED | 정상 전이 순서 |
+| `[2-b]` SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED | PENDING 경유 정상 경로 |
+| `[3]` MINED → REORGED → MINED | S19~20 REORG 복구 |
+| `[4]` SUBMITTED → FAILED | S18 REVERT |
+| `[5]` FINALIZED 이후 전이 → InvalidStatusTransitionError | 종단 상태 보호 |
+| `[6]` FAILED 이후 전이 → DB 변경 없음 | 종단 상태 보호 |
+| `[7]` PENDING 30분 초과 → pollStaleRequests → CONFIRMED | S22 폴링 복구 |
+| `[8]` transition 이벤트 발행 확인 | 이벤트 설계 |
+
+### 🔴 실습 (10분)
+
+```bash
+cd internal/integration
+npx jest tx-status --runInBand
+```
+
+통과 후 확인할 것:
+- `[5]` FINALIZED → FAILED 시도 시 `InvalidStatusTransitionError` 출력
+- `[7]` `pollStaleRequests()` 반환값 `{ processed: 1 }`
+
+### ✅ M3 테스트 완료 기준
+- [ ] `tx-status` 8개 전체 통과
+---
+
 ## S23: 온체인만으로 부족한 이유 — 내부 원장 필요성과 데이터 모델 설계 (강의 25분 + 실습 30분)
 
 ### 강의

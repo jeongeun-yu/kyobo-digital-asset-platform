@@ -3,8 +3,6 @@ import type { Pool } from 'pg';
 /**
  * IssuancePolicyService — NFT 발행 정책 조회 서비스
  *
- * M5 S28 핵심 개념:
- *
  * 역할:
  *   issuance_policies 테이블에서 eventType별 발행 정책(tokenId·amount)을 조회한다.
  *   IssuerService는 이 서비스를 통해서만 정책에 접근한다 (DB 직접 접근 금지).
@@ -18,10 +16,6 @@ import type { Pool } from 'pg';
  *   - IssuancePolicyService: "이 이벤트에 발행 가능한 정책이 있는가?" (정책 관문)
  *   - EventConditionService:  "이 사용자가 조건을 충족하는가?" (조건 관문)
  *   두 서비스는 서로를 모른다. IssuerService가 두 결과를 조합한다.
- *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 관련 모듈: M5 S28 (IssuancePolicyService · DB 기반 발행 정책 관리)
  */
 
 // ── 도메인 타입 ───────────────────────────────────────────────────────────────

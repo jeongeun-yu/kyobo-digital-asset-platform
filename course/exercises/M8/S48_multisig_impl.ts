@@ -216,7 +216,31 @@ export class KeyGovernanceService {
    *   9. pendingTx 반환
    */
   async proposeTx(proposer: string, params: SafeTxParams): Promise<PendingTx> {
-    return undefined as never;
+    // Travel Rule 검증
+    if (params.value >= TRAVEL_RULE_THRESHOLD && !params.travelRuleData) {
+      throw new TravelRuleRequiredError(params.value);
+    }
+
+    const safeTx    = await this.safeClient.buildSafeTx(params);
+    const txHash    = await this.safeClient.calcTxHash(safeTx);
+    const threshold = await this.safeClient.getThreshold();
+
+    const pendingTx: PendingTx = {
+      id:                  randomUUID(),
+      txHash,
+      params:              safeTx,
+      status:              'PENDING_SIGNATURES',
+      requiredSignatures:  threshold,
+      collectedSignatures: [],
+      proposedBy:          proposer,
+      proposedAt:          new Date(),
+    };
+
+    await this.db.insert(pendingTx);
+    await this.auditLog.log({ actor: proposer, action: 'TX_PROPOSED', txId: pendingTx.id });
+    await this.notifier.send({ type: 'SIGNATURE_REQUESTED', txId: pendingTx.id });
+
+    return pendingTx;
   }
 
   /**
@@ -235,7 +259,37 @@ export class KeyGovernanceService {
    *   9. { collected, required, ready } 반환
    */
   async addSignature(txId: string, signer: string, signature: string): Promise<SignatureStatus> {
-    return undefined as never;
+    const tx = await this.db.findById(txId);
+    if (!tx) throw new PendingTxNotFoundError(txId);
+
+    if (tx.status !== 'PENDING_SIGNATURES') {
+      throw new Error(`Transaction ${txId} is not in PENDING_SIGNATURES state`);
+    }
+
+    if (tx.collectedSignatures.some(s => s.signer.toLowerCase() === signer.toLowerCase())) {
+      throw new DuplicateSignatureError(signer);
+    }
+
+    const valid = await this.safeClient.verifySignature(tx.txHash, signer, signature);
+    if (!valid) {
+      throw new Error(`Invalid signature from ${signer}`);
+    }
+
+    const newSig: SignatureEntry = { signer, signature, signedAt: new Date() };
+    const newSigs = [...tx.collectedSignatures, newSig];
+    const collected = newSigs.length;
+    const required  = tx.requiredSignatures;
+    const ready     = collected >= required;
+    const newStatus: PendingTxStatus = ready ? 'READY_TO_EXECUTE' : 'PENDING_SIGNATURES';
+
+    await this.db.updateSignatures(txId, newSigs, newStatus);
+    await this.auditLog.log({ actor: signer, action: 'SIGNATURE_ADDED', txId });
+
+    if (ready) {
+      await this.notifier.send({ type: 'TX_READY_TO_EXECUTE', txId });
+    }
+
+    return { collected, required, ready };
   }
 
   /**
@@ -250,7 +304,18 @@ export class KeyGovernanceService {
    *   6. { onChainTxHash } 반환
    */
   async executeTx(txId: string, executor: string): Promise<{ onChainTxHash: string }> {
-    return undefined as never;
+    const tx = await this.db.findById(txId);
+    if (!tx) throw new PendingTxNotFoundError(txId);
+
+    if (tx.status !== 'READY_TO_EXECUTE') {
+      throw new Error(`Transaction ${txId} is not ready to execute: current status is ${tx.status}`);
+    }
+
+    const onChainTxHash = await this.safeClient.execTransaction(tx.params, tx.collectedSignatures);
+    await this.db.markExecuted(txId, onChainTxHash);
+    await this.auditLog.log({ actor: executor, action: 'TX_EXECUTED', txId });
+
+    return { onChainTxHash };
   }
 
   /**
@@ -276,7 +341,15 @@ export class KeyGovernanceService {
    *   4. this.auditLog.log: actor=cancelledBy, action='TX_CANCELLED'
    */
   async cancelTx(txId: string, cancelledBy: string, reason: string): Promise<void> {
-    return undefined as never;
+    const tx = await this.db.findById(txId);
+    if (!tx) throw new PendingTxNotFoundError(txId);
+
+    if (tx.status === 'EXECUTED') {
+      throw new Error('Cannot cancel already-executed transaction');
+    }
+
+    await this.db.updateStatus(txId, 'CANCELLED');
+    await this.auditLog.log({ actor: cancelledBy, action: 'TX_CANCELLED', txId, reason });
   }
 }
 

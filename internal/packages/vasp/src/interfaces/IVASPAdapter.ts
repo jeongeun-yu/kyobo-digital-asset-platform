@@ -42,7 +42,7 @@ export interface TransferResult {
 
 export interface VASPTransactionReceipt {
   txHash:    string;
-  status:    'pending' | 'submitted' | 'confirmed' | 'failed';
+  status:    'submitted' | 'pending' | 'confirmed' | 'failed';
   timestamp: number;
 }
 

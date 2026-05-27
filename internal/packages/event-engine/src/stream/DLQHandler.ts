@@ -1,10 +1,6 @@
 /**
  * DLQHandler — Dead Letter Queue 처리
  *
- * M2 S11 핵심 개념:
- *   3회 실패 메시지 → Dead Letter Stream 이동
- *   운영자 알림 → 수동 확인 → 수동 재큐잉 절차
- *
  * DLQ 설계 원칙:
  *   - DLQ에 빠진 메시지 = 자동 처리 불가 → 반드시 사람이 확인
  *   - 재큐잉: DLQ 스트림 조회 → 원인 파악 → 수동 XADD to kyobo:events

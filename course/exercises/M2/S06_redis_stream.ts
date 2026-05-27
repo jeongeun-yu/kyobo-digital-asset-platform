@@ -311,9 +311,9 @@ class SimpleNFTProcessor implements EventProcessor {
   readonly eventTypes: string[] = ['NFT_ISSUED'];
 
   async process(message: StreamMessage): Promise<void> {
-    // TODO 2 완성
+    // TODO 2: const payload = JSON.parse(message.fields['payload'] ?? '{}');
     const payload = JSON.parse(message.fields['payload'] ?? '{}');
-    // TODO 3 완성
+    // TODO 3: console.log(`[SimpleNFTProcessor] NFT 처리 완료: tokenId=${payload.tokenId}, owner=${payload.owner}`);
     console.log(`[SimpleNFTProcessor] NFT 처리 완료: tokenId=${payload.tokenId}, owner=${payload.owner}`);
   }
 }
@@ -350,7 +350,7 @@ class SimpleNFTProcessor implements EventProcessor {
   //           [XADD] kyobo:events { eventType: 'NFT_ISSUED', ... }
   //           [XADD] → messageId: 1714xxxxxx-0
   //           [check] 형식 확인: ✅ 정상
-  const messageId: string = await publisher.publish(event);
+  const messageId = await publisher.publish(event);
   console.log('[result] messageId:', messageId);
   console.log('[check] 형식 확인:', /^\d+-\d+$/.test(messageId) ? '✅ 정상' : '❌ 오류');
 
@@ -389,17 +389,9 @@ class SimpleNFTProcessor implements EventProcessor {
   //               consumerId: 'consumer-1', batchSize: 10, blockMs: 500, minIdleMs: 30_000 },
   //           );
   const worker = new ConsumerGroupWorker(
-    consumerRedis,
-    [new SimpleNFTProcessor()],
-    mockDLQ,
-    {
-      streamKey:  'kyobo:events',
-      groupName:  'issuer-consumers',
-      consumerId: 'consumer-1',
-      batchSize:  10,
-      blockMs:    500,
-      minIdleMs:  30_000,
-    },
+    consumerRedis, [new SimpleNFTProcessor()], mockDLQ,
+    { streamKey: 'kyobo:events', groupName: 'issuer-consumers',
+      consumerId: 'consumer-1', batchSize: 10, blockMs: 500, minIdleMs: 30_000 },
   );
 
   setTimeout(() => {

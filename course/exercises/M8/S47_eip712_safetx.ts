@@ -47,7 +47,11 @@ export const KYOBO_NFT     = '0xc0de000000000000000000000000000000000001';
  *   - ethers.keccak256(encodedData)
  */
 export function calcDomainSeparator(chainId: number, safeAddress: string): string {
-  return undefined as never;
+  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
+    ['bytes32', 'uint256', 'address'],
+    [DOMAIN_TYPEHASH, chainId, safeAddress],
+  );
+  return ethers.keccak256(encoded);
 }
 
 export interface SafeTxFields {
@@ -76,7 +80,24 @@ export interface SafeTxFields {
  *             gasToken=ethers.ZeroAddress, refundReceiver=ethers.ZeroAddress, nonce=0n
  */
 export function calcStructHash(tx: SafeTxFields): string {
-  return undefined as never;
+  const dataHash = ethers.keccak256(tx.data);
+  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
+    ['bytes32','address','uint256','bytes32','uint8','uint256','uint256','uint256','address','address','uint256'],
+    [
+      SAFE_TX_TYPEHASH,
+      tx.to,
+      tx.value,
+      dataHash,
+      tx.operation,
+      tx.safeTxGas      ?? 0n,
+      tx.baseGas        ?? 0n,
+      tx.gasPrice       ?? 0n,
+      tx.gasToken       ?? ethers.ZeroAddress,
+      tx.refundReceiver ?? ethers.ZeroAddress,
+      tx.nonce          ?? 0n,
+    ],
+  );
+  return ethers.keccak256(encoded);
 }
 
 /**
@@ -88,7 +109,7 @@ export function calcStructHash(tx: SafeTxFields): string {
  *   - ethers.keccak256(concatenated)
  */
 export function calcSafeTxHash(domainSeparator: string, structHash: string): string {
-  return undefined as never;
+  return ethers.keccak256(ethers.concat(['0x1901', domainSeparator, structHash]));
 }
 
 // ─── 서명 유틸리티 ────────────────────────────────────────────────────────────
@@ -102,7 +123,8 @@ export function calcSafeTxHash(domainSeparator: string, structHash: string): str
  *   - ethers.Signature.from(sig).serialized 반환
  */
 export function signEip712Hash(wallet: ethers.HDNodeWallet | ethers.Wallet, hash: string): string {
-  return undefined as never;
+  const sig = wallet.signingKey.sign(hash);
+  return ethers.Signature.from(sig).serialized;
 }
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────────────

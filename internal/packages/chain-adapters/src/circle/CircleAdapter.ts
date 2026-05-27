@@ -24,8 +24,6 @@
 //
 // IBlockchainAdapter 인터페이스를 구현하므로 issuer-service 수정 없음.
 // ChainAdapterFactory에서 chainType='BFT' 로 자동 라우팅.
-//
-// S14 실습 참조: src/exercises/S14_multichain_adapter.ts
 // =============================================================================
 
 import type {

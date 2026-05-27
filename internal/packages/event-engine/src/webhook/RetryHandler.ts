@@ -24,10 +24,6 @@
  *   → 즉시 DLQ로 보내 개발자가 원인 파악 후 수정해야 함.
  *     재시도 지연만 발생시키고 Core Banking에 불필요한 부하를 줌.
  *
- * ── 교육생 안내 ──────────────────────────────────────────────────────────────
- * 역할: 참고용 구현체 — 수정하지 말 것
- * 실습: course/exercises/M2/S10_handle_with_retry.ts  ← 재시도 로직 직접 구현
- *       course/exercises/M2/S11_dlq.ts                 ← DLQ push 로직 구현
  */
 
 import { logger } from '../infra/logger';

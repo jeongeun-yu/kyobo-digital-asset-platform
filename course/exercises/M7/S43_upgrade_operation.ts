@@ -60,15 +60,23 @@ export class RoleRegistry {
   private roles = new Map<string, Set<Role>>();
 
   grantRole(role: Role, account: string, caller: Account): void {
-    return undefined as never;
+    if (!this.hasRole('DEFAULT_ADMIN_ROLE', caller.address)) {
+      throw new Error(`AccessControlUnauthorizedAccount: ${caller.address}`);
+    }
+    if (!this.roles.has(account)) this.roles.set(account, new Set());
+    this.roles.get(account)!.add(role);
   }
 
   hasRole(role: Role, account: string): boolean {
-    return undefined as never;
+    return this.roles.get(account)?.has(role) ?? false;
   }
 
   initialize(admin: string): void {
-    return undefined as never;
+    if (!this.roles.has(admin)) this.roles.set(admin, new Set());
+    const adminRoles: Role[] = ['DEFAULT_ADMIN_ROLE', 'MINTER_ROLE', 'PAUSER_ROLE', 'UPGRADER_ROLE'];
+    for (const r of adminRoles) {
+      this.roles.get(admin)!.add(r);
+    }
   }
 }
 
@@ -264,15 +272,23 @@ export class KyoboNFTSecure {
   }
 
   private requireRole(role: Role, caller: string): void {
-    return undefined as never;
+    if (!this.registry.hasRole(role, caller)) {
+      throw new Error(`AccessControlUnauthorizedAccount: ${caller}`);
+    }
   }
 
   private requireNotPaused(): void {
-    return undefined as never;
+    if (this.paused) throw new Error('EnforcedPause');
   }
 
   mint(caller: Account, to: string, tokenId: number, amount: number): void {
-    return undefined as never;
+    this.requireRole('MINTER_ROLE', caller.address);
+    this.requireNotPaused();
+    if (amount <= 0) throw new Error('KyoboNFT: zero amount');
+    if (!this.balances.has(to)) this.balances.set(to, new Map());
+    const userBal = this.balances.get(to)!;
+    userBal.set(tokenId, (userBal.get(tokenId) ?? 0) + amount);
+    this.events.push(`TransferSingle(from=0x0, to=${to}, id=${tokenId}, value=${amount})`);
   }
 
   burn(caller: Account, from: string, tokenId: number, amount: number): void {
@@ -285,11 +301,14 @@ export class KyoboNFTSecure {
   }
 
   pause(caller: Account): void {
-    return undefined as never;
+    this.requireRole('PAUSER_ROLE', caller.address);
+    this.paused = true;
+    this.events.push(`Paused(account=${caller.address})`);
   }
 
   grantRole(caller: Account, role: Role, account: string): void {
-    return undefined as never;
+    this.registry.grantRole(role, account, caller);
+    this.events.push(`RoleGranted(role=${role}, account=${account}, sender=${caller.address})`);
   }
 
   balanceOf(account: string, tokenId: number): number {

@@ -108,7 +108,17 @@ export class AuditLogService {
   }
 
   private async _doInsert(params: LogParams): Promise<number> {
-    return undefined as never;
+    const { actor, action, resourceType = '', resourceId, beforeState = null, afterState, ipAddress = null, sessionId = null } = params;
+    const eventTime = new Date();
+    const lastRow = this.rows[this.rows.length - 1];
+    const prevChecksum = lastRow?.checksum ?? '';
+    const checksum = this._generateChainedChecksum(prevChecksum, eventTime, actor, action, resourceId, afterState);
+    const id = ++this.seq;
+    this.rows.push({
+      id, eventTime, actor, action, resourceType, resourceId,
+      beforeState, afterState, ipAddress, sessionId, checksum,
+    });
+    return id;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -121,7 +131,14 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   async verifyIntegrity(id: number): Promise<VerifyResult> {
-    return undefined as never;
+    const idx = this.rows.findIndex(r => r.id === id);
+    if (idx === -1) throw new Error(`Audit log entry not found: ${id}`);
+    const row = this.rows[idx]!;
+    const prevChecksum = idx > 0 ? (this.rows[idx - 1]?.checksum ?? '') : '';
+    const computedChecksum = this._generateChainedChecksum(
+      prevChecksum, row.eventTime, row.actor, row.action, row.resourceId, row.afterState,
+    );
+    return { id, valid: row.checksum === computedChecksum, storedChecksum: row.checksum, computedChecksum };
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -136,7 +153,18 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   async verifyChainIntegrity(): Promise<ChainVerifyResult> {
-    return undefined as never;
+    let prevChecksum = '';
+    for (let i = 0; i < this.rows.length; i++) {
+      const row = this.rows[i]!;
+      const expected = this._generateChainedChecksum(
+        prevChecksum, row.eventTime, row.actor, row.action, row.resourceId, row.afterState,
+      );
+      if (expected !== row.checksum) {
+        return { valid: false, firstInvalidId: row.id, checkedCount: i };
+      }
+      prevChecksum = row.checksum;
+    }
+    return { valid: true, checkedCount: this.rows.length };
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -149,7 +177,10 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   queryByResource(resourceId: string, options: QueryOptions = {}): AuditLogRow[] {
-    return undefined as never;
+    const { limit = 100, offset = 0, orderBy = 'desc' } = options;
+    const filtered = this.rows.filter(r => r.resourceId === resourceId);
+    const ordered = orderBy === 'asc' ? filtered : [...filtered].reverse();
+    return ordered.slice(offset, offset + limit);
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -159,7 +190,10 @@ export class AuditLogService {
   // ────────────────────────────────────────────────────────────────────────
 
   queryByActor(actor: string, options: QueryOptions = {}): AuditLogRow[] {
-    return undefined as never;
+    const { limit = 100, offset = 0, orderBy = 'desc' } = options;
+    const filtered = this.rows.filter(r => r.actor === actor);
+    const ordered = orderBy === 'asc' ? filtered : [...filtered].reverse();
+    return ordered.slice(offset, offset + limit);
   }
 
   // ── 테스트 전용: 내부 rows 직접 조작 (변조 시뮬레이션) — 완성 제공 ──

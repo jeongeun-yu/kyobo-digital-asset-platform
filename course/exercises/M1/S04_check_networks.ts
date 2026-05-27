@@ -42,31 +42,44 @@ async function queryNetwork(name: string, rpcUrl: string): Promise<void> {
 
   // TODO: JsonRpcProvider 생성
   //   힌트: new JsonRpcProvider(rpcUrl)
-  const provider = /* TODO */ null as unknown as JsonRpcProvider;
+  const provider = new JsonRpcProvider(rpcUrl);
 
   // TODO: [1] 체인 ID 조회
   //   힌트: provider.getNetwork() → network.chainId
   //   예상: 로컬=31337, Sepolia=11155111, 메인넷=1
+  const network = await provider.getNetwork();
+  check('체인 ID', network.chainId);
 
   // TODO: [2] 현재 블록 번호 조회
   //   힌트: provider.getBlockNumber()
   //   예상: 로컬=0, Sepolia=수백만, 메인넷=수천만
+  const blockNumber = await provider.getBlockNumber();
+  check('블록 번호', blockNumber);
 
   // TODO: [3] 내 계정(MY_ADDRESS) 잔액 조회 — EVM_SIGNER_KEY에서 파생된 주소
   //   힌트: provider.getBalance(MY_ADDRESS) → formatEther(잔액) + ' ETH'
   //   예상: 로컬=10000.0 ETH (Hardhat 기본 지급), Sepolia=실제 잔액
   if (MY_ADDRESS) {
     // TODO: check('내 계정 잔액', ...)
+    const myBalance = await provider.getBalance(MY_ADDRESS);
+    check('내 계정 잔액', formatEther(myBalance) + ' ETH');
   }
 
   // TODO: [4] Hardhat 기본 계정(HARDHAT_ACCT_0) 잔액 조회 — 로컬 노드 동작 확인용
   //   힌트: provider.getBalance(HARDHAT_ACCT_0) → formatEther(잔액) + ' ETH'
   //   예상: 로컬/Fork=10000.0 ETH, Sepolia=0.0 ETH (의미 없는 주소)
+  const hardhatBalance = await provider.getBalance(HARDHAT_ACCT_0);
+  check('Hardhat 계정 잔액', formatEther(hardhatBalance) + ' ETH');
 
   // TODO: [5] 가스 가격 조회 (Gwei 단위)
   //   힌트: provider.getFeeData() → feeData.maxFeePerGas (BigInt, wei 단위)
   //         Gwei 변환: maxFeePerGas / 1_000_000_000n
   //   예상: 로컬=1 Gwei, Sepolia=실제 시장 가격, Fork=최신 메인넷 가격
+  const feeData = await provider.getFeeData();
+  const gasPriceGwei = feeData.maxFeePerGas != null
+    ? feeData.maxFeePerGas / 1_000_000_000n
+    : 'N/A';
+  check('가스 가격 (Gwei)', gasPriceGwei);
 }
 
 async function main(): Promise<void> {

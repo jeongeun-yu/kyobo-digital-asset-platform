@@ -21,13 +21,17 @@ import crypto from 'crypto';
 //   5. crypto.timingSafeEqual(sigBuf, expBuf) 결과 반환
 export function verifySignature(rawBody: Buffer, signature: string, secret: string): boolean {
   // TODO 1: if (!signature) return false;
+  if (!signature) return false;
   // TODO 2: const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
   // TODO 3: const sigBuf = Buffer.from(signature, 'hex');
   //         const expBuf = Buffer.from(expected,  'hex');
+  const sigBuf = Buffer.from(signature, 'hex');
+  const expBuf = Buffer.from(expected,  'hex');
   // TODO 4: if (sigBuf.length !== expBuf.length) return false;
+  if (sigBuf.length !== expBuf.length) return false;
   // TODO 5: return crypto.timingSafeEqual(sigBuf, expBuf);
-  void rawBody; void signature; void secret;
-  return undefined as never;
+  return crypto.timingSafeEqual(sigBuf, expBuf);
 }
 
 // ── Timing Attack 시연용: === 비교 ────────────────────────────────────────────

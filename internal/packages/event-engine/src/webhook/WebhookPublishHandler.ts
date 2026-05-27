@@ -1,9 +1,8 @@
 /**
  * WebhookPublishHandler — WebhookServer → RedisStreamPublisher 연결
  *
- * M2 S6 구현 핵심 (2):
- *   WebhookServer에 등록되는 핸들러 팩토리.
- *   서명 검증 통과 후 비동기 실행되는 handler() 의 실제 구현체.
+ * WebhookServer에 등록되는 핸들러 팩토리.
+ * 서명 검증 통과 후 비동기 실행되는 handler() 의 실제 구현체.
  *
  * 역할:
  *   1. IdempotencyGuard로 requestId 중복 차단
@@ -37,7 +36,7 @@ export class WebhookPublishHandler {
       const idempotencyKey = `webhook:${payload.requestId}`;
 
       const published = await this.idempotency.run(idempotencyKey, async () => {
-        await this.publisher.publish({
+        const msgId = await this.publisher.publish({
           streamKey:   this.streamKey,
           eventType:   payload.eventType,
           payload:     payload.data,
@@ -45,6 +44,7 @@ export class WebhookPublishHandler {
           blockNumber: Number(payload.data['blockNumber'] ?? 0),
           requestId:   payload.requestId,
         });
+        console.log(`[WebhookPublishHandler] XADD → ${this.streamKey}  eventType=${payload.eventType}  msgId=${msgId}  requestId=${payload.requestId.slice(0, 8)}…`);
       });
 
       if (!published) {

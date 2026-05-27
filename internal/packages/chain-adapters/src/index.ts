@@ -10,6 +10,7 @@ export { KRW1StablecoinAdapter } from './stablecoin/KRW1StablecoinAdapter';
 export type { KRW1MintParams, KRW1BurnParams, KRW1Receipt, KRW1IssueMode } from './stablecoin/KRW1StablecoinAdapter';
 export { ChainAdapterFactory, UnsupportedChainError } from './ChainAdapterFactory';
 export type { ChainType, AdapterConfig }               from './ChainAdapterFactory';
+export { ChainAdapterRegistry }                        from './ChainAdapterRegistry';
 export { AdapterDecorator }         from './decorators/AdapterDecorator';
 export { LoggingAdapterDecorator }  from './decorators/LoggingAdapterDecorator';
 export type { Logger }              from './decorators/LoggingAdapterDecorator';

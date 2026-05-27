@@ -75,7 +75,26 @@ export const UINT8_MODULUS = 256n;
 // ────────────────────────────────────────────────────────────────────────
 
 export function analyzeAccessPatterns(codeLines: string[]): AccessPattern[] {
-  return undefined as never;
+  const patterns: AccessPattern[] = codeLines.map((code, idx) => {
+    const line = idx + 1;
+    if (code.includes('tx.origin')) {
+      return {
+        line,
+        code,
+        checkType: 'tx.origin' as AccessCheckType,
+        isSafe: false,
+        recommendation: 'tx.origin을 msg.sender로 교체하거나 onlyRole modifier로 전환',
+      };
+    } else if (code.includes('msg.sender ==') || code.includes('msg.sender !=')) {
+      return { line, code, checkType: 'msg.sender' as AccessCheckType, isSafe: true };
+    } else if (code.includes('onlyRole(') || code.includes('onlyOwner')) {
+      return { line, code, checkType: 'onlyRole' as AccessCheckType, isSafe: true };
+    } else {
+      return { line, code, checkType: 'msg.sender' as AccessCheckType, isSafe: true };
+    }
+  });
+
+  return patterns.filter(p => p.checkType === 'tx.origin' || !p.isSafe);
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -90,7 +109,11 @@ export function analyzeAccessPatterns(codeLines: string[]): AccessPattern[] {
 // ────────────────────────────────────────────────────────────────────────
 
 export function checkedAdd(a: bigint, b: bigint): { result: bigint | null; reverted: boolean } {
-  return undefined as never;
+  const sum = a + b;
+  if (sum > UINT8_MAX) {
+    return { result: null, reverted: true };
+  }
+  return { result: sum, reverted: false };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -104,7 +127,7 @@ export function checkedAdd(a: bigint, b: bigint): { result: bigint | null; rever
 // ────────────────────────────────────────────────────────────────────────
 
 export function uncheckedAdd(a: bigint, b: bigint): { result: bigint; reverted: boolean } {
-  return undefined as never;
+  return { result: (a + b) % UINT8_MODULUS, reverted: false };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -121,7 +144,10 @@ export function safeUncheckedAdd(
   a: bigint,
   b: bigint,
 ): { result: bigint | null; reverted: boolean } {
-  return undefined as never;
+  if (b > UINT8_MAX - a) {
+    return { result: null, reverted: true };
+  }
+  return { result: (a + b) % UINT8_MODULUS, reverted: false };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -161,15 +187,40 @@ export class ReentrancyGuardSimulator {
   public reentrancyBlocked = false;
 
   private withNonReentrant(fn: () => void): void {
-    return undefined as never;
+    if (this._status === ENTERED) {
+      this.reentrancyBlocked = true;
+      throw new Error('ReentrancyGuard: reentrant call');
+    }
+    this._status = ENTERED;
+    try {
+      fn();
+    } finally {
+      this._status = NOT_ENTERED;
+    }
   }
 
   burn(balances: Map<string, number>, from: string, amount: number): void {
-    return undefined as never;
+    this.withNonReentrant(() => {
+      const current = balances.get(from) ?? 0;
+      if (current < amount) throw new Error('insufficient balance');
+      // [CEI Effects] 잔액 먼저 차감
+      balances.set(from, current - amount);
+      this.burnCallCount++;
+    });
   }
 
   attackWithReentrancy(balances: Map<string, number>, from: string): void {
-    return undefined as never;
+    this.withNonReentrant(() => {
+      const current = balances.get(from) ?? 0;
+      if (current <= 0) return;
+      try {
+        this.burn(balances, from, 1);
+      } catch {
+        this.reentrancyBlocked = true;
+      }
+      balances.set(from, current - 1);
+      this.burnCallCount++;
+    });
   }
 }
 

@@ -1,10 +1,9 @@
 /**
  * IBlockchainAdapter — 블록체인 추상화 인터페이스
  *
- * M3 S14 핵심 개념:
- *   VASP와 블록체인 사이에 삽입되는 Strategy Pattern 레이어.
- *   발행·소각·잔액 조회·TX 검증·이벤트 구독을 체인 무관하게 추상화.
- *   비즈니스 로직(VASP, 원장)은 이 인터페이스만 의존 — 체인 교체 시 무변경.
+ * VASP와 블록체인 사이에 삽입되는 Strategy Pattern 레이어.
+ * 발행·소각·잔액 조회·TX 검증·이벤트 구독을 체인 무관하게 추상화.
+ * 비즈니스 로직(VASP, 원장)은 이 인터페이스만 의존 — 체인 교체 시 무변경.
  *
  * 구현체:
  *   EVMAdapter    — Ethereum / EVM 호환 체인 (Phase 1)
@@ -15,9 +14,6 @@
  *   IssuerService → IBlockchainAdapter ← EVMAdapter
  *                                      ← XRPLAdapter
  *                                      ← CircleAdapter
- *
- * 교체 시뮬레이션 (M3 S14):
- *   EVMAdapter → XRPLAdapter 교체 시 IssuerService 코드 한 줄도 변경 없음
  */
 
 export interface TransactionReceipt {
@@ -75,14 +71,12 @@ export interface BurnParams {
 // EIP-1559 (London 하드포크, 2021): Ethereum 기본 수수료 모델
 //
 //   실제 납부 = min(MaxFeePerGas, BaseFee + MaxPriorityFeePerGas)
-//   BaseFee:           네트워크 혼잡도에 따라 프로토콜이 자동 결정 (소각됨)
+//   BaseFee:             네트워크 혼잡도에 따라 프로토콜이 자동 결정 (소각됨)
 //   MaxPriorityFeePerGas: 검증자에게 지불하는 팁 (채굴자 우선순위)
-//   MaxFeePerGas:      사용자가 설정하는 최대 납부 한도
+//   MaxFeePerGas:        사용자가 설정하는 최대 납부 한도
 //
-// Phase 1 현황: VASP(월렛원)가 수수료 설정. EVMAdapter는 Legacy gasPrice 사용.
-// Phase 3 필요: 직접 TX 생성 시 EIP-1559 수수료 직접 설정 필요.
-//
-// Custody Track Session 5 참조: EIP-1559 수수료 구조
+// Phase 1: VASP(월렛원)가 수수료 설정. EVMAdapter는 Legacy gasPrice 사용.
+// Phase 3: 직접 TX 생성 시 EIP-1559 수수료 직접 설정 필요.
 
 export interface Eip1559FeeParams {
   maxFeePerGas:         bigint;   // wei 단위
@@ -97,8 +91,6 @@ export interface Eip1559FeeParams {
 //   NORMAL: 표준 처리. BaseFee + 최소 Priority Fee. (~12초)
 //   FAST:   빠른 처리. BaseFee * 1.2 + 높은 Priority Fee. (~6초)
 //   SURGE:  긴급 처리. BaseFee * 1.5 + 최고 Priority Fee. (~1블록)
-//
-// Custody Track Session 5 참조: feePolicyId 체계
 
 export type FeePolicyId = 'NORMAL' | 'FAST' | 'SURGE';
 
@@ -107,13 +99,11 @@ export type FeePolicyId = 'NORMAL' | 'FAST' | 'SURGE';
 // 단일 RPC 노드는 신뢰할 수 없다. 다중 RPC + quorum 합의 필요.
 // RPC 신뢰성 저하 시 단계적으로 기능을 제한하는 저하 모드.
 //
-//   NORMAL:                 정상. 모든 TX 처리 가능.
-//   DEGRADED_READ:          읽기 전용 RPC 부분 장애. 쓰기(TX)는 정상.
-//   DEGRADED_WRITE:         쓰기 RPC 부분 장애. 고가치 TX만 처리.
-//   MANUAL_APPROVAL_ONLY:   RPC 신뢰 불가. 모든 TX에 수동 승인 필요.
-//   STOP_THE_LINE:          전체 중단. 어떤 TX도 전송하지 않음.
-//
-// Custody Track Session 5 참조: RPC 저하 모드 5단계
+//   NORMAL:               정상. 모든 TX 처리 가능.
+//   DEGRADED_READ:        읽기 전용 RPC 부분 장애. 쓰기(TX)는 정상.
+//   DEGRADED_WRITE:       쓰기 RPC 부분 장애. 고가치 TX만 처리.
+//   MANUAL_APPROVAL_ONLY: RPC 신뢰 불가. 모든 TX에 수동 승인 필요.
+//   STOP_THE_LINE:        전체 중단. 어떤 TX도 전송하지 않음.
 
 export type RpcDegradeMode =
   | 'NORMAL'
@@ -187,7 +177,7 @@ export interface IBlockchainAdapter {
 
   /**
    * 과거 이벤트 조회 — 재시작 시 missed event 복구
-   * M7 이벤트 파이프라인: Finalized 블록 범위만 처리
+   * Finalized 블록 범위만 처리 (REORG 안전)
    */
   queryEvents(
     contractAddr: string,
@@ -207,8 +197,6 @@ export interface IBlockchainAdapter {
 // 이렇게 분리하는 이유:
 //   IBlockchainAdapter에 직접 추가하면 기존 구현체(EVMAdapter 등)가 모두 에러.
 //   인터페이스 확장(extends)으로 하위 호환성을 유지하면서 Phase 3 기능을 추가.
-//
-// Custody Track Session 5 참조: feePolicyId, RPC 저하 모드 5단계
 
 export interface IBlockchainAdapterV3 extends IBlockchainAdapter {
   /**
