@@ -136,6 +136,38 @@ describe('TxStatus 상태 전이 — PgTxRepository + TxStateMachineService', ()
     ]);
   });
 
+  // ── [2-b] PENDING 경유 정상 경로 ─────────────────────────────────────────
+
+  it('[2-b] PENDING 경유: SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED', async () => {
+    const txHash = '0x' + 'b3'.repeat(32);
+    vasp.setNextTxHash(txHash);
+
+    const { requestId: id } = await svc.submitMintRequest({
+      userId: 'user-tx-002b', tokenId: BigInt(1001), amount: BigInt(1),
+    });
+
+    // VASP TX 브로드캐스트 후 mempool 진입 시뮬레이션
+    await repo.updateStatus(id, 'PENDING');
+    expect((await repo.findById(id))!.status).toBe('PENDING');
+
+    const transitions: string[] = [];
+    svc.on('transition', (e: TxTransitionEvent) => transitions.push(`${e.from}→${e.to}`));
+
+    await svc.handleMined(id, 101);
+    await svc.handleConfirmed(id);
+    await svc.handleFinalized(id);
+
+    const final = await repo.findById(id);
+    expect(final!.status).toBe('FINALIZED');
+    expect(final!.blockNumber).toBe(101);
+
+    expect(transitions).toEqual([
+      'PENDING→MINED',
+      'MINED→CONFIRMED',
+      'CONFIRMED→FINALIZED',
+    ]);
+  });
+
   // ── [3] REORG 복구 경로 ───────────────────────────────────────────────────
   // handleReorg() 내부에 _waitBlocks(5 × 12,000ms) 대기가 있어
   // 통합 테스트에서는 DB 레이어 직접 전이로 검증한다.

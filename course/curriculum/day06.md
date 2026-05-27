@@ -159,6 +159,7 @@ M3에서 구현한 TX 상태머신과 pollStaleRequests가 실제 PostgreSQL과 
 | 테스트 | 검증 항목 |
 |---|---|
 | `[2]` SUBMITTED → MINED → CONFIRMED → FINALIZED | 정상 전이 순서 |
+| `[2-b]` SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED | PENDING 경유 정상 경로 |
 | `[3]` MINED → REORGED → MINED | S19~20 REORG 복구 |
 | `[4]` SUBMITTED → FAILED | S18 REVERT |
 | `[5]` FINALIZED 이후 전이 → InvalidStatusTransitionError | 종단 상태 보호 |
