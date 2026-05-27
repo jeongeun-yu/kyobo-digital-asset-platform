@@ -453,16 +453,15 @@ async function scenarioBurst(_userId: string) {
   statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
 
   console.log('\n[scenario-sepolia] 전체 CONFIRMED 대기 중 (최대 3분)...');
-  const pgUrl = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL'];
-  if (!pgUrl) {
-    console.error('[scenario-sepolia] POSTGRES_URL 환경변수가 필요합니다.');
-    console.error('  예: POSTGRES_URL="postgresql://postgres:demo@localhost:15432/postgres" npm run demo:scenario-sepolia -- burst');
-    return;
-  }
+  // POSTGRES_URL 명시 시 우선 사용, 없으면 start-sepolia.ts 기본 데모 DB로 fallback
+  const DEMO_PG_URL = 'postgresql://postgres:demo@localhost:15432/postgres';
+  const pgUrl = process.env['POSTGRES_URL'] ?? DEMO_PG_URL;
+  console.log(`[scenario-sepolia] DB 연결 중... (${pgUrl.replace(/:\/\/[^@]+@/, '://*@')})`);
 
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
 
+  let queryErr: Error | undefined;
   try {
     const deadline = Date.now() + 180_000;
     while (Date.now() < deadline) {
@@ -480,9 +479,14 @@ async function scenarioBurst(_userId: string) {
       }
       await new Promise(r => setTimeout(r, 3000));
     }
+  } catch (e) {
+    queryErr = e as Error;
+    console.error('[scenario-sepolia] DB 쿼리 오류:', (e as Error)?.message, (e as Error)?.stack);
   } finally {
-    await pool.end();
+    await pool.end().catch(e =>
+      console.error('[scenario-sepolia] pool.end() 오류:', (e as Error)?.message));
   }
+  if (queryErr) throw queryErr;
 
   printDbHint([
     'SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 5;',
@@ -494,9 +498,20 @@ async function scenarioBurst(_userId: string) {
 async function scenarioReset() {
   console.log('\n=== RESET: MockVASP mode 복원 (Sepolia) ===');
   await verifyContractDeployed();
-  await setMode(MintMode.NORMAL, 'NORMAL');
-  const current = await (getMockVasp()['mode'] as Function)();
-  console.log(`[scenario-sepolia] 현재 mode=${current} (0=NORMAL, 1=REVERT, 2=NO_EMIT)`);
+  try {
+    await setMode(MintMode.NORMAL, 'NORMAL');
+    const current = await (getMockVasp()['mode'] as Function)();
+    console.log(`[scenario-sepolia] 현재 mode=${current} (0=NORMAL, 1=REVERT, 2=NO_EMIT)`);
+  } catch (err: any) {
+    // 0xe2517d3f = AccessControlUnauthorizedAccount — 이 키에 OPERATOR_ROLE 없음
+    if (String(err?.data ?? err?.message ?? '').includes('e2517d3f')) {
+      console.error(`[scenario-sepolia] ❌ AccessControl 오류: OPERATOR 키가 이 컨트랙트의 OPERATOR_ROLE이 없습니다.`);
+      console.error(`  컨트랙트: ${MOCK_VASP_ADDR}`);
+      console.error(`  → start-sepolia.ts를 먼저 실행하세요. 매 실행마다 신규 컨트랙트를 배포하므로 reset이 필요 없습니다.`);
+      process.exit(1);
+    }
+    throw err;
+  }
 }
 
 // ── 엔트리포인트 ──────────────────────────────────────────────────────────────
@@ -543,7 +558,8 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
 }
 
 SCENARIOS[scenarioName]!(userId).catch(err => {
-  console.error('\n[scenario-sepolia] 오류:', err.message);
+  console.error('\n[scenario-sepolia] 오류:', err?.message ?? String(err));
+  if (err?.stack) console.error(err.stack);
   console.error('  → start-sepolia.ts가 실행 중인지, .env 환경변수를 확인하세요.');
   process.exit(1);
 });

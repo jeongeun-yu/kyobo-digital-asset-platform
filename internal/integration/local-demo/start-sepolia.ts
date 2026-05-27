@@ -5,7 +5,7 @@
  *
  * 사전 조건:
  *   1. local-demo/.env.sepolia 파일에 환경변수 기입 (OPERATOR 계정에 Sepolia ETH 필요)
- *   2. Sepolia에 MockVASP 컨트랙트가 이미 배포되어 있어야 함
+ *   2. OPERATOR 계정에 Sepolia ETH 충분 (MockVASP 배포 가스비 포함)
  *
  * 기동 순서:
  *   1. .env.sepolia 로드 + 필수 환경변수 검증
@@ -13,7 +13,9 @@
  *   3. Docker — PostgreSQL(15432) + Redis(16379)
  *   4. DB 스키마 적용 + 시드
  *   5. Java API 스텁 기동 (19875)
- *   6. VASPServer 기동 (19876) — Sepolia RPC + 고정 MockVASP 주소
+ *   4. MockVASP 컨트랙트 배포 (Sepolia) + .env SEPOLIA_MOCK_VASP_ADDR 자동 업데이트
+ *   5. Java API 스텁 기동 (19875)
+ *   6. VASPServer 기동 (19876) — Sepolia RPC + 신규 배포 MockVASP 주소
  *   7. Redis Stream + Consumer Group 초기화
  *   8. issuer-service 기동 (WebhookServer :19877)
  *   9. READY 배너 출력 (블록 확정 ~12s 안내)
@@ -21,9 +23,9 @@
  * 종료: Ctrl+C → 컨테이너 자동 정리
  */
 
-import { execSync, spawn }  from 'child_process';
-import { readFileSync }     from 'fs';
-import { resolve }          from 'path';
+import { execSync, spawn }          from 'child_process';
+import { readFileSync, writeFileSync } from 'fs';
+import { resolve }                   from 'path';
 import http                 from 'http';
 import crypto               from 'crypto';
 import dotenv               from 'dotenv';
@@ -43,7 +45,6 @@ function requireEnv(key: string): string {
 }
 
 const SEPOLIA_RPC_URL      = requireEnv('SEPOLIA_RPC_URL');
-const MOCK_VASP_ADDR       = requireEnv('SEPOLIA_MOCK_VASP_ADDR');
 const OPERATOR_PRIVATE_KEY = requireEnv('SEPOLIA_OPERATOR_KEY');
 // DEPLOYER_PRIVATE_KEY — setMode 제어용
 const DEPLOYER_PRIVATE_KEY = process.env['DEPLOYER_PRIVATE_KEY'] ?? OPERATOR_PRIVATE_KEY;
@@ -69,17 +70,73 @@ const TOKEN_ID         = String(Date.now());
 const PG_URL    = `postgresql://postgres:demo@localhost:${PG_PORT}/postgres`;
 const REDIS_URL = `redis://localhost:${REDIS_PORT}`;
 
-// Sepolia에서 OPERATOR 지갑 주소 추출 (ethers 없이 간단히 계산)
+// Sepolia에서 OPERATOR 지갑 주소 추출
 function deriveAddress(privateKey: string): string {
   const { ethers } = require('ethers') as typeof import('ethers');
   return new ethers.Wallet(privateKey).address;
 }
 const OPERATOR_ADDR = deriveAddress(OPERATOR_PRIVATE_KEY);
 
-const CONTAINERS  = ['kyobo-sepolia-postgres', 'kyobo-sepolia-redis'];
-const DEMO_PORTS  = [PG_PORT, REDIS_PORT];
-const SCHEMA_PATH = resolve(__dirname, '..', 'setup', 'schema.sql');
-const INDEX_PATH  = resolve(__dirname, '..', '..', 'apps', 'issuer-service', 'src', 'index.ts');
+// demo-user-001~005 수신 지갑 — OPERATOR 키 해시 파생 EOA
+// Hardhat 결정적 주소는 Sepolia에 컨트랙트가 배포되어 있을 수 있어
+// ERC1155InvalidReceiver revert 발생 → OPERATOR 키 기반 파생 주소 사용
+function deriveDemoWallet(index: number): string {
+  const { ethers } = require('ethers') as typeof import('ethers');
+  const key = OPERATOR_PRIVATE_KEY.startsWith('0x') ? OPERATOR_PRIVATE_KEY : `0x${OPERATOR_PRIVATE_KEY}`;
+  const hash = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ['bytes32', 'uint256'],
+      [key, index],
+    ),
+  );
+  return new ethers.Wallet(hash).address;
+}
+
+const DEMO_WALLETS = [
+  OPERATOR_ADDR,           // demo-user-001 (OPERATOR 본인)
+  deriveDemoWallet(2),     // demo-user-002
+  deriveDemoWallet(3),     // demo-user-003
+  deriveDemoWallet(4),     // demo-user-004
+  deriveDemoWallet(5),     // demo-user-005
+];
+
+const CONTAINERS   = ['kyobo-sepolia-postgres', 'kyobo-sepolia-redis'];
+const DEMO_PORTS   = [PG_PORT, REDIS_PORT];
+const SCHEMA_PATH  = resolve(__dirname, '..', 'setup', 'schema.sql');
+const INDEX_PATH   = resolve(__dirname, '..', '..', 'apps', 'issuer-service', 'src', 'index.ts');
+const ARTIFACT_PATH = resolve(
+  __dirname, '..', '..', '..', 'blockchain',
+  'artifacts', 'src', 'mocks', 'MockVASP.sol', 'MockVASP.json',
+);
+
+// ── .env 단일 키 업데이트 ─────────────────────────────────────────────────────
+function updateEnvKey(key: string, value: string): void {
+  const content = readFileSync(ENV_PATH, 'utf-8');
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const updated = content.match(new RegExp(`^${key}=`, 'm'))
+    ? content.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${value}`)
+    : content + `\n${key}=${value}`;
+  writeFileSync(ENV_PATH, updated, 'utf-8');
+  console.log(`  [.env] ${key} → ${value}`);
+}
+
+// ── MockVASP 배포 (Sepolia) ───────────────────────────────────────────────────
+async function deployMockVASP(): Promise<string> {
+  const { ethers } = await import('ethers');
+  const artifact   = JSON.parse(readFileSync(ARTIFACT_PATH, 'utf-8'));
+  const provider   = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
+  const deployer   = new ethers.NonceManager(new ethers.Wallet(OPERATOR_PRIVATE_KEY, provider));
+  const factory    = new ethers.ContractFactory(artifact.abi, artifact.bytecode, deployer);
+
+  console.log('  [deploy] MockVASP 배포 중 (Sepolia TX 브로드캐스트)...');
+  const contract = await factory.deploy(OPERATOR_ADDR);
+  await contract.waitForDeployment();
+  const addr = await contract.getAddress();
+
+  console.log(`  [deploy] MockVASP → ${addr}`);
+  updateEnvKey('SEPOLIA_MOCK_VASP_ADDR', addr);
+  return addr;
+}
 
 // ── Docker 유틸 ───────────────────────────────────────────────────────────────
 
@@ -143,11 +200,13 @@ function startJavaStub(pool: Pool): http.Server {
     const userMatch = url.match(/^\/api\/internal\/users\/([^/]+)$/);
     if (req.method === 'GET' && userMatch) {
       const userId = decodeURIComponent(userMatch[1]);
+      const idx = parseInt(userId.replace('demo-user-', ''), 10) - 1;
+      const walletAddress = DEMO_WALLETS[idx] ?? OPERATOR_ADDR;
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
         userId,
-        walletAddress: OPERATOR_ADDR,
-        kycLevel:      'BASIC',
-        isActive:      true,
+        walletAddress,
+        kycLevel:  'BASIC',
+        isActive:  true,
       }));
       console.log(`  [java-stub] GET /users/${userId} → ${OPERATOR_ADDR.slice(0, 10)}…`);
       return;
@@ -224,7 +283,6 @@ async function main() {
   console.log('\n=== kyobo issuer-service Sepolia 데모 시작 ===\n');
   console.log(`  네트워크     : Sepolia (chainId=${CHAIN_ID})`);
   console.log(`  RPC          : ${SEPOLIA_RPC_URL.slice(0, 50)}…`);
-  console.log(`  MockVASP     : ${MOCK_VASP_ADDR}`);
   console.log(`  OPERATOR     : ${OPERATOR_ADDR}`);
   console.log(`  TOKEN_ID     : ${TOKEN_ID}  (실행마다 고유 — 이전 잔액 충돌 방지)\n`);
 
@@ -257,14 +315,19 @@ async function main() {
     await pool.query(
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ($1, $2, 'SEPOLIA', true) ON CONFLICT (user_id) DO NOTHING`,
-      [`demo-user-${String(i).padStart(3, '0')}`, OPERATOR_ADDR],
+      [`demo-user-${String(i).padStart(3, '0')}`, DEMO_WALLETS[i - 1]],
     );
   }
   await pool.end();
   console.log('  [db] issuance_policies + user_wallet_mapping 시드 완료');
 
-  // ── 4. Java API 스텁 기동 ────────────────────────────────────────────────────
-  console.log('[4] Java API 스텁 기동...');
+  // ── 4. MockVASP 배포 (Sepolia) ───────────────────────────────────────────────
+  console.log('[4] MockVASP 컨트랙트 배포 (Sepolia)...');
+  const mockVaspAddr = await deployMockVASP();
+  console.log(`  [info] SEPOLIA_MOCK_VASP_ADDR .env 자동 업데이트 완료`);
+
+  // ── 5. Java API 스텁 기동 ────────────────────────────────────────────────────
+  console.log('[5] Java API 스텁 기동...');
   const javaStubPool = new Pool({ connectionString: PG_URL });
   const javaStub = startJavaStub(javaStubPool);
   await waitPort('localhost', JAVA_STUB_PORT, 'Java-stub');
@@ -286,7 +349,7 @@ async function main() {
     port:            VASP_PORT,
     rpcUrl:          SEPOLIA_RPC_URL,
     signerKey:       OPERATOR_PRIVATE_KEY,
-    contractAddr:    MOCK_VASP_ADDR,
+    contractAddr:    mockVaspAddr,
     callbackUrl:     `http://localhost:${WEBHOOK_PORT}`,
     callbackSecret:  WEBHOOK_SECRET,
     pollingInterval: 4000,
@@ -314,8 +377,8 @@ async function main() {
     RPC_URL:               SEPOLIA_RPC_URL,
     CHAIN_ID:              String(CHAIN_ID),
     OPERATOR_PRIVATE_KEY,
-    NFT_CONTRACT_ADDR:     MOCK_VASP_ADDR,
-    NFT_ISSUER_ADDR:       MOCK_VASP_ADDR,
+    NFT_CONTRACT_ADDR:     mockVaspAddr,
+    NFT_ISSUER_ADDR:       mockVaspAddr,
     VASP_API_URL:          `http://localhost:${VASP_PORT}`,
     VASP_API_KEY:          VASP_API_KEY,
     CORE_BANKING_URL:      `http://localhost:${JAVA_STUB_PORT}`,
@@ -344,7 +407,7 @@ async function main() {
 ║       issuer-service Sepolia 데모 준비 완료                    ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  네트워크       : Ethereum Sepolia (chainId=11155111)          ║
-║  MockVASP       : ${MOCK_VASP_ADDR.slice(0, 42).padEnd(42)}  ║
+║  MockVASP       : ${mockVaspAddr.slice(0, 42).padEnd(42)}  ║
 ║  OPERATOR       : ${OPERATOR_ADDR.slice(0, 42).padEnd(42)}  ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  WebhookServer  : http://localhost:${WEBHOOK_PORT}               ║

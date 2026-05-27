@@ -41,6 +41,15 @@ const OPERATOR_KEY  = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603
 const DEPLOYER_ADDR = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const OPERATOR_ADDR = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 
+// Hardhat 계정 1~5 — demo-user-001~005 에 1:1 매핑
+const DEMO_WALLETS = [
+  '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', // demo-user-001
+  '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC', // demo-user-002
+  '0x90F79bf6EB2c4f870365E785982E1f101E93b906', // demo-user-003
+  '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65', // demo-user-004
+  '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc', // demo-user-005
+];
+
 const WEBHOOK_SECRET    = 'local-demo-webhook-secret-32ch!!';
 const CORE_BANKING_SEC  = 'local-demo-internal-secret';
 const VASP_API_KEY      = 'local-demo-vasp-key';
@@ -160,13 +169,15 @@ function startJavaStub(pool: Pool): http.Server {
     const userMatch = url.match(/^\/api\/internal\/users\/([^/]+)$/);
     if (req.method === 'GET' && userMatch) {
       const userId = decodeURIComponent(userMatch[1]);
+      const idx = parseInt(userId.replace('demo-user-', ''), 10) - 1;
+      const walletAddress = DEMO_WALLETS[idx] ?? OPERATOR_ADDR;
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
         userId,
-        walletAddress: OPERATOR_ADDR,
-        kycLevel:      'BASIC',
-        isActive:      true,
+        walletAddress,
+        kycLevel:  'BASIC',
+        isActive:  true,
       }));
-      console.log(`  [java-stub] GET /users/${userId} → OPERATOR_ADDR`);
+      console.log(`  [java-stub] GET /users/${userId} → ${walletAddress.slice(0, 10)}…`);
       return;
     }
 
@@ -271,7 +282,7 @@ async function main() {
     await pool.query(
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ($1, $2, 'ANVIL', true) ON CONFLICT (user_id) DO NOTHING`,
-      [`demo-user-${String(i).padStart(3, '0')}`, OPERATOR_ADDR],
+      [`demo-user-${String(i).padStart(3, '0')}`, DEMO_WALLETS[i - 1]],
     );
   }
   await pool.end();
