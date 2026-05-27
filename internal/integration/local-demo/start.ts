@@ -34,6 +34,7 @@ const REDIS_PORT    = 16379;
 const JAVA_STUB_PORT = 19875;
 const VASP_PORT     = 19876;
 const WEBHOOK_PORT  = 19877;
+const ADMIN_PORT    = 19870;
 
 const DEPLOYER_KEY  = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 const OPERATOR_KEY  = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
@@ -327,6 +328,7 @@ async function main() {
     INTERNAL_LEDGER_URL:   `http://localhost:${JAVA_STUB_PORT}`,
     WEBHOOK_SECRET,
     WEBHOOK_PORT:          String(WEBHOOK_PORT),
+    ADMIN_PORT:            String(ADMIN_PORT),
     REDIS_URL,
     DATABASE_URL:          PG_URL,
   };

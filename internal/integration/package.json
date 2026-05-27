@@ -11,7 +11,9 @@
     "demo:start": "npx ts-node --project tsconfig.json local-demo/start.ts",
     "demo:issue": "npx ts-node --project tsconfig.json local-demo/issue.ts",
     "demo:start-sepolia": "npx ts-node --project tsconfig.json local-demo/start-sepolia.ts",
-    "demo:issue-sepolia": "npx ts-node --project tsconfig.json local-demo/issue-sepolia.ts"
+    "demo:issue-sepolia": "npx ts-node --project tsconfig.json local-demo/issue-sepolia.ts",
+    "demo:scenario": "npx ts-node --project tsconfig.json local-demo/scenario.ts",
+    "demo:scenario-sepolia": "npx ts-node --project tsconfig.json local-demo/scenario-sepolia.ts"
   },
   "dependencies": {
     "@kyobo/vasp":          "*",

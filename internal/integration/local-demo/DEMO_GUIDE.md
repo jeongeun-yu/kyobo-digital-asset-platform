@@ -2,7 +2,7 @@
 
 ## 개요
 
-이 데모는 **실제 블록체인(Hardhat 로컬 노드)** 위에서 NFT 발행 전 과정을 단계별 로그와 함께 눈으로 확인하는 환경이다.
+이 데모는 **실제 블록체인(Hardhat 로컬 노드 또는 Ethereum Sepolia 테스트넷)** 위에서 NFT 발행 전 과정을 단계별 로그와 함께 눈으로 확인하는 환경이다.
 
 외부 시스템(VASP, Java 원장, 코어뱅킹)을 스텁으로 대체하되, PostgreSQL·Redis·Hardhat은 **실제 Docker 컨테이너**로 띄워 DB 상태가 실제로 변하는 것을 직접 검증할 수 있다.
 
@@ -41,36 +41,32 @@
 │  ┌────────┴──────────────────────────────────────────────────────────┐ │
 │  │                     IssuerService                                 │ │
 │  │  getUserAccount() → KYC 확인 → AML 스크리닝 → submitTransaction()  │ │
-│  └──────────────┬─────────────────────────────────┬─────────────────┘ │
-│                 │                                 │                    │
-│        ┌────────┴──────────┐           ┌──────────┴────────────┐      │
-│        │ TxStateMachine    │           │  ChainEventListener   │      │
-│        │ TxTransitionBridge│◀──────────│  (RPC 폴링)           │      │
-│        └────────┬──────────┘  Issued   └──────────┬────────────┘      │
-│                 │             이벤트               │                    │
-└─────────────────┼───────────────────────────────────────────────────────┘
+│  └──────────────┬─────────────────────────────┬─────────────────────┘ │
+│                 │                             │                        │
+│        ┌────────┴──────────┐       ┌──────────┴────────────┐          │
+│        │ TxStateMachine    │       │  ChainEventListener   │          │
+│        │ TxTransitionBridge│◀──────│  (RPC 폴링)           │          │
+│        └────────┬──────────┘ Issued└──────────┬────────────┘          │
+│                 │            이벤트             │                       │
+│  ┌──────────────┴──────────────────────────────────────────────────┐  │
+│  │  Admin HTTP Server :19870  (데모/테스트 전용 — ADMIN_PORT 설정 시) │  │
+│  │  POST /admin/poll-stale → txStateMachine.pollStaleRequests()    │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
                   │
-     ┌────────────┼──────────────────────────────────────────┐
-     │            ▼                                          │
-     │  ┌──────────────────┐    HTTP POST    ┌────────────┐  │
-     │  │  ExternalVASP    │───────────────▶│ VASPServer │  │
-     │  │  Adapter         │   :19876       │   :19876   │  │
-     │  └──────────────────┘                └─────┬──────┘  │
-     │                                            │          │
-     │  ┌──────────────────┐    HTTP GET          │          │
-     │  │ KyoboCoreBanking │───────────────▶ Java Stub      │
-     │  │ Adapter          │   :19875       │   :19875  │  │
-     │  └──────────────────┘                └──────┬────┘  │
-     │                                             │        │
-     └──────────────────────────── PostgreSQL ◀───┘        │
-                                      :15432                │
-                                   ┌──────────────┐         │
-                                   │ Hardhat RPC  │◀────────┘
-                                   │   :8545      │  TX 브로드캐스트
-                                   └──────┬───────┘
-                                          │ NFT_ISSUED 콜백
-                                          ▼
-                                    WebhookServer :19877
+     ┌────────────┼────────────────────────────────────────────────┐
+     │            ▼                                                │
+     │  ┌──────────────────┐    HTTP POST    ┌────────────────┐    │
+     │  │  ExternalVASP    │───────────────▶│  VASPServer    │    │
+     │  │  Adapter         │   :19876       │    :19876      │    │
+     │  └──────────────────┘                └──────┬─────────┘    │
+     │                                             │              │
+     │  ┌──────────────────┐    HTTP              │              │
+     │  │ KyoboCoreBanking │──────────────▶  Java Stub :19875   │
+     │  │ Adapter          │                       │              │
+     │  └──────────────────┘                       │              │
+     │                                             ▼              │
+     └──────────────────────────────── PostgreSQL :15432 ◀────────┘
 ```
 
 ---
@@ -81,7 +77,7 @@
 
 | 컨테이너 | 이미지 | 포트 | 역할 |
 |---|---|---|---|
-| `kyobo-demo-hardhat` | `kyobo/hardhat-node:test` | 8545 | 로컬 EVM 블록체인 |
+| `kyobo-demo-hardhat` | `kyobo/hardhat-node:test` | 8545 | 로컬 EVM 블록체인 (Hardhat 데모만) |
 | `kyobo-demo-postgres` | `postgres:16-alpine` | 15432 | 모든 DB 테이블 |
 | `kyobo-demo-redis` | `redis:7-alpine` | 16379 | Redis Streams |
 
@@ -97,6 +93,7 @@
 | 서비스 | 포트 | 설명 |
 |---|---|---|
 | **issuer-service** | 19877 | `apps/issuer-service/src/index.ts` 그대로 실행 |
+| **Admin HTTP** | 19870 | `POST /admin/poll-stale` — 데모/테스트 전용 |
 
 ---
 
@@ -130,7 +127,7 @@ ConsumerGroupPool (activity-consumers)
      ├─ KYC 상태 확인 (isActive=true, kycLevel=BASIC)
      ├─ ExternalVASPAdapter.screenAddress()       →  VASPServer GET /aml/screen/{addr}
      ├─ ExternalVASPAdapter.submitTransaction()   →  VASPServer POST /transactions
-     │     └─ Hardhat TX 브로드캐스트 → txHash 반환
+     │     └─ Hardhat/Sepolia TX 브로드캐스트 → txHash 반환
      ├─ issuance_requests INSERT  status=SUBMITTED
      ├─ mint_requests INSERT      status=SUBMITTED
      └─ tx_mint_requests INSERT   status=SUBMITTED
@@ -158,10 +155,11 @@ tx_mint_requests   status=SUBMITTED
 
 ```
 VASPServer (비동기)
-  → Hardhat TX 채굴 대기 (tx.wait(1))
+  → TX 채굴 대기 (tx.wait(1)) — Hardhat: ~즉시, Sepolia: ~12s
   → MockVASP.issueActivityNFT() 실행 → Issued 이벤트 emit
   → HMAC 서명 NFT_ISSUED 콜백 → WebhookServer :19877
   → WebhookPublishHandler → XADD kyobo:events  eventType=NFT_ISSUED
+  → VASPServer.txStatuses.set(txHash, 'completed')  ← pollStaleRequests 복구 경로에서 사용
 ```
 
 **로그:**
@@ -258,6 +256,8 @@ REQUESTED / SUBMITTED ──submit 실패──→ FAILED   ← 종단
 PENDING   / MINED     ──REVERT──────→ FAILED
 PENDING               ──TIMEOUT─────→ (gas bump, 상태 유지)
 MINED                 ──REORG───────→ REORGED → MINED 또는 FAILED
+
+PENDING (10분 초과) ──pollStaleRequests()──→ getTransferStatus() → MINED → CONFIRMED
 ```
 
 | 상태 | 레이어 | 의미 | 다음 가능 상태 |
@@ -286,13 +286,6 @@ MINED     ──CONFIRMED 이벤트→ CONFIRMED
 SUBMITTED / MINED ──FAILED──→ FAILED
 ```
 
-| 상태 | 레이어 | 의미 |
-|---|---|---|
-| `SUBMITTED` | core-banking | TX 제출 직후 초기 상태 |
-| `MINED` | 블록체인 | 블록 포함 확인 |
-| `CONFIRMED` | core-banking | 원장 반영 완료 |
-| `FAILED` | core-banking | TX 실패 |
-
 ---
 
 ### issuance_requests — IssuerService (발행 요청 전체 생명주기)
@@ -303,12 +296,6 @@ SUBMITTED / MINED ──FAILED──→ FAILED
 SUBMITTED ──CONFIRMED 이벤트────→ CONFIRMED  ← 종단
 SUBMITTED ──FAILED 이벤트───────→ FAILED     ← 종단
 ```
-
-| 상태 | 레이어 | 의미 |
-|---|---|---|
-| `SUBMITTED` | 비즈니스 | NFT 발행 요청 제출 완료, 온체인 확정 대기 |
-| `CONFIRMED` | 비즈니스 | 온체인 확정 완료 — 발행 성공 종단 |
-| `FAILED` | 비즈니스 | TX REVERT 또는 제출 실패 — 발행 실패 종단 |
 
 > `issuance_requests`는 MINED·PENDING 상태를 거치지 않는다.
 > `tx_mint_requests`가 CONFIRMED 또는 FAILED에 도달할 때 `TxTransitionBridge`가 한 번에 전이시킨다.
@@ -425,77 +412,14 @@ cd internal/integration
 npm run demo:start-sepolia
 ```
 
-기동 시 콘솔에 아래 정보가 출력된다.
-
-```
-=== kyobo issuer-service Sepolia 데모 시작 ===
-
-  네트워크     : Sepolia (chainId=11155111)
-  RPC          : https://eth-sepolia.g.alchemy.com/v2/…
-  MockVASP     : 0x176ac5B7bf773841812D3fc7c2888ba29F7dC2Ae
-  OPERATOR     : 0x91ffcbB6f6dC947C01d402eA5703b9D27e8aA363
-  TOKEN_ID     : 1716123456789  (실행마다 고유 — 이전 잔액 충돌 방지)
-```
-
-> Sepolia는 고정 컨트랙트를 재사용하므로, 이전 실행에서 발행된 tokenId와 충돌하지 않도록
-> 매 실행마다 `Date.now()` 기반 고유 TOKEN_ID를 사용한다.
-
 ### 발행 요청 (별도 터미널)
 
 ```bash
-# 기본 (demo-user-001, steps=15000)
 npm run demo:issue-sepolia
-
-# 커스텀
 npm run demo:issue-sepolia -- demo-user-001 20000
 ```
 
-### 예상 로그 흐름
-
-```
-[issue-sepolia] 202 Accepted — 파이프라인 처리 중
-
-# ~즉시
-[WebhookPublishHandler] XADD → kyobo:events  eventType=ACTIVITY_ACHIEVED
-[ActivityProcessor] 처리 시작  userId=demo-user-001
-[java-stub] GET /users/demo-user-001 → 0x91ffcbB6…
-[TxTransitionBridge] 전이 이벤트  REQUESTED → SUBMITTED  txHash=0x…
-
-# ~12s 후 (Sepolia 블록 확정)
-[VASPServer] NFT_ISSUED 콜백 전송 완료 (requestId=…)
-[NFTIssuedProcessor] NFT_ISSUED 수신  to=0x91ffcbB6…  tokenId=…
-[PgNFTLedger] user_nft_holdings 기록 완료
-
-# 체인 이벤트 수신 후
-[IssuanceConfirmHandler] Issued 이벤트 수신  txHash=0x…
-[TxTransitionBridge] 전이 이벤트  SUBMITTED → MINED
-[TxTransitionBridge] 전이 이벤트  MINED → CONFIRMED
-[TxTransitionBridge] ✓ issuance_requests CONFIRMED 저장 완료
-[java-stub] audit_log 저장  actor=demo-user-001  action=MINT  checksum=3f8a21b4…
-```
-
-### DB 직접 조회
-
-```bash
-# 전체 발행 상태
-docker exec -it kyobo-sepolia-postgres psql -U postgres \
-  -c "SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC;"
-
-# NFT 보유 현황
-docker exec -it kyobo-sepolia-postgres psql -U postgres \
-  -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings;"
-
-# 감사 로그
-docker exec -it kyobo-sepolia-postgres psql -U postgres \
-  -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
-
-# Redis Stream 메시지 확인
-docker exec -it kyobo-sepolia-redis redis-cli XRANGE kyobo:events - +
-```
-
 ### Sepolia Etherscan 확인
-
-TX 해시로 실제 온체인 상태를 확인할 수 있다.
 
 ```
 https://sepolia.etherscan.io/tx/<txHash>
@@ -510,6 +434,158 @@ Ctrl+C  # PostgreSQL·Redis 컨테이너 자동 정리
 
 ---
 
+## 실패 시나리오 CLI — scenario.ts / scenario-sepolia.ts
+
+`start.ts` 또는 `start-sepolia.ts`가 실행 중인 상태에서 별도 터미널로 실행한다.
+
+```bash
+# Hardhat 로컬
+npm run demo:scenario -- <scenario> [userId]
+
+# Sepolia 테스트넷
+npm run demo:scenario-sepolia -- <scenario> [userId]
+```
+
+### 시나리오 목록
+
+| 시나리오 | 명령 | 설명 |
+|---|---|---|
+| **revert** | `-- revert` | MockVASP TX on-chain revert → `issuance_requests FAILED` |
+| **no-emit** | `-- no-emit` | mint 성공 + Issued 이벤트 없음 → `tx_mint_requests SUBMITTED` 유지 |
+| **invalid-hmac** | `-- invalid-hmac` | HMAC 서명 위조 → WebhookServer 401, 파이프라인 진입 없음 |
+| **unknown-user** | `-- unknown-user` | wallet mapping 없는 userId → `issuance_requests FAILED` |
+| **pending** | `-- pending` | TX mempool 체류 → 30초 후 자동 복원 (Hardhat: automine, Sepolia: nonce 블로커) |
+| **reorg** | `-- reorg` | 체인 롤백 시뮬 (Hardhat: evm_revert, Sepolia: DB 상태 주입) |
+| **poll-stale** | `-- poll-stale` | NO_EMIT → PENDING 10분 초과 조작 → `pollStaleRequests()` → CONFIRMED |
+| **reset** | `-- reset` | MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구) |
+
+### 시나리오별 상세
+
+#### revert — TX on-chain 실패
+
+```
+MockVASP.setMode(REVERT) → 웹훅 전송 → estimateGas 단계에서 revert
+→ VASPServer: VASP API 500 응답
+→ TxStateMachine: REQUESTED → FAILED
+→ issuance_requests.status = FAILED
+```
+
+**확인:**
+```bash
+docker exec -it kyobo-demo-postgres psql -U postgres \
+  -c "SELECT user_id, status, fail_reason FROM issuance_requests ORDER BY created_at DESC LIMIT 3;"
+```
+
+---
+
+#### no-emit — Issued 이벤트 없음
+
+```
+MockVASP.setMode(NO_EMIT) → 웹훅 전송 → mint 성공, Issued 이벤트 미발행
+→ VASPServer: NFT_ISSUED 콜백 없음 (txStatuses='completed' 기록만 됨)
+→ ChainEventListener: Issued 이벤트 수신 없음 → CONFIRMED 전이 없음
+→ tx_mint_requests.status = SUBMITTED 유지
+```
+
+> ChainEventListener 폴백이나 `poll-stale` 시나리오로 수동 복구 가능
+
+---
+
+#### invalid-hmac — HMAC 서명 위조
+
+```
+조작된 HMAC-SHA256 서명으로 POST /webhook
+→ WebhookServer: 서명 검증 실패 → HTTP 401
+→ Redis Stream 적재 없음, DB 변화 없음, 온체인 TX 없음
+```
+
+---
+
+#### unknown-user — 미등록 사용자
+
+```
+user_wallet_mapping에 없는 userId로 웹훅 전송
+→ IssuerService.getUserAccount() 실패
+→ issuance_requests.status = FAILED
+```
+
+---
+
+#### pending — TX mempool 체류
+
+| 환경 | 구현 방법 |
+|---|---|
+| Hardhat | `evm_setAutomine(false)` → TX 체류 → 30초 후 `evm_setAutomine(true)` + `evm_mine()` |
+| Sepolia | nonce 블로커 TX(maxFeePerGas=1 wei)로 같은 nonce를 점유 → 30초 후 replacement TX |
+
+> Alchemy/Sepolia는 `maxFeePerGas < baseFee` TX를 거부하므로 적절히 높은 replacement fee 필요
+
+```bash
+# 30초 대기 중 DB 상태 확인
+docker exec -it kyobo-demo-postgres psql -U postgres \
+  -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;"
+```
+
+---
+
+#### reorg — 체인 롤백
+
+| 환경 | 구현 방법 |
+|---|---|
+| Hardhat | `evm_snapshot` 저장 → 발행 → `evm_revert(snapshotId)` |
+| Sepolia | 정상 발행 → SUBMITTED 후 → DB에 `status='REORGED'` 직접 주입 |
+
+> Sepolia는 실제 reorg 통제 불가 → DB 상태 주입으로 상태머신 동작만 검증
+
+---
+
+#### poll-stale — PENDING 10분 초과 강제 복구
+
+pollStaleRequests 복구 경로를 실제로 실행해보는 시나리오다.
+
+```
+NO_EMIT 모드 → 웹훅 전송 → TX 채굴 성공 + Issued 이벤트 없음
+→ tx_mint_requests: SUBMITTED (txStatuses='completed' 기록됨)
+→ DB 조작: SUBMITTED → PENDING + created_at -11분
+→ POST :19870/admin/poll-stale
+  → txStateMachine.pollStaleRequests()
+    → findPendingOlderThan(10) → PENDING 10분 초과 건 발견
+    → ExternalVASPAdapter.getTransferStatus(txHash)
+      → GET VASPServer /transfers/:txHash → 'completed'
+    → handleMined() → PENDING → MINED
+    → handleConfirmed() → MINED → CONFIRMED
+→ TxTransitionBridge → issuance_requests CONFIRMED
+```
+
+**Sepolia 추가 조건:** `POSTGRES_URL` 환경변수 필요
+
+```bash
+# Sepolia poll-stale 실행 예
+POSTGRES_URL="postgresql://postgres:demo@localhost:15432/postgres" \
+  npm run demo:scenario-sepolia -- poll-stale demo-user-001
+```
+
+**확인:**
+```bash
+docker exec -it kyobo-demo-postgres psql -U postgres \
+  -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;"
+docker exec -it kyobo-demo-postgres psql -U postgres \
+  -c "SELECT user_id, status FROM issuance_requests ORDER BY created_at DESC LIMIT 3;"
+```
+
+---
+
+#### reset — 모드 복원
+
+비정상 종료 후 MockVASP가 REVERT나 NO_EMIT 모드로 남아 있을 때 NORMAL로 복원한다.
+
+```bash
+npm run demo:scenario -- reset
+npm run demo:scenario-sepolia -- reset
+```
+
+---
+
 ## 포트 정리
 
 ### Hardhat 로컬 데모
@@ -519,6 +595,7 @@ Ctrl+C  # PostgreSQL·Redis 컨테이너 자동 정리
 | 8545 | Hardhat RPC (EVM 로컬 노드) |
 | 15432 | PostgreSQL |
 | 16379 | Redis |
+| 19870 | Admin HTTP (`POST /admin/poll-stale`) |
 | 19875 | Java API 스텁 (internal-ledger 역할) |
 | 19876 | VASPServer (외부 VASP 역할) |
 | 19877 | WebhookServer (issuer-service 진입점) |
@@ -529,9 +606,21 @@ Ctrl+C  # PostgreSQL·Redis 컨테이너 자동 정리
 |---|---|
 | 15432 | PostgreSQL |
 | 16379 | Redis |
+| 19870 | Admin HTTP (`POST /admin/poll-stale`) |
 | 19875 | Java API 스텁 (internal-ledger 역할) |
 | 19876 | VASPServer (외부 VASP 역할, Sepolia RPC 연결) |
 | 19877 | WebhookServer (issuer-service 진입점) |
+
+---
+
+## Hardhat vs Sepolia 시나리오 구현 차이
+
+| 시나리오 | Hardhat | Sepolia | 이유 |
+|---|---|---|---|
+| **pending** | `evm_setAutomine(false/true)` | nonce 블로커 TX | Hardhat RPC 확장 명령 Sepolia 불가 |
+| **reorg** | `evm_snapshot` + `evm_revert` | DB 상태 직접 주입 | Sepolia 실제 reorg 통제 불가 |
+| **poll-stale** | 2초 대기 후 DB 조작 | `provider.waitForTransaction()` 후 DB 조작 | Sepolia는 블록 채굴 ~12s — 조기 폴 방지 |
+| 나머지 | 동일 | 동일 | — |
 
 ---
 
@@ -543,6 +632,7 @@ Ctrl+C  # PostgreSQL·Redis 컨테이너 자동 정리
 | 코어뱅킹 | Java API 스텁 (로컬 HTTP) | Java API 스텁 (로컬 HTTP) | Java internal-ledger (:8080) |
 | 블록체인 | Hardhat 로컬 (31337) | Ethereum Sepolia (11155111) | Ethereum Mainnet |
 | MockVASP | 실행마다 새 배포 | 고정 주소 재사용 | 실제 VASP 컨트랙트 |
+| Admin HTTP | `:19870` (ADMIN_PORT) | `:19870` (ADMIN_PORT) | 비활성화 (ADMIN_PORT 미설정) |
 | audit_log | 스텁이 직접 PG에 쓰기 | 스텁이 직접 PG에 쓰기 | Java internal-ledger가 Oracle DB에 기록 |
 | user_nft_holdings | 스텁 + Node.js 각각 UPSERT | 스텁 + Node.js 각각 UPSERT | Java 원장 단일 기록 |
 
@@ -555,11 +645,14 @@ internal/
 ├── integration/
 │   └── local-demo/
 │       ├── start.ts              # Hardhat 데모 — 인프라 기동 + Java 스텁 + DB 폴러
-│       ├── issue.ts              # Hardhat 데모 — 발행 요청 CLI
 │       ├── start-sepolia.ts      # Sepolia 데모 — 루트 .env 로드, Hardhat 없음
-│       └── issue-sepolia.ts      # Sepolia 데모 — 발행 요청 CLI
+│       ├── issue.ts              # Hardhat 발행 요청 CLI
+│       ├── issue-sepolia.ts      # Sepolia 발행 요청 CLI
+│       ├── scenario.ts           # Hardhat 실패 시나리오 CLI (8개)
+│       ├── scenario-sepolia.ts   # Sepolia 실패 시나리오 CLI (8개)
+│       └── DEMO_GUIDE.md         # 이 파일
 ├── apps/issuer-service/src/
-│   ├── index.ts                  # 실제 서비스 진입점 (수정 없이 그대로 실행)
+│   ├── index.ts                  # 실제 서비스 진입점 (ADMIN_PORT 설정 시 admin HTTP 활성화)
 │   ├── handlers/
 │   │   └── IssuanceConfirmHandler.ts  # 온체인 Issued → 상태 전이
 │   ├── services/
@@ -567,6 +660,8 @@ internal/
 │   └── infra/
 │       └── PgNFTLedgerService.ts     # user_nft_holdings 직접 기록
 └── packages/
+    ├── vasp/src/tx/
+    │   └── TxStateMachineService.ts  # TX 상태 머신 + pollStaleRequests()
     ├── event-engine/src/
     │   ├── webhook/WebhookPublishHandler.ts  # Webhook → Redis Stream
     │   ├── processors/ActivityProcessor.ts  # ACTIVITY_ACHIEVED 처리

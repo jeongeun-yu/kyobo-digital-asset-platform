@@ -148,6 +148,90 @@ async pollStaleRequests(): Promise<void> {
 
 ---
 
+## M3 마무리 — 통합 검증 실행 (강의 10분 + 실습 20분)
+
+### 강의 (10분)
+
+M3에서 구현한 TX 상태머신·복구 전략·폴링이 실제로 동작하는지 **4단계 검증 피라미드**로 확인한다.
+
+```
+          ┌──────────────────────────────┐
+          │   Sepolia 통합테스트 (느림)    │  실제 테스트넷 — 네트워크 조건 검증
+          ├──────────────────────────────┤
+          │  Hardhat 통합테스트 (중간)    │  전체 스택 — 9가지 시나리오
+          ├──────────────────────────────┤
+          │  컴포넌트 단독 테스트 (빠름)  │  TxStateMachine · IssuanceStatus
+          └──────────────────────────────┘
+```
+
+**각 레이어의 역할:**
+
+| 테스트 | 파일 | M3 검증 항목 |
+|---|---|---|
+| 컴포넌트 단독 | `tx-status.integration.test.ts` | 상태 전이 규칙 · 종단 상태 보호 · pollStaleRequests |
+| 컴포넌트 단독 | `issuance-status.integration.test.ts` | TxStatus↔IssuanceStatus 3레이어 동기화 · 멱등성 |
+| Hardhat 통합 | `issuer-service-mock-vasp.integration.test.ts` | REVERT·REORG·NO_EMIT·PENDING·poll-stale 전 시나리오 |
+| Sepolia 통합 | `issuer-service-sepolia.integration.test.ts` | 실제 테스트넷에서 동일 시나리오 재현 |
+
+**왜 두 층이 필요한가:**
+- 컴포넌트 테스트: 실패 원인이 명확 — 버그가 `TxStateMachine`에 있는지, 연결부에 있는지 바로 식별
+- 통합 테스트: 컴포넌트가 조합됐을 때 새로 생기는 버그(타이밍·순서·DB 트랜잭션) 포착
+
+### 🔴 실습 (20분) — 순서대로 실행
+
+**Step 1**: 컴포넌트 단독 테스트 (가장 빠름 — 약 10초)
+```bash
+# TX 상태머신 단독
+npx jest tx-status --runInBand
+
+# IssuanceStatus + 3레이어 동기화
+npx jest issuance-status --runInBand
+```
+
+각 테스트 통과 후 확인할 것:
+- `tx-status [5]` — FINALIZED 이후 전이 시도 → `InvalidStatusTransitionError`
+- `tx-status [7]` — `pollStaleRequests()` PENDING 30분 초과 → 자동 CONFIRMED
+- `issuance-status [9]` — NFT_ISSUED 웹훅 → TxStatus·MintStatus·IssuanceStatus 세 레이어 동시 CONFIRMED
+
+**Step 2**: Hardhat 통합 테스트 (약 2분)
+```bash
+npx jest issuer-service-mock-vasp --runInBand
+```
+
+9가지 시나리오가 순서대로 실행된다:
+```
+[1] NORMAL        — 정상 발행 전 과정
+[2] REVERT        — TX revert → FAILED
+[3] NO_EMIT       — Issued 이벤트 누락 → SUBMITTED 유지
+[4] PENDING       — mempool 체류 구간 포착
+[5] REORG         — 블록 재편성 복구
+[stream-2] 멱등성 — 중복 requestId 1회만 처리
+[stream-3] DLQ    — 3회 실패 → Dead Letter Queue
+[stream-4] XAUTOCLAIM — PEL 잔류 메시지 재수신
+[poll-1]          — 콜백 차단 → pollStaleRequests → CONFIRMED
+```
+
+**Step 3**: 로컬 데모 — 눈으로 확인 (선택, 약 5분)
+```bash
+# 터미널 1: 데모 환경 기동
+npx ts-node internal/integration/local-demo/start.ts
+
+# 터미널 2: 시나리오 실행
+npx ts-node internal/integration/local-demo/scenario.ts poll-stale user-001
+npx ts-node internal/integration/local-demo/scenario.ts revert    user-002
+npx ts-node internal/integration/local-demo/scenario.ts no-emit   user-003
+```
+
+로그에서 확인할 것: `SUBMITTED → [poll] → CONFIRMED` 전이가 콘솔에 출력되는 것.
+
+### ✅ M3 통합 검증 완료 기준
+- [ ] `tx-status` 전체 통과 (8개)
+- [ ] `issuance-status` 전체 통과 (9개)
+- [ ] `issuer-service-mock-vasp` 전체 통과 (9개)
+- [ ] `poll-stale` 시나리오 로컬 데모에서 콘솔 확인
+
+---
+
 ## S23: 온체인만으로 부족한 이유 — 내부 원장 필요성과 데이터 모델 설계 (강의 25분 + 실습 30분)
 
 ### 강의

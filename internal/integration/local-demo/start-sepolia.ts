@@ -55,6 +55,7 @@ const REDIS_PORT     = 16379;
 const JAVA_STUB_PORT = 19875;
 const VASP_PORT      = 19876;
 const WEBHOOK_PORT   = 19877;
+const ADMIN_PORT     = 19870;
 const CHAIN_ID       = 11155111; // Sepolia
 
 const WEBHOOK_SECRET   = 'sepolia-demo-webhook-secret-32ch!!';
@@ -320,6 +321,7 @@ async function main() {
     INTERNAL_LEDGER_URL:   `http://localhost:${JAVA_STUB_PORT}`,
     WEBHOOK_SECRET,
     WEBHOOK_PORT:          String(WEBHOOK_PORT),
+    ADMIN_PORT:            String(ADMIN_PORT),
     REDIS_URL,
     DATABASE_URL:          PG_URL,
     CHAIN_START_BLOCK:     String(chainStartBlock),

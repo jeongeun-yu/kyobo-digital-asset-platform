@@ -12,6 +12,7 @@
  * 각 레이어는 인터페이스를 통해 주입 — Phase 2/3에서 구현체만 교체.
  */
 
+import http                         from 'http';
 import Redis                        from 'ioredis';
 import { Pool }                    from 'pg';
 import { EVMAdapter }              from '@kyobo/chain-adapters';
@@ -208,6 +209,25 @@ async function bootstrap() {
       { groupName: 'activity-consumers', consumerId: 'activity-1', processors: [activityProcessor] },
     ],
   );
+
+  // ── Admin HTTP (데모/테스트 전용 — ADMIN_PORT 설정 시에만 활성화) ───────────────
+  // pollStaleRequests 수동 트리거 용도. 운영에서는 ADMIN_PORT 미설정.
+  const adminPort = Number(process.env.ADMIN_PORT ?? 0);
+  if (adminPort > 0) {
+    http.createServer(async (req, res) => {
+      if (req.method === 'POST' && req.url === '/admin/poll-stale') {
+        try {
+          const result = await txStateMachine.pollStaleRequests();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } catch (e) {
+          res.writeHead(500).end(JSON.stringify({ error: String(e) }));
+        }
+      } else {
+        res.writeHead(404).end('{}');
+      }
+    }).listen(adminPort, () => console.log(`[admin] :${adminPort} /admin/poll-stale`));
+  }
 
   // ── 시작 ─────────────────────────────────────────────────────────────────────
   await eventListener.start();
