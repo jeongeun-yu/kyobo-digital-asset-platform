@@ -134,12 +134,14 @@ Copy-Item .env.example .env
 
 ### Sepolia 테스트넷 데모를 할 경우
 
-아래 3가지 값을 `.env`에 채워야 한다.
+아래 2가지 값만 채우면 된다.
 
 ```
 SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<YOUR_ALCHEMY_KEY>
 SEPOLIA_OPERATOR_KEY=<개인키>
 ```
+
+> `DEPLOYER_PRIVATE_KEY`는 미설정 시 `SEPOLIA_OPERATOR_KEY`와 동일 키로 자동 사용된다. 데모에서는 따로 설정하지 않아도 된다.
 
 #### SEPOLIA_RPC_URL — Alchemy 무료 계정으로 발급
 
@@ -301,12 +303,10 @@ npm run demo:scenario-sepolia -- burst
 
 ```powershell
 # 결과 확인
-docker exec -it kyobo-demo-postgres psql -U postgres `
-  -c "SELECT user_id, token_id, amount FROM user_nft_holdings ORDER BY user_id;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, token_id, amount FROM user_nft_holdings ORDER BY user_id;"
 
 # Sepolia
-docker exec -it kyobo-sepolia-postgres psql -U postgres `
-  -c "SELECT user_id, token_id, amount FROM user_nft_holdings ORDER BY user_id;"
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT user_id, token_id, amount FROM user_nft_holdings ORDER BY user_id;"
 ```
 
 ---
@@ -327,7 +327,7 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 
 | 시나리오 | 명령 | 설명 |
 |---|---|---|
-| **revert** | `-- revert` | MockVASP TX on-chain revert → `issuance_requests FAILED` |
+| **revert** | `-- revert` | MockVASP TX on-chain revert → 1차 FAILED → Redis 재시도 → CONFIRMED |
 | **no-emit** | `-- no-emit` | mint 성공 + Issued 이벤트 없음 → ChainEventListener 폴백 경로 |
 | **invalid-hmac** | `-- invalid-hmac` | HMAC 서명 위조 → WebhookServer 401, 파이프라인 진입 없음 |
 | **unknown-user** | `-- unknown-user` | wallet mapping 없는 userId → `issuance_requests FAILED` |
@@ -341,18 +341,21 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 
 #### revert
 
+MockVASP의 REVERT는 **one-shot** 동작이다 — 한 번 revert 후 자동으로 NORMAL 복귀.
+Redis Stream consumer retry 덕분에 최종적으로 CONFIRMED까지 도달한다.
+
 ```
 MockVASP.setMode(REVERT) → 웹훅 전송
-→ estimateGas 단계에서 revert
-→ VASPServer: VASP API 500
-→ TxStateMachine: REQUESTED → FAILED
-→ issuance_requests.status = FAILED
+  [1차 시도] estimateGas 단계에서 on-chain revert
+           → VASPServer: VASP API 500
+           → issuance_requests FAILED (attempt=1)
+  [Redis 재시도] MockVASP 자동 NORMAL 복귀
+           → 2차 시도 성공 → SUBMITTED → MINED → CONFIRMED
 ```
 
-확인:
+확인 (FAILED row와 CONFIRMED row가 함께 보임):
 ```powershell
-docker exec -it kyobo-demo-postgres psql -U postgres `
-  -c "SELECT user_id, status, fail_reason FROM issuance_requests ORDER BY created_at DESC LIMIT 3;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, status, fail_reason FROM issuance_requests ORDER BY created_at DESC LIMIT 5;"
 ```
 
 #### no-emit
@@ -391,8 +394,7 @@ user_wallet_mapping에 없는 userId로 웹훅 전송
 
 30초 대기 중 DB 확인:
 ```powershell
-docker exec -it kyobo-demo-postgres psql -U postgres `
-  -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;"
 ```
 
 #### reorg
@@ -437,20 +439,16 @@ npm run demo:scenario-sepolia -- reset  # Sepolia
 
 ```powershell
 # 발행 요청 상태
-docker exec -it kyobo-demo-postgres psql -U postgres `
-  -c "SELECT user_id, status, tx_hash, fail_reason FROM issuance_requests ORDER BY created_at DESC;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, status, tx_hash, fail_reason FROM issuance_requests ORDER BY created_at DESC;"
 
 # NFT 보유 현황
-docker exec -it kyobo-demo-postgres psql -U postgres `
-  -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
 
 # TX 상태 머신
-docker exec -it kyobo-demo-postgres psql -U postgres `
-  -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;"
 
 # 감사 로그 (체인 해시 검증)
-docker exec -it kyobo-demo-postgres psql -U postgres `
-  -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
 
 # Redis Stream 메시지 확인
 docker exec -it kyobo-demo-redis redis-cli XRANGE kyobo:events - +
@@ -458,11 +456,21 @@ docker exec -it kyobo-demo-redis redis-cli XRANGE kyobo:events - +
 
 ### Sepolia (`kyobo-sepolia-postgres`)
 
-위와 동일한 쿼리, 컨테이너 이름만 교체:
-
 ```powershell
-docker exec -it kyobo-sepolia-postgres psql -U postgres `
-  -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
+# 발행 요청 상태
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT user_id, status, tx_hash, fail_reason FROM issuance_requests ORDER BY created_at DESC;"
+
+# NFT 보유 현황
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
+
+# TX 상태 머신
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;"
+
+# 감사 로그 (체인 해시 검증)
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
+
+# Redis Stream 메시지 확인
+docker exec -it kyobo-sepolia-redis redis-cli XRANGE kyobo:events - +
 ```
 
 ---

@@ -83,15 +83,15 @@ public class CoreBankingClient {
      * NFT 발행 완료 후 리워드 지급 요청
      * 포인트 적립 / 혜택 발행 등 교보 내부 보상 시스템 연동
      */
-    public void notifyReward(String userId, String policyId, Long tokenId) {
+    public void notifyReward(String userId, String rewardType, String tokenId) {
         if (demoMode) {
-            log.info("[CoreBankingClient] 데모 모드 notifyReward (no-op) userId={} policyId={} tokenId={}", userId, policyId, tokenId);
+            log.info("[CoreBankingClient] 데모 모드 notifyReward (no-op) userId={} rewardType={} tokenId={}", userId, rewardType, tokenId);
             return;
         }
         // Phase 2: 교보DTS Core Banking 리워드 API spec 수신 후 아래 구현으로 교체
         // restTemplate.postForEntity(
         //     baseCoBankingUrl + "/api/rewards/notify",
-        //     new RewardRequest(userId, policyId, tokenId), Void.class);
-        log.warn("[CoreBankingClient] notifyReward not connected — stub for userId={} policyId={} tokenId={}", userId, policyId, tokenId);
+        //     new RewardRequest(userId, rewardType, tokenId), Void.class);
+        log.warn("[CoreBankingClient] notifyReward not connected — stub for userId={} rewardType={} tokenId={}", userId, rewardType, tokenId);
     }
 }

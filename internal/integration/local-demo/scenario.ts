@@ -452,8 +452,13 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   process.exit(1);
 }
 
-SCENARIOS[scenarioName]!(userId).catch(err => {
-  console.error('\n[scenario] 오류:', err.message);
-  console.error('  → start.ts가 실행 중인지 확인하세요.');
-  process.exit(1);
-});
+const DIVIDER = '\n' + '─'.repeat(65);
+
+SCENARIOS[scenarioName]!(userId)
+  .then(() => console.log(DIVIDER))
+  .catch(err => {
+    console.error('\n[scenario] 오류:', err.message);
+    console.error('  → start.ts가 실행 중인지 확인하세요.');
+    console.log(DIVIDER);
+    process.exit(1);
+  });

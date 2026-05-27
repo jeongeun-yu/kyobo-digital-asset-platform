@@ -557,9 +557,14 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   process.exit(1);
 }
 
-SCENARIOS[scenarioName]!(userId).catch(err => {
-  console.error('\n[scenario-sepolia] 오류:', err?.message ?? String(err));
-  if (err?.stack) console.error(err.stack);
-  console.error('  → start-sepolia.ts가 실행 중인지, .env 환경변수를 확인하세요.');
-  process.exit(1);
-});
+const DIVIDER = '\n' + '─'.repeat(65);
+
+SCENARIOS[scenarioName]!(userId)
+  .then(() => console.log(DIVIDER))
+  .catch(err => {
+    console.error('\n[scenario-sepolia] 오류:', err?.message ?? String(err));
+    if (err?.stack) console.error(err.stack);
+    console.error('  → start-sepolia.ts가 실행 중인지, .env 환경변수를 확인하세요.');
+    console.log(DIVIDER);
+    process.exit(1);
+  });
