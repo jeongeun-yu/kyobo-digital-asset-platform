@@ -1,5 +1,6 @@
 import { writeFileSync }       from 'fs';
 import { resolve }             from 'path';
+import { execSync }            from 'child_process';
 import { config as loadEnv }   from 'dotenv';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import { readFileSync }        from 'fs';
@@ -16,8 +17,28 @@ declare global {
   var __PG_CONTAINER__: import('testcontainers').StartedTestContainer | undefined;
 }
 
+// Docker 소켓 자동 감지 — Docker Desktop / Rancher Desktop / Linux 공용
+function detectAndSetDockerHost(): void {
+  if (process.env.DOCKER_HOST) return; // 이미 설정된 경우 유지
+
+  try {
+    const host = execSync('docker context inspect --format "{{.Endpoints.docker.Host}}"', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim().replace(/^"|"$/g, '');
+
+    if (host && host !== '<no value>') {
+      process.env.DOCKER_HOST = host;
+      console.log(`[integration] DOCKER_HOST 자동 감지 → ${host}`);
+    }
+  } catch {
+    // docker CLI 없거나 context inspect 실패 → Testcontainers 기본값 사용
+  }
+}
+
 export default async function globalSetup() {
   console.log('\n[integration] 통합 테스트 시작');
+  detectAndSetDockerHost();
 
   // 공유 PostgreSQL 컨테이너 — walkthrough / e2e / issuance-status 테스트용
   // mock-vasp / Sepolia 테스트는 각 beforeAll에서 자체 컨테이너를 별도 관리

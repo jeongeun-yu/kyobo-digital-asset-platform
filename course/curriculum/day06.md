@@ -170,6 +170,7 @@ M3에서 구현한 TX 상태머신과 pollStaleRequests가 실제 PostgreSQL과 
 ### 🔴 실습 (10분)
 
 ```bash
+cd internal/integration
 npx jest tx-status --runInBand
 ```
 
