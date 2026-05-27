@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Kyobo DAP — Class Diagram</title>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',system-ui,sans-serif; }
@@ -37,6 +38,21 @@
       border-radius:10px; padding:24px; overflow:auto; min-height:200px;
     }
     .wrap svg { max-width:none !important; }
+    .wrap { position:relative; }
+    .zoom-bar {
+      position:absolute; top:12px; right:12px; z-index:10;
+      display:flex; gap:4px; align-items:center;
+    }
+    .zoom-bar button {
+      width:28px; height:28px; border:1px solid #30363d; border-radius:6px;
+      background:#161b22; color:#c9d1d9; font-size:16px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; line-height:1;
+      transition:background .1s;
+    }
+    .zoom-bar button:hover { background:#21262d; }
+    .zoom-bar span {
+      font-size:11px; color:#484f58; width:36px; text-align:center;
+    }
     .err { color:#f85149; font-size:13px; font-family:monospace; white-space:pre-wrap; }
     .loading { color:#484f58; font-size:13px; padding:16px; }
   </style>
@@ -1253,11 +1269,148 @@ D.boot = `classDiagram
 // ── Render ─────────────────────────────────────────────────────────────────────
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'dark',
-  darkMode: true,
+  theme: 'base',
+  themeVariables: {
+    background:          '#0d1117',
+    mainBkg:             '#161b22',
+    nodeBorder:          '#30363d',
+    clusterBkg:          '#161b22',
+    titleColor:          '#e6edf3',
+    edgeLabelBackground: '#0d1117',
+    lineColor:           '#8b949e',
+    primaryTextColor:    '#e6edf3',
+    primaryColor:        '#161b22',
+    primaryBorderColor:  '#30363d',
+    secondaryColor:      '#161b22',
+    tertiaryColor:       '#161b22',
+    fontFamily:          'Segoe UI, system-ui, sans-serif',
+  },
   fontFamily: 'Segoe UI, system-ui, sans-serif',
   fontSize: 13
 });
+
+const panZoomInstances = {};  // key → svgPanZoom instance
+const panZoomReady     = {};  // key → boolean (이미 초기화됐는지)
+
+function attachPanZoom(key, wrapEl) {
+  if (panZoomReady[key]) return;
+  const svgEl = wrapEl.querySelector('svg');
+  if (!svgEl || !window.svgPanZoom) return;
+
+  // 패널이 실제로 표시된 상태에서만 초기화 (hidden이면 크기가 0이라 깨짐)
+  if (wrapEl.clientWidth === 0) return;
+
+  panZoomReady[key] = true;
+
+  svgEl.setAttribute('width',  wrapEl.clientWidth);
+  svgEl.setAttribute('height', Math.max(wrapEl.clientHeight, 400));
+
+  const instance = svgPanZoom(svgEl, {
+    zoomEnabled:          true,
+    panEnabled:           true,
+    controlIconsEnabled:  false,
+    fit:                  true,
+    center:               true,
+    minZoom:              0.05,
+    maxZoom:              20,
+    zoomScaleSensitivity: 0.3,
+  });
+  panZoomInstances[key] = instance;
+
+  // zoom-bar
+  const bar = document.createElement('div');
+  bar.className = 'zoom-bar';
+  const pct = document.createElement('span');
+  pct.textContent = '100%';
+
+  function updatePct() { pct.textContent = Math.round(instance.getZoom() * 100) + '%'; }
+
+  const btnIn  = document.createElement('button'); btnIn.title  = '확대'; btnIn.textContent = '+';
+  const btnOut = document.createElement('button'); btnOut.title = '축소'; btnOut.textContent = '−';
+  const btnRst = document.createElement('button'); btnRst.title = '초기화'; btnRst.textContent = '⊙';
+
+  btnIn.onclick  = () => { instance.zoomIn();  updatePct(); };
+  btnOut.onclick = () => { instance.zoomOut(); updatePct(); };
+  btnRst.onclick = () => {
+    instance.resetZoom(); instance.resetPan();
+    instance.fit(); instance.center();
+    updatePct();
+  };
+
+  svgEl.addEventListener('wheel', () => requestAnimationFrame(updatePct));
+
+  bar.append(btnOut, pct, btnIn, btnRst);
+  wrapEl.appendChild(bar);
+  requestAnimationFrame(updatePct);
+}
+
+// classDef 이름 → 색상 (범례와 동일)
+const CLASS_COLORS = {
+  iface: { fill: '#1c2230', stroke: '#484f58', text: '#8b949e' },
+  chain: { fill: '#0d2d4a', stroke: '#58a6ff', text: '#cae8ff' },
+  ee:    { fill: '#1e1040', stroke: '#bc8cff', text: '#e2ccff' },
+  vasp:  { fill: '#0a2a14', stroke: '#3fb950', text: '#aff5b4' },
+  cb:    { fill: '#2d1a00', stroke: '#d29922', text: '#f0d58c' },
+  comp:  { fill: '#2a0d1e', stroke: '#f778ba', text: '#ffb3d9' },
+  is:    { fill: '#0d2030', stroke: '#79c0ff', text: '#cae8ff' },
+};
+
+function injectColors(wrapEl, src) {
+  const svgEl = wrapEl.querySelector('svg');
+  if (!svgEl) return;
+
+  // class ClassName:::styleKey 파싱 (사용 안 하지만 향후 확장용)
+  const re = /^\s*class\s+(\w+):::(\w+)/gm;
+  let m; while ((m = re.exec(src)) !== null) {} // just validate src exists
+
+  // 렌더된 SVG에서 styleKey CSS 클래스를 가진 <g id="..."> 를 직접 찾아
+  // 실제 ID 기반 CSS 규칙 + DOM 직접 조작으로 이중 적용
+  let css = '';
+
+  svgEl.querySelectorAll('g[id]').forEach(g => {
+    for (const [styleKey, c] of Object.entries(CLASS_COLORS)) {
+      if (!g.classList.contains(styleKey)) continue;
+
+      // ① DOM 직접 조작
+      g.querySelectorAll('rect, polygon').forEach(el => {
+        el.style.setProperty('fill',   c.fill,   'important');
+        el.style.setProperty('stroke', c.stroke, 'important');
+      });
+      g.querySelectorAll('path').forEach(el => {
+        if (el.getAttribute('stroke') === 'none') {
+          // 배경 path (solid fill, no stroke)
+          el.style.setProperty('fill',   c.fill,   'important');
+        } else {
+          // 테두리 path
+          el.style.setProperty('stroke', c.stroke, 'important');
+          el.style.setProperty('fill',   'none',   'important');
+        }
+      });
+      g.querySelectorAll('line').forEach(el =>
+        el.style.setProperty('stroke', c.stroke, 'important'));
+      g.querySelectorAll('text, tspan').forEach(el =>
+        el.style.setProperty('fill', c.text, 'important'));
+      g.querySelectorAll('foreignObject *').forEach(el =>
+        el.style.setProperty('color', c.text, 'important'));
+
+      // ② ID 기반 CSS 규칙 주입 (이중 보험)
+      const id = CSS.escape(g.id);
+      css += `#${id} rect,#${id} polygon{fill:${c.fill}!important;stroke:${c.stroke}!important}`;
+      css += `#${id} path[stroke="none"]{fill:${c.fill}!important}`;
+      css += `#${id} path:not([stroke="none"]){stroke:${c.stroke}!important;fill:none!important}`;
+      css += `#${id} line{stroke:${c.stroke}!important}`;
+      css += `#${id} text,#${id} tspan{fill:${c.text}!important}`;
+      css += `#${id} foreignObject *{color:${c.text}!important}`;
+      break;
+    }
+  });
+
+  if (css) {
+    const st = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    st.textContent = css;
+    svgEl.appendChild(st); // 맨 뒤에 추가해야 기존 style 블록보다 나중에 적용됨
+  }
+}
 
 async function renderAll() {
   let uid = 0;
@@ -1267,13 +1420,34 @@ async function renderAll() {
     try {
       const { svg } = await mermaid.render('mg-' + (uid++), src);
       el.innerHTML = svg;
+      injectColors(el, src);
       el.classList.remove('loading');
+      // 첫 번째(active) 패널만 즉시 초기화, 나머지는 탭 클릭 시 lazy 초기화
+      attachPanZoom(key, el);
     } catch (err) {
       el.innerHTML = '<div class="err">Mermaid error:\n' + (err.message || err) + '</div>';
       el.classList.remove('loading');
     }
   }
 }
+
+// 탭 전환 시 해당 패널 pan-zoom lazy 초기화 + 기존 인스턴스 resize
+tabsEl.addEventListener('click', e => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  const key = tab.dataset.tab;
+  requestAnimationFrame(() => {
+    const el = document.getElementById('d-' + key);
+    if (!el) return;
+    if (!panZoomReady[key]) {
+      attachPanZoom(key, el);
+    } else {
+      const inst = panZoomInstances[key];
+      if (inst) { inst.resize(); inst.fit(); inst.center(); }
+    }
+  });
+});
+
 document.addEventListener('DOMContentLoaded', renderAll);
 </script>
 </body>

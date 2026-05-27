@@ -267,11 +267,13 @@ async function main() {
      VALUES ($1, $2, 1) ON CONFLICT (event_type) DO NOTHING`,
     [TEST_EVENT_TYPE, TOKEN_ID],
   );
-  await pool.query(
-    `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
-     VALUES ($1, $2, 'ANVIL', true) ON CONFLICT (user_id) DO NOTHING`,
-    [DEMO_USER_ID, OPERATOR_ADDR],
-  );
+  for (let i = 1; i <= 5; i++) {
+    await pool.query(
+      `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
+       VALUES ($1, $2, 'ANVIL', true) ON CONFLICT (user_id) DO NOTHING`,
+      [`demo-user-${String(i).padStart(3, '0')}`, OPERATOR_ADDR],
+    );
+  }
   await pool.end();
   console.log('  [db] issuance_policies + user_wallet_mapping 시드 완료');
 

@@ -345,16 +345,13 @@ npm run demo:issue -- demo-user-001 20000
 
 ```bash
 # 전체 발행 상태
-docker exec -it kyobo-demo-postgres psql -U postgres \
-  -c "SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC;"
 
 # NFT 보유 현황
-docker exec -it kyobo-demo-postgres psql -U postgres \
-  -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings;"
 
 # 감사 로그 (체인 검증)
-docker exec -it kyobo-demo-postgres psql -U postgres \
-  -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
 
 # Redis Stream 메시지 확인
 docker exec -it kyobo-demo-redis redis-cli XRANGE kyobo:events - +
@@ -472,8 +469,7 @@ MockVASP.setMode(REVERT) → 웹훅 전송 → estimateGas 단계에서 revert
 
 **확인:**
 ```bash
-docker exec -it kyobo-demo-postgres psql -U postgres \
-  -c "SELECT user_id, status, fail_reason FROM issuance_requests ORDER BY created_at DESC LIMIT 3;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, status, fail_reason FROM issuance_requests ORDER BY created_at DESC LIMIT 3;"
 ```
 
 ---
@@ -561,16 +557,13 @@ NO_EMIT 모드 → 웹훅 전송 → TX 채굴 성공 + Issued 이벤트 없음
 
 ```bash
 # Sepolia poll-stale 실행 예
-POSTGRES_URL="postgresql://postgres:demo@localhost:15432/postgres" \
-  npm run demo:scenario-sepolia -- poll-stale demo-user-001
+POSTGRES_URL="postgresql://postgres:demo@localhost:15432/postgres" npm run demo:scenario-sepolia -- poll-stale demo-user-001
 ```
 
 **확인:**
 ```bash
-docker exec -it kyobo-demo-postgres psql -U postgres \
-  -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;"
-docker exec -it kyobo-demo-postgres psql -U postgres \
-  -c "SELECT user_id, status FROM issuance_requests ORDER BY created_at DESC LIMIT 3;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, status FROM issuance_requests ORDER BY created_at DESC LIMIT 3;"
 ```
 
 ---

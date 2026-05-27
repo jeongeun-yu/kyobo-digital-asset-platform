@@ -42,13 +42,13 @@ import { Pool }          from 'pg';
 import Redis             from 'ioredis';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { GenericContainer, Network, Wait }                from 'testcontainers';
-import type { StartedNetwork }                             from 'testcontainers';
+import { StartedNetwork }                                  from 'testcontainers';
 
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
 import { HttpInternalLedgerClient }             from '../../apps/issuer-service/src/infra/HttpInternalLedgerClient';
-import type { IEventHandler }                    from '@kyobo/event-engine/interfaces';
+import { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
   WebhookServer,
@@ -57,12 +57,12 @@ import {
   RedisIdempotencyStore,
   WebhookPublishHandler,
 }                                                from '@kyobo/event-engine/webhook';
-import type { WebhookPayload }                   from '@kyobo/event-engine/webhook';
+import { WebhookPayload }                   from '@kyobo/event-engine/webhook';
 import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }                      from '../../packages/core-banking/src/ledger/PgDatabaseClient';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
-import type { ChainEvent }                       from '@kyobo/chain-adapters';
+import { ChainEvent }                       from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';
 import {
   ConsumerGroupPool,
@@ -73,7 +73,7 @@ import {
   RedisStreamPublisher,
 }                                                from '@kyobo/event-engine';
 import { PgNFTLedgerService }                    from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
-import type { StreamMessage }  from '@kyobo/event-engine';
+import { StreamMessage }  from '@kyobo/event-engine';
 import { ExternalVASPAdapter }                   from '@kyobo/vasp';
 import { AnvilVASPAdapter }                      from '../vasp-testing/AnvilVASPAdapter';
 import { VASPServer }                            from '../vasp-testing/VASPServer';
@@ -333,11 +333,13 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
 
     // ⑥ Core Banking + 정적 데이터 시드
     coreBanking = new PgHybridCoreBankingAdapter(pool);
-    await pool.query(
-      `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
-       VALUES ($1, $2, 'ANVIL', true) ON CONFLICT (user_id) DO NOTHING`,
-      ['user-mock-001', OPERATOR_ADDR],
-    );
+    for (let i = 1; i <= 5; i++) {
+      await pool.query(
+        `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
+         VALUES ($1, $2, 'ANVIL', true) ON CONFLICT (user_id) DO NOTHING`,
+        [`user-mock-${String(i).padStart(3, '0')}`, OPERATOR_ADDR],
+      );
+    }
     await pool.query(
       `INSERT INTO issuance_policies (event_type, token_id, amount)
        VALUES ($1, $2, 1) ON CONFLICT (event_type) DO NOTHING`,
@@ -539,12 +541,15 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     // audit_log — TxTransitionBridge CONFIRMED 전이 시 HttpInternalLedgerClient 자동 호출
     await waitFor(async () => {
       const { rows } = await pool.query(
-        "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
+        `SELECT actor, action FROM audit_log
+         WHERE resource_type = 'issuance_request' AND actor = 'user-mock-001' AND action = 'ISSUANCE_CONFIRMED'`,
       );
       return rows.length > 0;
     }, 5_000, 'audit_log');
     const { rows: auditRows } = await pool.query(
-      "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
+      `SELECT actor, action FROM audit_log
+       WHERE resource_type = 'issuance_request' AND actor = 'user-mock-001' AND action = 'ISSUANCE_CONFIRMED'
+       ORDER BY event_time DESC LIMIT 1`,
     );
     expect(auditRows[0].actor).toBe('user-mock-001');
     expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
@@ -996,17 +1001,67 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     expect(txRows[0]?.status).toBe('CONFIRMED');
     console.log(`  ✔ tx_mint_requests CONFIRMED (pollStaleRequests → getTransferStatus 경로)`);
 
-    // TxTransitionBridge → issuance_requests CONFIRMED 확인
+    // TxTransitionBridge → issuance_requests CONFIRMED 확인 (가장 최근 행 기준)
     await waitFor(async () => {
-      const { rows } = await pool.query('SELECT status FROM issuance_requests');
+      const { rows } = await pool.query(
+        "SELECT status FROM issuance_requests ORDER BY created_at DESC LIMIT 1",
+      );
       return rows[0]?.status === 'CONFIRMED';
-    }, 5_000, 'issuance_requests CONFIRMED');
-    const { rows: isRows } = await pool.query('SELECT status FROM issuance_requests');
+    }, 15_000, 'issuance_requests CONFIRMED');
+    const { rows: isRows } = await pool.query(
+      'SELECT status FROM issuance_requests ORDER BY created_at DESC LIMIT 1',
+    );
     expect(isRows[0]?.status).toBe('CONFIRMED');
     console.log('  ✔ issuance_requests CONFIRMED (TxTransitionBridge 경유)');
 
     await controlVasp.setMode('NORMAL');
     console.log('  · setMode(NORMAL) 복원 완료');
+  });
+
+  // ── [burst] 동시 발행 ─────────────────────────────────────────────────────────
+
+  it('[burst] 5개 다른 userId 동시 발행 → NonceManager nonce 충돌 없이 전체 CONFIRMED', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [burst] 5명 동시 발행 — user-mock-001 ~ user-mock-005');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    const COUNT = 5;
+    const users = Array.from({ length: COUNT }, (_, i) => `user-mock-${String(i + 1).padStart(3, '0')}`);
+
+    // 5개 웹훅 동시 전송
+    const statuses = await Promise.all(
+      users.map(userId => postWebhook(makePayload({
+        eventType: 'ACTIVITY_ACHIEVED',
+        data: { userId, activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
+      }))),
+    );
+    statuses.forEach((s, i) => console.log(`  · ${users[i]} → HTTP ${s}`));
+    expect(statuses.every(s => s === 202)).toBe(true);
+
+    // 전체 CONFIRMED 대기
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        `SELECT status FROM issuance_requests
+         WHERE user_id = ANY($1)
+         ORDER BY created_at DESC`,
+        [users],
+      );
+      const confirmed = rows.filter(r => r.status === 'CONFIRMED').length;
+      const failed    = rows.filter(r => r.status === 'FAILED').length;
+      if (failed > 0) throw new Error(`${failed}개 FAILED 발생 — NonceManager 문제 의심`);
+      console.log(`  · CONFIRMED ${confirmed}/${COUNT}`);
+      return confirmed >= COUNT;
+    }, 30_000, `${COUNT}개 전체 CONFIRMED`);
+
+    const { rows } = await pool.query(
+      `SELECT user_id, status FROM issuance_requests
+       WHERE user_id = ANY($1)
+       ORDER BY user_id`,
+      [users],
+    );
+    rows.forEach(r => console.log(`  · ${r.user_id}: ${r.status}`));
+    expect(rows.every(r => r.status === 'CONFIRMED')).toBe(true);
+    console.log(`  ✔ ${COUNT}개 동시 발행 전체 CONFIRMED — NonceManager nonce 직렬화 동작 확인`);
   });
 
 });

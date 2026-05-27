@@ -436,6 +436,61 @@ async function scenarioPollStale(userId: string) {
   ]);
 }
 
+async function scenarioBurst(_userId: string) {
+  const COUNT = 5;
+  console.log(`\n=== BURST: ${COUNT}개 발행 요청 동시 전송 (Sepolia) ===`);
+  console.log('  demo-user-001 ~ demo-user-005 에 대해 동시에 NFT 발행 요청.');
+  console.log('  VASPServer NonceManager가 nonce 충돌 없이 순번 처리.');
+  console.log('  Sepolia 블록 ~12s — 전체 완료까지 최대 3분 소요.\n');
+
+  await verifyContractDeployed();
+
+  const users = Array.from({ length: COUNT }, (_, i) => `demo-user-${String(i + 1).padStart(3, '0')}`);
+  const start = Date.now();
+
+  console.log(`[scenario-sepolia] ${COUNT}개 웹훅 동시 전송...`);
+  const statuses = await Promise.all(users.map(u => sendWebhook({ userId: u })));
+  statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
+
+  console.log('\n[scenario-sepolia] 전체 CONFIRMED 대기 중 (최대 3분)...');
+  const pgUrl = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL'];
+  if (!pgUrl) {
+    console.error('[scenario-sepolia] POSTGRES_URL 환경변수가 필요합니다.');
+    console.error('  예: POSTGRES_URL="postgresql://postgres:demo@localhost:15432/postgres" npm run demo:scenario-sepolia -- burst');
+    return;
+  }
+
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  try {
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT user_id, status FROM issuance_requests
+         WHERE user_id = ANY($1) ORDER BY created_at DESC`,
+        [users],
+      );
+      const done = rows.filter(r => ['CONFIRMED', 'FAILED'].includes(r.status as string));
+      console.log(`  [+${((Date.now() - start) / 1000).toFixed(1)}s] ${done.length}/${COUNT} 완료`);
+      if (done.length >= COUNT) {
+        console.log('\n[scenario-sepolia] 최종 결과:');
+        rows.forEach(r => console.log(`  ${r.user_id}: ${r.status}`));
+        break;
+      }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  } finally {
+    await pool.end();
+  }
+
+  printDbHint([
+    'SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT user_id, token_id, balance FROM user_nft_holdings ORDER BY user_id LIMIT 5;',
+  ]);
+}
+
 async function scenarioReset() {
   console.log('\n=== RESET: MockVASP mode 복원 (Sepolia) ===');
   await verifyContractDeployed();
@@ -454,6 +509,7 @@ const SCENARIOS: Record<string, (userId: string) => Promise<void>> = {
   'pending':      scenarioPending,
   'reorg':        scenarioReorg,
   'poll-stale':   scenarioPollStale,
+  'burst':        scenarioBurst,
   'reset':        () => scenarioReset(),
 };
 
@@ -472,6 +528,7 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   pending       nonce 블로커 TX → 발행 TX mempool 체류 → 30초 후 자동 복원
   reorg         정상 발행 후 DB 상태 주입 → REORGED 시뮬레이션
   poll-stale    NO_EMIT → PENDING 조작 → pollStaleRequests() → CONFIRMED
+  burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
   reset         MockVASP mode → NORMAL 복원
 
 구현 방식:

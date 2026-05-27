@@ -361,6 +361,54 @@ async function scenarioPollStale(userId: string) {
   ]);
 }
 
+async function scenarioBurst(_userId: string) {
+  const COUNT = 5;
+  console.log(`\n=== BURST: ${COUNT}개 발행 요청 동시 전송 ===`);
+  console.log('  demo-user-001 ~ demo-user-005 에 대해 동시에 NFT 발행 요청.');
+  console.log('  VASPServer NonceManager가 nonce 충돌 없이 순번 처리.\n');
+
+  await verifyContractDeployed();
+
+  const users = Array.from({ length: COUNT }, (_, i) => `demo-user-${String(i + 1).padStart(3, '0')}`);
+  const start = Date.now();
+
+  console.log(`[scenario] ${COUNT}개 웹훅 동시 전송...`);
+  const statuses = await Promise.all(users.map(u => sendWebhook({ userId: u })));
+  statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
+
+  console.log('\n[scenario] 전체 CONFIRMED 대기 중...');
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  try {
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT user_id, status FROM issuance_requests
+         WHERE user_id = ANY($1) ORDER BY created_at DESC`,
+        [users],
+      );
+      const done = rows.filter(r => ['CONFIRMED', 'FAILED'].includes(r.status as string));
+      console.log(`  [+${((Date.now() - start) / 1000).toFixed(1)}s] ${done.length}/${COUNT} 완료`);
+      if (done.length >= COUNT) {
+        console.log('\n[scenario] 최종 결과:');
+        rows.forEach(r => console.log(`  ${r.user_id}: ${r.status}`));
+        break;
+      }
+      await sleep(2000);
+    }
+  } finally {
+    await pool.end();
+  }
+
+  printDbHint([
+    'SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT user_id, token_id, balance FROM user_nft_holdings ORDER BY user_id LIMIT 5;',
+  ]);
+}
+
 async function scenarioReset() {
   console.log('\n=== RESET: MockVASP mode 복원 ===');
   await verifyContractDeployed();
@@ -379,6 +427,7 @@ const SCENARIOS: Record<string, (userId: string) => Promise<void>> = {
   'pending':      scenarioPending,
   'reorg':        scenarioReorg,
   'poll-stale':   scenarioPollStale,
+  'burst':        scenarioBurst,
   'reset':        () => scenarioReset(),
 };
 
@@ -397,6 +446,7 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   pending       evm_setAutomine(false) → TX mempool 체류 (30초 후 자동 복원)
   reorg         정상 발행 후 evm_revert → 체인 롤백 → REORGED 상태
   poll-stale    NO_EMIT → PENDING 조작 → pollStaleRequests() → CONFIRMED
+  burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
   reset         MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구)
 `);
   process.exit(1);
