@@ -558,10 +558,7 @@ async function scenarioBurst(_userId: string) {
 
 async function scenarioReconcile(userId: string) {
   console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 시나리오 (Sepolia) ===');
-  console.log('  1. 정상 발행(CONFIRMED) → mint_requests에 기록됨');
-  console.log('  2. mint_requests 레코드를 수동 삭제 → 원장에서만 사라짐');
-  console.log('  3. POST /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지');
-  console.log('  4. GET /admin/reconcile/history → 결과 확인\n');
+  console.log('  정상 발행(CONFIRMED) → mint_requests 수동 삭제 → /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지\n');
 
   await verifyContractDeployed();
 
