@@ -163,7 +163,7 @@ async function scenarioRevert(userId: string) {
 
   await verifyContractDeployed();
 
-  const pgUrl = process.env['POSTGRES_URL'] ?? 'postgresql://postgres:demo@localhost:15432/postgres';
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
 
@@ -217,7 +217,7 @@ async function scenarioNoEmit(userId: string) {
   // sendWebhook() 직후 즉시 NORMAL로 복원하면 파이프라인이 VASPServer를 호출하기 전에
   // 모드가 바뀌어 TX가 NORMAL로 브로드캐스트된다. tx_hash 등록 = TX 브로드캐스트 완료이므로
   // DB에서 tx_hash가 나타날 때까지 대기한 뒤 모드를 복원한다.
-  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
   const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
@@ -422,7 +422,8 @@ async function scenarioPollStale(userId: string) {
   console.log('  Sepolia TX 채굴 확인 후 DB 조작: SUBMITTED → PENDING + created_at -11분');
   console.log('  → POST /admin/poll-stale → getTransferStatus(VASPServer) → CONFIRMED\n');
 
-  const pgUrl = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL'] ?? 'postgresql://postgres:demo@localhost:15432/postgres';
+  // 시나리오 스크립트는 호스트에서 실행 → Docker 노출 포트(15432) 고정
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
 
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
@@ -557,7 +558,7 @@ async function scenarioReconcile(userId: string) {
 
   await verifyContractDeployed();
 
-  const pgUrl = process.env['POSTGRES_URL'] ?? 'postgresql://postgres:demo@localhost:15432/postgres';
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
 
