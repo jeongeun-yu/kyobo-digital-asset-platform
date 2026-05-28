@@ -49,7 +49,7 @@ export class IssuerService {
     userId:     string;
     activityId: string;
     event:      ActivityEvent;
-  }): Promise<{ requestId: string; eligible: boolean; txHash?: string; tokenId?: string }> {
+  }): Promise<{ requestId: string; eligible: boolean; txHash?: string; tokenId?: string; failed?: boolean }> {
     const { userId, activityId, event } = params;
 
     // ── ① 정책 조회 — NoPolicyError 상위 전파 ────────────────────────
@@ -149,7 +149,10 @@ export class IssuerService {
         beforeState:  { status: 'REQUESTED' },
         afterState:   { status: 'FAILED', failReason },
       }).catch(e => console.error('[IssuerService] audit-log 오류:', e));
-      throw err;
+      // VASP 실패(REVERT 포함)는 issuance_requests에 FAILED로 기록 후 정상 반환.
+      // throw하면 IdempotencyGuard.unmark() → ConsumerGroupWorker가 PEL 재시도 →
+      // setMode(NORMAL) 후 TX 성공 → user_nft_holdings 오중복. 복구는 VaspRecoveryService 경로.
+      return { requestId: req.id, eligible: true, failed: true };
     }
 
     // ── CoreBanking 보상 알림 (fire-and-forget) ───────────────────────
