@@ -13,6 +13,7 @@
 4. [Part 2 — 자동화 통합 테스트](#part-2--자동화-통합-테스트)
 5. [DB 직접 조회](#db-직접-조회)
 6. [트러블슈팅](#트러블슈팅)
+7. [파일 구조](#파일-구조)
 
 ---
 
@@ -179,19 +180,7 @@ npm run demo:issue-sepolia -- demo-user-001 20000
 
 ---
 
-### 1-3. burst — 동시 5명 발행
-
-```powershell
-# Hardhat 로컬
-npm run demo:scenario -- burst
-
-# Sepolia
-npm run demo:scenario-sepolia -- burst
-```
-
----
-
-### 1-4. 실패 시나리오 CLI
+### 1-3. 실패 시나리오 CLI
 
 서버가 실행 중인 상태에서 **별도 터미널**로 실행한다.
 
@@ -205,19 +194,19 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 
 | 시나리오 | 설명 | 최종 상태 |
 |---|---|---|
-| `revert` | MockVASP TX on-chain revert → Redis 재시도 | FAILED → CONFIRMED |
+| `revert` | MockVASP TX on-chain revert → Redis 재시도 | FAILED |
 | `no-emit` | mint 성공 + Issued 이벤트 없음 | SUBMITTED 유지 |
 | `invalid-hmac` | HMAC 서명 위조 → WebhookServer 401 | DB 변화 없음 |
 | `unknown-user` | wallet mapping 없는 userId | FAILED |
 | `pending` | TX mempool 체류 → 30초 후 자동 복원 | CONFIRMED |
-| `reorg` | 체인 롤백 시뮬레이션 | REORGED |
+| `reorg` | 체인 롤백 시뮬레이션 (DB 상태 직접 주입) | REORGED |
 | `poll-stale` | PENDING 10분 초과 강제 복구 | CONFIRMED |
 | `burst` | 동시 5명 발행 | 전체 CONFIRMED |
 | `reset` | MockVASP mode → NORMAL 복원 | — |
 
 ---
 
-### 1-5. 포트 정리
+### 1-4. 포트 정리
 
 | 포트 | 서비스 | Hardhat | Sepolia |
 |---|---|---|---|
@@ -235,59 +224,7 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 
 코드 변경 후 전체 파이프라인이 정상 동작하는지 자동으로 검증한다.
 
-### 2-1. 컨트랙트 단위 테스트
-
-Hardhat 노드를 먼저 기동해야 한다.
-
-**터미널 1:**
-
-```powershell
-cd blockchain
-npx hardhat node
-```
-
-**터미널 2:**
-
-```powershell
-cd blockchain
-npx hardhat test test/MockVASP.test.ts
-```
-
-예상 출력:
-
-```
-  MockVASP
-    ✔ [1] NORMAL: issueActivityNFT → ERC-1155 mint + Issued 이벤트
-    ✔ [2] REVERT: TX revert (기본 메시지)
-    ✔ [2-a] REVERT: 커스텀 revert 메시지
-    ✔ [3] NO_EMIT: mint 성공, Issued 이벤트 없음
-    ✔ [4] OPERATOR_ROLE 없는 계정 → issueActivityNFT revert
-    ✔ [4-a] OPERATOR_ROLE 없는 계정 → setMode revert
-    ✔ [5] 모드 전환: NORMAL → REVERT → NO_EMIT → NORMAL
-    ✔ [6] 동일 주소에 여러 번 발행 → balanceOf 누적
-
-  8 passing
-```
-
-### 2-2. 컨트랙트 시나리오 스크립트 (Hardhat)
-
-```powershell
-npx hardhat run scripts/test-anvil-adapter.ts --network localhost
-```
-
-예상 출력:
-
-```
-[DEPLOY] MockVASP 컨트랙트 배포
-[1] NORMAL — 정상 발행 + Issued 이벤트  ✔
-[2] REVERT — TX revert 시뮬레이션       ✔
-[3] NO_EMIT — mint 성공, Issued 이벤트 없음  ✔
-[4] PENDING — 블록 중단 → 채굴 → 확정   ✔
-[5] REORG — snapshot → revert → 원복   ✔
-모든 시나리오 통과 ✔
-```
-
-### 2-3. mock-vasp 통합 테스트 (9가지 시나리오)
+### 2-1. mock-vasp 통합 테스트 (9가지 시나리오)
 
 ```powershell
 cd internal/integration
@@ -307,13 +244,14 @@ npm run test:mock-vasp
     ✔ [stream-3] retryCount >= 3 → DLQ 이동
     ✔ [stream-4] XAUTOCLAIM — PEL 잔류 메시지 재수신
     ✔ [poll-1] pollStaleRequests — SUBMITTED → PENDING 조작 → CONFIRMED
+    ✔ [burst] 동시 5명 웹훅 → 전체 CONFIRMED
 
-  Tests: 9 passed, 9 total
+  Tests: 10 passed, 10 total
 ```
 
-### 2-4. Sepolia 통합 테스트 (6가지 시나리오)
+### 2-2. Sepolia 통합 테스트 (6가지 시나리오)
 
-`.env`에 `SEPOLIA_RPC_URL`, `OPERATOR_PRIVATE_KEY`, `SEPOLIA_MOCK_VASP_ADDR` 설정 필요.
+`.env`에 `SEPOLIA_RPC_URL`, `SEPOLIA_OPERATOR_KEY`, `SEPOLIA_MOCK_VASP_ADDR`, `DEPLOYER_PRIVATE_KEY` 설정 필요.
 
 MockVASP 배포 (최초 1회):
 
@@ -345,28 +283,7 @@ npm run test:sepolia
   Tests: 6 passed, 6 total
 ```
 
-### 2-5. Redis Stream 통합 테스트
-
-`REDIS_URL` 미설정 시 InMemoryRedis로 자동 폴백 — Docker 없이도 실행 가능.
-
-```powershell
-cd internal/integration
-npm run test:stream-consumer
-```
-
-예상 출력:
-
-```
-  PASS __tests__/stream-consumer.integration.test.ts
-    ✔ [1] NFT_ISSUED → ConsumerGroupPool 처리 → LedgerService 잔액 반영
-    ✔ [2] 동일 requestId 중복 발행 → 한 번만 처리 (멱등성 보장)
-    ✔ [3] 처리 3회 실패 → DLQ 이동
-    ✔ [4] XAUTOCLAIM — PEL 잔류 메시지 재수신
-
-  Tests: 4 passed, 4 total
-```
-
-### 2-6. Etherscan에서 NFT 확인 (Sepolia)
+### 2-3. Etherscan에서 NFT 확인 (Sepolia)
 
 ```
 # 토큰 전송 내역
@@ -464,14 +381,6 @@ internal/integration/local-demo/
 └── scenario-sepolia.ts   # Sepolia 실패 시나리오 CLI
 
 internal/integration/__tests__/
-├── issuer-service-mock-vasp.integration.test.ts   # 9가지 시나리오
-├── issuer-service-sepolia.integration.test.ts     # 6가지 시나리오
-└── stream-consumer.integration.test.ts            # Redis Stream 4가지
-
-blockchain/
-├── test/MockVASP.test.ts
-└── scripts/
-    ├── test-anvil-adapter.ts
-    ├── test-sepolia-adapter.ts
-    └── deploy/deploy-mock-vasp.ts
+├── issuer-service-mock-vasp.integration.test.ts   # 9가지 시나리오 (Hardhat)
+└── issuer-service-sepolia.integration.test.ts     # 6가지 시나리오 (Sepolia)
 ```

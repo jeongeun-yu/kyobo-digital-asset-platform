@@ -194,9 +194,6 @@ D.full = `classDiagram
     +start()
     +stop()
   }
-  class NFTIssuedHandler:::ee {
-    +handle(event)
-  }
   class WebhookServer:::ee {
     +on(eventType, handler)
     +listen()
@@ -219,7 +216,6 @@ D.full = `classDiagram
     +process(msg)
   }
   IdempotencyStore <|.. RedisIdempotencyStore
-  IEventHandler <|.. NFTIssuedHandler
   EventProcessor <|.. NFTIssuedProcessor
   EventProcessor <|.. ActivityProcessor
   IdempotencyGuard *-- IdempotencyStore
@@ -243,9 +239,6 @@ D.full = `classDiagram
     +submitTransaction(params)
     +screenAddress(addr)
   }
-  class KyoboVASPAdapter:::vasp {
-    +submitTransaction(params)
-  }
   class TxStateMachineService:::vasp {
     +submitMintRequest(req)
     +updateStatus(txHash, status)
@@ -255,7 +248,6 @@ D.full = `classDiagram
     +updateStatus(id, status)
   }
   IVASPAdapter <|.. ExternalVASPAdapter
-  IVASPAdapter <|.. KyoboVASPAdapter
   TxStateMachineService *-- PgTxRepository
   TxStateMachineService ..> IVASPAdapter : submits TX
 
@@ -294,11 +286,6 @@ D.full = `classDiagram
     +runAll()
     +getSummary(results)
   }
-  class InvestorRegistryService:::comp {
-    +registerInvestor(userId)
-    +canAccept(userId, amount)
-  }
-  IKYCProvider <|.. InvestorRegistryService
 
   class IssuerService:::is {
     +issueActivityNFT(payload)
@@ -321,9 +308,6 @@ D.full = `classDiagram
     +creditNFT(wallet, tokenId, amount, txHash)
     +getNFTBalance(wallet, tokenId)
   }
-  class ActivityRouter:::is {
-    +register(server)
-  }
   LedgerService <|.. PgNFTLedgerService
   IEventHandler <|.. IssuanceConfirmHandler
   IActivityIssuer <|.. IssuerService
@@ -333,10 +317,7 @@ D.full = `classDiagram
   IssuerService *-- PgIssuanceRequestRepository
   IssuerService *-- TxStateMachineService
   TokenIssuerFactory ..> IssuerService : creates
-  ActivityRouter *-- IssuerService
-  ActivityRouter *-- IdempotencyGuard
   ActivityProcessor ..> IssuerService : calls
-  WebhookServer --> ActivityRouter : dispatches
   WebhookServer --> WebhookPublishHandler : routes`;
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -361,11 +342,6 @@ D.chain = `classDiagram
     +getReceipt(txHash)
     +queryEvents(addr, abi, eventName)
     +subscribeEvents(contracts, handler)
-  }
-  class IBlockchainAdapterV3:::iface {
-    <<interface>>
-    +getFeeParams()
-    +getRpcDegradeMode()
   }
   class AdapterDecorator:::chain {
     <<abstract>>
@@ -395,32 +371,11 @@ D.chain = `classDiagram
     +getBlockNumber()
     +getReceipt(txHash)
   }
-  class XRPLAdapter:::chain {
-    +mintNFT(to, tokenId, uri)
-    +queryEvents(addr, abi, eventName)
-  }
-  class UTXOAdapter:::chain {
-    +mintNFT(to, tokenId, uri)
-    +queryEvents(addr, abi, eventName)
-  }
-  class CircleAdapter:::chain {
-    +mintNFT(to, tokenId, uri)
-    +queryEvents(addr, abi, eventName)
-  }
-  class ChainAdapterFactory:::chain {
-    +create(config) IBlockchainAdapter
-    +createFromEnv() IBlockchainAdapter
-  }
 
-  IBlockchainAdapter <|-- IBlockchainAdapterV3
   IBlockchainAdapter <|.. EVMAdapter
-  IBlockchainAdapter <|.. XRPLAdapter
-  IBlockchainAdapter <|.. UTXOAdapter
-  IBlockchainAdapter <|.. CircleAdapter
   IBlockchainAdapter <|.. AdapterDecorator
   AdapterDecorator <|-- LoggingAdapterDecorator
-  AdapterDecorator <|-- RetryAdapterDecorator
-  ChainAdapterFactory ..> IBlockchainAdapter : creates`;
+  AdapterDecorator <|-- RetryAdapterDecorator`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // event-engine
@@ -440,17 +395,11 @@ D.ee = `classDiagram
     -ttlSeconds number
     +run(key, fn)
   }
-  class InMemoryIdempotencyStore:::ee {
-    -map Map
-    +tryMark(key, ttl)
-    +unmark(key)
-  }
   class RedisIdempotencyStore:::ee {
     -redis RedisClient
     +tryMark(key, ttl)
     +unmark(key)
   }
-  IdempotencyStore <|.. InMemoryIdempotencyStore
   IdempotencyStore <|.. RedisIdempotencyStore
   IdempotencyGuard *-- IdempotencyStore
 
@@ -466,21 +415,6 @@ D.ee = `classDiagram
     -idempotency IdempotencyGuard
     +createHandler()
   }
-  class RetryHandler:::ee {
-    -config RetryConfig
-    -dlq DeadLetterQueue
-    +send(event)
-  }
-  class DeadLetterQueue:::ee {
-    -store DLQStore
-    +push(item)
-  }
-  class DLQStore:::iface {
-    <<interface>>
-    +save(item)
-  }
-  DLQStore <|.. DeadLetterQueue
-  RetryHandler *-- DeadLetterQueue
   WebhookPublishHandler *-- IdempotencyGuard
 
   class RedisStreamClient:::iface {
@@ -555,23 +489,8 @@ D.ee = `classDiagram
     -issuer IActivityIssuer
     +process(msg)
   }
-  class CouponProcessor:::ee {
-    +eventTypes string[]
-    +process(msg)
-  }
-  class NFTBurnedProcessor:::ee {
-    +eventTypes string[]
-    +process(msg)
-  }
-  class NFTTransferredProcessor:::ee {
-    +eventTypes string[]
-    +process(msg)
-  }
   EventProcessor <|.. NFTIssuedProcessor
   EventProcessor <|.. ActivityProcessor
-  EventProcessor <|.. CouponProcessor
-  EventProcessor <|.. NFTBurnedProcessor
-  EventProcessor <|.. NFTTransferredProcessor
   ConsumerGroupWorker *-- EventProcessor
   NFTIssuedProcessor *-- IdempotencyGuard
   NFTIssuedProcessor *-- LedgerService
@@ -585,16 +504,7 @@ D.ee = `classDiagram
     +start()
     +stop()
   }
-  class NFTIssuedHandler:::ee {
-    -contractAddr string
-    -idempotency IdempotencyGuard
-    -retry RetryHandler
-    +handle(event)
-  }
-  IEventHandler <|.. NFTIssuedHandler
-  ChainEventListener *-- IEventHandler
-  NFTIssuedHandler *-- IdempotencyGuard
-  NFTIssuedHandler *-- RetryHandler`;
+  ChainEventListener *-- IEventHandler`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // vasp
@@ -623,16 +533,7 @@ D.vasp = `classDiagram
     +transfer(params)
     +getTransferStatus(id)
   }
-  class KyoboVASPAdapter:::vasp {
-    +submitTransaction(params)
-    +screenAddress(addr)
-    +createWallet(userId)
-    +getWallet(userId)
-    +transfer(params)
-    +getTransferStatus(id)
-  }
   IVASPAdapter <|.. ExternalVASPAdapter
-  IVASPAdapter <|.. KyoboVASPAdapter
 
   class TxRepository:::iface {
     <<interface>>
@@ -677,34 +578,7 @@ D.vasp = `classDiagram
   }
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
-
-  class NonceManager:::vasp {
-    -strategy NonceStrategy
-    +allocate()
-    +release(nonce)
-    +detectGap()
-  }
-  class Broadcaster:::vasp {
-    -attemptRepo TxAttemptRepository
-    +broadcast(tx)
-    +broadcastPending()
-  }
-  class ConfirmationTracker:::vasp {
-    +track(txHash)
-    +detectReorg(blockHash)
-  }
-  class VaspRecoveryService:::vasp {
-    +recover(txHash)
-    +handleStale(tx)
-  }
-  class WhitelistAddressService:::vasp {
-    +isWhitelisted(addr)
-    +add(addr)
-  }
-  class KeyGovernanceService:::vasp {
-    +sign(payload)
-    +rotate()
-  }`;
+`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // core-banking
@@ -732,12 +606,7 @@ D.cb = `classDiagram
     +recordNftHolding(params)
     +recordAuditLog(log)
   }
-  class StubCoreBankingAdapter:::cb {
-    +getUserAccount(userId)
-    +notifyReward(userId, nftId)
-  }
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
-  ICoreBankingAdapter <|.. StubCoreBankingAdapter
 
   class InternalGatewayClient:::cb {
     -baseUrl string
@@ -793,10 +662,6 @@ D.cb = `classDiagram
     +reconcile()
     +detectDiscrepancy()
   }
-  class KDEPAdapter:::cb {
-    +settle(amount, currency)
-    +getRate()
-  }
   CoreBankingLedgerService *-- DatabaseClient
   CoreBankingLedgerService *-- ICoreBankingAdapter
   AuditLogService *-- DatabaseClient
@@ -825,26 +690,7 @@ D.comp = `classDiagram
     +runAll()
     +getSummary(results)
   }
-  class InvestorRegistryService:::comp {
-    -kyc IKYCProvider
-    -onchain OnchainClient
-    +registerInvestor(userId)
-    +canAccept(userId, amount)
-    +getRegistry()
-  }
-  class LockupPolicyService:::comp {
-    +getLockupPeriod(tokenId)
-    +isLocked(tokenId, timestamp)
-    +setLockup(tokenId, period)
-  }
-  class PermissiveComplianceAdapter:::comp {
-    +validate(tx)
-    +checkLimits(userId, amount)
-    +screenTransaction(params)
-  }
-  IKYCProvider <|.. InvestorRegistryService
-  ISMSChecklist ..> IKYCProvider : uses
-  InvestorRegistryService *-- IKYCProvider`;
+  ISMSChecklist ..> IKYCProvider : uses`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // issuer-service
@@ -862,11 +708,6 @@ D.issuer = `classDiagram
     +listen()
     +close()
   }
-  class ActivityRouter:::is {
-    -issuerService IssuerService
-    -idempotency IdempotencyGuard
-    +register(server)
-  }
   class IdempotencyGuard:::ee {
     -store IdempotencyStore
     +run(key, fn)
@@ -883,9 +724,6 @@ D.issuer = `classDiagram
     +evaluate(event, policy)
   }
   class ActivityConditionStrategy:::is {
-    +evaluate(event, policy)
-  }
-  class CouponConditionStrategy:::is {
     +evaluate(event, policy)
   }
   class PgIssuanceRequestRepository:::is {
@@ -930,7 +768,6 @@ D.issuer = `classDiagram
   IVASPAdapter <|.. ExternalVASPAdapter
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   EventConditionService *-- ActivityConditionStrategy
-  EventConditionService *-- CouponConditionStrategy
   IssuerService *-- IssuancePolicyService
   IssuerService *-- EventConditionService
   IssuerService *-- PgIssuanceRequestRepository
@@ -938,9 +775,6 @@ D.issuer = `classDiagram
   IssuerService *-- IVASPAdapter
   IssuerService *-- ICoreBankingAdapter
   TxStateMachineService ..> IVASPAdapter : submits TX
-  WebhookServer --> ActivityRouter : dispatches
-  ActivityRouter *-- IssuerService
-  ActivityRouter *-- IdempotencyGuard
   TokenIssuerFactory ..> IssuerService : creates
   IssuanceConfirmHandler --> PgIssuanceRequestRepository : CONFIRMED
   IssuanceConfirmHandler --> PgNFTLedgerService : creditNFT`;
@@ -1089,9 +923,6 @@ D.tx = `classDiagram
     -apiKey string
     +submitTransaction(params)
   }
-  class KyoboVASPAdapter:::vasp {
-    +submitTransaction(params)
-  }
   class ICoreBankingAdapter:::iface {
     <<interface>>
     +getUserAccount(userId)
@@ -1126,7 +957,6 @@ D.tx = `classDiagram
   TxRepository <|.. PgTxRepository
   VaspTxClient <|.. VaspTxClientAdapter
   IVASPAdapter <|.. ExternalVASPAdapter
-  IVASPAdapter <|.. KyoboVASPAdapter
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
@@ -1177,12 +1007,6 @@ D.boot = `classDiagram
   class IdempotencyGuard:::ee {
     store RedisIdempotencyStore
   }
-  class DeadLetterQueue:::ee
-  class RetryHandler:::ee {
-    maxAttempts 5
-    initialDelayMs 1000
-    maxDelayMs 30000
-  }
   class EventConditionService:::is {
     strategies ActivityConditionStrategy
   }
@@ -1196,14 +1020,9 @@ D.boot = `classDiagram
   class IssuerService:::is {
     nftIssuerAddr NFT_ISSUER_ADDR
   }
-  class NFTIssuedHandler:::ee {
-    contractAddr NFT_CONTRACT_ADDR
-    idempotency IdempotencyGuard
-    retry RetryHandler
-  }
   class ChainEventListener:::ee {
     adapter EVMAdapter
-    handlers NFTIssuedHandler + IssuanceConfirmHandler
+    handlers IssuanceConfirmHandler + ProcessedEventHandler
     contracts NFT_CONTRACT_ADDR
   }
   class RedisStreamPublisher:::ee {
@@ -1244,17 +1063,13 @@ D.boot = `classDiagram
   Pool --> TokenIssuerFactory : injected
   Pool --> PgNFTLedgerService : injected
   RedisIdempotencyStore --> IdempotencyGuard : injected
-  DeadLetterQueue --> RetryHandler : injected
   InternalGatewayClient --> KyoboCoreBankingAdapter : injected
   ActivityConditionStrategy --> EventConditionService : injected
   EVMAdapter --> TokenIssuerFactory : injected
   ExternalVASPAdapter --> TokenIssuerFactory : injected
   KyoboCoreBankingAdapter --> TokenIssuerFactory : injected
   TokenIssuerFactory ..> IssuerService : creates
-  IdempotencyGuard --> NFTIssuedHandler : injected
-  RetryHandler --> NFTIssuedHandler : injected
   EVMAdapter --> ChainEventListener : injected
-  NFTIssuedHandler --> ChainEventListener : injected
   RedisStreamPublisher --> WebhookPublishHandler : injected
   IdempotencyGuard --> WebhookPublishHandler : injected
   WebhookPublishHandler --> WebhookServer : registered

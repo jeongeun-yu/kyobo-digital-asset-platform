@@ -168,17 +168,22 @@ function elapsed(startMs: number): string {
 }
 
 async function logDbState(pool: Pool, label: string, startMs: number): Promise<void> {
-  const { rows } = await pool.query(
-    'SELECT status, fail_reason, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 1',
-  );
-  if (rows.length === 0) {
-    console.log(`  [DB ${elapsed(startMs)}] ${label} — issuance_requests: (없음)`);
-    return;
-  }
-  const r = rows[0];
-  const failPart = r.fail_reason ? ` fail=${String(r.fail_reason).slice(0, 60)}` : '';
-  const txPart   = r.tx_hash    ? ` tx=${String(r.tx_hash).slice(0, 14)}…` : '';
-  console.log(`  [DB ${elapsed(startMs)}] ${label} — status=${r.status}${txPart}${failPart}`);
+  const [iss, mint, tx] = await Promise.all([
+    pool.query('SELECT status, fail_reason, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 1'),
+    pool.query('SELECT status,              tx_hash FROM mint_requests     ORDER BY created_at DESC LIMIT 1'),
+    pool.query('SELECT status,              tx_hash FROM tx_mint_requests  ORDER BY created_at DESC LIMIT 1'),
+  ]);
+  const fmt = (rows: any[], table: string) => {
+    if (rows.length === 0) return `${table}: (없음)`;
+    const r = rows[0];
+    const fail = r.fail_reason ? ` fail=${String(r.fail_reason).slice(0, 50)}` : '';
+    const tx   = r.tx_hash    ? ` tx=${String(r.tx_hash).slice(0, 14)}…`      : '';
+    return `${table}: ${r.status.padEnd(10)}${tx}${fail}`;
+  };
+  console.log(`  [DB ${elapsed(startMs)}] ${label}`);
+  console.log(`    · ${fmt(iss.rows,  '[issuance_requests]')}`);
+  console.log(`    · ${fmt(mint.rows, '[mint_requests]    ')}`);
+  console.log(`    · ${fmt(tx.rows,   '[tx_mint_requests] ')}`);
 }
 
 async function logRedisStream(redis: Redis, label: string, startMs: number): Promise<void> {
@@ -438,7 +443,9 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     );
     consumerPool = new ConsumerGroupPool(
       redisAdapter, streamDlq,
-      { streamKey: 'kyobo:events', batchSize: 10, blockMs: 3_000, minIdleMs: 60_000 },
+      // minIdleMs=300_000: 이전 테스트의 PEL 잔류 메시지가 후속 테스트 중
+      // XAUTOCLAIM으로 재시도되어 추가 Sepolia TX를 발생시키는 것을 방지한다.
+      { streamKey: 'kyobo:events', batchSize: 10, blockMs: 3_000, minIdleMs: 300_000 },
       [
         { groupName: 'activity-consumers', consumerId: 'activity-1', processors: [activityProcessor] },
         { groupName: 'nft-consumers',      consumerId: 'nft-1',      processors: [nftIssuedProcessor] },
@@ -465,10 +472,11 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     await dockerNetwork?.stop().catch(() => {});
   });
 
-  // ── beforeEach: 이전 테스트 드레인 → 테이블 초기화 ──────────────────────────
+  // ── beforeEach: 이전 테스트 드레인 → 테이블 초기화 → NonceManager 재동기화 ─
 
   beforeEach(async () => {
     // Sepolia 블록타임 고려 — 이전 TX가 confirm될 때까지 최대 2분 대기
+    // NO_EMIT 테스트 후에는 SUBMITTED 상태가 남아 드레인이 타임아웃되므로 .catch()로 무시
     await waitFor(async () => {
       const { rows } = await pool.query(
         "SELECT COUNT(*) AS cnt FROM issuance_requests WHERE status NOT IN ('CONFIRMED','FAILED')",
@@ -477,6 +485,10 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     }, 120_000, 'drain previous test').catch(() => {});
 
     await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log');
+
+    // 이전 테스트에서 발생한 Sepolia TX(PEL 재시도 포함)로 NonceManager 카운터가
+    // 체인 실제 nonce와 어긋날 수 있으므로 각 테스트 전에 강제 재동기화한다.
+    vaspServer?.resetNonce();
   }, 180_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
@@ -525,7 +537,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
         const txShort = rows[0].tx_hash ? ` tx=${String(rows[0].tx_hash).slice(0, 16)}…` : '';
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}${txShort}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
       }
       return rows[0].status !== 'REQUESTED';
     }, 60_000, 'SUBMITTED');
@@ -551,7 +563,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     const { rows } = await pool.query('SELECT status, tx_hash, wallet_addr FROM issuance_requests');
     console.log(`\n  ── CONFIRMED 달성 ──────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
     console.log(`  · tx_hash      ${rows[0].tx_hash}`);
     console.log(`  · wallet_addr  ${rows[0].wallet_addr}`);
     await logRedisStream(redis, 'CONFIRMED 직후', t0);
@@ -671,7 +683,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
         const failPart = rows[0].fail_reason
           ? ` fail=${String(rows[0].fail_reason).slice(0, 60)}`
           : '';
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}${failPart}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
         await logRedisStream(redis, `status=${lastStatus}`, t0);
       }
       return rows[0].status !== 'REQUESTED';
@@ -679,7 +691,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     const { rows } = await pool.query('SELECT status, fail_reason FROM issuance_requests');
     console.log(`\n  ── 최종 상태 ───────────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
     console.log(`  · fail_reason  ${String(rows[0].fail_reason).slice(0, 120)}`);
     await logRedisStream(redis, '최종 상태', t0);
 
@@ -733,7 +745,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
         const txShort = rows[0].tx_hash ? ` tx=${String(rows[0].tx_hash).slice(0, 16)}…` : '';
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}${txShort}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
         await logRedisStream(redis, `status=${lastStatus}`, t0);
       }
       return rows[0].status === 'SUBMITTED';
@@ -761,7 +773,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     });
 
     console.log(`\n  ── 최종 상태 ───────────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
     console.log(`  · TX receipt.status          ${receipt!.status} (1=성공)`);
     console.log(`  · TX 내 Issued 이벤트 수     ${issuedLogs.length} (0이어야 함)`);
     console.log(`  · ledger 잔액 (최종)         ${await ledger.getNFTBalance(operatorAddr, TOKEN_ID)} (변화 없어야 함)`);
@@ -820,7 +832,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows.length === 0) return false;
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
       }
       if (rows[0].status === 'SUBMITTED' && rows[0].tx_hash) {
         submittedTxHash = rows[0].tx_hash as string;
@@ -861,7 +873,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     const { rows } = await pool.query('SELECT status, tx_hash FROM issuance_requests');
     console.log(`\n  ── CONFIRMED 달성 ──────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
 
     expect(rows[0].status).toBe('CONFIRMED');
     expect(rows[0].tx_hash).toMatch(/^0x/);
@@ -903,7 +915,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows[0].status === 'FAILED') throw new Error(`TX FAILED: ${rows[0].fail_reason}`);
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
       }
       if (rows[0].status === 'SUBMITTED' && rows[0].tx_hash) {
         txHash = rows[0].tx_hash as string;

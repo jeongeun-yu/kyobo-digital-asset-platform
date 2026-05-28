@@ -152,6 +152,21 @@ function postWebhook(payload: WebhookPayload, opts: { secret?: string } = {}): P
   });
 }
 
+async function logAllStatuses(pool: import('pg').Pool, label: string): Promise<void> {
+  const [iss, mint, tx] = await Promise.all([
+    pool.query('SELECT status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 1'),
+    pool.query('SELECT status, tx_hash FROM mint_requests     ORDER BY created_at DESC LIMIT 1'),
+    pool.query('SELECT status, tx_hash FROM tx_mint_requests  ORDER BY created_at DESC LIMIT 1'),
+  ]);
+  const fmt = (rows: any[], table: string) =>
+    rows.length === 0 ? `${table}: (없음)` :
+    `${table}: ${rows[0].status.padEnd(10)} tx=${(rows[0].tx_hash ?? 'null').slice(0, 12)}…`;
+  console.log(`  [STATUS ${label}]`);
+  console.log(`    · ${fmt(iss.rows,  '[issuance_requests]')}`);
+  console.log(`    · ${fmt(mint.rows, '[mint_requests]    ')}`);
+  console.log(`    · ${fmt(tx.rows,   '[tx_mint_requests] ')}`);
+}
+
 async function waitFor(
   cond: () => boolean | Promise<boolean>,
   timeoutMs = 20_000,
@@ -481,7 +496,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     }, 20_000, 'SUBMITTED');
     const { rows: midRows } = await pool.query('SELECT status, fail_reason, tx_hash FROM issuance_requests');
     if (midRows[0].status === 'FAILED') throw new Error(`TX failed early: ${midRows[0].fail_reason}`);
-    console.log(`  · SUBMITTED 확인 / tx_hash=${midRows[0].tx_hash}`);
+    await logAllStatuses(pool, 'SUBMITTED 시점');
 
     // CONFIRMED 대기 — ChainEventListener 폴백 경로
     await waitFor(async () => {
@@ -490,7 +505,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     }, 40_000, 'CONFIRMED');
 
     const { rows } = await pool.query('SELECT status, tx_hash, wallet_addr FROM issuance_requests');
-    console.log(`  · issuance_requests  ${rows[0].status}  tx=${rows[0].tx_hash}`);
+    await logAllStatuses(pool, 'CONFIRMED 시점');
     expect(rows[0].status).toBe('CONFIRMED');
     expect(rows[0].tx_hash).toMatch(/^0x/);
     expect(rows[0].wallet_addr?.toLowerCase()).toBe(OPERATOR_ADDR.toLowerCase());
@@ -578,7 +593,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     }, 15_000, 'FAILED');
 
     const { rows } = await pool.query('SELECT status, fail_reason FROM issuance_requests');
-    console.log(`  · status=${rows[0].status}  fail_reason=${String(rows[0].fail_reason).slice(0, 80)}`);
+    await logAllStatuses(pool, 'FAILED 시점');
     expect(rows[0].status).toBe('FAILED');
     console.log('  ✔ REVERT → VASPServer 500 → FAILED 확인');
 
@@ -621,7 +636,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
       catch { return false; }
     });
 
-    console.log(`  · issuance_requests status   ${rows[0].status}`);
+    await logAllStatuses(pool, 'NO_EMIT 확인 시점');
     console.log(`  · TX 내 Issued 이벤트 수     ${issuedLogs.length} (0이어야 함)`);
     console.log(`  · TX receipt.status          ${receipt!.status} (1=성공)`);
     console.log(`  · ledger balance             ${await ledger.getNFTBalance(OPERATOR_ADDR, TOKEN_ID)} (변화 없어야 함)`);
@@ -1059,7 +1074,8 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
        ORDER BY user_id`,
       [users],
     );
-    rows.forEach(r => console.log(`  · ${r.user_id}: ${r.status}`));
+    rows.forEach(r => console.log(`  · [issuance_requests] ${r.user_id}: ${r.status}`));
+    await logAllStatuses(pool, 'burst 최종');
     expect(rows.every(r => r.status === 'CONFIRMED')).toBe(true);
     console.log(`  ✔ ${COUNT}개 동시 발행 전체 CONFIRMED — NonceManager nonce 직렬화 동작 확인`);
   });

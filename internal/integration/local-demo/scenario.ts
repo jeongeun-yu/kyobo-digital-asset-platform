@@ -170,22 +170,47 @@ async function scenarioNoEmit(userId: string) {
   console.log('\n=== NO_EMIT: Issued 이벤트 없음 시나리오 ===');
   console.log('  ERC-1155 mint()는 성공하지만 Issued 이벤트를 emit하지 않는다.');
   console.log('  → ChainEventListener가 이벤트를 수신하지 못해 CONFIRMED 전이 없음.');
-  console.log('  → mint_requests.status가 SUBMITTED 또는 MINED에서 멈춤 (폴백 경로 동작)\n');
+  console.log('  → issuance_requests.status가 SUBMITTED에서 멈춤\n');
 
   await verifyContractDeployed();
   await setMode(MintMode.NO_EMIT, 'NO_EMIT');
 
+  // setMode(NORMAL) 복원 전에 NO_EMIT TX가 먼저 채굴되어야 한다.
+  // sendWebhook() 직후 NORMAL 복원 시 Hardhat 즉시 채굴 때문에
+  // 파이프라인이 VASPServer를 호출하기 전에 NORMAL로 되돌아가 Issued 이벤트가 발생한다.
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
   try {
     const status = await sendWebhook({ userId });
-    console.log(`[scenario] HTTP ${status}`);
+    console.log(`[scenario] HTTP ${status} — NO_EMIT TX 채굴 대기 중...`);
+
+    // tx_hash 등록 = VASPServer가 TX 브로드캐스트 완료 = Hardhat이 NO_EMIT 모드로 채굴됨
+    const deadline = Date.now() + 15_000;
+    let confirmed = false;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT tx_hash FROM tx_mint_requests
+         WHERE tx_hash IS NOT NULL AND created_at > NOW() - INTERVAL '30 seconds'
+         ORDER BY created_at DESC LIMIT 1`,
+      );
+      if (rows[0]?.tx_hash) {
+        console.log(`[scenario] NO_EMIT TX 채굴 확인: ${String(rows[0].tx_hash).slice(0, 16)}…`);
+        confirmed = true;
+        break;
+      }
+      await sleep(300);
+    }
+    if (!confirmed) console.warn('[scenario] TX 확인 타임아웃 — DB를 직접 확인하세요');
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
+    await pool.end();
   }
 
   printDbHint([
-    'SELECT status, tx_hash FROM mint_requests ORDER BY created_at DESC LIMIT 3;',
-    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;',
     'SELECT user_id, status FROM issuance_requests ORDER BY created_at DESC LIMIT 3;',
+    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;',
   ]);
 }
 

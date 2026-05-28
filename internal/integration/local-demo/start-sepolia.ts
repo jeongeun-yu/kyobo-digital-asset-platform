@@ -5,13 +5,13 @@
  *
  * 사전 조건:
  *   1. local-demo/.env.sepolia 파일에 환경변수 기입 (OPERATOR 계정에 Sepolia ETH 필요)
- *   2. OPERATOR 계정에 Sepolia ETH 충분 (MockVASP 배포 가스비 포함)
+ *   2. OPERATOR 계정에 Sepolia ETH 충분 (MockVASP 신규 배포 시 가스비 필요)
  *
  * 기동 순서:
  *   1. Docker 네트워크 생성 (kyobo-sepolia-net) + 기존 컨테이너 정리
  *   2. Docker — PostgreSQL(15432) + Redis(16379)
  *   3. DB 스키마 적용 + 시드
- *   4. MockVASP 컨트랙트 배포 (Sepolia) + .env SEPOLIA_MOCK_VASP_ADDR 자동 업데이트
+ *   4. MockVASP — SEPOLIA_MOCK_VASP_ADDR 이미 설정 시 재사용, 없으면 신규 배포
  *   5. Java internal-ledger 컨테이너 기동 (19875) — 실제 원장 서비스
  *   6. 현재 Sepolia 블록 번호 조회 (CHAIN_START_BLOCK)
  *   7. VASPServer 기동 (19876) — Sepolia RPC + 신규 배포 MockVASP 주소
@@ -251,10 +251,17 @@ async function main() {
   await pool.end();
   console.log('  [db] issuance_policies + user_wallet_mapping 시드 완료');
 
-  // ── 4. MockVASP 배포 (Sepolia) ───────────────────────────────────────────────
-  console.log('[4] MockVASP 컨트랙트 배포 (Sepolia)...');
-  const mockVaspAddr = await deployMockVASP();
-  console.log(`  [info] SEPOLIA_MOCK_VASP_ADDR .env 자동 업데이트 완료`);
+  // ── 4. MockVASP — 기존 주소 재사용 또는 신규 배포 ────────────────────────────
+  const existingAddr = process.env['SEPOLIA_MOCK_VASP_ADDR'];
+  let mockVaspAddr: string;
+  if (existingAddr) {
+    mockVaspAddr = existingAddr;
+    console.log(`[4] MockVASP 기존 컨트랙트 재사용: ${mockVaspAddr}`);
+  } else {
+    console.log('[4] MockVASP 컨트랙트 배포 (Sepolia)...');
+    mockVaspAddr = await deployMockVASP();
+    console.log(`  [info] SEPOLIA_MOCK_VASP_ADDR .env 자동 업데이트 완료`);
+  }
 
   // ── 5. Java internal-ledger 컨테이너 기동 ─────────────────────────────────────
   console.log('[5] Java internal-ledger 기동...');

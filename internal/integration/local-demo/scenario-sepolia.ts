@@ -84,6 +84,8 @@ async function verifyContractDeployed(): Promise<void> {
   }
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function setMode(mode: MintModeValue, label: string): Promise<void> {
   const contract = getMockVasp();
   console.log(`[scenario-sepolia] MockVASP.setMode(${label}) 브로드캐스트 중...`);
@@ -183,15 +185,45 @@ async function scenarioNoEmit(userId: string) {
   await verifyContractDeployed();
   await setMode(MintMode.NO_EMIT, 'NO_EMIT');
 
+  // sendWebhook() 직후 즉시 NORMAL로 복원하면 파이프라인이 VASPServer를 호출하기 전에
+  // 모드가 바뀌어 TX가 NORMAL로 브로드캐스트된다. tx_hash 등록 = TX 브로드캐스트 완료이므로
+  // DB에서 tx_hash가 나타날 때까지 대기한 뒤 모드를 복원한다.
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+  const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
+
   try {
     const status = await sendWebhook({ userId });
-    console.log(`[scenario-sepolia] HTTP ${status}`);
+    console.log(`[scenario-sepolia] HTTP ${status} — NO_EMIT TX 브로드캐스트 대기 중...`);
+
+    const deadline = Date.now() + 30_000;
+    let txHash: string | undefined;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT tx_hash FROM tx_mint_requests
+         WHERE tx_hash IS NOT NULL AND created_at > NOW() - INTERVAL '60 seconds'
+         ORDER BY created_at DESC LIMIT 1`,
+      );
+      if (rows[0]?.tx_hash) {
+        txHash = String(rows[0].tx_hash);
+        console.log(`[scenario-sepolia] TX 브로드캐스트 확인: ${txHash.slice(0, 16)}… — Sepolia 채굴 대기 중 (~12s)`);
+        break;
+      }
+      await sleep(500);
+    }
+    if (!txHash) console.warn('[scenario-sepolia] TX 브로드캐스트 타임아웃 — DB를 직접 확인하세요');
+
+    if (txHash) {
+      await provider.waitForTransaction(txHash, 1, 60_000);
+      console.log('[scenario-sepolia] Sepolia 채굴 완료 — NO_EMIT 모드 복원');
+    }
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
+    await pool.end();
   }
 
   printDbHint([
-    'SELECT status, tx_hash FROM mint_requests ORDER BY created_at DESC LIMIT 3;',
     'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;',
   ]);
 }
