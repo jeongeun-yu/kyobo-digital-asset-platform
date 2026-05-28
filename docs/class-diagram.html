@@ -313,9 +313,11 @@ D.full = `classDiagram
   IActivityIssuer <|.. IssuerService
   IssuerService *-- IVASPAdapter
   IssuerService *-- ICoreBankingAdapter
+  IssuerService *-- IBlockchainAdapter
   IssuerService *-- EventConditionService
-  IssuerService *-- PgIssuanceRequestRepository
+  IssuerService *-- IIssuanceRequestRepository
   IssuerService *-- TxStateMachineService
+  IssuerService *-- LedgerService
   PgNFTLedgerService *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
   ActivityProcessor ..> IssuerService : calls
@@ -662,17 +664,43 @@ D.cb = `classDiagram
     +queryByResource(type, id)
     +queryByActor(actor, from, to)
   }
+  class IReconcileService:::iface {
+    <<interface>>
+    +reconcile()
+    +reconcileNftHoldings(userId)
+    +reconcileAllNftHoldings()
+  }
   class ReconcileService:::cb {
-    -ledger LedgerService
     -coreBanking ICoreBankingAdapter
     +reconcile()
-    +detectDiscrepancy()
+    +reconcileNftHoldings(userId)
+    +reconcileAllNftHoldings()
   }
+  class PgNftHoldingRepository:::is {
+    -pool Pool
+    +getHoldings(userId)
+    +getAllUserIds()
+  }
+  note for PgNftHoldingRepository "issuer-service/infra"
+  class NotifierAdapter:::iface {
+    <<interface>>
+    +sendAlert(payload)
+  }
+  class ReconcileAdminService:::cb {
+    +runHourlyReconcile()
+    +runDailyReconcile()
+    +runManualReconcile(userId, operator)
+    +getHistory(limit, runType)
+  }
+  IReconcileService <|.. ReconcileService
   LedgerService *-- DatabaseClient
   LedgerService *-- ICoreBankingAdapter
   AuditLogService *-- DatabaseClient
-  ReconcileService *-- LedgerService
-  ReconcileService *-- ICoreBankingAdapter`;
+  ReconcileService *-- PgNftHoldingRepository
+  ReconcileService *-- ICoreBankingAdapter
+  ReconcileAdminService *-- ReconcileService
+  ReconcileAdminService *-- ICoreBankingAdapter
+  ReconcileAdminService *-- NotifierAdapter`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // compliance
@@ -717,6 +745,17 @@ D.issuer = `classDiagram
     -store IdempotencyStore
     +run(key, fn)
   }
+  class IConditionStrategy:::iface {
+    <<interface>>
+    +evaluate(event, policy)
+  }
+  class IIssuanceRequestRepository:::iface {
+    <<interface>>
+    +create(req)
+    +findPending(userId, eventType, tokenId)
+    +updateStatus(id, status)
+    +findByTxHash(txHash)
+  }
   class IssuerService:::is {
     +issueActivityNFT(payload)
     +handleVaspTxFailed(params)
@@ -741,6 +780,13 @@ D.issuer = `classDiagram
     +updateStatus(txHash, status)
     +pollStaleRequests()
   }
+  class TxRepository:::iface {
+    <<interface>>
+    +save(tx)
+    +findByTxHash(hash)
+    +updateStatus(id, status)
+    +findPendingOlderThan(ms)
+  }
   class IVASPAdapter:::iface {
     <<interface>>
     +submitTransaction(params)
@@ -754,15 +800,26 @@ D.issuer = `classDiagram
     <<interface>>
     +getUserAccount(userId)
     +notifyReward(userId, nftId)
+    +recordAuditLog(log)
   }
   class KyoboCoreBankingAdapter:::cb {
     +getUserAccount(userId)
     +notifyReward(userId, nftId)
+    +recordAuditLog(log)
+  }
+  class LedgerService:::cb {
+    +createMintRequest(userId, policyId)
+    +findByTxHash(txHash)
+    +updateMintRequest(id, patch)
+    +recordProcessedEvent(txHash, logIndex)
   }
   class TokenIssuerFactory:::is {
     +createNFTIssuer(addr, condSvc)
   }
   class IssuanceConfirmHandler:::is {
+    +handle(event)
+  }
+  class ProcessedEventHandler:::is {
     +handle(event)
   }
   class TxTransitionBridge:::is {
@@ -779,22 +836,34 @@ D.issuer = `classDiagram
     +creditNFT(wallet, tokenId, amount, txHash)
     +getNFTBalance(wallet, tokenId)
   }
+  class PgNftHoldingRepository:::is {
+    -pool Pool
+    +getHoldings(userId)
+    +getAllUserIds()
+  }
+  IConditionStrategy <|.. ActivityConditionStrategy
+  IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
   IVASPAdapter <|.. ExternalVASPAdapter
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
-  EventConditionService *-- ActivityConditionStrategy
+  EventConditionService *-- IConditionStrategy
   IssuerService *-- IssuancePolicyService
   IssuerService *-- EventConditionService
-  IssuerService *-- PgIssuanceRequestRepository
+  IssuerService *-- IIssuanceRequestRepository
   IssuerService *-- TxStateMachineService
   IssuerService *-- IVASPAdapter
   IssuerService *-- ICoreBankingAdapter
+  IssuerService *-- LedgerService
   TxStateMachineService ..> IVASPAdapter : submits TX
   TxTransitionBridge ..> TxStateMachineService : listens transition
+  TxTransitionBridge *-- LedgerService
+  TxTransitionBridge *-- IIssuanceRequestRepository
   TxTransitionBridge *-- ICoreBankingAdapter
   PgNFTLedgerService *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> TxTransitionBridge : creates
-  IssuanceConfirmHandler --> TxStateMachineService : confirms`;
+  IssuanceConfirmHandler *-- TxStateMachineService
+  IssuanceConfirmHandler *-- TxRepository
+  ProcessedEventHandler *-- LedgerService`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // Stream Pipeline
@@ -962,6 +1031,13 @@ D.tx = `classDiagram
     +recordNftHolding(params)
     +recordAuditLog(params)
   }
+  class IIssuanceRequestRepository:::iface {
+    <<interface>>
+    +create(req)
+    +findPending(userId, eventType, tokenId)
+    +updateStatus(id, status)
+    +findByTxHash(txHash)
+  }
   class TxTransitionBridge:::is {
     -ledgerService LedgerService
     -issuanceRepo IIssuanceRequestRepository
@@ -997,6 +1073,8 @@ D.tx = `classDiagram
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
   TxStateMachineService --> TxTransitionBridge : emits events
+  TxTransitionBridge *-- LedgerService
+  TxTransitionBridge *-- IIssuanceRequestRepository
   TxTransitionBridge *-- ICoreBankingAdapter
   VaspTxClientAdapter *-- IVASPAdapter
   KyoboCoreBankingAdapter *-- InternalGatewayClient
