@@ -414,6 +414,7 @@ D.ee = `classDiagram
     +createHandler()
   }
   WebhookPublishHandler *-- IdempotencyGuard
+  WebhookServer --> WebhookPublishHandler : registers handler
 
   class RedisStreamClient:::iface {
     <<interface>>
