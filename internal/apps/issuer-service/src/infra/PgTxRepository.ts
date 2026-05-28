@@ -21,7 +21,7 @@
  */
 
 import type { Pool }                                 from 'pg';
-import type { MintRequest, TxRepository, TxStatus } from './TxStateMachineService';
+import type { MintRequest, TxRepository, TxStatus } from '@kyobo/vasp';
 
 type DbRow = {
   id:             string;

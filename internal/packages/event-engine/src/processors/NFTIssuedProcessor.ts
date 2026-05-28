@@ -8,8 +8,8 @@
  *   (XACK는 ConsumerGroupWorker._handleWithRetry() 에서 처리 — 이 클래스는 호출하지 않음)
  *
  * LedgerService:
- *   현재 InMemoryLedgerService (개발·테스트용).
- *   프로덕션에서는 PostgreSQL + Knex 구현체로 교체.
+ *   인터페이스 — 구현체는 주입으로 결정.
+ *   프로덕션·통합 테스트: PgNFTLedgerService / 유닛 테스트: InMemoryLedgerService
  */
 
 import { type EventProcessor, type StreamMessage, DeferredProcessingError } from '../stream/ConsumerGroupWorker';

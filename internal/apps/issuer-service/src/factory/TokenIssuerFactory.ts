@@ -11,10 +11,10 @@ import {
 import { PgIssuanceRequestRepository } from '../services/IssuanceRequestRepository';
 import { EventConditionService }    from '../services/EventConditionService';
 import { TxStateMachineService }    from '../../../../packages/vasp/src/tx/TxStateMachineService';
-import { PgTxRepository }           from '../../../../packages/vasp/src/tx/PgTxRepository';
+import { PgTxRepository }           from '../infra/PgTxRepository';
 import { VaspTxClientAdapter }      from '../../../../packages/vasp/src/tx/VaspTxClientAdapter';
 import { LedgerService }            from '../../../../packages/core-banking/src/ledger/LedgerService';
-import { PgDatabaseClient }         from '../../../../packages/core-banking/src/ledger/PgDatabaseClient';
+import { PgDatabaseClient }         from '../infra/PgDatabaseClient';
 import { TxTransitionBridge }       from '../services/TxTransitionBridge';
 import { IssuanceConfirmHandler }   from '../handlers/IssuanceConfirmHandler';
 

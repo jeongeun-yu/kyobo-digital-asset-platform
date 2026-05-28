@@ -1,13 +1,14 @@
 /**
  * Redis Stream 통합 테스트 — 클라우드 Redis
  *
- * ConsumerGroupPool + NFTIssuedProcessor + InMemoryLedgerService
+ * ConsumerGroupPool + NFTIssuedProcessor + PgNFTLedgerService
  *
  * 검증 시나리오:
  *   [1] NFT_ISSUED 발행 → ConsumerGroupPool 처리 → LedgerService 잔액 반영
  *   [2] 동일 requestId 중복 발행 → 멱등성 보장 (한 번만 처리)
  *   [3] 처리 실패 3회 → DLQ 이동 확인
  *   [4] XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
+ *   [5] burst — 동시 5건 발행 → 전체 처리 완료
  *
  * REDIS_URL 환경변수 필수: 클라우드 Redis 연결 문자열
  */
@@ -500,6 +501,58 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
     await waitFor(async () => (await ledger.getNFTBalance(owner, tokenId)) > 0);
 
     expect(await ledger.getNFTBalance(owner, tokenId)).toBe(1);
+
+    cgPool.stop();
+  });
+
+  // ── [5] burst ─────────────────────────────────────────────────────────────
+
+  it('[5] burst — 동시 5건 발행 → 전체 처리 완료', async () => {
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
+    const processor   = new NFTIssuedProcessor(idempotency, ledger);
+    const dlq         = new DLQHandler(adapter, { async sendAlert() {} });
+    const cgPool      = new ConsumerGroupPool(adapter, dlq, {
+      streamKey, batchSize: 10, blockMs: 200, minIdleMs: 60_000,
+    }, [{ groupName: GROUP, consumerId: CONSUMER, processors: [processor] }]);
+
+    cgPool.start().catch(() => {});
+
+    const users = Array.from({ length: 5 }, (_, i) => ({
+      owner:     `0xBURST00${i + 1}`,
+      tokenId:   String(9000 + i),
+      requestId: randomUUID(),
+    }));
+
+    // wallet 시드
+    await pool.query(`
+      INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
+      VALUES ${users.map((_, i) => `('user-burst-00${i + 1}', '0xBURST00${i + 1}', 'MOCK', true)`).join(',')}
+      ON CONFLICT (user_id) DO NOTHING
+    `);
+
+    // 5건 동시 발행
+    await Promise.all(users.map((u, i) =>
+      adapter.xadd(streamKey, {
+        eventType:   'NFT_ISSUED',
+        requestId:   u.requestId,
+        txHash:      '0x' + String(i).repeat(64),
+        blockNumber: String(2000 + i),
+        payload:     JSON.stringify({ tokenId: u.tokenId, to: u.owner, blockNumber: 2000 + i }),
+        publishedAt: new Date().toISOString(),
+        _retryCount: '0',
+      }),
+    ));
+
+    // 전체 처리 완료 대기
+    await waitFor(async () => {
+      const balances = await Promise.all(users.map(u => ledger.getNFTBalance(u.owner, u.tokenId)));
+      return balances.every(b => b > 0);
+    });
+
+    const balances = await Promise.all(users.map(u => ledger.getNFTBalance(u.owner, u.tokenId)));
+    balances.forEach(b => expect(b).toBe(1));
 
     cgPool.stop();
   });

@@ -249,7 +249,31 @@ npm run test:mock-vasp
   Tests: 10 passed, 10 total
 ```
 
-### 2-2. Sepolia 통합 테스트 (6가지 시나리오)
+### 2-2. Redis Stream 통합 테스트 (5가지 시나리오)
+
+```powershell
+cd internal/integration
+npx jest __tests__/stream-consumer.integration.test.ts
+```
+
+예상 출력:
+
+```
+  PASS __tests__/stream-consumer.integration.test.ts
+    ✔ [1] NFT_ISSUED → ConsumerGroupPool 처리 → LedgerService 잔액 반영
+    ✔ [2] 동일 requestId 중복 발행 → 한 번만 처리 (멱등성 보장)
+    ✔ [3] 처리 3회 실패 → DLQ 이동 확인
+    ✔ [4] XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
+    ✔ [5] burst — 동시 5건 발행 → 전체 처리 완료
+
+  Tests: 5 passed, 5 total
+```
+
+> `REDIS_URL` 미설정 시 InMemoryRedis로 폴백 — Docker 없이도 실행 가능.
+
+---
+
+### 2-3. Sepolia 통합 테스트 (6가지 시나리오)
 
 `.env`에 `SEPOLIA_RPC_URL`, `SEPOLIA_OPERATOR_KEY`, `SEPOLIA_MOCK_VASP_ADDR`, `DEPLOYER_PRIVATE_KEY` 설정 필요.
 

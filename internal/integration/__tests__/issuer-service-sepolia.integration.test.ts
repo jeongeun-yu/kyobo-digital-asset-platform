@@ -57,7 +57,7 @@ import {
 }                                                from '@kyobo/event-engine/webhook';
 import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
-import { PgDatabaseClient }                      from '../../packages/core-banking/src/ledger/PgDatabaseClient';
+import { PgDatabaseClient }                      from '../../apps/issuer-service/src/infra/PgDatabaseClient';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
 import type { ChainEvent }                       from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';

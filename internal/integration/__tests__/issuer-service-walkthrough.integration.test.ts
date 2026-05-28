@@ -24,7 +24,7 @@ import { TokenIssuerFactory }          from '../../apps/issuer-service/src/facto
 import { ActivityRouter }              from '../../apps/issuer-service/src/api/ActivityRouter';
 import { IssuanceConfirmHandler }      from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
 import { TxStateMachineService }       from '../../packages/vasp/src/tx/TxStateMachineService';
-import { PgTxRepository }              from '../../packages/vasp/src/tx/PgTxRepository';
+import { PgTxRepository }              from '../../apps/issuer-service/src/infra/PgTxRepository';
 import { LedgerService }               from '../../packages/core-banking/src/ledger/LedgerService';
 
 import { WebhookServer, IdempotencyGuard, RedisIdempotencyStore } from '@kyobo/event-engine/webhook';

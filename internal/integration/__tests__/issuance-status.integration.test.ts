@@ -25,11 +25,11 @@ import {
   PgIssuanceRequestRepository,
 }                                  from '../../apps/issuer-service/src/services/IssuanceRequestRepository';
 import { IssuanceConfirmHandler }  from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
-import { PgTxRepository }          from '../../packages/vasp/src/tx/PgTxRepository';
+import { PgTxRepository }          from '../../apps/issuer-service/src/infra/PgTxRepository';
 import { TxStateMachineService }   from '../../packages/vasp/src/tx/TxStateMachineService';
 import { TxTransitionBridge }      from '../../apps/issuer-service/src/services/TxTransitionBridge';
 import { LedgerService }           from '../../packages/core-banking/src/ledger/LedgerService';
-import { PgDatabaseClient }        from '../../packages/core-banking/src/ledger/PgDatabaseClient';
+import { PgDatabaseClient }        from '../../apps/issuer-service/src/infra/PgDatabaseClient';
 import { StubCoreBankingAdapter }  from '@kyobo/core-banking';
 import { PgNFTLedgerService }      from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
 import {
