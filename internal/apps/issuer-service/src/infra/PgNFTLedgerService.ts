@@ -10,6 +10,7 @@
 
 import type { Pool } from 'pg';
 import type { NFTLedgerService } from '@kyobo/event-engine';
+import type { ICoreBankingAdapter } from '@kyobo/core-banking';
 import type { TxStateMachineService, TxRepository } from '../../../../packages/vasp/src/tx/TxStateMachineService';
 
 export class PgNFTLedgerService implements NFTLedgerService {
@@ -17,6 +18,7 @@ export class PgNFTLedgerService implements NFTLedgerService {
     private readonly pool:            Pool,
     private readonly contractAddr:    string,
     private readonly chainId:         number,
+    private readonly coreBanking:     ICoreBankingAdapter,
     private readonly txStateMachine?: TxStateMachineService,
     private readonly txRepo?:         TxRepository,
   ) {}
@@ -33,16 +35,16 @@ export class PgNFTLedgerService implements NFTLedgerService {
       return;
     }
 
-    await this.pool.query(
-      `INSERT INTO user_nft_holdings
-         (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
-       VALUES ($1, $2, $3, $4, $5, NOW(), $6)
-       ON CONFLICT (user_id, token_id, contract_addr, chain_id)
-       DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount,
-                     on_chain_tx = EXCLUDED.on_chain_tx`,
-      [userId, BigInt(tokenId), this.contractAddr, this.chainId, amount, txHash],
-    );
-    console.log(`[PgNFTLedger] user_nft_holdings 기록 완료  userId=${userId}  tokenId=${tokenId}  amount=${amount}  tx=${txHash.slice(0, 10)}…`);
+    await this.coreBanking.recordNftHolding({
+      userId,
+      tokenId:     BigInt(tokenId),
+      contractAddr: this.contractAddr,
+      chainId:     this.chainId,
+      amount:      BigInt(amount),
+      acquiredAt:  new Date(),
+      onChainTx:   txHash,
+    });
+    console.log(`[PgNFTLedger] recordNftHolding 완료  userId=${userId}  tokenId=${tokenId}  amount=${amount}  tx=${txHash.slice(0, 10)}…`);
   }
 
   async getNFTBalance(walletAddr: string, tokenId: string): Promise<number> {

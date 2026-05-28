@@ -192,7 +192,7 @@ async function bootstrap() {
     redisAdapter,
     { async sendAlert(msg) { console.error('[DLQ]', msg); } },
   );
-  const ledger = new PgNFTLedgerService(pgPool, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID ?? '11155111'), txStateMachine, txRepo);
+  const ledger = new PgNFTLedgerService(pgPool, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID ?? '11155111'), coreBanking, txStateMachine, txRepo);
 
   const nftIssuedProcessor  = new NFTIssuedProcessor(idempotency, ledger);
   const activityProcessor   = new ActivityProcessor(issuerService, idempotency);

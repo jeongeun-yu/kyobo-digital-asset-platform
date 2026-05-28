@@ -161,7 +161,28 @@ import type {
   StreamMessage,
 }                                  from '@kyobo/event-engine';
 import { PgNFTLedgerService }      from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
+import { StubCoreBankingAdapter }  from '../../packages/core-banking/src/adapters/StubCoreBankingAdapter';
 import { getPgUrl }                from '../helpers/state';
+
+class PgRecordingCoreBankingAdapter extends StubCoreBankingAdapter {
+  constructor(private readonly pool: Pool) { super(); }
+
+  override async recordNftHolding(params: {
+    userId: string; tokenId: bigint; contractAddr: string;
+    chainId: number; amount: bigint; acquiredAt: Date; onChainTx: string;
+  }): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO user_nft_holdings
+         (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (user_id, token_id, contract_addr, chain_id)
+       DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount,
+                     on_chain_tx = EXCLUDED.on_chain_tx`,
+      [params.userId, params.tokenId, params.contractAddr, params.chainId,
+       params.amount, params.acquiredAt, params.onChainTx],
+    );
+  }
+}
 
 const TEST_CONTRACT_ADDR = '0x0000000000000000000000000000000000000001';
 const TEST_CHAIN_ID      = 31337;
@@ -317,7 +338,7 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
   // ── [1] 정상 처리 ──────────────────────────────────────────────────────────
 
   it('[1] NFT_ISSUED → ConsumerGroupPool 처리 → LedgerService 잔액 반영', async () => {
-    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID, new PgRecordingCoreBankingAdapter(pool));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const processor   = new NFTIssuedProcessor(idempotency, ledger);
@@ -360,7 +381,7 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
 
   it('[2] 동일 requestId 중복 발행 → 한 번만 처리 (멱등성 보장)', async () => {
     let processCount = 0;
-    const ledger = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    const ledger = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID, new PgRecordingCoreBankingAdapter(pool));
 
     // creditNFT 호출 횟수 추적
     const originalCredit = ledger.creditNFT.bind(ledger);
@@ -409,7 +430,7 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
   it('[3] 처리 3회 실패 → DLQ 이동 확인', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
-    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID, new PgRecordingCoreBankingAdapter(pool));
     const failProcessor = new AlwaysFailProcessor(idempotency, ledger);
 
     // DLQHandler에 streamKey를 전달해야 dlqKey = streamKey:dlq 로 일치
@@ -453,7 +474,7 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
     const CRASH_CONSUMER = 'consumer-crash';
     const NEW_CONSUMER   = 'consumer-reclaim';
 
-    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID, new PgRecordingCoreBankingAdapter(pool));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const processor   = new NFTIssuedProcessor(idempotency, ledger);
@@ -508,7 +529,7 @@ describe('Redis Stream 통합 — ConsumerGroupPool E2E', () => {
   // ── [5] burst ─────────────────────────────────────────────────────────────
 
   it('[5] burst — 동시 5건 발행 → 전체 처리 완료', async () => {
-    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID);
+    const ledger      = new PgNFTLedgerService(pool, TEST_CONTRACT_ADDR, TEST_CHAIN_ID, new PgRecordingCoreBankingAdapter(pool));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const idempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const processor   = new NFTIssuedProcessor(idempotency, ledger);

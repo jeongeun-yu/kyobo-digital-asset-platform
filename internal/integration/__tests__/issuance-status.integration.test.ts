@@ -295,7 +295,7 @@ describe('IssuanceStatus 상태 전이 — PgIssuanceRequestRepository', () => {
 
     // ⑤ NFTIssuedProcessor 구성 — PgNFTLedgerService에 txStateMachine + txRepo 주입
     const webhookLedger = new PgNFTLedgerService(
-      pool, '0xCONTRACT', 31337, txStateMachine, txRepo,
+      pool, '0xCONTRACT', 31337, new StubCoreBankingAdapter(), txStateMachine, txRepo,
     );
     const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
     const processor   = new NFTIssuedProcessor(idempotency, webhookLedger);

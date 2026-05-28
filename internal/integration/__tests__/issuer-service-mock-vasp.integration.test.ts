@@ -118,6 +118,22 @@ class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
       status:     'active' as const,
     };
   }
+
+  override async recordNftHolding(params: {
+    userId: string; tokenId: bigint; contractAddr: string;
+    chainId: number; amount: bigint; acquiredAt: Date; onChainTx: string;
+  }): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO user_nft_holdings
+         (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (user_id, token_id, contract_addr, chain_id)
+       DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount,
+                     on_chain_tx = EXCLUDED.on_chain_tx`,
+      [params.userId, params.tokenId, params.contractAddr, params.chainId,
+       params.amount, params.acquiredAt, params.onChainTx],
+    );
+  }
 }
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────────────────
@@ -418,7 +434,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     await webhookServer.listen();
 
     // ConsumerGroupPool: 도메인별 Consumer Group 독립 소비
-    ledger = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    ledger = new PgNFTLedgerService(pool, mockVaspAddr, 31337, coreBanking);
     const nftIssuedProcessor  = new NFTIssuedProcessor(idempotency, ledger);
     const activityProcessor   = new ActivityProcessor(issuerService, idempotency);
     const streamDlq     = new DLQHandler(
@@ -788,7 +804,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ('user-idem-002', '0xOWNER002', 'MOCK', true) ON CONFLICT (user_id) DO NOTHING`,
     );
-    const idemLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    const idemLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337, coreBanking);
     let creditCount       = 0;
     const origCredit      = idemLedger.creditNFT.bind(idemLedger);
     idemLedger.creditNFT  = async (owner, tokenId, amount, txHash) => {
@@ -845,7 +861,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dlqIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
-    const dlqLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    const dlqLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337, coreBanking);
     const failProcessor  = new AlwaysFailProcessor(dlqIdempotency, dlqLedger);
 
     // sourceStreamKey를 dlqKey로 지정 → DLQ 키: dlqKey + ':dlq'
@@ -906,7 +922,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ('user-xclaim-004', '0xOWNER004', 'MOCK', true) ON CONFLICT (user_id) DO NOTHING`,
     );
-    const claimLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337);
+    const claimLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 31337, coreBanking);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const claimIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const claimProcessor   = new NFTIssuedProcessor(claimIdempotency, claimLedger);

@@ -108,6 +108,22 @@ class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
       status:     'active' as const,
     };
   }
+
+  override async recordNftHolding(params: {
+    userId: string; tokenId: bigint; contractAddr: string;
+    chainId: number; amount: bigint; acquiredAt: Date; onChainTx: string;
+  }): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO user_nft_holdings
+         (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (user_id, token_id, contract_addr, chain_id)
+       DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount,
+                     on_chain_tx = EXCLUDED.on_chain_tx`,
+      [params.userId, params.tokenId, params.contractAddr, params.chainId,
+       params.amount, params.acquiredAt, params.onChainTx],
+    );
+  }
 }
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────────────────
@@ -434,7 +450,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     // ConsumerGroupPool: activity-consumers → ActivityProcessor → IssuerService
     //                    nft-consumers      → NFTIssuedProcessor → PgNFTLedgerService
-    ledger = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    ledger = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     const activityProcessor  = new ActivityProcessor(issuerService, idempotency);
     const nftIssuedProcessor = new NFTIssuedProcessor(idempotency, ledger);
     const streamDlq = new DLQHandler(
@@ -995,7 +1011,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ('user-idem-002', '0xOWNER002', 'SEPOLIA', true) ON CONFLICT (user_id) DO NOTHING`,
     );
-    const idemLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    const idemLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     let creditCount       = 0;
     const origCredit      = idemLedger.creditNFT.bind(idemLedger);
     idemLedger.creditNFT  = async (owner, tokenId, amount, txHash) => {
@@ -1051,7 +1067,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dlqIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
-    const dlqLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    const dlqLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     const failProcessor  = new AlwaysFailProcessor(dlqIdempotency, dlqLedger);
 
     const dlqHandler = new DLQHandler(
@@ -1110,7 +1126,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ('user-xclaim-004', '0xOWNER004', 'SEPOLIA', true) ON CONFLICT (user_id) DO NOTHING`,
     );
-    const claimLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    const claimLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const claimIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const claimProcessor   = new NFTIssuedProcessor(claimIdempotency, claimLedger);
