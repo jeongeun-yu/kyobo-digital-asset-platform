@@ -229,8 +229,20 @@ D.full = `classDiagram
     +process(msg)
   }
   IdempotencyStore <|.. RedisIdempotencyStore
+  class CouponProcessor:::ee {
+    +process(msg)
+  }
+  class NFTBurnedProcessor:::ee {
+    +process(msg)
+  }
+  class NFTTransferredProcessor:::ee {
+    +process(msg)
+  }
   EventProcessor <|.. NFTIssuedProcessor
   EventProcessor <|.. ActivityProcessor
+  EventProcessor <|.. CouponProcessor
+  EventProcessor <|.. NFTBurnedProcessor
+  EventProcessor <|.. NFTTransferredProcessor
   IdempotencyGuard *-- IdempotencyStore
   ChainEventListener *-- IBlockchainAdapter
   ChainEventListener *-- IEventHandler
@@ -325,7 +337,6 @@ D.full = `classDiagram
   IEventHandler <|.. IssuanceConfirmHandler
   IActivityIssuer <|.. IssuerService
   IssuerService *-- ICoreBankingAdapter
-  IssuerService *-- IBlockchainAdapter
   IssuerService *-- EventConditionService
   IssuerService *-- IIssuanceRequestRepository
   IssuerService *-- TxStateMachineService
@@ -509,8 +520,23 @@ D.ee = `classDiagram
     -issuer IActivityIssuer
     +process(msg)
   }
+  class CouponProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class NFTBurnedProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class NFTTransferredProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
   EventProcessor <|.. NFTIssuedProcessor
   EventProcessor <|.. ActivityProcessor
+  EventProcessor <|.. CouponProcessor
+  EventProcessor <|.. NFTBurnedProcessor
+  EventProcessor <|.. NFTTransferredProcessor
   ConsumerGroupWorker *-- EventProcessor
   NFTIssuedProcessor *-- IdempotencyGuard
   NFTIssuedProcessor *-- NFTLedgerService
@@ -622,7 +648,7 @@ D.vasp = `classDiagram
   }
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
-  TxStateMachineService *-- WalletResolver
+  TxStateMachineService o-- WalletResolver
 `;
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -883,7 +909,12 @@ D.issuer = `classDiagram
   TokenIssuerFactory ..> TxTransitionBridge : creates
   IssuanceConfirmHandler *-- TxStateMachineService
   IssuanceConfirmHandler *-- TxRepository
-  ProcessedEventHandler *-- LedgerService`;
+  ProcessedEventHandler *-- LedgerService
+  class ActivityRouter:::is {
+    +register(server)
+  }
+  ActivityRouter *-- IssuerService
+  ActivityRouter *-- IdempotencyGuard`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // Stream Pipeline
@@ -1104,7 +1135,7 @@ D.tx = `classDiagram
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
-  TxStateMachineService *-- WalletResolver
+  TxStateMachineService o-- WalletResolver
   TxStateMachineService --> TxTransitionBridge : emits events
   TxTransitionBridge *-- LedgerService
   TxTransitionBridge *-- IIssuanceRequestRepository
@@ -1209,10 +1240,33 @@ D.boot = `classDiagram
   class ConsumerGroupPool:::ee {
     streamKey kyobo:events
   }
+  class IssuanceConfirmHandler:::is {
+    contractAddr NFT_ISSUER_ADDR
+  }
+  class ProcessedEventHandler:::is {
+    contractAddr NFT_CONTRACT_ADDR
+  }
+  class PgNftHoldingRepository:::is {
+    pool Pool
+  }
+  class PgDatabaseClient:::is {
+    pool Pool
+  }
+  class ReconcileService:::cb {
+    coreBanking KyoboCoreBankingAdapter
+    pgHoldingRepo PgNftHoldingRepository
+  }
+  class ReconcileAdminService:::cb {
+    db PgDatabaseClient
+    reconcileService ReconcileService
+    coreBanking KyoboCoreBankingAdapter
+  }
 
   Redis --> RedisIdempotencyStore : injected
   Pool --> TokenIssuerFactory : injected
   Pool --> PgNFTLedgerService : injected
+  Pool --> PgNftHoldingRepository : injected
+  Pool --> PgDatabaseClient : injected
   KyoboCoreBankingAdapter --> PgNFTLedgerService : injected
   RedisIdempotencyStore --> IdempotencyGuard : injected
   InternalGatewayClient --> KyoboCoreBankingAdapter : injected
@@ -1221,7 +1275,10 @@ D.boot = `classDiagram
   ExternalVASPAdapter --> TokenIssuerFactory : injected
   KyoboCoreBankingAdapter --> TokenIssuerFactory : injected
   TokenIssuerFactory ..> IssuerService : creates
+  TokenIssuerFactory ..> IssuanceConfirmHandler : creates
   EVMAdapter --> ChainEventListener : injected
+  IssuanceConfirmHandler --> ChainEventListener : injected
+  ProcessedEventHandler --> ChainEventListener : injected
   RedisStreamPublisher --> WebhookPublishHandler : injected
   IdempotencyGuard --> WebhookPublishHandler : injected
   WebhookPublishHandler --> WebhookServer : registered
@@ -1233,7 +1290,12 @@ D.boot = `classDiagram
   DLQHandler --> ConsumerGroupPool : injected
   NFTIssuedProcessor --> ConsumerGroupWorker : injected
   ActivityProcessor --> ConsumerGroupWorker : injected
-  ConsumerGroupPool ..> ConsumerGroupWorker : creates`;
+  ConsumerGroupPool ..> ConsumerGroupWorker : creates
+  KyoboCoreBankingAdapter --> ReconcileService : injected
+  PgNftHoldingRepository --> ReconcileService : injected
+  PgDatabaseClient --> ReconcileAdminService : injected
+  ReconcileService --> ReconcileAdminService : injected
+  KyoboCoreBankingAdapter --> ReconcileAdminService : injected`;
 
 // ── Render ─────────────────────────────────────────────────────────────────────
 mermaid.initialize({
