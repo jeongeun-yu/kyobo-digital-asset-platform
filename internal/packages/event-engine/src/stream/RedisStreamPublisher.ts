@@ -6,7 +6,7 @@
  *
  * At-least-once 보장:
  *   - Redis XADD → messageId 반환
- *   - DB에 messageId + 상태 기록
+ *   - DB에 messageId + 상태 기록 (미구현)
  *   - Consumer 장애 후 재시작 시 미처리 메시지 자동 재전달 (PEL)
  *
  * Consumer Group 구조:
