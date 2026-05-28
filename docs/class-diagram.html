@@ -268,14 +268,14 @@ D.full = `classDiagram
     +execute(fn)
     +getState()
   }
-  class CoreBankingLedgerService:::cb {
+  class LedgerService:::cb {
     +createMintRequest(params)
     +updateMintRequest(id, status)
   }
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   KyoboCoreBankingAdapter *-- InternalGatewayClient
   InternalGatewayClient *-- CircuitBreaker
-  CoreBankingLedgerService *-- ICoreBankingAdapter
+  LedgerService *-- ICoreBankingAdapter
 
   class IKYCProvider:::iface {
     <<interface>>
@@ -647,12 +647,14 @@ D.cb = `classDiagram
   note for PgDatabaseClient "issuer-service/infra"
   DatabaseClient <|.. PgDatabaseClient
 
-  class CoreBankingLedgerService:::cb {
+  class LedgerService:::cb {
     -db DatabaseClient
     -coreBanking ICoreBankingAdapter
-    +createMintRequest(params)
-    +updateMintRequest(id, status)
-    +findMintRequest(id)
+    +createMintRequest(userId, policyId)
+    +getMintRequest(id)
+    +findByTxHash(txHash)
+    +updateMintRequest(id, patch)
+    +recordProcessedEvent(txHash, logIndex, ...)
   }
   class AuditLogService:::cb {
     -db DatabaseClient
@@ -661,15 +663,15 @@ D.cb = `classDiagram
     +queryByActor(actor, from, to)
   }
   class ReconcileService:::cb {
-    -ledger CoreBankingLedgerService
+    -ledger LedgerService
     -coreBanking ICoreBankingAdapter
     +reconcile()
     +detectDiscrepancy()
   }
-  CoreBankingLedgerService *-- DatabaseClient
-  CoreBankingLedgerService *-- ICoreBankingAdapter
+  LedgerService *-- DatabaseClient
+  LedgerService *-- ICoreBankingAdapter
   AuditLogService *-- DatabaseClient
-  ReconcileService *-- CoreBankingLedgerService
+  ReconcileService *-- LedgerService
   ReconcileService *-- ICoreBankingAdapter`;
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -765,7 +767,7 @@ D.issuer = `classDiagram
     +handle(event)
   }
   class TxTransitionBridge:::is {
-    -ledgerService CoreBankingLedgerService
+    -ledgerService LedgerService
     -issuanceRepo IIssuanceRequestRepository
     -coreBanking ICoreBankingAdapter
     +attach(txStateMachine)
@@ -980,7 +982,7 @@ D.tx = `classDiagram
     +getState()
     +reset()
   }
-  class CoreBankingLedgerService:::cb {
+  class LedgerService:::cb {
     -db DatabaseClient
     -coreBanking ICoreBankingAdapter
     +createMintRequest(params)
@@ -998,7 +1000,7 @@ D.tx = `classDiagram
   VaspTxClientAdapter *-- IVASPAdapter
   KyoboCoreBankingAdapter *-- InternalGatewayClient
   InternalGatewayClient *-- CircuitBreaker
-  CoreBankingLedgerService *-- ICoreBankingAdapter`;
+  LedgerService *-- ICoreBankingAdapter`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // Bootstrap / 의존성 주입 (index.ts)
