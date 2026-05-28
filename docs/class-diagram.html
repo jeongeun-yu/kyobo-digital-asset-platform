@@ -243,6 +243,21 @@ D.full = `classDiagram
   EventProcessor <|.. CouponProcessor
   EventProcessor <|.. NFTBurnedProcessor
   EventProcessor <|.. NFTTransferredProcessor
+  class NFTIssuedHandler:::ee {
+    +eventName string
+    +handle(event)
+  }
+  class NFTBurnedHandler:::ee {
+    +eventName string
+    +handle(event)
+  }
+  class NFTTransferredHandler:::ee {
+    +eventName string
+    +handle(event)
+  }
+  IEventHandler <|.. NFTIssuedHandler
+  IEventHandler <|.. NFTBurnedHandler
+  IEventHandler <|.. NFTTransferredHandler
   IdempotencyGuard *-- IdempotencyStore
   ChainEventListener *-- IBlockchainAdapter
   ChainEventListener *-- IEventHandler
@@ -588,7 +603,33 @@ D.ee = `classDiagram
   }
   ChainEventListener *-- IEventHandler
   ChainEventListener *-- BlockStateStore
-  NFTIssuedProcessor *-- FinalizedBlockProvider`;
+  NFTIssuedProcessor *-- FinalizedBlockProvider
+
+  class RetryHandler:::ee {
+    -maxRetries number
+    -delayMs number
+    +send(params)
+  }
+  class NFTIssuedHandler:::ee {
+    +eventName string
+    +contractAddr string
+    -idempotency IdempotencyGuard
+    -retry RetryHandler
+    +handle(event)
+  }
+  class NFTBurnedHandler:::ee {
+    +eventName string
+    +handle(event)
+  }
+  class NFTTransferredHandler:::ee {
+    +eventName string
+    +handle(event)
+  }
+  IEventHandler <|.. NFTIssuedHandler
+  IEventHandler <|.. NFTBurnedHandler
+  IEventHandler <|.. NFTTransferredHandler
+  NFTIssuedHandler *-- IdempotencyGuard
+  NFTIssuedHandler *-- RetryHandler`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // vasp
