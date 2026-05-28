@@ -1,5 +1,4 @@
 import type { IBlockchainAdapter }        from '@kyobo/chain-adapters';
-import type { IVASPAdapter }               from '@kyobo/vasp';
 import type { ICoreBankingAdapter }        from '@kyobo/core-banking';
 import type { ActivityEvent }              from './EventConditionService';
 import { EventConditionService }           from './EventConditionService';
@@ -16,7 +15,7 @@ import type { LedgerService }              from '../../../../packages/core-banki
  *   ② 조건 판단   — EventConditionService.evaluate()            → eligible 여부
  *   ③ 멱등성 체크  — issuanceRepo.findPending()                 → 중복 요청 방지
  *   ④ REQUESTED   — issuanceRepo.create()
- *   ⑤ KYC/AML    — coreBanking + vaspAdapter.screenAddress()   → 실패 시 FAILED
+ *   ⑤ 지갑 조회   — coreBanking.getUserAccount()               → walletAddr 획득, 실패 시 FAILED
  *   ⑥ TX 위탁     — txStateMachine.submitMintRequest()          → tx_mint_requests REQUESTED→SUBMITTED
  *                   issuanceRepo SUBMITTED / 실패 시 FAILED
  *
@@ -29,7 +28,6 @@ import type { LedgerService }              from '../../../../packages/core-banki
 export class IssuerService {
   constructor(private readonly deps: {
     chainAdapter:          IBlockchainAdapter;
-    vaspAdapter:           IVASPAdapter;
     coreBanking:           ICoreBankingAdapter;
     nftIssuerAddr:         string;
     policyService:         IssuancePolicyService;
@@ -91,15 +89,11 @@ export class IssuerService {
     }).catch(err => console.error('[IssuerService] audit-log 오류:', err));
     const ledgerReq  = await this.deps.ledgerService.createMintRequest(userId, String(policy.id));
 
-    // ── ⑤ KYC / AML / 지갑 조회 — 실패 → FAILED + throw ─────────────
+    // ── ⑤ 지갑 조회 — 실패 → FAILED + throw ────────────────────────────
     let walletAddr: string;
     try {
       const account = await this.deps.coreBanking.getUserAccount(userId);
       if (!account) throw new Error(`user not found: ${userId}`);
-      if (account.status !== 'active') throw new Error(`account not active: ${userId}`);
-
-      const aml = await this.deps.vaspAdapter.screenAddress(account.walletAddr);
-      if (aml.flagged) throw new Error(`AML flagged: ${aml.reason}`);
 
       walletAddr = account.walletAddr;
       await this.deps.issuanceRepo.setWalletAddr(req.id, walletAddr);

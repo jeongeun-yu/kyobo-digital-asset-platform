@@ -69,7 +69,6 @@
   <div class="li"><div class="dot" style="background:#bc8cff"></div>event-engine</div>
   <div class="li"><div class="dot" style="background:#3fb950"></div>vasp</div>
   <div class="li"><div class="dot" style="background:#eab308"></div>core-banking</div>
-  <div class="li"><div class="dot" style="background:#f778ba"></div>compliance</div>
   <div class="li"><div class="dot" style="background:#f97316"></div>issuer-service</div>
   <div class="li"><div class="dot" style="background:#484f58"></div>interface</div>
   <div class="li" style="margin-left:auto;font-size:11px;color:#484f58">
@@ -88,7 +87,6 @@ const TABS = [
   { key:'ee',      label:'event-engine'    },
   { key:'vasp',    label:'vasp'            },
   { key:'cb',      label:'core-banking'    },
-  { key:'comp',    label:'compliance'      },
   { key:'issuer',  label:'issuer-service'  },
   { key:'stream',  label:'Stream Pipeline' },
   { key:'tx',      label:'TX State Machine'},
@@ -277,16 +275,6 @@ D.full = `classDiagram
   InternalGatewayClient *-- CircuitBreaker
   LedgerService *-- ICoreBankingAdapter
 
-  class IKYCProvider:::iface {
-    <<interface>>
-    +getStatus(userId)
-    +verify(userId)
-  }
-  class ISMSChecklist:::comp {
-    +runAll()
-    +getSummary(results)
-  }
-
   class IssuerService:::is {
     +issueActivityNFT(payload)
     +handleVaspTxFailed(params)
@@ -311,7 +299,6 @@ D.full = `classDiagram
   NFTLedgerService <|.. PgNFTLedgerService
   IEventHandler <|.. IssuanceConfirmHandler
   IActivityIssuer <|.. IssuerService
-  IssuerService *-- IVASPAdapter
   IssuerService *-- ICoreBankingAdapter
   IssuerService *-- IBlockchainAdapter
   IssuerService *-- EventConditionService
@@ -703,29 +690,6 @@ D.cb = `classDiagram
   ReconcileAdminService *-- NotifierAdapter`;
 
 // ════════════════════════════════════════════════════════════════════════════════
-// compliance
-// ════════════════════════════════════════════════════════════════════════════════
-D.comp = `classDiagram
-  direction TB
-  classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
-  classDef comp  fill:#2a0d1e,stroke:#f778ba,color:#ffb3d9
-
-  class IKYCProvider:::iface {
-    <<interface>>
-    +getStatus(userId)
-    +verify(userId)
-  }
-  class ISMSChecklist:::comp {
-    -rpcUrl string
-    -nftContractAddr string
-    -contractCall fn
-    -queryLatestAuditLog fn
-    +runAll()
-    +getSummary(results)
-  }
-  ISMSChecklist ..> IKYCProvider : uses`;
-
-// ════════════════════════════════════════════════════════════════════════════════
 // issuer-service
 // ════════════════════════════════════════════════════════════════════════════════
 D.issuer = `classDiagram
@@ -850,7 +814,6 @@ D.issuer = `classDiagram
   IssuerService *-- EventConditionService
   IssuerService *-- IIssuanceRequestRepository
   IssuerService *-- TxStateMachineService
-  IssuerService *-- IVASPAdapter
   IssuerService *-- ICoreBankingAdapter
   IssuerService *-- LedgerService
   TxStateMachineService ..> IVASPAdapter : submits TX
@@ -1151,10 +1114,6 @@ D.boot = `classDiagram
   class WebhookServer:::ee {
     port WEBHOOK_PORT
     secret WEBHOOK_SECRET
-  }
-  class ISMSChecklist:::comp {
-    rpcUrl RPC_URL
-    nftContractAddr NFT_CONTRACT_ADDR
   }
   class PgNFTLedgerService:::is {
     pool Pool

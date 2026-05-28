@@ -32,7 +32,6 @@ import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
 // Phase 3 전환 시: ExternalVASPAdapter → KyoboVASPAdapter 로 교체
 // KyoboVASPAdapter는 @kyobo/vasp 패키지에 stub 구현 완료 (IVASPAdapter 동일 인터페이스)
 import { KyoboCoreBankingAdapter, InternalGatewayClient, ReconcileService, ReconcileAdminService } from '@kyobo/core-banking';
-import { ISMSChecklist }           from '@kyobo/compliance';
 
 import { TokenIssuerFactory }      from './factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from './services/EventConditionService';
@@ -168,22 +167,6 @@ async function bootstrap() {
       const data = payload.data as { txHash: string; reason?: string };
       await issuerService.handleVaspTxFailed({ txHash: data.txHash, reason: data.reason });
     });
-
-  // ── ISMS 자동 점검 (주기적 실행) ─────────────────────────────────────────────
-  const isms = new ISMSChecklist({
-    rpcUrl:          process.env.RPC_URL!,
-    nftContractAddr: process.env.NFT_CONTRACT_ADDR!,
-    contractCall:    (addr, abi, method) =>
-      chainAdapter.call({ contractAddr: addr, abi, method, args: [] }),
-    queryLatestAuditLog: async () => null,  // Phase 2: DB 연동으로 교체
-  });
-  setInterval(async () => {
-    const results = await isms.runAll();
-    const summary = isms.getSummary(results);
-    if (summary.failed.length > 0) {
-      console.error('[ISMS] 점검 실패 항목:', summary.failed);
-    }
-  }, 60 * 60 * 1000);  // 1시간마다
 
   // ── Redis Streams Consumer (NFT_ISSUED) ──────────────────────────────────────
   const streamDlq = new DLQHandler(

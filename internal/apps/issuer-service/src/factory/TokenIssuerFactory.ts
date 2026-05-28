@@ -85,7 +85,6 @@ export class TokenIssuerFactory {
 
     const issuerService  = new IssuerService({
       chainAdapter:  this.deps.chainAdapter,
-      vaspAdapter:   this.deps.vaspAdapter,
       coreBanking:   this.deps.coreBanking,
       nftIssuerAddr,
       policyService,
