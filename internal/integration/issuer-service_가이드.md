@@ -249,42 +249,21 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 
 내부적으로 `ReconcileAdminService.creditNft()`를 호출한다 — 감사 로그(`ADMIN_CREDIT_NFT`) 자동 기록.
 
-**요청 형식**
-
-```json
-POST http://localhost:19870/admin/credit-nft
-Content-Type: application/json
-
-{
-  "userId":   "demo-user-001",
-  "tokenId":  "1748000000000",
-  "amount":   1,
-  "txHash":   "0x3bb01ff914fc8c...",
-  "operator": "admin"
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `userId` | string | ✓ | 보정 대상 사용자 ID |
-| `tokenId` | string | ✓ | NFT 토큰 ID (숫자를 문자열로) |
-| `amount` | number | — | 보정 수량 (기본값 `1`) |
-| `txHash` | string | — | 온체인 TX 해시 (기본값 `""`) |
-| `operator` | string | — | 감사 로그에 기록될 요청자 식별자 (기본값 `"admin"`) |
-
-**응답**
-
-```json
-{ "ok": true, "userId": "demo-user-001", "tokenId": "1748000000000", "amount": 1 }
-```
-
-**PowerShell 실행 예시**
+**실행 (PowerShell)**
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:19870/admin/credit-nft `
   -ContentType "application/json" `
-  -Body '{"userId":"demo-user-001","tokenId":"1748000000000","amount":1,"txHash":"0x3bb01ff..."}'
+  -Body '{"userId":"demo-user-001","tokenId":"1748000000000","amount":1,"txHash":"0x3bb01ff914fc8c..."}'
 ```
+
+| 파라미터 | 설명 | 기본값 |
+|---|---|---|
+| `userId` | 보정 대상 사용자 ID | 필수 |
+| `tokenId` | NFT 토큰 ID (문자열) | 필수 |
+| `amount` | 보정 수량 | `1` |
+| `txHash` | 온체인 TX 해시 | `""` |
+| `operator` | 감사 로그 기록 요청자 | `"admin"` |
 
 **결과 확인**
 
