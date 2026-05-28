@@ -461,8 +461,35 @@ D.full = `classDiagram
   class TokenIssuerFactory:::is {
     +createNFTIssuer(addr, condSvc)
   }
+  class IConditionStrategy:::iface {
+    <<interface>>
+    +evaluate(event)
+  }
+  class ActivityConditionStrategy:::is {
+    +evaluate(event)
+  }
+  class CouponConditionStrategy:::is {
+    +evaluate(event)
+  }
   class EventConditionService:::is {
     +evaluate(event, policy)
+    +registerStrategy(strategy)
+  }
+  class IssuancePolicyService:::is {
+    +getPolicy(eventType)
+  }
+  class IIssuancePolicyRepository:::iface {
+    <<interface>>
+    +findByEventType(eventType)
+  }
+  class PgIssuancePolicyRepository:::is {
+    +findByEventType(eventType)
+  }
+  class IIssuanceRequestRepository:::iface {
+    <<interface>>
+    +create(req)
+    +updateStatus(id, status)
+    +findByTxHash(txHash)
   }
   class PgIssuanceRequestRepository:::is {
     +create(req)
@@ -475,12 +502,18 @@ D.full = `classDiagram
     +creditNFT(wallet, tokenId, amount, txHash)
     +getNFTBalance(wallet, tokenId)
   }
+  IConditionStrategy <|.. ActivityConditionStrategy
+  IConditionStrategy <|.. CouponConditionStrategy
+  EventConditionService *-- IConditionStrategy
+  IssuancePolicyService *-- IIssuancePolicyRepository
+  IIssuancePolicyRepository <|.. PgIssuancePolicyRepository
   NFTLedgerService <|.. PgNFTLedgerService
   IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
   IEventHandler <|.. IssuanceConfirmHandler
   IEventHandler <|.. ProcessedEventHandler
   IActivityIssuer <|.. IssuerService
   IssuerService *-- ICoreBankingAdapter
+  IssuerService *-- IssuancePolicyService
   IssuerService *-- EventConditionService
   IssuerService *-- IIssuanceRequestRepository
   IssuerService *-- TxStateMachineService
@@ -1103,7 +1136,10 @@ D.issuer = `classDiagram
     +evaluate(event, policy)
   }
   class ActivityConditionStrategy:::is {
-    +evaluate(event, policy)
+    +evaluate(event)
+  }
+  class CouponConditionStrategy:::is {
+    +evaluate(event)
   }
   class PgIssuanceRequestRepository:::is {
     +create(req)
@@ -1197,6 +1233,7 @@ D.issuer = `classDiagram
     +getAllUserIds()
   }
   IConditionStrategy <|.. ActivityConditionStrategy
+  IConditionStrategy <|.. CouponConditionStrategy
   IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
   IVASPAdapter <|.. ExternalVASPAdapter
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
