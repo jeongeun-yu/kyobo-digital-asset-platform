@@ -65,12 +65,12 @@
 </header>
 
 <div class="legend">
-  <div class="li"><div class="dot" style="background:#58a6ff"></div>chain-adapters</div>
+  <div class="li"><div class="dot" style="background:#1f6feb"></div>chain-adapters</div>
   <div class="li"><div class="dot" style="background:#bc8cff"></div>event-engine</div>
   <div class="li"><div class="dot" style="background:#3fb950"></div>vasp</div>
   <div class="li"><div class="dot" style="background:#d29922"></div>core-banking</div>
   <div class="li"><div class="dot" style="background:#f778ba"></div>compliance</div>
-  <div class="li"><div class="dot" style="background:#79c0ff"></div>issuer-service</div>
+  <div class="li"><div class="dot" style="background:#56d4fb"></div>issuer-service</div>
   <div class="li"><div class="dot" style="background:#484f58"></div>interface</div>
   <div class="li" style="margin-left:auto;font-size:11px;color:#484f58">
     ◁|— 상속 &nbsp;·&nbsp; ◁|.. 구현 &nbsp;·&nbsp; ◆— 컴포지션 &nbsp;·&nbsp; ..> 의존
@@ -129,12 +129,12 @@ const D = {};
 D.full = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
-  classDef chain fill:#0d2d4a,stroke:#58a6ff,color:#cae8ff
+  classDef chain fill:#040f1e,stroke:#1f6feb,color:#79c0ff
   classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
   classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
   classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
   classDef comp  fill:#2a0d1e,stroke:#f778ba,color:#ffb3d9
-  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef is    fill:#0d3d5c,stroke:#56d4fb,color:#d0f0ff
 
   class IBlockchainAdapter:::iface {
     <<interface>>
@@ -327,7 +327,7 @@ D.full = `classDiagram
 D.chain = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
-  classDef chain fill:#0d2d4a,stroke:#58a6ff,color:#cae8ff
+  classDef chain fill:#040f1e,stroke:#1f6feb,color:#79c0ff
 
   class IBlockchainAdapter:::iface {
     <<interface>>
@@ -514,7 +514,7 @@ D.vasp = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
   classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
-  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef is    fill:#0d3d5c,stroke:#56d4fb,color:#d0f0ff
 
   class IVASPAdapter:::iface {
     <<interface>>
@@ -590,7 +590,7 @@ D.cb = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
   classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
-  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef is    fill:#0d3d5c,stroke:#56d4fb,color:#d0f0ff
 
   class ICoreBankingAdapter:::iface {
     <<interface>>
@@ -706,7 +706,7 @@ D.issuer = `classDiagram
   classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
   classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
   classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
-  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef is    fill:#0d3d5c,stroke:#56d4fb,color:#d0f0ff
 
   class WebhookServer:::ee {
     +on(eventType, handler)
@@ -803,7 +803,7 @@ D.stream = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
   classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
-  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef is    fill:#0d3d5c,stroke:#56d4fb,color:#d0f0ff
 
   class WebhookServer:::ee {
     +on(eventType, handler)
@@ -902,7 +902,7 @@ D.tx = `classDiagram
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
   classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
   classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
-  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef is    fill:#0d3d5c,stroke:#56d4fb,color:#d0f0ff
 
   class TxStateMachineService:::vasp {
     -repo TxRepository
@@ -1009,12 +1009,12 @@ D.tx = `classDiagram
 D.boot = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
-  classDef chain fill:#0d2d4a,stroke:#58a6ff,color:#cae8ff
+  classDef chain fill:#040f1e,stroke:#1f6feb,color:#79c0ff
   classDef ee    fill:#1e1040,stroke:#bc8cff,color:#e2ccff
   classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
   classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
   classDef comp  fill:#2a0d1e,stroke:#f778ba,color:#ffb3d9
-  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
+  classDef is    fill:#0d3d5c,stroke:#56d4fb,color:#d0f0ff
   classDef infra fill:#1a1a1a,stroke:#6e7681,color:#8b949e
 
   class Redis:::infra {
