@@ -263,9 +263,17 @@ D.full = `classDiagram
   ChainEventListener *-- IEventHandler
   WebhookPublishHandler *-- RedisStreamPublisher
   WebhookPublishHandler *-- IdempotencyGuard
+  class RedisConsumerClient:::iface {
+    <<interface>>
+    +xreadgroup(group, consumer, streams, count, blockMs)
+    +xack(key, group, ids)
+  }
   ConsumerGroupPool *-- ConsumerGroupWorker
+  ConsumerGroupPool ..> RedisConsumerClient
+  ConsumerGroupPool ..> DLQHandler
   ConsumerGroupWorker *-- EventProcessor
   ConsumerGroupWorker *-- DLQHandler
+  ConsumerGroupWorker *-- RedisConsumerClient
   NFTIssuedProcessor *-- IdempotencyGuard
   NFTIssuedProcessor *-- NFTLedgerService
   ActivityProcessor *-- IdempotencyGuard
@@ -527,6 +535,8 @@ D.ee = `classDiagram
   RedisStreamPublisher *-- RedisStreamClient
   WebhookPublishHandler *-- RedisStreamPublisher
   ConsumerGroupPool *-- ConsumerGroupWorker
+  ConsumerGroupPool ..> RedisConsumerClient
+  ConsumerGroupPool ..> DLQHandler
   ConsumerGroupWorker *-- RedisConsumerClient
   ConsumerGroupWorker *-- DLQHandler
 
@@ -1134,6 +1144,8 @@ D.stream = `classDiagram
   WebhookPublishHandler *-- IdempotencyGuard
   RedisStreamPublisher *-- RedisStreamClient
   ConsumerGroupPool *-- ConsumerGroupWorker
+  ConsumerGroupPool ..> RedisConsumerClient
+  ConsumerGroupPool ..> DLQHandler
   ConsumerGroupWorker *-- RedisConsumerClient
   ConsumerGroupWorker *-- EventProcessor
   ConsumerGroupWorker *-- DLQHandler
