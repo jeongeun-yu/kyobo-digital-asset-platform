@@ -12,7 +12,7 @@ export type { DLQItem, DLQRedisClient } from './stream/DLQHandler';
 export { RedisStreamPublisher } from './stream/RedisStreamPublisher';
 export type { StreamEvent, RedisStreamClient } from './stream/RedisStreamPublisher';
 export { InMemoryLedgerService } from './processors/NFTIssuedProcessor';
-export type { LedgerService } from './processors/NFTIssuedProcessor';
+export type { NFTLedgerService } from './processors/NFTIssuedProcessor';
 export { ActivityProcessor }      from './processors/ActivityProcessor';
 export type { IActivityIssuer }  from './processors/ActivityProcessor';
 export { CouponProcessor }        from './processors/CouponProcessor';

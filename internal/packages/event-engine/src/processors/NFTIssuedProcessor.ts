@@ -19,7 +19,7 @@ import { logger } from '../infra/logger';
 
 // ── LedgerService 인터페이스 ─────────────────────────────────────────────────
 
-export interface LedgerService {
+export interface NFTLedgerService {
   creditNFT(owner: string, tokenId: string, amount?: number, txHash?: string): Promise<void>;
   getNFTBalance(owner: string, tokenId: string): Promise<number>;
   updateMintRequestConfirmed?(requestId: string, blockNumber?: number): Promise<void>;
@@ -36,7 +36,7 @@ export class NFTIssuedProcessor implements EventProcessor {
 
   constructor(
     private readonly idempotency:             IdempotencyGuard,
-    private readonly ledger:                  LedgerService,
+    private readonly ledger:                  NFTLedgerService,
     private readonly finalizedBlockProvider?: FinalizedBlockProvider,
   ) {}
 
@@ -81,7 +81,7 @@ export class NFTIssuedProcessor implements EventProcessor {
 // ── InMemoryLedgerService ────────────────────────────────────────────────────
 // 개발·테스트용. 프로덕션에서는 PostgreSQL 구현체로 교체.
 
-export class InMemoryLedgerService implements LedgerService {
+export class InMemoryLedgerService implements NFTLedgerService {
   readonly holdings = new Map<string, number>();
 
   async creditNFT(owner: string, tokenId: string, amount = 1): Promise<void> {

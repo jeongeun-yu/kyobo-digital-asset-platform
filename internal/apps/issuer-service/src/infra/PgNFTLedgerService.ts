@@ -9,10 +9,10 @@
  */
 
 import type { Pool } from 'pg';
-import type { LedgerService } from '@kyobo/event-engine';
+import type { NFTLedgerService } from '@kyobo/event-engine';
 import type { TxStateMachineService, TxRepository } from '../../../../packages/vasp/src/tx/TxStateMachineService';
 
-export class PgNFTLedgerService implements LedgerService {
+export class PgNFTLedgerService implements NFTLedgerService {
   constructor(
     private readonly pool:            Pool,
     private readonly contractAddr:    string,
