@@ -400,7 +400,7 @@ D.full = `classDiagram
     +prevChecksum String
     +checksum String
   }
-  note for AuditLogEntry "audit_log 테이블 (append-only)\nSHA-256 hash chain 무결성"
+  note for AuditLogEntry "audit_log 테이블 — append-only, SHA-256 hash chain"
   class AuditLogRepository:::cb {
     +save(entry)
     +findLast()
@@ -411,7 +411,7 @@ D.full = `classDiagram
     +log(actor, action, resourceType, resourceId, before, after)
     +verifyIntegrity(id)
   }
-  note for AuditLogService "REQUIRES_NEW 트랜잭션\n메인 롤백 시에도 로그 보존"
+  note for AuditLogService "REQUIRES_NEW — 메인 롤백 시에도 로그 보존"
   class NftHolding:::cb {
     +id Long
     +userId String
@@ -439,7 +439,7 @@ D.full = `classDiagram
     +recordAuditLog(request)
     +getUserAccount(userId)
   }
-  note for BlockchainGatewayController "Java Spring Boot\nPOST /api/internal/users/{userId}/nft-holdings\nPOST /api/internal/audit-log"
+  note for BlockchainGatewayController "Java Spring Boot — POST /api/internal/users/nft-holdings, /audit-log"
   NftHoldingRepository ..> NftHolding
   InternalLedgerService *-- NftHoldingRepository
   InternalLedgerService *-- AuditLogService
@@ -944,7 +944,7 @@ D.cb = `classDiagram
     +prevChecksum String
     +checksum String
   }
-  note for AuditLogEntry "audit_log 테이블 (append-only)\nSHA-256 hash chain 무결성"
+  note for AuditLogEntry "audit_log 테이블 — append-only, SHA-256 hash chain"
   class AuditLogRepository:::cb {
     +save(entry)
     +findLast()
@@ -956,7 +956,7 @@ D.cb = `classDiagram
     +log(actor, action, resourceType, resourceId, before, after)
     +verifyIntegrity(id)
   }
-  note for AuditLogService "REQUIRES_NEW 트랜잭션\n메인 롤백 시에도 로그 보존"
+  note for AuditLogService "REQUIRES_NEW — 메인 롤백 시에도 로그 보존"
   AuditLogService *-- AuditLogRepository
   AuditLogRepository ..> AuditLogEntry
   class IReconcileService:::iface {
@@ -1021,7 +1021,7 @@ D.cb = `classDiagram
     +getUserAccount(userId)
     +notifyReward(request)
   }
-  note for BlockchainGatewayController "Java Spring Boot\nPOST /api/internal/users/{userId}/nft-holdings\nPOST /api/internal/audit-log"
+  note for BlockchainGatewayController "Java Spring Boot — POST /api/internal/users/nft-holdings, /audit-log"
   NftHoldingRepository ..> NftHolding
   InternalLedgerService *-- NftHoldingRepository
   InternalLedgerService *-- AuditLogService
