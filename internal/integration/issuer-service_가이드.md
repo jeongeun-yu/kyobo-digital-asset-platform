@@ -202,6 +202,7 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 | `reorg` | 체인 롤백 시뮬레이션 (DB 상태 직접 주입) | REORGED |
 | `poll-stale` | PENDING 10분 초과 강제 복구 | CONFIRMED |
 | `burst` | 동시 5명 발행 | 전체 CONFIRMED |
+| `reconcile` | 정상 발행 후 mint_requests 삭제 → `/admin/reconcile/run` → ONCHAIN_ONLY 불일치 감지 | reconcile_history 기록 |
 | `reset` | MockVASP mode → NORMAL 복원 | — |
 
 ---

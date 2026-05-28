@@ -819,11 +819,16 @@ D.issuer = `classDiagram
     +setWalletAddr(id, addr)
   }
   class TxStateMachineService:::vasp {
+    -repo TxRepository
+    -vasp VaspTxClient
+    -wallet? WalletResolver
     +submitMintRequest(req)
     +handleMined(requestId, blockNumber)
     +handleConfirmed(requestId)
     +handleFinalized(requestId)
     +handleFailed(requestId, reason)
+    +handleTimeout(requestId)
+    +handleReorg(requestId)
     +pollStaleRequests()
     +getStatus(requestId)
   }
@@ -996,8 +1001,23 @@ D.stream = `classDiagram
   class IssuerService:::is {
     +issueActivityNFT(payload)
   }
+  class CouponProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class NFTBurnedProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
+  class NFTTransferredProcessor:::ee {
+    +eventTypes string[]
+    +process(msg)
+  }
   EventProcessor <|.. NFTIssuedProcessor
   EventProcessor <|.. ActivityProcessor
+  EventProcessor <|.. CouponProcessor
+  EventProcessor <|.. NFTBurnedProcessor
+  EventProcessor <|.. NFTTransferredProcessor
   NFTLedgerService <|.. PgNFTLedgerService
   IActivityIssuer <|.. IssuerService
   PgNFTLedgerService *-- ICoreBankingAdapter
@@ -1261,6 +1281,15 @@ D.boot = `classDiagram
     reconcileService ReconcileService
     coreBanking KyoboCoreBankingAdapter
   }
+  class LedgerService:::cb {
+    -db DatabaseClient
+    -coreBanking ICoreBankingAdapter
+    +createMintRequest(userId, policyId)
+    +getMintRequest(id)
+    +findByTxHash(txHash)
+    +updateMintRequest(id, patch)
+    +recordProcessedEvent(txHash, logIndex, ...)
+  }
 
   Redis --> RedisIdempotencyStore : injected
   Pool --> TokenIssuerFactory : injected
@@ -1276,6 +1305,7 @@ D.boot = `classDiagram
   KyoboCoreBankingAdapter --> TokenIssuerFactory : injected
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> IssuanceConfirmHandler : creates
+  TokenIssuerFactory ..> LedgerService : creates
   EVMAdapter --> ChainEventListener : injected
   IssuanceConfirmHandler --> ChainEventListener : injected
   ProcessedEventHandler --> ChainEventListener : injected
