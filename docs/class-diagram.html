@@ -243,6 +243,20 @@ D.full = `classDiagram
   }
   DLQHandler *-- DLQRedisClient
   DLQHandler *-- DLQNotifier
+  class DLQStore:::iface {
+    <<interface>>
+    +save(item)
+  }
+  class DeadLetterQueue:::ee {
+    -store DLQStore
+    +push(item)
+  }
+  class RetryHandler:::ee {
+    -dlq DeadLetterQueue
+    +send(event)
+  }
+  DeadLetterQueue *-- DLQStore
+  RetryHandler *-- DeadLetterQueue
   class NFTIssuedProcessor:::ee {
     +process(msg)
   }
@@ -1160,6 +1174,20 @@ D.stream = `classDiagram
   }
   DLQHandler *-- DLQRedisClient
   DLQHandler *-- DLQNotifier
+  class DLQStore:::iface {
+    <<interface>>
+    +save(item)
+  }
+  class DeadLetterQueue:::ee {
+    -store DLQStore
+    +push(item)
+  }
+  class RetryHandler:::ee {
+    -dlq DeadLetterQueue
+    +send(event)
+  }
+  DeadLetterQueue *-- DLQStore
+  RetryHandler *-- DeadLetterQueue
   class EventProcessor:::iface {
     <<interface>>
     +eventTypes string[]
