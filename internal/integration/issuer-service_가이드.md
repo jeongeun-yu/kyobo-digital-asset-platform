@@ -213,7 +213,7 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 | 8545 | Hardhat EVM RPC | ✓ | — |
 | 15432 | PostgreSQL | ✓ | ✓ |
 | 16379 | Redis | ✓ | ✓ |
-| 19870 | Admin HTTP (`POST /admin/poll-stale`) | ✓ | ✓ |
+| 19870 | Admin HTTP (`POST /admin/poll-stale`, `POST /admin/reconcile/run`, `GET /admin/reconcile/history`) | ✓ | ✓ |
 | 19875 | Java internal-ledger | ✓ | ✓ |
 | 19876 | VASPServer | ✓ | ✓ |
 | 19877 | WebhookServer (issuer-service) | ✓ | ✓ |
@@ -224,7 +224,7 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 
 코드 변경 후 전체 파이프라인이 정상 동작하는지 자동으로 검증한다.
 
-### 2-1. mock-vasp 통합 테스트 (9가지 시나리오)
+### 2-1. mock-vasp 통합 테스트 (11가지 시나리오)
 
 ```powershell
 cd internal/integration
@@ -245,8 +245,9 @@ npm run test:mock-vasp
     ✔ [stream-4] XAUTOCLAIM — PEL 잔류 메시지 재수신
     ✔ [poll-1] pollStaleRequests — SUBMITTED → PENDING 조작 → CONFIRMED
     ✔ [burst] 동시 5명 웹훅 → 전체 CONFIRMED
+    ✔ [reconcile-1] DB 조작 → ONCHAIN_ONLY 불일치 → ReconcileService 감지 + reconcile_history 기록
 
-  Tests: 10 passed, 10 total
+  Tests: 11 passed, 11 total
 ```
 
 ### 2-2. Redis Stream 통합 테스트 (5가지 시나리오)
@@ -273,7 +274,7 @@ npx jest __tests__/stream-consumer.integration.test.ts
 
 ---
 
-### 2-3. Sepolia 통합 테스트 (6가지 시나리오)
+### 2-3. Sepolia 통합 테스트 (10가지 시나리오)
 
 `.env`에 `SEPOLIA_RPC_URL`, `SEPOLIA_OPERATOR_KEY`, `SEPOLIA_MOCK_VASP_ADDR`, `DEPLOYER_PRIVATE_KEY` 설정 필요.
 
@@ -296,15 +297,19 @@ npm run test:sepolia
 예상 출력:
 
 ```
-  PASS __tests__/issuer-service-sepolia.integration.test.ts (약 10분)
+  PASS __tests__/issuer-service-sepolia.integration.test.ts (약 12분)
     ✔ [1] NORMAL — 정상 발행 → Issued 이벤트 → CONFIRMED  (~2분)
     ✔ [2] REVERT — TX revert → issuance_requests FAILED    (~1분)
     ✔ [3] NO_EMIT — mint 성공, Issued 이벤트 없음 → SUBMITTED 유지  (~2분)
+    ✔ [4] PENDING — nonce 블로커 TX → mempool 체류 → replacement → CONFIRMED
+    ✔ [5] REORG — CONFIRMED 후 DB 직접 REORGED 주입 → 30초 관찰
     ✔ [stream-2] 동일 requestId 중복 주입 → 멱등성 보장
     ✔ [stream-3] retryCount >= 3 → DLQ 이동
     ✔ [stream-4] XAUTOCLAIM — PEL 잔류 메시지 재수신
+    ✔ [poll-1] pollStaleRequests — SUBMITTED → PENDING 조작 → CONFIRMED
+    ✔ [reconcile-1] DB 조작 → ONCHAIN_ONLY 불일치 → ReconcileService 감지 + reconcile_history 기록
 
-  Tests: 6 passed, 6 total
+  Tests: 10 passed, 10 total
 ```
 
 ### 2-3. Etherscan에서 NFT 확인 (Sepolia)
@@ -337,6 +342,9 @@ docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT status, tx_hash 
 # 감사 로그
 docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
 
+# Reconcile 이력
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT run_type, target_count, mismatch_count, mismatch_user_ids, duration_ms FROM reconcile_history ORDER BY run_at DESC LIMIT 10;"
+
 # Redis Stream
 docker exec -it kyobo-demo-redis redis-cli XRANGE kyobo:events - +
 ```
@@ -351,6 +359,8 @@ docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT user_id, toke
 docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;"
 
 docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT actor, action, resource_type, checksum, prev_checksum FROM audit_log ORDER BY id;"
+
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT run_type, target_count, mismatch_count, mismatch_user_ids, duration_ms FROM reconcile_history ORDER BY run_at DESC LIMIT 10;"
 
 docker exec -it kyobo-sepolia-redis redis-cli XRANGE kyobo:events - +
 ```
@@ -405,6 +415,9 @@ internal/integration/local-demo/
 └── scenario-sepolia.ts   # Sepolia 실패 시나리오 CLI
 
 internal/integration/__tests__/
-├── issuer-service-mock-vasp.integration.test.ts   # 9가지 시나리오 (Hardhat)
-└── issuer-service-sepolia.integration.test.ts     # 6가지 시나리오 (Sepolia)
+├── issuer-service-mock-vasp.integration.test.ts   # 11가지 시나리오 (Hardhat)
+└── issuer-service-sepolia.integration.test.ts     # 10가지 시나리오 (Sepolia)
+
+internal/apps/issuer-service/src/infra/
+└── PgNftHoldingRepository.ts   # user_nft_holdings DB 조회 (Reconcile용)
 ```

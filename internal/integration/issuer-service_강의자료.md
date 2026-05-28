@@ -21,6 +21,7 @@
 12. [테스트 전용 클래스 해설](#12-테스트-전용-클래스-해설)
 13. [Sepolia 통합 테스트 — Hardhat과의 차이](#13-sepolia-통합-테스트--hardhat과의-차이)
 14. [InMemoryRedis 구현 원리](#14-inmemoryredis-구현-원리)
+15. [Reconcile 설계 — DB ↔ 온체인 정합성 검증](#15-reconcile-설계--db--온체인-정합성-검증)
 
 ---
 
@@ -180,6 +181,29 @@ NO_EMIT 모드 → TX 채굴 성공 + Issued 이벤트 없음
 
 ChainEventListener가 이벤트를 놓쳤을 때 폴링으로 복구하는 경로.
 
+### Reconcile — ONCHAIN_ONLY 불일치 감지
+
+```
+정상 발행 완료 (user_nft_holdings에 tokenId 기록됨)
+→ DB 조작: user_nft_holdings 해당 row 삭제 (ONCHAIN_ONLY 상태 인위 생성)
+→ POST :19870/admin/reconcile/run (body: { userId, operator })
+  → ReconcileAdminService.runManualReconcile()
+  → ReconcileService.reconcileNftHoldings(userId)
+     ├── DB: PgNftHoldingRepository.getHoldings() → [] (삭제했으므로 없음)
+     └── 온체인: EVMAdapter.getNftHoldings() → [tokenId] (여전히 보유 중)
+  → 불일치 감지: { tokenId, dbAmount: 0, onChainAmount: 1, type: 'ONCHAIN_ONLY' }
+→ reconcile_history INSERT (mismatch_count=1)
+→ audit_log INSERT: action='RECONCILE_MISMATCH_DETECTED'
+→ GET :19870/admin/reconcile/history → 불일치 이력 확인
+```
+
+**ONCHAIN_ONLY**: 온체인에는 NFT가 있지만 DB에는 없는 상태. 발행 파이프라인 일부 실패나 DB 장애 시 발생할 수 있다.
+
+**ReconcileService 설계 원칙**:
+- `ReconcileService`: 단일 userId에 대한 DB ↔ 온체인 비교 로직만 담당
+- `ReconcileAdminService`: 언제·누구를·어떻게 실행할지 담당 (HOURLY/DAILY/MANUAL)
+- `EVMAdapter.getNftHoldings()`: ERC-1155는 tokenId 열거 API가 없으므로 `TransferSingle` 이벤트를 스캔해 tokenId 목록을 수집한 뒤 `balanceOf > 0` 필터로 실제 보유분만 추린다.
+
 ---
 
 ## 3. DB 테이블 역할
@@ -194,6 +218,7 @@ ChainEventListener가 이벤트를 놓쳤을 때 폴링으로 복구하는 경�
 | `processed_events` | core-banking | 체인 이벤트 중복 처리 방지 (txHash + logIndex로 멱등성 보장) |
 | `user_nft_holdings` | Java internal-ledger | NFT 보유 현황 영구 원장 |
 | `audit_log` | Java internal-ledger | 모든 상태 전이 감사 로그 (hash chain 무결성) |
+| `reconcile_history` | ReconcileAdminService | Reconcile 실행 이력 (runType, mismatchCount, 소요시간) |
 
 ---
 
@@ -441,11 +466,12 @@ ioredis와 동일한 메서드 시그니처(`xadd`, `xreadgroup`, `xack`, `xauto
 | PostgreSQL | ❌ | ✅ | ❌ | ✅ | ❌ |
 | Java 컨테이너 | ❌ | ✅ | ❌ | ✅ | ❌ |
 | Redis | ❌ | ✅ | ❌ | ✅ | ✅ |
-| PENDING / REORG | ✅ | ✅ | ❌ | ❌ | ❌ |
+| PENDING / REORG | ✅ | ✅ | ❌ | ✅ | ❌ |
 | Redis Stream (멱등·DLQ·XAUTOCLAIM) | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Reconcile (DB ↔ 온체인 정합성) | ❌ | ✅ | ❌ | ✅ | ❌ |
 | Etherscan 확인 | ❌ | ❌ | ✅ | ✅ | ❌ |
 | 오프라인 실행 | ✅ | ❌ | ❌ | ❌ | ✅ (InMemory) |
-| 총 시나리오 수 | 5 | 9 | 3 | 6 | 4 |
+| 총 시나리오 수 | 5 | 11 | 3 | 10 | 4 |
 | 강의 용도 | 컨트랙트 설명 | 서비스 설계 전체 | 실운영 TX 시각화 | 실운영 유사 E2E | 이벤트 버스 신뢰성 |
 
 ---
@@ -456,8 +482,8 @@ ioredis와 동일한 메서드 시그니처(`xadd`, `xreadgroup`, `xack`, `xauto
 
 ```
 internal/integration/__tests__/
-├── issuer-service-mock-vasp.integration.test.ts   ← 메인 (9 시나리오, Hardhat)
-├── issuer-service-sepolia.integration.test.ts     ← Sepolia E2E (9 시나리오)
+├── issuer-service-mock-vasp.integration.test.ts   ← 메인 (11 시나리오, Hardhat)
+├── issuer-service-sepolia.integration.test.ts     ← Sepolia E2E (10 시나리오)
 ├── stream-consumer.integration.test.ts            ← Redis Stream 레이어 독립 검증
 ├── issuer-service-walkthrough.integration.test.ts ← 워크스루 (메서드 추적 로그)
 ├── issuance-status.integration.test.ts            ← 상태 전이 단위 (IssuanceStatus)
@@ -468,8 +494,8 @@ internal/integration/__tests__/
 
 | 파일 | 레이어 | 인프라 | 목적 |
 |---|---|---|---|
-| mock-vasp | 파이프라인 전체 | Hardhat + PG + Redis + Java | 9개 비즈니스 시나리오 E2E 검증 |
-| sepolia | 파이프라인 전체 | Sepolia + PG + Redis + Java | 실운영 환경 유사 E2E 검증 |
+| mock-vasp | 파이프라인 전체 | Hardhat + PG + Redis + Java | 11개 비즈니스 시나리오 E2E 검증 |
+| sepolia | 파이프라인 전체 | Sepolia + PG + Redis + Java | 실운영 환경 유사 E2E 검증 (10개) |
 | stream-consumer | 이벤트 버스 | Redis (또는 InMemory) | ConsumerGroupPool 신뢰성 독립 검증 |
 | walkthrough | 파이프라인 전체 | PG + Redis (InMemory 폴백) | 메서드 호출 흐름 교육용 추적 |
 | issuance-status | issuer-service 레이어 | PG | IssuanceStatus 상태 전이 규칙 검증 |
@@ -985,3 +1011,86 @@ const CLAIM_GROUP = `${GROUP}-autoclaim-${Date.now()}`;
 ```
 
 같은 스트림을 여러 테스트가 공유할 때, 각 테스트의 PEL이 다른 테스트에 영향을 주지 않도록 그룹 이름을 고유하게 만든다. PEL은 그룹 단위로 관리되므로 그룹이 다르면 완전히 독립적이다.
+
+---
+
+## 15. Reconcile 설계 — DB ↔ 온체인 정합성 검증
+
+### 왜 Reconcile이 필요한가
+
+NFT 발행 파이프라인은 여러 단계로 구성된다. 어느 단계에서든 장애가 발생하면 DB와 온체인 상태가 어긋날 수 있다.
+
+| 불일치 유형 | 원인 예시 |
+|---|---|
+| `ONCHAIN_ONLY` | DB 기록 중 장애 → 온체인에는 있지만 DB에 없음 |
+| `DB_ONLY` | 이중 발행 방지 로직 버그 → DB에는 있지만 온체인에 없음 |
+| `AMOUNT_MISMATCH` | DB 수량과 온체인 잔액 불일치 |
+
+Reconcile은 이 상태를 주기적으로 감지하고 알림을 보낸다. **자동 수정은 하지 않는다** — 원인 분석 후 운영자가 수동 보정한다.
+
+### ReconcileService — 단일 사용자 비교 로직
+
+```typescript
+async reconcileNftHoldings(userId: string): Promise<ReconcileResult> {
+  const dbHoldings     = await this.holdingRepo.getHoldings(userId);   // user_nft_holdings
+  const chainHoldings  = await this.chainAdapter.getNftHoldings(       // TransferSingle 스캔
+    this.contractAddr, walletAddr, this.fromBlock
+  );
+
+  const dbSet    = new Set(dbHoldings.map(String));
+  const chainSet = new Set(chainHoldings.map(String));
+
+  const discrepancies: Discrepancy[] = [];
+  for (const id of chainSet) {
+    if (!dbSet.has(id)) discrepancies.push({ tokenId: BigInt(id), type: 'ONCHAIN_ONLY' });
+  }
+  for (const id of dbSet) {
+    if (!chainSet.has(id)) discrepancies.push({ tokenId: BigInt(id), type: 'DB_ONLY' });
+  }
+  return { isHealthy: discrepancies.length === 0, discrepancies };
+}
+```
+
+**ERC-1155 열거 문제**: ERC-1155는 `tokenIds()` 같은 열거 API가 없다. `EVMAdapter.getNftHoldings()`는 `TransferSingle` 이벤트 로그를 스캔해 이 지갑이 관련된 tokenId 집합을 수집하고, `balanceOf(addr, id) > 0`인 것만 보유 중으로 판단한다.
+
+### ReconcileAdminService — 실행 오케스트레이터
+
+```
+HOURLY  → user_nft_holdings WHERE updated_at >= NOW() - 1h → 변경된 사용자만
+DAILY   → user_nft_holdings 전체 순회 → 누적 오차 감지
+MANUAL  → 특정 userId 즉시 실행 → 보정 후 재검증용
+```
+
+실행 결과는 `reconcile_history` 테이블에 기록된다:
+
+```sql
+run_at, run_type, target_count, mismatch_count, mismatch_user_ids (JSONB), duration_ms
+```
+
+불일치 발생 시 심각도별 알림:
+- **P3**: 1~4건
+- **P2**: 5~9건
+- **P1**: 10건 이상
+
+### Admin HTTP 엔드포인트
+
+```
+POST :19870/admin/reconcile/run
+Body: { "userId": "user-001", "operator": "admin-kim" }
+→ runManualReconcile() 실행
+
+GET  :19870/admin/reconcile/history?limit=10&runType=MANUAL
+→ reconcile_history 조회
+```
+
+### JSONB auto-parse 주의사항
+
+pg(node-postgres)는 JSONB 컬럼을 자동으로 JS 객체로 파싱한다. `mismatch_user_ids`가 JSONB이므로 조회 결과를 `JSON.parse()`로 다시 파싱하면 안 된다.
+
+```typescript
+// ❌ 잘못된 방법 — array.toString()이 호출되어 "[object Object]" 오류
+const ids = JSON.parse(row.mismatch_user_ids);
+
+// ✅ 올바른 방법 — pg가 이미 파싱한 배열 그대로 사용
+const ids = row.mismatch_user_ids as string[];
+```
