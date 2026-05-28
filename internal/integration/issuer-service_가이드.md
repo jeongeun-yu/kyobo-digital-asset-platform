@@ -278,24 +278,22 @@ Content-Type: application/json
 { "ok": true, "userId": "demo-user-001", "tokenId": "1748000000000", "amount": 1 }
 ```
 
-**curl 예시**
+**PowerShell 실행 예시**
 
 ```powershell
-curl -X POST http://localhost:19870/admin/credit-nft `
-  -H "Content-Type: application/json" `
-  -d '{"userId":"demo-user-001","tokenId":"1748000000000","amount":1,"txHash":"0x3bb01ff..."}'
+Invoke-RestMethod -Method Post -Uri http://localhost:19870/admin/credit-nft `
+  -ContentType "application/json" `
+  -Body '{"userId":"demo-user-001","tokenId":"1748000000000","amount":1,"txHash":"0x3bb01ff..."}'
 ```
 
 **결과 확인**
 
 ```powershell
 # Hardhat
-docker exec -it kyobo-demo-postgres psql -U postgres -c \
-  "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
+docker exec -it kyobo-demo-postgres psql -U postgres -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
 
 # Sepolia
-docker exec -it kyobo-sepolia-postgres psql -U postgres -c \
-  "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
 ```
 
 > `poll-stale` 시나리오 스크립트(`scenario-sepolia.ts`)는 CONFIRMED 확인 후 자동으로 이 엔드포인트를 호출한다.
