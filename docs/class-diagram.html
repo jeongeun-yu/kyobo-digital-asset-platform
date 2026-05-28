@@ -136,15 +136,23 @@ D.full = `classDiagram
 
   class IBlockchainAdapter:::iface {
     <<interface>>
-    +mintNFT(to, tokenId, uri)
-    +queryEvents(addr, abi, eventName)
+    +isConnected()
     +getBlockNumber()
+    +mintNFT(params)
+    +mintNFTBatch(params)
+    +burnNFT(params)
+    +getBalance(contractAddr, owner, tokenId)
+    +getNftHoldings?(contractAddr, address, fromBlock)
+    +call(params)
     +sendTransaction(params)
+    +getReceipt(txHash)
+    +queryEvents(addr, abi, eventName)
+    +subscribeEvents(contracts, handler)
   }
   class EVMAdapter:::chain {
-    -rpcUrl string
-    -wallet Wallet
-    +mintNFT(to, tokenId, uri)
+    -wallet Wallet|null
+    -provider JsonRpcProvider
+    +mintNFT(params)
   }
   class AdapterDecorator:::chain {
     <<abstract>>
@@ -247,7 +255,11 @@ D.full = `classDiagram
   }
   class TxStateMachineService:::vasp {
     +submitMintRequest(req)
-    +updateStatus(txHash, status)
+    +handleMined(requestId, blockNumber)
+    +handleConfirmed(requestId)
+    +handleFinalized(requestId)
+    +handleFailed(requestId, reason)
+    +pollStaleRequests()
   }
   class PgTxRepository:::is {
     +save(tx)
@@ -271,8 +283,13 @@ D.full = `classDiagram
     +health()
   }
   class CircuitBreaker:::cb {
+    -state string
+    -failures number
+    -failureThreshold number
+    -recoveryTimeMs number
     +execute(fn)
     +getState()
+    +getFailures()
   }
   class LedgerService:::cb {
     +createMintRequest(params)
@@ -330,16 +347,18 @@ D.chain = `classDiagram
     <<interface>>
     +chainId string
     +chainType string
-    +mintNFT(to, tokenId, uri)
-    +mintNFTBatch(recipients, tokenIds)
-    +burnNFT(tokenId)
-    +getBalance(addr, tokenId)
+    +isConnected()
+    +getBlockNumber()
+    +mintNFT(params)
+    +mintNFTBatch(params)
+    +burnNFT(params)
+    +getBalance(contractAddr, owner, tokenId)
+    +getNftHoldings?(contractAddr, address, fromBlock)
     +call(params)
     +sendTransaction(params)
-    +getBlockNumber()
     +getReceipt(txHash)
-    +queryEvents(addr, abi, eventName)
-    +subscribeEvents(contracts, handler)
+    +queryEvents(addr, abi, eventName, fromBlock, toBlock)
+    +subscribeEvents(contractAddr, abi, eventNames, fromBlock, handler)
   }
   class AdapterDecorator:::chain {
     <<abstract>>
@@ -355,18 +374,19 @@ D.chain = `classDiagram
     +All methods — retries on failure
   }
   class EVMAdapter:::chain {
-    -rpcUrl string
-    -chainId string
-    -wallet Wallet
+    +chainId string
+    -wallet Wallet|null
     -provider JsonRpcProvider
-    +mintNFT(to, tokenId, uri)
-    +mintNFTBatch(recipients, tokenIds)
-    +burnNFT(tokenId)
-    +getBalance(addr, tokenId)
-    +sendTransaction(params)
-    +queryEvents(addr, abi, eventName)
-    +subscribeEvents(contracts, handler)
+    +isConnected()
     +getBlockNumber()
+    +mintNFT(params)
+    +mintNFTBatch(params)
+    +burnNFT(params)
+    +getBalance(contractAddr, owner, tokenId)
+    +getNftHoldings(contractAddr, address, fromBlock)
+    +sendTransaction(params)
+    +queryEvents(addr, abi, eventName, fromBlock, toBlock)
+    +subscribeEvents(contractAddr, abi, eventNames, fromBlock, handler)
     +getReceipt(txHash)
   }
 
@@ -411,6 +431,7 @@ D.ee = `classDiagram
   class WebhookPublishHandler:::ee {
     -publisher RedisStreamPublisher
     -idempotency IdempotencyGuard
+    -streamKey string
     +createHandler()
   }
   WebhookPublishHandler *-- IdempotencyGuard
@@ -496,14 +517,26 @@ D.ee = `classDiagram
   ActivityProcessor *-- IdempotencyGuard
   ActivityProcessor *-- IActivityIssuer
 
+  class BlockStateStore:::iface {
+    <<interface>>
+    +getLastProcessedBlock()
+    +setLastProcessedBlock(block)
+  }
+  class FinalizedBlockProvider:::iface {
+    <<interface>>
+    +getFinalizedBlockNumber()
+  }
   class ChainEventListener:::ee {
     -adapter IBlockchainAdapter
     -handlers IEventHandler[]
     -contracts ContractConfig[]
+    -stateStore BlockStateStore
     +start()
     +stop()
   }
-  ChainEventListener *-- IEventHandler`;
+  ChainEventListener *-- IEventHandler
+  ChainEventListener *-- BlockStateStore
+  NFTIssuedProcessor *-- FinalizedBlockProvider`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // vasp
@@ -569,16 +602,27 @@ D.vasp = `classDiagram
   VaspTxClient <|.. VaspTxClientAdapter
   VaspTxClientAdapter *-- IVASPAdapter
 
+  class WalletResolver:::iface {
+    <<interface>>
+    +getWalletAddr(userId)
+  }
   class TxStateMachineService:::vasp {
     -repo TxRepository
-    -vaspClient VaspTxClient
+    -vasp VaspTxClient
+    -wallet? WalletResolver
     +submitMintRequest(req)
-    +updateStatus(txHash, status)
+    +handleMined(requestId, blockNumber)
+    +handleConfirmed(requestId)
+    +handleFinalized(requestId)
+    +handleFailed(requestId, reason)
+    +handleTimeout(requestId)
+    +handleReorg(requestId)
     +pollStaleRequests()
-    +addEventListener(fn)
+    +getStatus(requestId)
   }
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
+  TxStateMachineService *-- WalletResolver
 `;
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -622,12 +666,12 @@ D.cb = `classDiagram
   }
   class CircuitBreaker:::cb {
     -state string
+    -failures number
     -failureThreshold number
-    -successThreshold number
-    -timeout number
+    -recoveryTimeMs number
     +execute(fn)
     +getState()
-    +reset()
+    +getFailures()
   }
   KyoboCoreBankingAdapter *-- InternalGatewayClient
   InternalGatewayClient *-- CircuitBreaker
@@ -750,8 +794,12 @@ D.issuer = `classDiagram
   }
   class TxStateMachineService:::vasp {
     +submitMintRequest(req)
-    +updateStatus(txHash, status)
+    +handleMined(requestId, blockNumber)
+    +handleConfirmed(requestId)
+    +handleFinalized(requestId)
+    +handleFailed(requestId, reason)
     +pollStaleRequests()
+    +getStatus(requestId)
   }
   class TxRepository:::iface {
     <<interface>>
@@ -947,11 +995,17 @@ D.tx = `classDiagram
 
   class TxStateMachineService:::vasp {
     -repo TxRepository
-    -vaspClient VaspTxClient
+    -vasp VaspTxClient
+    -wallet? WalletResolver
     +submitMintRequest(req)
-    +updateStatus(txHash, status)
+    +handleMined(requestId, blockNumber)
+    +handleConfirmed(requestId)
+    +handleFinalized(requestId)
+    +handleFailed(requestId, reason)
+    +handleTimeout(requestId)
+    +handleReorg(requestId)
     +pollStaleRequests()
-    +addEventListener(fn)
+    +getStatus(requestId)
   }
   class TxRepository:::iface {
     <<interface>>
@@ -1024,10 +1078,12 @@ D.tx = `classDiagram
   }
   class CircuitBreaker:::cb {
     -state string
-    -failureCount number
+    -failures number
+    -failureThreshold number
+    -recoveryTimeMs number
     +execute(fn)
     +getState()
-    +reset()
+    +getFailures()
   }
   class LedgerService:::cb {
     -db DatabaseClient
@@ -1038,12 +1094,17 @@ D.tx = `classDiagram
     +updateMintRequest(id, patch)
     +recordProcessedEvent(txHash, logIndex, ...)
   }
+  class WalletResolver:::iface {
+    <<interface>>
+    +getWalletAddr(userId)
+  }
   TxRepository <|.. PgTxRepository
   VaspTxClient <|.. VaspTxClientAdapter
   IVASPAdapter <|.. ExternalVASPAdapter
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
+  TxStateMachineService *-- WalletResolver
   TxStateMachineService --> TxTransitionBridge : emits events
   TxTransitionBridge *-- LedgerService
   TxTransitionBridge *-- IIssuanceRequestRepository
