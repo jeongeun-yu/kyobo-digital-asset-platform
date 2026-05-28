@@ -347,8 +347,16 @@ D.full = `classDiagram
     +getStatus(txHash)
     +resubmitWithGasBump(txHash, pct)
   }
+  class ExternalVaspTxClient:::vasp {
+    -baseUrl string
+    -apiKey string
+    +submitMint(params)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash, pct)
+  }
   IVASPAdapter <|.. ExternalVASPAdapter
   VaspTxClient <|.. VaspTxClientAdapter
+  VaspTxClient <|.. ExternalVaspTxClient
   VaspTxClientAdapter *-- IVASPAdapter
   TxStateMachineService *-- PgTxRepository
   TxStateMachineService *-- VaspTxClient
@@ -833,7 +841,15 @@ D.vasp = `classDiagram
     +getStatus(txHash)
     +resubmitWithGasBump(txHash)
   }
+  class ExternalVaspTxClient:::vasp {
+    -baseUrl string
+    -apiKey string
+    +submitMint(req)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash)
+  }
   VaspTxClient <|.. VaspTxClientAdapter
+  VaspTxClient <|.. ExternalVaspTxClient
   VaspTxClientAdapter *-- IVASPAdapter
 
   class WalletResolver:::iface {
@@ -1207,7 +1223,15 @@ D.issuer = `classDiagram
     +getStatus(txHash)
     +resubmitWithGasBump(txHash, pct)
   }
+  class ExternalVaspTxClient:::vasp {
+    -baseUrl string
+    -apiKey string
+    +submitMint(params)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash, pct)
+  }
   VaspTxClient <|.. VaspTxClientAdapter
+  VaspTxClient <|.. ExternalVaspTxClient
   VaspTxClientAdapter *-- IVASPAdapter
   TxStateMachineService *-- VaspTxClient
   TxTransitionBridge ..> TxStateMachineService : listens transition
@@ -1502,8 +1526,16 @@ D.tx = `classDiagram
     <<interface>>
     +getWalletAddr(userId)
   }
+  class ExternalVaspTxClient:::vasp {
+    -baseUrl string
+    -apiKey string
+    +submitMint(req)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash)
+  }
   TxRepository <|.. PgTxRepository
   VaspTxClient <|.. VaspTxClientAdapter
+  VaspTxClient <|.. ExternalVaspTxClient
   IVASPAdapter <|.. ExternalVASPAdapter
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   TxStateMachineService *-- TxRepository

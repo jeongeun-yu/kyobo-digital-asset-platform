@@ -306,14 +306,14 @@ async function scenarioPending(userId: string) {
   console.log(`[scenario-sepolia] OPERATOR nonce(pending)=${pendingNonce}`);
   console.log(`[scenario-sepolia] Sepolia baseFee=${ethers.formatUnits(baseFee, 'gwei')} gwei`);
 
-  // blocker TX: 1 wei maxFeePerGas → base fee 훨씬 밑 → mempool 체류
-  console.log('[scenario-sepolia] 블로커 TX 전송 (maxFeePerGas=1 wei)...');
+  // blocker TX: maxFeePerGas=baseFee+1 → mempool 진입, tip=0 → 채굴 유인 없음 → 체류
+  console.log(`[scenario-sepolia] 블로커 TX 전송 (maxFeePerGas=baseFee+1=${ethers.formatUnits(baseFee + 1n, 'gwei')} gwei, tip=0)...`);
   const blockerTx = await signer.sendTransaction({
     to:           signer.address,   // 자기 자신에게 0 ETH
     value:        0n,
     nonce:        pendingNonce,
-    maxFeePerGas: 1n,               // 1 wei — base fee 이하 → mempool 체류
-    maxPriorityFeePerGas: 0n,
+    maxFeePerGas:         baseFee + 1n,  // baseFee+1 → mempool 진입 가능
+    maxPriorityFeePerGas: 0n,            // tip=0 → validator 채굴 유인 없음 → 체류
     gasLimit:     21_000n,
   });
   console.log(`[scenario-sepolia] 블로커 TX hash: ${blockerTx.hash} (체류 중)`);
@@ -330,20 +330,28 @@ async function scenarioPending(userId: string) {
   console.log(`[scenario-sepolia] ${PENDING_SEC}초 대기 후 블로커 취소...`);
   await new Promise(r => setTimeout(r, PENDING_SEC * 1000));
 
-  // EIP-1559 replacement TX: 같은 nonce, 충분한 gas (기존 maxFeePerGas의 110% 이상)
-  const replaceFee = baseFee * 2n + ethers.parseUnits('2', 'gwei');
-  console.log('[scenario-sepolia] 블로커 replacement TX 전송...');
-  const replaceTx = await signer.sendTransaction({
-    to:                  signer.address,
-    value:               0n,
-    nonce:               pendingNonce,   // 동일 nonce → replacement
-    maxFeePerGas:        replaceFee,
-    maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei'),
-    gasLimit:            21_000n,
-  });
-  console.log(`[scenario-sepolia] replacement TX hash: ${replaceTx.hash}`);
-  await replaceTx.wait(1);
-  console.log('[scenario-sepolia] 블로커 취소 완료 → 발행 TX 순차 처리됨');
+  // 블로커 채굴 여부 확인 (Sepolia는 tip=0 TX도 빠르게 채굴될 수 있음)
+  const confirmedNonce = await provider.getTransactionCount(signer.address, 'latest');
+  if (confirmedNonce > pendingNonce) {
+    // 블로커가 이미 채굴됨 → replacement 불필요, 발행 TX도 순차 처리 중
+    console.log(`[scenario-sepolia] 블로커 이미 채굴됨 (confirmedNonce=${confirmedNonce}, blockerNonce=${pendingNonce})`);
+    console.log('[scenario-sepolia] → 발행 TX도 순차 처리됨 (PENDING 체류 시간이 짧았음)');
+  } else {
+    // EIP-1559 replacement TX: 같은 nonce, 충분한 gas (기존 maxFeePerGas의 110% 이상)
+    const replaceFee = baseFee * 2n + ethers.parseUnits('2', 'gwei');
+    console.log('[scenario-sepolia] 블로커 replacement TX 전송...');
+    const replaceTx = await signer.sendTransaction({
+      to:                  signer.address,
+      value:               0n,
+      nonce:               pendingNonce,   // 동일 nonce → replacement
+      maxFeePerGas:        replaceFee,
+      maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei'),
+      gasLimit:            21_000n,
+    });
+    console.log(`[scenario-sepolia] replacement TX hash: ${replaceTx.hash}`);
+    await replaceTx.wait(1);
+    console.log('[scenario-sepolia] 블로커 취소 완료 → 발행 TX 순차 처리됨');
+  }
 
   printDbHint([
     'SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 3;',
