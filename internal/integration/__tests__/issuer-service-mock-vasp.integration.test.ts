@@ -472,6 +472,9 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     }, 3_000, 'drain previous test').catch(() => {});
 
     await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log, reconcile_history');
+
+    // evm_revert 이후 NonceManager 내부 카운터가 체인과 어긋날 수 있으므로 재동기화
+    vaspServer.resetNonce();
   }, 20_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
