@@ -244,6 +244,28 @@ async function bootstrap() {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(rows));
 
+        } else if (req.method === 'POST' && req.url === '/admin/credit-nft') {
+          // 임시 — 데모/테스트 전용: 특정 userId에 NFT +amount 직접 기록
+          const body = await new Promise<string>((ok, ng) => {
+            let buf = '';
+            req.on('data', c => { buf += c; });
+            req.on('end',  () => ok(buf));
+            req.on('error', ng);
+          });
+          const { userId, tokenId, amount = 1, txHash: onChainTx = '', operator = 'admin' } =
+            JSON.parse(body) as { userId: string; tokenId: string; amount?: number; txHash?: string; operator?: string };
+          await reconcileAdmin.creditNft({
+            userId,
+            tokenId:      BigInt(tokenId),
+            contractAddr: process.env.NFT_CONTRACT_ADDR!,
+            chainId:      Number(process.env.CHAIN_ID!),
+            amount:       BigInt(amount),
+            onChainTx,
+            operator,
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, userId, tokenId, amount }));
+
         } else {
           res.writeHead(404).end('{}');
         }
@@ -251,7 +273,7 @@ async function bootstrap() {
         res.writeHead(500).end(JSON.stringify({ error: String(e) }));
       }
     }).listen(adminPort, () =>
-      console.log(`[admin] :${adminPort} /admin/poll-stale | /admin/reconcile/run | /admin/reconcile/history`),
+      console.log(`[admin] :${adminPort} /admin/poll-stale | /admin/reconcile/run | /admin/reconcile/history | /admin/credit-nft`),
     );
   }
 

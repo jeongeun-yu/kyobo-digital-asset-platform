@@ -479,8 +479,34 @@ async function scenarioPollStale(userId: string) {
 
     // issuance_requests CONFIRMED 확인
     await new Promise(r => setTimeout(r, 1000));
-    const { rows } = await pool.query('SELECT status FROM issuance_requests ORDER BY created_at DESC LIMIT 1');
+    const { rows } = await pool.query(
+      'SELECT status, token_id FROM issuance_requests ORDER BY created_at DESC LIMIT 1',
+    );
     console.log(`[scenario-sepolia] issuance_requests.status = ${rows[0]?.status}`);
+
+    // user_nft_holdings +1 (임시 admin API — poll-stale 경로에서 원장 미반영 보정)
+    if (rows[0]?.status === 'CONFIRMED') {
+      const tokenId = String(rows[0].token_id);
+      const creditResult = await new Promise<{ ok: boolean }>((resolve, reject) => {
+        const body = JSON.stringify({ userId, tokenId, amount: 1, txHash });
+        const req2 = http.request(
+          {
+            hostname: 'localhost', port: ADMIN_PORT,
+            method: 'POST', path: '/admin/credit-nft',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+          },
+          res => {
+            let buf = '';
+            res.on('data', d => { buf += d; });
+            res.on('end', () => resolve(JSON.parse(buf)));
+          },
+        );
+        req2.on('error', reject);
+        req2.write(body);
+        req2.end();
+      });
+      console.log(`[scenario-sepolia] /admin/credit-nft → ${JSON.stringify(creditResult)}`);
+    }
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
     await pool.end();

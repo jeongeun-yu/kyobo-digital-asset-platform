@@ -388,9 +388,69 @@ D.full = `classDiagram
     +createMintRequest(params)
     +updateMintRequest(id, status)
   }
+  class AuditLogEntry:::cb {
+    +id Long
+    +eventTime Instant
+    +actor String
+    +action String
+    +resourceType String
+    +resourceId String
+    +beforeState String
+    +afterState String
+    +prevChecksum String
+    +checksum String
+  }
+  note for AuditLogEntry "audit_log 테이블 (append-only)\nSHA-256 hash chain 무결성"
+  class AuditLogRepository:::cb {
+    +save(entry)
+    +findLast()
+    +acquireChainLock()
+  }
+  class AuditLogService:::cb {
+    -auditLogRepository AuditLogRepository
+    +log(actor, action, resourceType, resourceId, before, after)
+    +verifyIntegrity(id)
+  }
+  note for AuditLogService "REQUIRES_NEW 트랜잭션\n메인 롤백 시에도 로그 보존"
+  class NftHolding:::cb {
+    +id Long
+    +userId String
+    +tokenId Long
+    +amount Long
+    +onChainTx String
+    +addAmount(delta, onChainTx)
+    +release()
+  }
+  note for NftHolding "user_nft_holdings 테이블"
+  class NftHoldingRepository:::cb {
+    +save(holding)
+    +findByUserIdAndTokenIdAndContractAddrAndChainId(...)
+  }
+  class InternalLedgerService:::cb {
+    -nftHoldingRepository NftHoldingRepository
+    -auditLogService AuditLogService
+    +recordNftHolding(userId, request)
+    +releaseNftHolding(userId, tokenId, contractAddr, chainId)
+  }
+  class BlockchainGatewayController:::cb {
+    -ledgerService InternalLedgerService
+    -auditLogService AuditLogService
+    +recordNftHolding(userId, request)
+    +recordAuditLog(request)
+    +getUserAccount(userId)
+  }
+  note for BlockchainGatewayController "Java Spring Boot\nPOST /api/internal/users/{userId}/nft-holdings\nPOST /api/internal/audit-log"
+  NftHoldingRepository ..> NftHolding
+  InternalLedgerService *-- NftHoldingRepository
+  InternalLedgerService *-- AuditLogService
+  BlockchainGatewayController *-- InternalLedgerService
+  BlockchainGatewayController *-- AuditLogService
+  AuditLogService *-- AuditLogRepository
+  AuditLogRepository ..> AuditLogEntry
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   KyoboCoreBankingAdapter *-- InternalGatewayClient
   InternalGatewayClient *-- CircuitBreaker
+  InternalGatewayClient ..> BlockchainGatewayController : HTTP
   LedgerService *-- DatabaseClient
   LedgerService *-- ICoreBankingAdapter
 
@@ -872,12 +932,33 @@ D.cb = `classDiagram
     +updateMintRequest(id, patch)
     +recordProcessedEvent(txHash, logIndex, ...)
   }
-  class AuditLogService:::cb {
-    -db DatabaseClient
-    +verifyIntegrity(id)
-    +queryByResource(type, id)
-    +queryByActor(actor, from, to)
+  class AuditLogEntry:::cb {
+    +id Long
+    +eventTime Instant
+    +actor String
+    +action String
+    +resourceType String
+    +resourceId String
+    +beforeState String
+    +afterState String
+    +prevChecksum String
+    +checksum String
   }
+  note for AuditLogEntry "audit_log 테이블 (append-only)\nSHA-256 hash chain 무결성"
+  class AuditLogRepository:::cb {
+    +save(entry)
+    +findLast()
+    +findById(id)
+    +acquireChainLock()
+  }
+  class AuditLogService:::cb {
+    -auditLogRepository AuditLogRepository
+    +log(actor, action, resourceType, resourceId, before, after)
+    +verifyIntegrity(id)
+  }
+  note for AuditLogService "REQUIRES_NEW 트랜잭션\n메인 롤백 시에도 로그 보존"
+  AuditLogService *-- AuditLogRepository
+  AuditLogRepository ..> AuditLogEntry
   class IReconcileService:::iface {
     <<interface>>
     +reconcile()
@@ -905,11 +986,50 @@ D.cb = `classDiagram
     +runDailyReconcile()
     +runManualReconcile(userId, operator)
     +getHistory(limit, runType)
+    +creditNft(params)
   }
+  class NftHolding:::cb {
+    +id Long
+    +userId String
+    +tokenId Long
+    +contractAddr String
+    +chainId Integer
+    +amount Long
+    +acquiredAt Instant
+    +releasedAt Instant
+    +onChainTx String
+    +addAmount(delta, onChainTx)
+    +release()
+  }
+  note for NftHolding "user_nft_holdings 테이블"
+  class NftHoldingRepository:::cb {
+    +save(holding)
+    +findByUserIdAndTokenIdAndContractAddrAndChainId(...)
+    +findByUserIdAndTokenIdAndContractAddrAndChainIdAndReleasedAtIsNull(...)
+  }
+  class InternalLedgerService:::cb {
+    -nftHoldingRepository NftHoldingRepository
+    -auditLogService AuditLogService
+    +recordNftHolding(userId, request)
+    +releaseNftHolding(userId, tokenId, contractAddr, chainId)
+  }
+  class BlockchainGatewayController:::cb {
+    -ledgerService InternalLedgerService
+    -auditLogService AuditLogService
+    +recordNftHolding(userId, request)
+    +recordAuditLog(request)
+    +getUserAccount(userId)
+    +notifyReward(request)
+  }
+  note for BlockchainGatewayController "Java Spring Boot\nPOST /api/internal/users/{userId}/nft-holdings\nPOST /api/internal/audit-log"
+  NftHoldingRepository ..> NftHolding
+  InternalLedgerService *-- NftHoldingRepository
+  InternalLedgerService *-- AuditLogService
+  BlockchainGatewayController *-- InternalLedgerService
+  BlockchainGatewayController *-- AuditLogService
   IReconcileService <|.. ReconcileService
   LedgerService *-- DatabaseClient
   LedgerService *-- ICoreBankingAdapter
-  AuditLogService *-- DatabaseClient
   ReconcileService *-- PgNftHoldingRepository
   ReconcileService *-- ICoreBankingAdapter
   ReconcileAdminService *-- ReconcileService

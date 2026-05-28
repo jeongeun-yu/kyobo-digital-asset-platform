@@ -15,6 +15,8 @@
 6. [트러블슈팅](#트러블슈팅)
 7. [파일 구조](#파일-구조)
 
+> Admin HTTP API (credit-nft 포함): [1-4절](#1-4-admin-http-api-포트-19870)
+
 ---
 
 ## 1. 사전 준비
@@ -55,13 +57,25 @@ docker images | Select-String "kyobo"
 # kyobo/internal-ledger   test   ...
 ```
 
-> `build:java`는 Docker 내부에서 Maven 빌드를 실행한다. 로컬에 Java가 없어도 된다.  
-> Java 소스 변경 시 재빌드:
+> `build:java`는 Docker 내부에서 Maven 빌드를 실행한다. 로컬에 Java가 없어도 된다.
+>
+> **Java 소스 변경 시 전체 적용 순서:**
 >
 > ```powershell
+> # 1. 이미지 재빌드 (internal/integration 에서 실행)
 > cd internal/integration
 > npm run build:java
+>
+> # 2. 실행 중인 Java 컨테이너 재시작
+> docker rm -f kyobo-demo-java        # Hardhat 데모
+> docker rm -f kyobo-sepolia-java     # Sepolia 데모
+>
+> # 3. 데모 서버 재시작 — 컨테이너는 start.ts / start-sepolia.ts 가 자동으로 다시 띄움
+> npm run demo:start          # Hardhat
+> npm run demo:start-sepolia  # Sepolia
 > ```
+>
+> 통합 테스트는 globalSetup이 컨테이너를 자동으로 올리므로 `npm run build:java` 후 바로 실행하면 된다.
 >
 > ⚠ `docker compose build`는 `:local` 태그로 빌드하므로 사용하지 말 것. 데모·테스트는 `:test` 태그를 사용한다.
 
@@ -214,14 +228,88 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 
 ---
 
-### 1-4. 포트 정리
+### 1-4. Admin HTTP API (포트 19870)
+
+데모·테스트 전용. `ADMIN_PORT` 환경변수가 설정된 경우에만 활성화된다 (운영 환경에서는 미설정).
+
+| 엔드포인트 | 설명 |
+|---|---|
+| `POST /admin/poll-stale` | `pollStaleRequests()` 수동 트리거 — PENDING 10분 초과 TX 강제 복구 |
+| `POST /admin/reconcile/run` | `ReconcileAdminService.runManualReconcile()` — 특정 userId 온체인 잔액 검증 |
+| `GET /admin/reconcile/history` | Reconcile 실행 이력 조회 (`?limit=N`) |
+| `POST /admin/credit-nft` | **임시** — NFT 원장 직접 보정 (아래 참고) |
+
+#### `POST /admin/credit-nft` — NFT 원장 직접 보정
+
+**언제 사용하나**
+
+`poll-stale` 시나리오처럼 온체인 이벤트(Issued)가 누락된 채로 TX가 CONFIRMED 처리된 경우,  
+`pollStaleRequests()`는 TX 상태만 복구하고 `user_nft_holdings`는 건드리지 않는다.  
+이 엔드포인트로 원장에 직접 +1을 기록한다.
+
+내부적으로 `ReconcileAdminService.creditNft()`를 호출한다 — 감사 로그(`ADMIN_CREDIT_NFT`) 자동 기록.
+
+**요청 형식**
+
+```json
+POST http://localhost:19870/admin/credit-nft
+Content-Type: application/json
+
+{
+  "userId":   "demo-user-001",
+  "tokenId":  "1748000000000",
+  "amount":   1,
+  "txHash":   "0x3bb01ff914fc8c...",
+  "operator": "admin"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `userId` | string | ✓ | 보정 대상 사용자 ID |
+| `tokenId` | string | ✓ | NFT 토큰 ID (숫자를 문자열로) |
+| `amount` | number | — | 보정 수량 (기본값 `1`) |
+| `txHash` | string | — | 온체인 TX 해시 (기본값 `""`) |
+| `operator` | string | — | 감사 로그에 기록될 요청자 식별자 (기본값 `"admin"`) |
+
+**응답**
+
+```json
+{ "ok": true, "userId": "demo-user-001", "tokenId": "1748000000000", "amount": 1 }
+```
+
+**curl 예시**
+
+```powershell
+curl -X POST http://localhost:19870/admin/credit-nft `
+  -H "Content-Type: application/json" `
+  -d '{"userId":"demo-user-001","tokenId":"1748000000000","amount":1,"txHash":"0x3bb01ff..."}'
+```
+
+**결과 확인**
+
+```powershell
+# Hardhat
+docker exec -it kyobo-demo-postgres psql -U postgres -c \
+  "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
+
+# Sepolia
+docker exec -it kyobo-sepolia-postgres psql -U postgres -c \
+  "SELECT user_id, token_id, amount, on_chain_tx FROM user_nft_holdings ORDER BY user_id;"
+```
+
+> `poll-stale` 시나리오 스크립트(`scenario-sepolia.ts`)는 CONFIRMED 확인 후 자동으로 이 엔드포인트를 호출한다.
+
+---
+
+### 1-5. 포트 정리
 
 | 포트 | 서비스 | Hardhat | Sepolia |
 |---|---|---|---|
 | 8545 | Hardhat EVM RPC | ✓ | — |
 | 15432 | PostgreSQL | ✓ | ✓ |
 | 16379 | Redis | ✓ | ✓ |
-| 19870 | Admin HTTP (`POST /admin/poll-stale`, `POST /admin/reconcile/run`, `GET /admin/reconcile/history`) | ✓ | ✓ |
+| 19870 | Admin HTTP (poll-stale / reconcile / credit-nft) | ✓ | ✓ |
 | 19875 | Java internal-ledger | ✓ | ✓ |
 | 19876 | VASPServer | ✓ | ✓ |
 | 19877 | WebhookServer (issuer-service) | ✓ | ✓ |
