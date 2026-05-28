@@ -656,11 +656,27 @@ D.ee = `classDiagram
   ChainEventListener *-- BlockStateStore
   NFTIssuedProcessor *-- FinalizedBlockProvider
 
-  class RetryHandler:::ee {
-    -maxRetries number
-    -delayMs number
-    +send(params)
+  class DLQStore:::iface {
+    <<interface>>
+    +save(item)
   }
+  class DeadLetterQueue:::ee {
+    -store DLQStore
+    +push(item)
+  }
+  class NonRetryableError:::ee {
+    +statusCode number
+  }
+  class RetryableError:::ee {
+    +statusCode number
+  }
+  class RetryHandler:::ee {
+    -config RetryConfig
+    -dlq DeadLetterQueue
+    +send(event)
+  }
+  DeadLetterQueue *-- DLQStore
+  RetryHandler *-- DeadLetterQueue
   class NFTIssuedHandler:::ee {
     +eventName string
     +contractAddr string
