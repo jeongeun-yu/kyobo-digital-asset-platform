@@ -422,12 +422,7 @@ async function scenarioPollStale(userId: string) {
   console.log('  Sepolia TX 채굴 확인 후 DB 조작: SUBMITTED → PENDING + created_at -11분');
   console.log('  → POST /admin/poll-stale → getTransferStatus(VASPServer) → CONFIRMED\n');
 
-  const pgUrl = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL'];
-  if (!pgUrl) {
-    console.error('[scenario-sepolia] POSTGRES_URL 환경변수가 필요합니다.');
-    console.error('  예: POSTGRES_URL="postgresql://postgres:demo@localhost:15432/postgres" npm run demo:scenario-sepolia -- poll-stale');
-    return;
-  }
+  const pgUrl = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL'] ?? 'postgresql://postgres:demo@localhost:15432/postgres';
 
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
