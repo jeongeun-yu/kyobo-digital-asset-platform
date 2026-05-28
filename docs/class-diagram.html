@@ -334,6 +334,7 @@ D.full = `classDiagram
     +getNFTBalance(wallet, tokenId)
   }
   NFTLedgerService <|.. PgNFTLedgerService
+  IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
   IEventHandler <|.. IssuanceConfirmHandler
   IActivityIssuer <|.. IssuerService
   IssuerService *-- ICoreBankingAdapter
@@ -912,6 +913,7 @@ D.issuer = `classDiagram
   PgNFTLedgerService *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> TxTransitionBridge : creates
+  TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
   IssuanceConfirmHandler *-- TxStateMachineService
   IssuanceConfirmHandler *-- TxRepository
   ProcessedEventHandler *-- LedgerService
@@ -1306,6 +1308,7 @@ D.boot = `classDiagram
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> IssuanceConfirmHandler : creates
   TokenIssuerFactory ..> LedgerService : creates
+  TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
   EVMAdapter --> ChainEventListener : injected
   IssuanceConfirmHandler --> ChainEventListener : injected
   ProcessedEventHandler --> ChainEventListener : injected
