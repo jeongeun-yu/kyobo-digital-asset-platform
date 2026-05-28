@@ -277,9 +277,22 @@ D.full = `classDiagram
     +save(tx)
     +updateStatus(id, status)
   }
+  class VaspTxClient:::iface {
+    <<interface>>
+    +submitMint(params)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash, pct)
+  }
+  class VaspTxClientAdapter:::vasp {
+    +submitMint(params)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash, pct)
+  }
   IVASPAdapter <|.. ExternalVASPAdapter
+  VaspTxClient <|.. VaspTxClientAdapter
+  VaspTxClientAdapter *-- IVASPAdapter
   TxStateMachineService *-- PgTxRepository
-  TxStateMachineService ..> IVASPAdapter : submits TX
+  TxStateMachineService *-- VaspTxClient
 
   class ICoreBankingAdapter:::iface {
     <<interface>>
@@ -303,13 +316,23 @@ D.full = `classDiagram
     +getState()
     +getFailures()
   }
+  class DatabaseClient:::iface {
+    <<interface>>
+    +query(sql, params)
+  }
+  class PgDatabaseClient:::is {
+    +query(sql, params)
+  }
+  DatabaseClient <|.. PgDatabaseClient
   class LedgerService:::cb {
+    -db DatabaseClient
     +createMintRequest(params)
     +updateMintRequest(id, status)
   }
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   KyoboCoreBankingAdapter *-- InternalGatewayClient
   InternalGatewayClient *-- CircuitBreaker
+  LedgerService *-- DatabaseClient
   LedgerService *-- ICoreBankingAdapter
 
   class IssuerService:::is {
@@ -875,15 +898,26 @@ D.issuer = `classDiagram
     +notifyReward(userId, nftId)
     +recordAuditLog(log)
   }
+  class DatabaseClient:::iface {
+    <<interface>>
+    +query(sql, params)
+  }
+  class PgDatabaseClient:::is {
+    +query(sql, params)
+  }
+  DatabaseClient <|.. PgDatabaseClient
   class LedgerService:::cb {
+    -db DatabaseClient
     +createMintRequest(userId, policyId)
     +findByTxHash(txHash)
     +updateMintRequest(id, patch)
     +recordProcessedEvent(txHash, logIndex)
   }
+  LedgerService *-- DatabaseClient
   class TokenIssuerFactory:::is {
     +createNFTIssuer(addr, condSvc)
   }
+  TokenIssuerFactory ..> PgDatabaseClient : creates
   class IssuanceConfirmHandler:::is {
     +handle(event)
   }
@@ -920,7 +954,20 @@ D.issuer = `classDiagram
   IssuerService *-- TxStateMachineService
   IssuerService *-- ICoreBankingAdapter
   IssuerService *-- LedgerService
-  TxStateMachineService ..> IVASPAdapter : submits TX
+  class VaspTxClient:::iface {
+    <<interface>>
+    +submitMint(params)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash, pct)
+  }
+  class VaspTxClientAdapter:::vasp {
+    +submitMint(params)
+    +getStatus(txHash)
+    +resubmitWithGasBump(txHash, pct)
+  }
+  VaspTxClient <|.. VaspTxClientAdapter
+  VaspTxClientAdapter *-- IVASPAdapter
+  TxStateMachineService *-- VaspTxClient
   TxTransitionBridge ..> TxStateMachineService : listens transition
   TxTransitionBridge *-- LedgerService
   TxTransitionBridge *-- IIssuanceRequestRepository
@@ -1157,6 +1204,14 @@ D.tx = `classDiagram
     +getState()
     +getFailures()
   }
+  class DatabaseClient:::iface {
+    <<interface>>
+    +query(sql, params)
+  }
+  class PgDatabaseClient:::is {
+    +query(sql, params)
+  }
+  DatabaseClient <|.. PgDatabaseClient
   class LedgerService:::cb {
     -db DatabaseClient
     -coreBanking ICoreBankingAdapter
@@ -1166,6 +1221,7 @@ D.tx = `classDiagram
     +updateMintRequest(id, patch)
     +recordProcessedEvent(txHash, logIndex, ...)
   }
+  LedgerService *-- DatabaseClient
   class WalletResolver:::iface {
     <<interface>>
     +getWalletAddr(userId)
@@ -1290,9 +1346,14 @@ D.boot = `classDiagram
   class PgNftHoldingRepository:::is {
     pool Pool
   }
+  class DatabaseClient:::iface {
+    <<interface>>
+    +query(sql, params)
+  }
   class PgDatabaseClient:::is {
     pool Pool
   }
+  DatabaseClient <|.. PgDatabaseClient
   class ReconcileService:::cb {
     coreBanking KyoboCoreBankingAdapter
     pgHoldingRepo PgNftHoldingRepository

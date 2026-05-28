@@ -166,6 +166,7 @@ async function scenarioRevert(userId: string) {
   const pgUrl = process.env['POSTGRES_URL'] ?? 'postgresql://postgres:demo@localhost:15432/postgres';
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
+  const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
 
   await setMode(MintMode.REVERT, 'REVERT');
 
@@ -173,7 +174,7 @@ async function scenarioRevert(userId: string) {
     const status = await sendWebhook({ userId });
     console.log(`[scenario-sepolia] HTTP ${status} — VASPServer TX 브로드캐스트 대기 중...`);
 
-    // TX가 VASPServer에 의해 브로드캐스트될 때까지 대기
+    // 1단계: TX broadcast 확인 (tx_hash DB 등록)
     // sendWebhook()의 202는 큐 진입일 뿐 — TX 전송 전에 NORMAL 복원하면 revert 안 됨
     const deadline = Date.now() + 30_000;
     let txHash: string | undefined;
@@ -185,15 +186,23 @@ async function scenarioRevert(userId: string) {
       );
       if (rows[0]?.tx_hash) {
         txHash = String(rows[0].tx_hash);
-        console.log(`[scenario-sepolia] TX 브로드캐스트 확인: ${txHash.slice(0, 16)}… — NORMAL 복원`);
+        console.log(`[scenario-sepolia] TX 브로드캐스트 확인: ${txHash.slice(0, 16)}… — Sepolia 채굴 대기 중 (~12s)`);
         break;
       }
       await sleep(500);
     }
-    if (!txHash) console.warn('[scenario-sepolia] TX 브로드캐스트 타임아웃 — DB를 직접 확인하세요');
+    if (!txHash) {
+      console.warn('[scenario-sepolia] TX 브로드캐스트 타임아웃 — DB를 직접 확인하세요');
+      return;
+    }
+
+    // 2단계: TX 채굴까지 대기 — 채굴 전에 NORMAL 복원하면 setMode TX가 먼저 확정되어 safeMint 성공할 수 있음
+    await provider.waitForTransaction(txHash, 1, 60_000);
+    console.log('[scenario-sepolia] Sepolia TX 채굴 완료 (revert 확정) — NORMAL 복원');
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
     await pool.end();
+    (provider as any).destroy?.();
   }
 
   printDbHint([

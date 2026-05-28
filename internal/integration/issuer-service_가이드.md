@@ -56,7 +56,14 @@ docker images | Select-String "kyobo"
 ```
 
 > `build:java`는 Docker 내부에서 Maven 빌드를 실행한다. 로컬에 Java가 없어도 된다.  
-> 소스 변경 시에만 재빌드 필요.
+> Java 소스 변경 시 재빌드:
+>
+> ```powershell
+> cd internal/integration
+> npm run build:java
+> ```
+>
+> ⚠ `docker compose build`는 `:local` 태그로 빌드하므로 사용하지 말 것. 데모·테스트는 `:test` 태그를 사용한다.
 
 ---
 

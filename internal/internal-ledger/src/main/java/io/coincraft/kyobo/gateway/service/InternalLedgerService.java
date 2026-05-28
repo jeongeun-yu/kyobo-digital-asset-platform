@@ -30,35 +30,43 @@ public class InternalLedgerService {
      */
     @Transactional
     public void recordNftHolding(String userId, NftHoldingRequest request) {
-        // 중복 방지: 동일 (userId, tokenId, contractAddr, chainId) 이미 존재 시 skip
-        boolean alreadyExists = nftHoldingRepository
-            .existsByUserIdAndTokenIdAndContractAddrAndChainId(
-                userId, request.tokenId(), request.contractAddr(), request.chainId());
-
-        if (alreadyExists) {
-            log.warn("[Ledger] 이미 기록된 NFT 보유: userId={}, tokenId={}, tx={}", userId, request.tokenId(), request.onChainTx());
-            return;
-        }
-
-        NftHolding holding = NftHolding.of(
-            userId,
-            request.tokenId(),
-            request.contractAddr(),
-            request.chainId(),
-            request.amount(),
-            request.acquiredAt(),
-            request.onChainTx()
-        );
-        nftHoldingRepository.save(holding);
-
-        String afterJson = String.format(
-            "{\"userId\":\"%s\",\"tokenId\":%d,\"contractAddr\":\"%s\",\"chainId\":%d,\"amount\":%d,\"onChainTx\":\"%s\"}",
-            userId, request.tokenId(), request.contractAddr(), request.chainId(), request.amount(), request.onChainTx());
-        auditLogService.log("system", "NFT_ACQUIRED", "NftHolding",
-            request.contractAddr() + ":" + request.tokenId(),
-            null, afterJson);
-
-        log.info("[Ledger] NFT 보유 기록 완료: userId={}, tokenId={}", userId, request.tokenId());
+        nftHoldingRepository
+            .findByUserIdAndTokenIdAndContractAddrAndChainId(
+                userId, request.tokenId(), request.contractAddr(), request.chainId())
+            .ifPresentOrElse(
+                existing -> {
+                    long before = existing.getAmount();
+                    existing.addAmount(request.amount(), request.onChainTx());
+                    String afterJson = String.format(
+                        "{\"userId\":\"%s\",\"tokenId\":%d,\"contractAddr\":\"%s\",\"chainId\":%d,\"amount\":%d,\"onChainTx\":\"%s\"}",
+                        userId, request.tokenId(), request.contractAddr(), request.chainId(),
+                        existing.getAmount(), request.onChainTx());
+                    String beforeJson = String.format(
+                        "{\"userId\":\"%s\",\"tokenId\":%d,\"contractAddr\":\"%s\",\"chainId\":%d,\"amount\":%d}",
+                        userId, request.tokenId(), request.contractAddr(), request.chainId(), before);
+                    auditLogService.log("system", "NFT_AMOUNT_INCREMENTED", "NftHolding",
+                        request.contractAddr() + ":" + request.tokenId(), beforeJson, afterJson);
+                    log.info("[Ledger] NFT 보유량 누적: userId={}, tokenId={}, {}→{}", userId, request.tokenId(), before, existing.getAmount());
+                },
+                () -> {
+                    NftHolding holding = NftHolding.of(
+                        userId,
+                        request.tokenId(),
+                        request.contractAddr(),
+                        request.chainId(),
+                        request.amount(),
+                        request.acquiredAt(),
+                        request.onChainTx()
+                    );
+                    nftHoldingRepository.save(holding);
+                    String afterJson = String.format(
+                        "{\"userId\":\"%s\",\"tokenId\":%d,\"contractAddr\":\"%s\",\"chainId\":%d,\"amount\":%d,\"onChainTx\":\"%s\"}",
+                        userId, request.tokenId(), request.contractAddr(), request.chainId(), request.amount(), request.onChainTx());
+                    auditLogService.log("system", "NFT_ACQUIRED", "NftHolding",
+                        request.contractAddr() + ":" + request.tokenId(), null, afterJson);
+                    log.info("[Ledger] NFT 보유 기록 완료: userId={}, tokenId={}", userId, request.tokenId());
+                }
+            );
     }
 
     /**
