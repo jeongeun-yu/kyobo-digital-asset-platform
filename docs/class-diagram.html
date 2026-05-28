@@ -336,6 +336,7 @@ D.full = `classDiagram
   NFTLedgerService <|.. PgNFTLedgerService
   IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
   IEventHandler <|.. IssuanceConfirmHandler
+  IEventHandler <|.. ProcessedEventHandler
   IActivityIssuer <|.. IssuerService
   IssuerService *-- ICoreBankingAdapter
   IssuerService *-- EventConditionService
@@ -404,6 +405,7 @@ D.chain = `classDiagram
 
   IBlockchainAdapter <|.. EVMAdapter
   IBlockchainAdapter <|.. AdapterDecorator
+  AdapterDecorator *-- IBlockchainAdapter
   AdapterDecorator <|-- LoggingAdapterDecorator
   AdapterDecorator <|-- RetryAdapterDecorator`;
 
@@ -800,6 +802,19 @@ D.issuer = `classDiagram
     +updateStatus(id, status)
     +findByTxHash(txHash)
   }
+  class IIssuancePolicyRepository:::iface {
+    <<interface>>
+    +findByEventType(eventType)
+  }
+  class PgIssuancePolicyRepository:::is {
+    +findByEventType(eventType)
+  }
+  class PgIssuanceRequestRepository:::is {
+    +create(req)
+    +findPending(userId, eventType, tokenId)
+    +updateStatus(id, status)
+    +findByTxHash(txHash)
+  }
   class IssuerService:::is {
     +issueActivityNFT(payload)
     +handleVaspTxFailed(params)
@@ -911,9 +926,13 @@ D.issuer = `classDiagram
   TxTransitionBridge *-- IIssuanceRequestRepository
   TxTransitionBridge *-- ICoreBankingAdapter
   PgNFTLedgerService *-- ICoreBankingAdapter
+  IIssuancePolicyRepository <|.. PgIssuancePolicyRepository
+  IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
+  IssuancePolicyService *-- IIssuancePolicyRepository
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> TxTransitionBridge : creates
   TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
+  TokenIssuerFactory ..> PgIssuancePolicyRepository : creates
   IssuanceConfirmHandler *-- TxStateMachineService
   IssuanceConfirmHandler *-- TxRepository
   ProcessedEventHandler *-- LedgerService
@@ -1309,6 +1328,7 @@ D.boot = `classDiagram
   TokenIssuerFactory ..> IssuanceConfirmHandler : creates
   TokenIssuerFactory ..> LedgerService : creates
   TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
+  TokenIssuerFactory ..> PgIssuancePolicyRepository : creates
   EVMAdapter --> ChainEventListener : injected
   IssuanceConfirmHandler --> ChainEventListener : injected
   ProcessedEventHandler --> ChainEventListener : injected
