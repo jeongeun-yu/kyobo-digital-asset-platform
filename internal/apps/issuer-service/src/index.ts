@@ -158,19 +158,18 @@ async function bootstrap() {
     maxBodyKb: 64,
   });
 
-  // 내부 인바운드 → Redis Stream
-  webhookServer.on('ACTIVITY_ACHIEVED', webhookPublisher.createHandler());
-  webhookServer.on('COUPON_CLAIM',      webhookPublisher.createHandler());
-
-  // VASP 콜백 → Redis Stream
-  webhookServer.on('NFT_ISSUED', webhookPublisher.createHandler());
-
-  // VASP_TX_FAILED: 직접 처리 (실패 TX → issuance_requests FAILED 즉시 전이)
-  // 지연 없이 DB 상태를 갱신해야 하므로 Redis Stream 우회
-  webhookServer.on('VASP_TX_FAILED', async (payload) => {
-    const data = payload.data as { txHash: string; reason?: string };
-    await issuerService.handleVaspTxFailed({ txHash: data.txHash, reason: data.reason });
-  });
+  webhookServer
+    // 내부 인바운드 → Redis Stream
+    .on('ACTIVITY_ACHIEVED', webhookPublisher.createHandler())
+    .on('COUPON_CLAIM',      webhookPublisher.createHandler())
+    // VASP 콜백 → Redis Stream
+    .on('NFT_ISSUED', webhookPublisher.createHandler())
+    // VASP_TX_FAILED: 직접 처리 (실패 TX → issuance_requests FAILED 즉시 전이)
+    // 지연 없이 DB 상태를 갱신해야 하므로 Redis Stream 우회
+    .on('VASP_TX_FAILED', async (payload) => {
+      const data = payload.data as { txHash: string; reason?: string };
+      await issuerService.handleVaspTxFailed({ txHash: data.txHash, reason: data.reason });
+    });
 
   // ── ISMS 자동 점검 (주기적 실행) ─────────────────────────────────────────────
   const isms = new ISMSChecklist({
