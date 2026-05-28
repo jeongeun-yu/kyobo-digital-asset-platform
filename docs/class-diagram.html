@@ -225,9 +225,24 @@ D.full = `classDiagram
     +start()
     +stop()
   }
+  class DLQRedisClient:::iface {
+    <<interface>>
+    +xadd(key, fields)
+    +xrange(key, start, end, count)
+    +xdel(key, ids)
+  }
+  class DLQNotifier:::iface {
+    <<interface>>
+    +sendAlert(message)
+  }
   class DLQHandler:::ee {
     +move(item)
+    +listPending(count)
+    +requeueMessage(dlqMessageId)
+    +drop(dlqMessageId)
   }
+  DLQHandler *-- DLQRedisClient
+  DLQHandler *-- DLQNotifier
   class NFTIssuedProcessor:::ee {
     +process(msg)
   }
@@ -535,10 +550,30 @@ D.ee = `classDiagram
     +start()
     +stop()
   }
-  class DLQHandler:::ee {
-    -redis RedisConsumerClient
-    +move(item)
+  class DLQRedisClient:::iface {
+    <<interface>>
+    +xadd(key, fields)
+    +xrange(key, start, end, count)
+    +xdel(key, ids)
   }
+  class DLQNotifier:::iface {
+    <<interface>>
+    +sendAlert(message)
+  }
+  class DLQHandler:::ee {
+    -redis DLQRedisClient
+    -notifier DLQNotifier
+    -dlqStreamKey string
+    +move(item)
+    +listPending(count)
+    +requeueMessage(dlqMessageId, targetStreamKey)
+    +drop(dlqMessageId)
+  }
+  class DLQMessageNotFoundError:::ee {
+    +name string
+  }
+  DLQHandler *-- DLQRedisClient
+  DLQHandler *-- DLQNotifier
   RedisStreamPublisher *-- RedisStreamClient
   WebhookPublishHandler *-- RedisStreamPublisher
   ConsumerGroupPool *-- ConsumerGroupWorker
@@ -1088,9 +1123,27 @@ D.stream = `classDiagram
     +xack(key, group, ids)
     +xautoclaim(key, group, consumer, minIdle, startId)
   }
-  class DLQHandler:::ee {
-    +move(item)
+  class DLQRedisClient:::iface {
+    <<interface>>
+    +xadd(key, fields)
+    +xrange(key, start, end, count)
+    +xdel(key, ids)
   }
+  class DLQNotifier:::iface {
+    <<interface>>
+    +sendAlert(message)
+  }
+  class DLQHandler:::ee {
+    -redis DLQRedisClient
+    -notifier DLQNotifier
+    -dlqStreamKey string
+    +move(item)
+    +listPending(count)
+    +requeueMessage(dlqMessageId, targetStreamKey)
+    +drop(dlqMessageId)
+  }
+  DLQHandler *-- DLQRedisClient
+  DLQHandler *-- DLQNotifier
   class EventProcessor:::iface {
     <<interface>>
     +eventTypes string[]
