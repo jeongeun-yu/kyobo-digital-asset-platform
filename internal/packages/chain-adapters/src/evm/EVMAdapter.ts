@@ -23,6 +23,11 @@ const ERC1155_ABI = [
   'function balanceOf(address account, uint256 id) view returns (uint256)',
 ];
 
+// ERC-1155 TransferSingle — tokenId 목록 스캔용
+const TRANSFER_SINGLE_ABI = [
+  'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)',
+];
+
 /**
  * EVMAdapter — IBlockchainAdapter EVM 구현체 (Ethereum / Polygon)
  *
@@ -123,6 +128,47 @@ export class EVMAdapter implements IBlockchainAdapter {
       args:   [owner, tokenId],
     });
     return BigInt(String(result));
+  }
+
+  /**
+   * ERC-1155 주소의 보유 tokenId 목록 조회
+   *
+   * ERC-1155는 enumeration이 없으므로 TransferSingle 이벤트를 스캔한다.
+   * from/to에 address가 포함된 이벤트의 tokenId를 수집 → balanceOf > 0 필터링.
+   */
+  async getNftHoldings(
+    contractAddr: string,
+    address: string,
+    fromBlock = 0,
+  ): Promise<bigint[]> {
+    const currentBlock = await this.provider.getBlockNumber();
+    const iface    = new Interface(TRANSFER_SINGLE_ABI);
+    const contract = new Contract(contractAddr, iface, this.provider);
+
+    const logs = await contract.queryFilter(
+      contract.getEvent('TransferSingle'),
+      fromBlock,
+      currentBlock,
+    ) as EventLog[];
+
+    const addrLower = address.toLowerCase();
+    const tokenIds  = new Set<string>();
+    for (const log of logs) {
+      const from = (log.args?.[1] as string | undefined)?.toLowerCase();
+      const to   = (log.args?.[2] as string | undefined)?.toLowerCase();
+      const id   = log.args?.[3] as bigint | undefined;
+      if (id !== undefined && (from === addrLower || to === addrLower)) {
+        tokenIds.add(String(id));
+      }
+    }
+
+    const result: bigint[] = [];
+    for (const tokenIdStr of tokenIds) {
+      const tokenId = BigInt(tokenIdStr);
+      const balance = await this.getBalance(contractAddr, address, tokenId);
+      if (balance > 0n) result.push(tokenId);
+    }
+    return result;
   }
 
   // ── 저수준 TX ─────────────────────────────────────────────────────

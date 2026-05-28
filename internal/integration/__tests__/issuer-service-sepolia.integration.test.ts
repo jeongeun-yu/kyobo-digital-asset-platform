@@ -75,6 +75,8 @@ import { ExternalVASPAdapter }                   from '@kyobo/vasp';
 import { TxStateMachineService }                 from '../../packages/vasp/src/tx/TxStateMachineService';
 
 import MOCK_VASP_ABI                             from '../vasp-testing/MockVASP.abi.json';
+import { ReconcileService, ReconcileAdminService } from '@kyobo/core-banking';
+import { PgNftHoldingRepository }                from '../../apps/issuer-service/src/infra/PgNftHoldingRepository';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
@@ -485,7 +487,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       return parseInt(rows[0].cnt, 10) === 0;
     }, 120_000, 'drain previous test').catch(() => {});
 
-    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log');
+    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log, reconcile_history');
 
     // 이전 테스트에서 발생한 Sepolia TX(PEL 재시도 포함)로 NonceManager 카운터가
     // 체인 실제 nonce와 어긋날 수 있으므로 각 테스트 전에 강제 재동기화한다.
@@ -1241,5 +1243,138 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     await controlVasp.setMode('NORMAL');
     console.log('  · setMode(NORMAL) 복원 완료');
   }, 120_000);
+
+  // ── [reconcile-1] NFT Reconcile 대사 (Sepolia) ───────────────────────────────
+  //
+  // 시나리오:
+  //   ① NO_EMIT 모드: TX 확정, Issued 이벤트 없음 → VASP 콜백 없음 → user_nft_holdings 미기록
+  //   ② pollStaleRequests → CONFIRMED (user_nft_holdings는 여전히 없음)
+  //   ③ runManualReconcile → ONCHAIN_ONLY 불일치 감지
+  //   ④ reconcile_history 기록 검증
+
+  it('[reconcile-1] NFT Reconcile — Sepolia 온체인 보유 / 원장 없음 → ONCHAIN_ONLY 감지', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [reconcile-1] Reconcile — ONCHAIN_ONLY (Sepolia)');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    const t0     = Date.now();
+    const userId = 'user-sepolia-001';
+
+    // ① NO_EMIT: TX 확정, Issued 이벤트/콜백 없음 → user_nft_holdings 미기록
+    await controlVasp.setMode('NO_EMIT');
+
+    // Alchemy 무료 티어 eth_getLogs 10-block 범위 제한 대응:
+    // webhook 전송 직전 블록을 fromBlock으로 고정 → TX 이후 ~2-3블록만 스캔
+    const reconcileFromBlock = await chainAdapter.getBlockNumber();
+
+    const statusCode = await postWebhook(makePayload({
+      eventType: 'ACTIVITY_ACHIEVED',
+      data: {
+        userId,
+        activityId: randomUUID(),
+        eventType:  TEST_EVENT_TYPE,
+        eventCode:  1,
+        data:       { steps: 15_000 },
+      },
+    }));
+    expect(statusCode).toBe(202);
+
+    let txHash = '';
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT tx_hash FROM tx_mint_requests WHERE status = 'SUBMITTED' AND tx_hash IS NOT NULL",
+      );
+      if (rows.length > 0 && rows[0].tx_hash) { txHash = rows[0].tx_hash as string; return true; }
+      return false;
+    }, 60_000, 'SUBMITTED in tx_mint_requests');
+    console.log(`  · tx_hash=${txHash.slice(0, 18)}… (${elapsed(t0)})`);
+
+    // Sepolia TX 채굴 대기
+    await provider.waitForTransaction(txHash, 1, 60_000);
+    await new Promise(r => setTimeout(r, 2_000));
+    console.log(`  · TX 채굴 완료 (${elapsed(t0)})`);
+
+    // pollStaleRequests로 CONFIRMED 전이
+    await pool.query(
+      "UPDATE tx_mint_requests SET status = 'PENDING', created_at = NOW() - INTERVAL '11 minutes' WHERE status = 'SUBMITTED'",
+    );
+    const pollResult = await txStateMachine.pollStaleRequests();
+    expect(pollResult.processed).toBe(1);
+
+    await waitFor(async () => {
+      const { rows } = await pool.query('SELECT status FROM issuance_requests');
+      return rows[0]?.status === 'CONFIRMED';
+    }, 15_000, 'issuance_requests CONFIRMED');
+    console.log(`  · issuance_requests CONFIRMED (${elapsed(t0)})`);
+
+    // user_nft_holdings 기록 없음 확인 (NO_EMIT → 콜백 없음 → NFTIssuedProcessor 미실행)
+    const { rows: emptyHoldings } = await pool.query(
+      'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
+    );
+    expect(emptyHoldings.length).toBe(0);
+    console.log('  · user_nft_holdings 비어 있음 확인 (NO_EMIT 시뮬)');
+
+    // ③ Reconcile 실행
+    const holdingRepo = new PgNftHoldingRepository(pool);
+    const reconcileService = new ReconcileService(
+      coreBanking,
+      {
+        getTotalSupply:           async () => 0n,
+        getCustodyAccountBalance: async () => 0n,
+        balanceOf: (addr, tokenId) =>
+          chainAdapter.getBalance(mockVaspAddr, addr, tokenId),
+        getNftHoldings: (addr) =>
+          chainAdapter.getNftHoldings(mockVaspAddr, addr, reconcileFromBlock),
+        getBlockNumber: () => chainAdapter.getBlockNumber(),
+      },
+      holdingRepo,
+      { fire: async (msg, sev) => console.log(`  · [Reconcile alert] ${sev}: ${msg}`) },
+    );
+    const reconcileAdmin = new ReconcileAdminService(
+      new PgDatabaseClient(pool),
+      reconcileService,
+      coreBanking,
+      { sendAlert: async (p) => console.log(`  · [ReconcileAlert] ${p.severity}: ${p.title}`) },
+    );
+
+    console.log(`  · runManualReconcile 시작 (${elapsed(t0)})`);
+    const result = await reconcileAdmin.runManualReconcile(userId, 'test-operator');
+    console.log(`  · runManualReconcile 완료 — mismatchCount=${result.mismatchCount} (${elapsed(t0)})`);
+
+    expect(result.mismatchCount).toBe(1);
+    expect(result.mismatchUserIds).toContain(userId);
+    console.log('  ✔ mismatchCount=1, mismatchUserIds에 userId 포함');
+
+    // ④ reconcile_history 검증
+    const { rows: histRows } = await pool.query(
+      "SELECT run_type, target_count, mismatch_count, mismatch_user_ids FROM reconcile_history ORDER BY run_at DESC LIMIT 1",
+    );
+    expect(histRows[0]?.run_type).toBe('MANUAL');
+    expect(histRows[0]?.mismatch_count).toBe(1);
+    const mismatchIds = histRows[0]?.mismatch_user_ids as string[];  // JSONB → auto-parsed by pg
+    expect(mismatchIds).toContain(userId);
+    console.log('  ✔ reconcile_history 기록 확인 (run_type=MANUAL, mismatch_count=1)');
+
+    // audit_log 검증 (Java 경유)
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT action FROM audit_log WHERE resource_id = $1 AND action LIKE 'RECONCILE%'",
+        [userId],
+      );
+      return rows.length >= 2;
+    }, 10_000, 'reconcile audit_log entries');
+
+    const { rows: auditRows } = await pool.query(
+      "SELECT action FROM audit_log WHERE resource_id = $1 AND action LIKE 'RECONCILE%' ORDER BY event_time",
+      [userId],
+    );
+    const actions = auditRows.map(r => r.action as string);
+    expect(actions).toContain('RECONCILE_MANUAL_TRIGGER');
+    expect(actions).toContain('RECONCILE_MISMATCH_DETECTED');
+    console.log('  ✔ audit_log 기록 확인 (RECONCILE_MANUAL_TRIGGER + RECONCILE_MISMATCH_DETECTED)');
+
+    await controlVasp.setMode('NORMAL');
+    console.log(`  ✔ [reconcile-1] 완료 (총 ${elapsed(t0)})`);
+  }, 300_000);
 
 });

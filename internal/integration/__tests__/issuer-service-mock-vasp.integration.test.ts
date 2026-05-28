@@ -77,6 +77,8 @@ import { AnvilVASPAdapter }                      from '../vasp-testing/AnvilVASP
 import { VASPServer }                            from '../vasp-testing/VASPServer';
 import { TxStateMachineService }                 from '../../packages/vasp/src/tx/TxStateMachineService';
 import MOCK_VASP_ABI                             from '../vasp-testing/MockVASP.abi.json';
+import { ReconcileService, ReconcileAdminService } from '@kyobo/core-banking';
+import { PgNftHoldingRepository }                from '../../apps/issuer-service/src/infra/PgNftHoldingRepository';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
@@ -469,7 +471,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
       return parseInt(rows[0].cnt, 10) === 0;
     }, 3_000, 'drain previous test').catch(() => {});
 
-    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log');
+    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log, reconcile_history');
   }, 20_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
@@ -1034,6 +1036,111 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     await controlVasp.setMode('NORMAL');
     console.log('  · setMode(NORMAL) 복원 완료');
   });
+
+  // ── [reconcile-1] NFT Reconcile 대사 ──────────────────────────────────────────
+  //
+  // 시나리오:
+  //   ① NORMAL 발행 → CONFIRMED + user_nft_holdings 기록
+  //   ② user_nft_holdings 행 삭제 (이벤트 미처리 시뮬)
+  //   ③ runManualReconcile → ONCHAIN_ONLY 불일치 감지
+  //   ④ reconcile_history 1건 기록 검증
+
+  it('[reconcile-1] NFT Reconcile — user_nft_holdings 삭제 후 ONCHAIN_ONLY 불일치 감지', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [reconcile-1] Reconcile — 온체인 O / 원장 X → ONCHAIN_ONLY');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    const userId = 'user-mock-001';
+
+    // ① NORMAL 발행 → CONFIRMED
+    await postWebhook(makePayload({
+      eventType: 'ACTIVITY_ACHIEVED',
+      data: { userId, activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
+    }));
+    console.log('  · webhook 전송');
+
+    await waitFor(async () => {
+      const { rows } = await pool.query('SELECT status FROM issuance_requests');
+      return rows[0]?.status === 'CONFIRMED';
+    }, 40_000, 'CONFIRMED');
+    console.log('  · CONFIRMED 확인');
+
+    // user_nft_holdings 기록 대기 (NFTIssuedProcessor → PgNFTLedgerService.creditNFT)
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
+      );
+      return rows.length > 0;
+    }, 15_000, 'user_nft_holdings populated');
+
+    const { rows: holdingRows } = await pool.query(
+      'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
+    );
+    console.log(`  · user_nft_holdings 기록 확인 (tokenId=${holdingRows[0]?.token_id})`);
+
+    // ② user_nft_holdings 삭제 — 이벤트 미처리 시뮬
+    await pool.query('DELETE FROM user_nft_holdings WHERE user_id = $1', [userId]);
+    console.log('  · user_nft_holdings 삭제 완료 (ONCHAIN_ONLY 상태 조작)');
+
+    // ③ Reconcile 실행
+    const holdingRepo = new PgNftHoldingRepository(pool);
+    const reconcileService = new ReconcileService(
+      coreBanking,
+      {
+        getTotalSupply:           async () => 0n,
+        getCustodyAccountBalance: async () => 0n,
+        balanceOf: (addr, tokenId) =>
+          chainAdapter.getBalance(mockVaspAddr, addr, tokenId),
+        getNftHoldings: (addr) =>
+          chainAdapter.getNftHoldings(mockVaspAddr, addr, 0),
+        getBlockNumber: () => chainAdapter.getBlockNumber(),
+      },
+      holdingRepo,
+      { fire: async (msg, sev) => console.log(`  · [Reconcile alert] ${sev}: ${msg}`) },
+    );
+    const reconcileAdmin = new ReconcileAdminService(
+      new PgDatabaseClient(pool),
+      reconcileService,
+      coreBanking,
+      { sendAlert: async (p) => console.log(`  · [ReconcileAlert] ${p.severity}: ${p.title}`) },
+    );
+
+    const result = await reconcileAdmin.runManualReconcile(userId, 'test-operator');
+    console.log(`  · runManualReconcile 완료 — mismatchCount=${result.mismatchCount}`);
+    console.log(`    discrepancies:`, result.mismatchUserIds);
+
+    expect(result.mismatchCount).toBe(1);
+    expect(result.mismatchUserIds).toContain(userId);
+    console.log('  ✔ mismatchCount=1, mismatchUserIds에 userId 포함');
+
+    // ④ reconcile_history 검증
+    const { rows: histRows } = await pool.query(
+      "SELECT run_type, target_count, mismatch_count, mismatch_user_ids FROM reconcile_history ORDER BY run_at DESC LIMIT 1",
+    );
+    expect(histRows[0]?.run_type).toBe('MANUAL');
+    expect(histRows[0]?.mismatch_count).toBe(1);
+    const mismatchIds = histRows[0]?.mismatch_user_ids as string[];  // JSONB → auto-parsed by pg
+    expect(mismatchIds).toContain(userId);
+    console.log('  ✔ reconcile_history 기록 확인 (run_type=MANUAL, mismatch_count=1)');
+
+    // audit_log 기록 검증 (Java 경유 — RECONCILE_MANUAL_TRIGGER + RECONCILE_MISMATCH_DETECTED)
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT action FROM audit_log WHERE resource_id = $1 AND action LIKE 'RECONCILE%'",
+        [userId],
+      );
+      return rows.length >= 2;
+    }, 10_000, 'reconcile audit_log entries');
+
+    const { rows: auditRows } = await pool.query(
+      "SELECT action FROM audit_log WHERE resource_id = $1 AND action LIKE 'RECONCILE%' ORDER BY event_time",
+      [userId],
+    );
+    const actions = auditRows.map(r => r.action as string);
+    expect(actions).toContain('RECONCILE_MANUAL_TRIGGER');
+    expect(actions).toContain('RECONCILE_MISMATCH_DETECTED');
+    console.log('  ✔ audit_log 기록 확인 (RECONCILE_MANUAL_TRIGGER + RECONCILE_MISMATCH_DETECTED)');
+  }, 90_000);
 
   // ── [burst] 동시 발행 ─────────────────────────────────────────────────────────
 

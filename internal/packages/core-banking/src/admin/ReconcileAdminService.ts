@@ -133,7 +133,12 @@ export class ReconcileAdminService {
             action:       'RECONCILE_MISMATCH_DETECTED',
             resourceId:   userId,
             resourceType: 'USER',
-            afterState:   { discrepancies: result.discrepancies },
+            afterState: {
+              discrepancies: result.discrepancies.map(d => ({
+                ...d,
+                tokenId: String(d.tokenId),
+              })),
+            },
           });
         }
       } catch (err) {

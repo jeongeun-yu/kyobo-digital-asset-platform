@@ -149,6 +149,12 @@ export interface IBlockchainAdapter {
    */
   getBalance(contractAddr: string, owner: string, tokenId: bigint): Promise<bigint>;
 
+  /**
+   * ERC-1155 주소 보유 tokenId 목록 (TransferSingle 이벤트 스캔)
+   * 옵셔널 — EVM 체인에서만 구현, XRPL 등은 불필요
+   */
+  getNftHoldings?(contractAddr: string, address: string, fromBlock?: number): Promise<bigint[]>;
+
   // ── 저수준 TX ───────────────────────────────────────────────────────
 
   /** 컨트랙트 read-only 호출 */
