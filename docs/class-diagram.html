@@ -207,6 +207,13 @@ D.full = `classDiagram
     +start()
     +stop()
   }
+  class ConsumerGroupWorker:::ee {
+    +start()
+    +stop()
+  }
+  class DLQHandler:::ee {
+    +move(item)
+  }
   class NFTIssuedProcessor:::ee {
     +process(msg)
   }
@@ -221,8 +228,9 @@ D.full = `classDiagram
   ChainEventListener *-- IEventHandler
   WebhookPublishHandler *-- RedisStreamPublisher
   WebhookPublishHandler *-- IdempotencyGuard
-  ConsumerGroupPool *-- NFTIssuedProcessor
-  ConsumerGroupPool *-- ActivityProcessor
+  ConsumerGroupPool *-- ConsumerGroupWorker
+  ConsumerGroupWorker *-- EventProcessor
+  ConsumerGroupWorker *-- DLQHandler
   NFTIssuedProcessor *-- IdempotencyGuard
   NFTIssuedProcessor *-- NFTLedgerService
   ActivityProcessor *-- IdempotencyGuard
@@ -1129,10 +1137,15 @@ D.boot = `classDiagram
     issuer IssuerService
     idempotency IdempotencyGuard
   }
+  class ConsumerGroupWorker:::ee {
+    groupName nft-consumers / activity-consumers
+    consumerId nft-1 / activity-1
+  }
+  class DLQHandler:::ee {
+    sendAlert console.error
+  }
   class ConsumerGroupPool:::ee {
     streamKey kyobo:events
-    nft-consumers NFTIssuedProcessor
-    activity-consumers ActivityProcessor
   }
 
   Redis --> RedisIdempotencyStore : injected
@@ -1155,8 +1168,10 @@ D.boot = `classDiagram
   PgNFTLedgerService --> NFTIssuedProcessor : injected
   IssuerService --> ActivityProcessor : injected
   IdempotencyGuard --> ActivityProcessor : injected
-  NFTIssuedProcessor --> ConsumerGroupPool : nft-consumers
-  ActivityProcessor --> ConsumerGroupPool : activity-consumers`;
+  DLQHandler --> ConsumerGroupPool : injected
+  NFTIssuedProcessor --> ConsumerGroupWorker : injected
+  ActivityProcessor --> ConsumerGroupWorker : injected
+  ConsumerGroupPool ..> ConsumerGroupWorker : creates`;
 
 // ── Render ─────────────────────────────────────────────────────────────────────
 mermaid.initialize({
