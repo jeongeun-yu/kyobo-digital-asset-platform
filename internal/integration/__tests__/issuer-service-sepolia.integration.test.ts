@@ -1291,8 +1291,18 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     // Sepolia TX 채굴 대기
     await provider.waitForTransaction(txHash, 1, 60_000);
-    await new Promise(r => setTimeout(r, 2_000));
     console.log(`  · TX 채굴 완료 (${elapsed(t0)})`);
+
+    // VASPServer txStatuses='completed' 대기
+    // VASPServer._waitAndNotify(tx.wait(1))가 완료된 후 txStatuses='completed'로 설정됨
+    // provider.waitForTransaction과 tx.wait(1)은 독립적으로 폴링하므로 race condition 가능
+    await waitFor(async () => {
+      const res = await fetch(`http://localhost:${VASP_PORT}/transfers/${txHash}`);
+      if (!res.ok) return false;
+      const body = await res.json() as { status: string };
+      return body.status === 'completed';
+    }, 30_000, 'VASPServer txStatuses=completed');
+    console.log(`  · VASPServer txStatuses=completed 확인 (${elapsed(t0)})`);
 
     // pollStaleRequests로 CONFIRMED 전이
     await pool.query(
