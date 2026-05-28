@@ -13,6 +13,7 @@
  *   unknown-user  wallet mapping 없는 userId → 발행 FAILED
  *   pending       evm_setAutomine(false) → TX mempool 체류 → 30초 후 자동 복원
  *   reorg         정상 발행 후 evm_revert로 체인 롤백 → REORGED 상태 검증
+ *   reconcile     정상 발행 후 /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지
  *   reset         MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구용)
  */
 
@@ -434,6 +435,98 @@ async function scenarioBurst(_userId: string) {
   ]);
 }
 
+async function scenarioReconcile(userId: string) {
+  console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 시나리오 ===');
+  console.log('  1. 정상 발행(CONFIRMED) → mint_requests에 기록됨');
+  console.log('  2. mint_requests 레코드를 수동 삭제 → 원장에서만 사라짐');
+  console.log('  3. POST /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지');
+  console.log('  4. GET /admin/reconcile/history → 결과 확인\n');
+
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  await verifyContractDeployed();
+
+  try {
+    // ① 정상 발행
+    const status = await sendWebhook({ userId });
+    console.log(`[scenario] HTTP ${status} — CONFIRMED 대기 중...`);
+
+    const deadline = Date.now() + 30_000;
+    let confirmed = false;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT status FROM issuance_requests
+         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [userId],
+      );
+      if (rows[0]?.status === 'CONFIRMED') { confirmed = true; break; }
+      await sleep(1000);
+    }
+    if (!confirmed) { console.error('[scenario] CONFIRMED 타임아웃'); return; }
+    console.log('[scenario] issuance_requests → CONFIRMED');
+
+    // ② mint_requests 레코드 삭제 → 원장 누락 시뮬레이션
+    const { rowCount } = await pool.query(
+      `DELETE FROM mint_requests
+       WHERE user_id = $1
+         AND status IN ('CONFIRMED', 'FINALIZED')
+         AND created_at > NOW() - INTERVAL '5 minutes'`,
+      [userId],
+    );
+    console.log(`[scenario] mint_requests ${rowCount}건 삭제 (원장 누락 시뮬레이션)`);
+
+    // ③ POST /admin/reconcile/run
+    console.log('[scenario] POST /admin/reconcile/run...');
+    const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const body = JSON.stringify({ userId, operator: 'demo-admin' });
+      const req = http.request(
+        {
+          hostname: 'localhost',
+          port:     ADMIN_PORT,
+          method:   'POST',
+          path:     '/admin/reconcile/run',
+          headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        },
+        res => {
+          let buf = '';
+          res.on('data', d => { buf += d; });
+          res.on('end', () => resolve(JSON.parse(buf)));
+        },
+      );
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+    console.log('[scenario] reconcile 결과:');
+    console.log(JSON.stringify(result, null, 2));
+
+    // ④ GET /admin/reconcile/history
+    const history = await new Promise<unknown[]>((resolve, reject) => {
+      const req = http.request(
+        { hostname: 'localhost', port: ADMIN_PORT, method: 'GET', path: '/admin/reconcile/history?limit=3' },
+        res => {
+          let buf = '';
+          res.on('data', d => { buf += d; });
+          res.on('end', () => resolve(JSON.parse(buf)));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    console.log('[scenario] reconcile_history (최근 3건):');
+    console.log(JSON.stringify(history, null, 2));
+  } finally {
+    await pool.end();
+  }
+
+  printDbHint([
+    `SELECT user_id, token_id, discrepancy_type FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
+    `SELECT status FROM issuance_requests WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 3;`,
+  ]);
+}
+
 async function scenarioReset() {
   console.log('\n=== RESET: MockVASP mode 복원 ===');
   await verifyContractDeployed();
@@ -453,6 +546,7 @@ const SCENARIOS: Record<string, (userId: string) => Promise<void>> = {
   'reorg':        scenarioReorg,
   'poll-stale':   scenarioPollStale,
   'burst':        scenarioBurst,
+  'reconcile':    scenarioReconcile,
   'reset':        () => scenarioReset(),
 };
 
@@ -472,6 +566,7 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   reorg         정상 발행 후 evm_revert → 체인 롤백 → REORGED 상태
   poll-stale    NO_EMIT → PENDING 조작 → pollStaleRequests() → CONFIRMED
   burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
+  reconcile     정상 발행 후 mint_requests 삭제 → reconcile/run → ONCHAIN_ONLY 감지
   reset         MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구)
 `);
   process.exit(1);
