@@ -486,7 +486,19 @@ D.full = `classDiagram
   IssuerService *-- TxStateMachineService
   IssuerService *-- LedgerService
   PgNFTLedgerService *-- ICoreBankingAdapter
+  TokenIssuerFactory *-- IBlockchainAdapter
+  TokenIssuerFactory *-- IVASPAdapter
+  TokenIssuerFactory *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
+  TokenIssuerFactory ..> TxStateMachineService : creates
+  TokenIssuerFactory ..> TxTransitionBridge : creates
+  TokenIssuerFactory ..> LedgerService : creates
+  TokenIssuerFactory ..> IssuanceConfirmHandler : creates
+  TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
+  TokenIssuerFactory ..> PgIssuancePolicyRepository : creates
+  IssuanceConfirmHandler *-- TxStateMachineService
+  IssuanceConfirmHandler *-- TxRepository
+  ProcessedEventHandler *-- LedgerService
   WebhookServer --> WebhookPublishHandler : routes`;
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -1159,7 +1171,6 @@ D.issuer = `classDiagram
   class TokenIssuerFactory:::is {
     +createNFTIssuer(addr, condSvc)
   }
-  TokenIssuerFactory ..> PgDatabaseClient : creates
   class IssuanceConfirmHandler:::is {
     +handle(event)
   }
@@ -1218,8 +1229,14 @@ D.issuer = `classDiagram
   IIssuancePolicyRepository <|.. PgIssuancePolicyRepository
   IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
   IssuancePolicyService *-- IIssuancePolicyRepository
+  TokenIssuerFactory *-- IBlockchainAdapter
+  TokenIssuerFactory *-- IVASPAdapter
+  TokenIssuerFactory *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
+  TokenIssuerFactory ..> TxStateMachineService : creates
   TokenIssuerFactory ..> TxTransitionBridge : creates
+  TokenIssuerFactory ..> LedgerService : creates
+  TokenIssuerFactory ..> IssuanceConfirmHandler : creates
   TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
   TokenIssuerFactory ..> PgIssuancePolicyRepository : creates
   IssuanceConfirmHandler *-- TxStateMachineService
