@@ -220,11 +220,17 @@ npm run demo:scenario-sepolia -- <시나리오> [userId]
 | `invalid-hmac` | HMAC 서명 위조 → WebhookServer 401 | DB 변화 없음 |
 | `unknown-user` | wallet mapping 없는 userId | FAILED |
 | `pending` | TX mempool 체류 → 30초 후 자동 복원 | CONFIRMED |
-| `reorg` | 체인 롤백 시뮬레이션 (DB 상태 직접 주입) | REORGED |
+| `reorg` | 체인 롤백 시뮬레이션 (DB 상태 직접 주입) — **POSTGRES_URL 필요** | REORGED |
 | `poll-stale` | PENDING 10분 초과 강제 복구 | CONFIRMED |
 | `burst` | 동시 5명 발행 | 전체 CONFIRMED |
 | `reconcile` | 정상 발행 후 mint_requests 삭제 → `/admin/reconcile/run` → ONCHAIN_ONLY 불일치 감지 | reconcile_history 기록 |
 | `reset` | MockVASP mode → NORMAL 복원 | — |
+
+> **`reorg` 시나리오 전제조건** — DB 직접 접근이 필요하므로 루트 `.env`에 아래 항목이 있어야 한다.
+>
+> ```
+> POSTGRES_URL=postgresql://postgres:demo@localhost:15432/postgres
+> ```
 
 ---
 
