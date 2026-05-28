@@ -383,7 +383,6 @@ D.full = `classDiagram
   IssuerService *-- LedgerService
   PgNFTLedgerService *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
-  ActivityProcessor ..> IssuerService : calls
   WebhookServer --> WebhookPublishHandler : routes`;
 
 // ════════════════════════════════════════════════════════════════════════════════
