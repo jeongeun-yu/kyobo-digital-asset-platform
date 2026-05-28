@@ -720,7 +720,6 @@ D.issuer = `classDiagram
   class IssuerService:::is {
     +issueActivityNFT(payload)
     +handleVaspTxFailed(params)
-    +findPending()
   }
   class IssuancePolicyService:::is {
     +getPolicy(eventType)
@@ -964,10 +963,10 @@ D.tx = `classDiagram
     +recordAuditLog(params)
   }
   class TxTransitionBridge:::is {
-    -ledgerService NFTLedgerService
-    -issuanceRepo IssuanceRequestRepository
+    -ledgerService LedgerService
+    -issuanceRepo IIssuanceRequestRepository
     -coreBanking ICoreBankingAdapter
-    +onTransition(event)
+    +attach(txStateMachine)
   }
   class InternalGatewayClient:::cb {
     -baseUrl string
@@ -985,9 +984,11 @@ D.tx = `classDiagram
   class LedgerService:::cb {
     -db DatabaseClient
     -coreBanking ICoreBankingAdapter
-    +createMintRequest(params)
-    +updateMintRequest(id, status)
-    +findMintRequest(id)
+    +createMintRequest(userId, policyId)
+    +getMintRequest(id)
+    +findByTxHash(txHash)
+    +updateMintRequest(id, patch)
+    +recordProcessedEvent(txHash, logIndex, ...)
   }
   TxRepository <|.. PgTxRepository
   VaspTxClient <|.. VaspTxClientAdapter
