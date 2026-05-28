@@ -574,7 +574,7 @@ async function scenarioReconcile(userId: string) {
     const status = await sendWebhook({ userId });
     console.log(`[scenario-sepolia] HTTP ${status} — CONFIRMED 대기 중 (최대 120초)...`);
 
-    const deadline = Date.now() + 120_000;
+    const deadline = Date.now() + 180_000;
     let confirmed = false;
     while (Date.now() < deadline) {
       const { rows } = await pool.query(
@@ -583,7 +583,7 @@ async function scenarioReconcile(userId: string) {
         [userId],
       );
       if (rows[0]?.status === 'CONFIRMED') { confirmed = true; break; }
-      await sleep(2_000);
+      await sleep(3_000);
     }
     if (!confirmed) { console.error('[scenario-sepolia] CONFIRMED 타임아웃'); return; }
     console.log('[scenario-sepolia] issuance_requests → CONFIRMED');
