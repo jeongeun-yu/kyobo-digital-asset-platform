@@ -207,6 +207,12 @@ D.full = `classDiagram
   class WebhookPublishHandler:::ee {
     +createHandler()
   }
+  class RedisStreamClient:::iface {
+    <<interface>>
+    +xadd(key, fields)
+    +xgroupCreate(key, group, id, mkstream)
+    +ping()
+  }
   class RedisStreamPublisher:::ee {
     +publish(event)
     +initialize(groupName)
@@ -263,6 +269,7 @@ D.full = `classDiagram
   ChainEventListener *-- IEventHandler
   WebhookPublishHandler *-- RedisStreamPublisher
   WebhookPublishHandler *-- IdempotencyGuard
+  RedisStreamPublisher *-- RedisStreamClient
   class RedisConsumerClient:::iface {
     <<interface>>
     +xreadgroup(group, consumer, streams, count, blockMs)
