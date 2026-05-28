@@ -166,43 +166,38 @@ async function scenarioRevert(userId: string) {
   const pgUrl = process.env['POSTGRES_URL'] ?? 'postgresql://postgres:demo@localhost:15432/postgres';
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
-  const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
 
   await setMode(MintMode.REVERT, 'REVERT');
 
   try {
+    const webhookSentAt = new Date();
     const status = await sendWebhook({ userId });
-    console.log(`[scenario-sepolia] HTTP ${status} — VASPServer TX 브로드캐스트 대기 중...`);
+    console.log(`[scenario-sepolia] HTTP ${status} — issuance_requests FAILED 대기 중...`);
 
-    // 1단계: TX broadcast 확인 (tx_hash DB 등록)
-    // sendWebhook()의 202는 큐 진입일 뿐 — TX 전송 전에 NORMAL 복원하면 revert 안 됨
-    const deadline = Date.now() + 30_000;
-    let txHash: string | undefined;
+    // REVERT 모드에서 issueActivityNFT()는 estimateGas 단계에서 revert → tx_hash 미생성
+    // tx_hash 폴링 대신 issuance_requests.status = FAILED/CONFIRMED 를 확인한다.
+    // tx_hash 기반 폴링은 이전 시나리오의 잔여 tx_hash(60초 이내)를 잘못 집어올 수 있음.
+    const deadline = Date.now() + 45_000;
+    let finalStatus: string | undefined;
     while (Date.now() < deadline) {
       const { rows } = await pool.query(
-        `SELECT tx_hash FROM tx_mint_requests
-         WHERE tx_hash IS NOT NULL AND created_at > NOW() - INTERVAL '60 seconds'
+        `SELECT status FROM issuance_requests
+         WHERE user_id = $1 AND created_at > $2
          ORDER BY created_at DESC LIMIT 1`,
+        [userId, webhookSentAt.toISOString()],
       );
-      if (rows[0]?.tx_hash) {
-        txHash = String(rows[0].tx_hash);
-        console.log(`[scenario-sepolia] TX 브로드캐스트 확인: ${txHash.slice(0, 16)}… — Sepolia 채굴 대기 중 (~12s)`);
+      const s = rows[0]?.status as string | undefined;
+      if (s === 'FAILED' || s === 'CONFIRMED') {
+        finalStatus = s;
+        console.log(`[scenario-sepolia] issuance_requests.status = ${s} — NORMAL 복원`);
         break;
       }
-      await sleep(500);
+      await sleep(1_000);
     }
-    if (!txHash) {
-      console.warn('[scenario-sepolia] TX 브로드캐스트 타임아웃 — DB를 직접 확인하세요');
-      return;
-    }
-
-    // 2단계: TX 채굴까지 대기 — 채굴 전에 NORMAL 복원하면 setMode TX가 먼저 확정되어 safeMint 성공할 수 있음
-    await provider.waitForTransaction(txHash, 1, 60_000);
-    console.log('[scenario-sepolia] Sepolia TX 채굴 완료 (revert 확정) — NORMAL 복원');
+    if (!finalStatus) console.warn('[scenario-sepolia] 상태 확정 타임아웃 — DB를 직접 확인하세요');
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
     await pool.end();
-    (provider as any).destroy?.();
   }
 
   printDbHint([
