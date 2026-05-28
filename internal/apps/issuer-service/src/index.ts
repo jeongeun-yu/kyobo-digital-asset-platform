@@ -39,7 +39,6 @@ import { ActivityConditionStrategy, EventConditionService } from './services/Eve
 import { ActivityRouter }          from './api/ActivityRouter';
 import { IssuanceConfirmHandler }  from './handlers/IssuanceConfirmHandler';
 import { ProcessedEventHandler }   from './handlers/ProcessedEventHandler';
-import { HttpInternalLedgerClient } from './infra/HttpInternalLedgerClient';
 import { PgIssuanceRequestRepository } from './services/IssuanceRequestRepository';
 import NFTIssuerABI                from './abi/NFTIssuer.json';
 
@@ -110,10 +109,7 @@ async function bootstrap() {
   ]);
 
   // ── 발행 서비스 (Factory 경유 — policyService·issuanceRepo 자동 주입) ─────────
-  const internalLedgerClient = process.env.INTERNAL_LEDGER_URL
-    ? new HttpInternalLedgerClient(process.env.INTERNAL_LEDGER_URL)
-    : undefined;
-  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool, internalLedgerClient });
+  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool });
   const {
     issuerService,
     confirmHandler: issuanceConfirmHandler,

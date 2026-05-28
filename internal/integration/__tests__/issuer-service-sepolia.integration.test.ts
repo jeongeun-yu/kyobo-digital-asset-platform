@@ -28,7 +28,6 @@
  *   - MockVASP 고정 주소 (SEPOLIA_MOCK_VASP_ADDR 환경변수)
  *   - PostgreSQL — @testcontainers/postgresql
  *   - Redis — testcontainers GenericContainer
- *   - Java internal-ledger — testcontainers GenericContainer
  */
 
 import { readFileSync }                 from 'fs';
@@ -45,7 +44,6 @@ import { GenericContainer, Network, StartedNetwork, Wait } from 'testcontainers'
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
-import { HttpInternalLedgerClient }             from '../../apps/issuer-service/src/infra/HttpInternalLedgerClient';
 import type { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
@@ -55,7 +53,7 @@ import {
   WebhookPublishHandler,
   WebhookPayload,
 }                                                from '@kyobo/event-engine/webhook';
-import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
+import { KyoboCoreBankingAdapter, InternalGatewayClient } from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }                      from '../../apps/issuer-service/src/infra/PgDatabaseClient';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
@@ -92,8 +90,12 @@ const TOKEN_ID_BN = BigInt(TOKEN_ID);
 
 // ── PgHybridCoreBankingAdapter ────────────────────────────────────────────────
 
-class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
-  constructor(private readonly pool: Pool) { super(); }
+// getUserAccount: 테스트용 로컬 DB (user_wallet_mapping) 조회
+// recordNftHolding / recordAuditLog: Java internal-ledger 경유 (운영과 동일 경로)
+class PgHybridCoreBankingAdapter extends KyoboCoreBankingAdapter {
+  constructor(private readonly pool: Pool, gateway: InternalGatewayClient) {
+    super(gateway);
+  }
 
   override async getUserAccount(userId: string) {
     const { rows } = await this.pool.query(
@@ -103,26 +105,10 @@ class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
     if (!rows[0]) return null;
     return {
       userId,
-      accountId: `acc-${userId}`,
+      accountId:  `acc-${userId}`,
       walletAddr: rows[0].wallet_addr as string,
       status:     'active' as const,
     };
-  }
-
-  override async recordNftHolding(params: {
-    userId: string; tokenId: bigint; contractAddr: string;
-    chainId: number; amount: bigint; acquiredAt: Date; onChainTx: string;
-  }): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO user_nft_holdings
-         (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (user_id, token_id, contract_addr, chain_id)
-       DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount,
-                     on_chain_tx = EXCLUDED.on_chain_tx`,
-      [params.userId, params.tokenId, params.contractAddr, params.chainId,
-       params.amount, params.acquiredAt, params.onChainTx],
-    );
   }
 }
 
@@ -323,7 +309,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     redis = new Redis(redisUrl);
     console.log(`  [2/6] Redis 준비 완료 → ${redisUrl}`);
 
-    // ③ PostgreSQL Testcontainer
+    // ③ PostgreSQL + Java internal-ledger 컨테이너
     console.log('\n  [3/6] PostgreSQL + Java 컨테이너 시작...');
     dockerNetwork = await new Network().start();
     pgContainer = await new PostgreSqlContainer('postgres:16-alpine')
@@ -339,7 +325,6 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     await pool.query(schema);
     console.log('  [3/6] PostgreSQL 준비 완료');
 
-    // ④ Java internal-ledger 컨테이너
     javaContainer = await new GenericContainer('kyobo/internal-ledger:test')
       .withNetwork(dockerNetwork)
       .withEnvironment({
@@ -375,7 +360,8 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     });
 
     // ⑥ Core Banking 어댑터 + 정적 데이터 시드
-    coreBanking = new PgHybridCoreBankingAdapter(pool);
+    const gateway = new InternalGatewayClient({ baseUrl: javaBaseUrl, secret: 'test-secret' });
+    coreBanking = new PgHybridCoreBankingAdapter(pool, gateway);
 
     await pool.query(
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
@@ -405,10 +391,9 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     const conditionSvc = new EventConditionService([new ActivityConditionStrategy()]);
     const factory      = new TokenIssuerFactory({
       chainAdapter,
-      vaspAdapter:           externalVasp,
+      vaspAdapter: externalVasp,
       coreBanking,
       pool,
-      internalLedgerClient:  new HttpInternalLedgerClient(javaBaseUrl),
     });
 
     const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
@@ -645,7 +630,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     expect(nftRows[0].on_chain_tx.toLowerCase()).toBe(txHash.toLowerCase());
     console.log(`  ✔ user_nft_holdings 자동 기록 확인 (creditNFT 경로)  token_id=${nftRows[0].token_id}`);
 
-    // audit_log — TxTransitionBridge CONFIRMED 전이 시 HttpInternalLedgerClient 자동 호출
+    // audit_log — TxTransitionBridge CONFIRMED 전이 시 coreBanking.recordAuditLog 자동 호출
     await waitFor(async () => {
       const { rows } = await pool.query(
         "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
@@ -657,7 +642,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     );
     expect(auditRows[0].actor).toBe('user-sepolia-001');
     expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
-    console.log(`  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → HttpInternalLedgerClient)`);
+    console.log(`  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → coreBanking.recordAuditLog)`);
 
     console.log(`\n  ✔ [1] NORMAL 전체 완료 (총 ${elapsed(t0)})`);
   }, 300_000);

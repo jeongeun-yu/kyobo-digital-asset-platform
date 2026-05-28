@@ -29,7 +29,6 @@
  *   - VASPServer (HTTP, 포트 19876) — 서명·브로드캐스트·콜백
  *   - PostgreSQL — @testcontainers/postgresql
  *   - Redis — testcontainers GenericContainer
- *   - Java internal-ledger — testcontainers GenericContainer
  */
 
 import { readFileSync }  from 'fs';
@@ -47,7 +46,6 @@ import { StartedNetwork }                                  from 'testcontainers'
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
-import { HttpInternalLedgerClient }             from '../../apps/issuer-service/src/infra/HttpInternalLedgerClient';
 import { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
@@ -58,7 +56,7 @@ import {
   WebhookPublishHandler,
 }                                                from '@kyobo/event-engine/webhook';
 import { WebhookPayload }                   from '@kyobo/event-engine/webhook';
-import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
+import { KyoboCoreBankingAdapter, InternalGatewayClient } from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }                      from '../../apps/issuer-service/src/infra/PgDatabaseClient';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
@@ -102,8 +100,12 @@ const ARTIFACT_PATH  = resolve(
 
 // ── PgHybridCoreBankingAdapter ─────────────────────────────────────────────────
 
-class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
-  constructor(private readonly pool: Pool) { super(); }
+// getUserAccount: 테스트용 로컬 DB (user_wallet_mapping) 조회
+// recordNftHolding / recordAuditLog: Java internal-ledger 경유 (운영과 동일 경로)
+class PgHybridCoreBankingAdapter extends KyoboCoreBankingAdapter {
+  constructor(private readonly pool: Pool, gateway: InternalGatewayClient) {
+    super(gateway);
+  }
 
   override async getUserAccount(userId: string) {
     const { rows } = await this.pool.query(
@@ -117,22 +119,6 @@ class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
       walletAddr: rows[0].wallet_addr as string,
       status:     'active' as const,
     };
-  }
-
-  override async recordNftHolding(params: {
-    userId: string; tokenId: bigint; contractAddr: string;
-    chainId: number; amount: bigint; acquiredAt: Date; onChainTx: string;
-  }): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO user_nft_holdings
-         (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (user_id, token_id, contract_addr, chain_id)
-       DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount,
-                     on_chain_tx = EXCLUDED.on_chain_tx`,
-      [params.userId, params.tokenId, params.contractAddr, params.chainId,
-       params.amount, params.acquiredAt, params.onChainTx],
-    );
   }
 }
 
@@ -363,7 +349,8 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     console.log(`  [5/7] VASPServer 준비 완료 → :${VASP_PORT}`);
 
     // ⑥ Core Banking + 정적 데이터 시드
-    coreBanking = new PgHybridCoreBankingAdapter(pool);
+    const gateway = new InternalGatewayClient({ baseUrl: javaBaseUrl, secret: 'test-secret' });
+    coreBanking = new PgHybridCoreBankingAdapter(pool, gateway);
     for (let i = 1; i <= 5; i++) {
       await pool.query(
         `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
@@ -392,10 +379,9 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     const conditionSvc  = new EventConditionService([new ActivityConditionStrategy()]);
     const factory       = new TokenIssuerFactory({
       chainAdapter,
-      vaspAdapter:           externalVasp,
+      vaspAdapter: externalVasp,
       coreBanking,
       pool,
-      internalLedgerClient:  new HttpInternalLedgerClient(javaBaseUrl),
     });
     const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
     const { issuerService } = factoryResult;
@@ -569,7 +555,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     expect(String(nftRows[0].token_id)).toBe(TOKEN_ID);
     console.log('  ✔ user_nft_holdings 자동 기록 확인 (creditNFT 경로)');
 
-    // audit_log — TxTransitionBridge CONFIRMED 전이 시 HttpInternalLedgerClient 자동 호출
+    // audit_log — TxTransitionBridge CONFIRMED 전이 시 coreBanking.recordAuditLog 자동 호출
     await waitFor(async () => {
       const { rows } = await pool.query(
         `SELECT actor, action FROM audit_log
@@ -584,7 +570,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가�
     );
     expect(auditRows[0].actor).toBe('user-mock-001');
     expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
-    console.log('  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → HttpInternalLedgerClient)');
+    console.log('  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → coreBanking.recordAuditLog)');
   });
 
   // ── [2] REVERT ──────────────────────────────────────────────────────────────

@@ -7,7 +7,6 @@ import { IssuancePolicyService }           from './IssuancePolicyService';
 import type { IIssuanceRequestRepository } from './IssuanceRequestRepository';
 import { TxStateMachineService }           from '../../../../packages/vasp/src/tx/TxStateMachineService';
 import type { LedgerService }              from '../../../../packages/core-banking/src/ledger/LedgerService';
-import type { IInternalLedgerClient }      from '../interfaces/IInternalLedgerClient';
 
 /**
  * IssuerService — NFT 발행 오케스트레이터
@@ -38,7 +37,6 @@ export class IssuerService {
     issuanceRepo:          IIssuanceRequestRepository;
     txStateMachine:        TxStateMachineService;
     ledgerService:         LedgerService;
-    internalLedgerClient?: IInternalLedgerClient;
   }) {}
 
   /**
@@ -84,12 +82,11 @@ export class IssuerService {
       txHash:     null,
       failReason: null,
     });
-    this.deps.internalLedgerClient?.recordAuditLog({
+    this.deps.coreBanking.recordAuditLog({
       actor:        userId,
       action:       'ISSUANCE_REQUESTED',
       resourceType: 'issuance_request',
       resourceId:   req.id,
-      beforeState:  null,
       afterState:   { status: 'REQUESTED', eventType: event.eventType, tokenId: String(policy.tokenId) },
     }).catch(err => console.error('[IssuerService] audit-log 오류:', err));
     const ledgerReq  = await this.deps.ledgerService.createMintRequest(userId, String(policy.id));
@@ -110,7 +107,7 @@ export class IssuerService {
       const failReason = (err as Error).message;
       await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
-      this.deps.internalLedgerClient?.recordAuditLog({
+      this.deps.coreBanking.recordAuditLog({
         actor:        userId,
         action:       'ISSUANCE_FAILED',
         resourceType: 'issuance_request',
@@ -138,7 +135,7 @@ export class IssuerService {
       // (txHash가 설정된 후 이벤트가 발행되므로 bridge에서 findByTxHash 가능)
       // 단, SUBMITTED 전이 이벤트 시점에 mint_requests.tx_hash가 아직 없으므로 직접 업데이트
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'SUBMITTED', txHash });
-      this.deps.internalLedgerClient?.recordAuditLog({
+      this.deps.coreBanking.recordAuditLog({
         actor:        userId,
         action:       'ISSUANCE_SUBMITTED',
         resourceType: 'issuance_request',
@@ -150,7 +147,7 @@ export class IssuerService {
       const failReason = (err as Error).message;
       await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
-      this.deps.internalLedgerClient?.recordAuditLog({
+      this.deps.coreBanking.recordAuditLog({
         actor:        userId,
         action:       'ISSUANCE_FAILED',
         resourceType: 'issuance_request',
@@ -187,7 +184,7 @@ export class IssuerService {
     if (!req || req.status !== 'SUBMITTED') return;
     const failReason = params.reason ?? 'VASP TX failed on-chain';
     await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
-    this.deps.internalLedgerClient?.recordAuditLog({
+    this.deps.coreBanking.recordAuditLog({
       actor:        req.userId,
       action:       'ISSUANCE_FAILED',
       resourceType: 'issuance_request',

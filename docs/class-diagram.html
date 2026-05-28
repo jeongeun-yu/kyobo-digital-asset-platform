@@ -173,7 +173,7 @@ D.full = `classDiagram
     <<interface>>
     +handle(event)
   }
-  class LedgerService:::iface {
+  class NFTLedgerService:::iface {
     <<interface>>
     +creditNFT(wallet, tokenId, amount, txHash)
     +getNFTBalance(wallet, tokenId)
@@ -226,7 +226,7 @@ D.full = `classDiagram
   ConsumerGroupPool *-- NFTIssuedProcessor
   ConsumerGroupPool *-- ActivityProcessor
   NFTIssuedProcessor *-- IdempotencyGuard
-  NFTIssuedProcessor *-- LedgerService
+  NFTIssuedProcessor *-- NFTLedgerService
   ActivityProcessor *-- IdempotencyGuard
   ActivityProcessor *-- IActivityIssuer
 
@@ -243,7 +243,7 @@ D.full = `classDiagram
     +submitMintRequest(req)
     +updateStatus(txHash, status)
   }
-  class PgTxRepository:::vasp {
+  class PgTxRepository:::is {
     +save(tx)
     +updateStatus(id, status)
   }
@@ -308,7 +308,7 @@ D.full = `classDiagram
     +creditNFT(wallet, tokenId, amount, txHash)
     +getNFTBalance(wallet, tokenId)
   }
-  LedgerService <|.. PgNFTLedgerService
+  NFTLedgerService <|.. PgNFTLedgerService
   IEventHandler <|.. IssuanceConfirmHandler
   IActivityIssuer <|.. IssuerService
   IssuerService *-- IVASPAdapter
@@ -316,6 +316,7 @@ D.full = `classDiagram
   IssuerService *-- EventConditionService
   IssuerService *-- PgIssuanceRequestRepository
   IssuerService *-- TxStateMachineService
+  PgNFTLedgerService *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
   ActivityProcessor ..> IssuerService : calls
   WebhookServer --> WebhookPublishHandler : routes`;
@@ -468,7 +469,7 @@ D.ee = `classDiagram
     <<interface>>
     +handle(event)
   }
-  class LedgerService:::iface {
+  class NFTLedgerService:::iface {
     <<interface>>
     +creditNFT(wallet, tokenId, amount, txHash)
     +getNFTBalance(wallet, tokenId)
@@ -480,7 +481,7 @@ D.ee = `classDiagram
   class NFTIssuedProcessor:::ee {
     +eventTypes string[]
     -idempotency IdempotencyGuard
-    -ledger LedgerService
+    -ledger NFTLedgerService
     +process(msg)
   }
   class ActivityProcessor:::ee {
@@ -493,7 +494,7 @@ D.ee = `classDiagram
   EventProcessor <|.. ActivityProcessor
   ConsumerGroupWorker *-- EventProcessor
   NFTIssuedProcessor *-- IdempotencyGuard
-  NFTIssuedProcessor *-- LedgerService
+  NFTIssuedProcessor *-- NFTLedgerService
   ActivityProcessor *-- IdempotencyGuard
   ActivityProcessor *-- IActivityIssuer
 
@@ -513,6 +514,7 @@ D.vasp = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
   classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
+  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
 
   class IVASPAdapter:::iface {
     <<interface>>
@@ -543,7 +545,7 @@ D.vasp = `classDiagram
     +updateStatus(id, status)
     +findPendingOlderThan(ms)
   }
-  class PgTxRepository:::vasp {
+  class PgTxRepository:::is {
     -pool Pool
     +save(tx)
     +findById(id)
@@ -551,6 +553,7 @@ D.vasp = `classDiagram
     +updateStatus(id, status)
     +findPendingOlderThan(ms)
   }
+  note for PgTxRepository "issuer-service/infra"
   TxRepository <|.. PgTxRepository
 
   class VaspTxClient:::iface {
@@ -587,6 +590,7 @@ D.cb = `classDiagram
   direction TB
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
   classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
+  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
 
   class ICoreBankingAdapter:::iface {
     <<interface>>
@@ -635,11 +639,12 @@ D.cb = `classDiagram
     +query(sql, params)
     +transaction(fn)
   }
-  class PgDatabaseClient:::cb {
+  class PgDatabaseClient:::is {
     -pool Pool
     +query(sql, params)
     +transaction(fn)
   }
+  note for PgDatabaseClient "issuer-service/infra"
   DatabaseClient <|.. PgDatabaseClient
 
   class CoreBankingLedgerService:::cb {
@@ -648,13 +653,12 @@ D.cb = `classDiagram
     +createMintRequest(params)
     +updateMintRequest(id, status)
     +findMintRequest(id)
-    +updateStatus(id, status)
   }
   class AuditLogService:::cb {
     -db DatabaseClient
-    -coreBanking ICoreBankingAdapter
-    +log(event)
-    +query(filter)
+    +verifyIntegrity(id)
+    +queryByResource(type, id)
+    +queryByActor(actor, from, to)
   }
   class ReconcileService:::cb {
     -ledger CoreBankingLedgerService
@@ -665,7 +669,6 @@ D.cb = `classDiagram
   CoreBankingLedgerService *-- DatabaseClient
   CoreBankingLedgerService *-- ICoreBankingAdapter
   AuditLogService *-- DatabaseClient
-  AuditLogService *-- ICoreBankingAdapter
   ReconcileService *-- CoreBankingLedgerService
   ReconcileService *-- ICoreBankingAdapter`;
 
@@ -761,8 +764,18 @@ D.issuer = `classDiagram
   class IssuanceConfirmHandler:::is {
     +handle(event)
   }
+  class TxTransitionBridge:::is {
+    -ledgerService CoreBankingLedgerService
+    -issuanceRepo IIssuanceRequestRepository
+    -coreBanking ICoreBankingAdapter
+    +attach(txStateMachine)
+  }
   class PgNFTLedgerService:::is {
-    +creditNFT(wallet, tokenId)
+    -pool Pool
+    -contractAddr string
+    -chainId number
+    -coreBanking ICoreBankingAdapter
+    +creditNFT(wallet, tokenId, amount, txHash)
     +getNFTBalance(wallet, tokenId)
   }
   IVASPAdapter <|.. ExternalVASPAdapter
@@ -775,9 +788,12 @@ D.issuer = `classDiagram
   IssuerService *-- IVASPAdapter
   IssuerService *-- ICoreBankingAdapter
   TxStateMachineService ..> IVASPAdapter : submits TX
+  TxTransitionBridge ..> TxStateMachineService : listens transition
+  TxTransitionBridge *-- ICoreBankingAdapter
+  PgNFTLedgerService *-- ICoreBankingAdapter
   TokenIssuerFactory ..> IssuerService : creates
-  IssuanceConfirmHandler --> PgIssuanceRequestRepository : CONFIRMED
-  IssuanceConfirmHandler --> PgNFTLedgerService : creditNFT`;
+  TokenIssuerFactory ..> TxTransitionBridge : creates
+  IssuanceConfirmHandler --> TxStateMachineService : confirms`;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // Stream Pipeline
@@ -837,14 +853,20 @@ D.stream = `classDiagram
     +eventTypes string[]
     +process(msg)
   }
-  class LedgerService:::iface {
+  class NFTLedgerService:::iface {
     <<interface>>
     +creditNFT(wallet, tokenId)
     +getNFTBalance(wallet, tokenId)
   }
   class PgNFTLedgerService:::is {
+    -coreBanking ICoreBankingAdapter
     +creditNFT(wallet, tokenId)
     +getNFTBalance(wallet, tokenId)
+  }
+  class ICoreBankingAdapter:::iface {
+    <<interface>>
+    +recordAuditLog(params)
+    +recordNftHolding(params)
   }
   class IActivityIssuer:::iface {
     <<interface>>
@@ -855,8 +877,9 @@ D.stream = `classDiagram
   }
   EventProcessor <|.. NFTIssuedProcessor
   EventProcessor <|.. ActivityProcessor
-  LedgerService <|.. PgNFTLedgerService
+  NFTLedgerService <|.. PgNFTLedgerService
   IActivityIssuer <|.. IssuerService
+  PgNFTLedgerService *-- ICoreBankingAdapter
   WebhookServer --> WebhookPublishHandler : routes
   WebhookPublishHandler *-- RedisStreamPublisher
   WebhookPublishHandler *-- IdempotencyGuard
@@ -866,7 +889,7 @@ D.stream = `classDiagram
   ConsumerGroupWorker *-- EventProcessor
   ConsumerGroupWorker *-- DLQHandler
   NFTIssuedProcessor *-- IdempotencyGuard
-  NFTIssuedProcessor *-- LedgerService
+  NFTIssuedProcessor *-- NFTLedgerService
   ActivityProcessor *-- IdempotencyGuard
   ActivityProcessor *-- IActivityIssuer`;
 
@@ -878,6 +901,7 @@ D.tx = `classDiagram
   classDef iface fill:#1c2230,stroke:#484f58,color:#8b949e
   classDef vasp  fill:#0a2a14,stroke:#3fb950,color:#aff5b4
   classDef cb    fill:#2d1a00,stroke:#d29922,color:#f0d58c
+  classDef is    fill:#0d2030,stroke:#79c0ff,color:#cae8ff
 
   class TxStateMachineService:::vasp {
     -repo TxRepository
@@ -894,7 +918,7 @@ D.tx = `classDiagram
     +updateStatus(id, status)
     +findPendingOlderThan(ms)
   }
-  class PgTxRepository:::vasp {
+  class PgTxRepository:::is {
     -pool Pool
     +save(tx)
     +findByTxHash(hash)
@@ -928,11 +952,20 @@ D.tx = `classDiagram
     +getUserAccount(userId)
     +notifyReward(userId, nftId)
     +recordNftHolding(params)
+    +recordAuditLog(params)
   }
   class KyoboCoreBankingAdapter:::cb {
     -gateway InternalGatewayClient
     +getUserAccount(userId)
     +notifyReward(userId, nftId)
+    +recordNftHolding(params)
+    +recordAuditLog(params)
+  }
+  class TxTransitionBridge:::is {
+    -ledgerService NFTLedgerService
+    -issuanceRepo IssuanceRequestRepository
+    -coreBanking ICoreBankingAdapter
+    +onTransition(event)
   }
   class InternalGatewayClient:::cb {
     -baseUrl string
@@ -960,6 +993,8 @@ D.tx = `classDiagram
   ICoreBankingAdapter <|.. KyoboCoreBankingAdapter
   TxStateMachineService *-- TxRepository
   TxStateMachineService *-- VaspTxClient
+  TxStateMachineService --> TxTransitionBridge : emits events
+  TxTransitionBridge *-- ICoreBankingAdapter
   VaspTxClientAdapter *-- IVASPAdapter
   KyoboCoreBankingAdapter *-- InternalGatewayClient
   InternalGatewayClient *-- CircuitBreaker
@@ -1044,6 +1079,7 @@ D.boot = `classDiagram
     pool Pool
     contractAddr NFT_CONTRACT_ADDR
     chainId CHAIN_ID
+    coreBanking KyoboCoreBankingAdapter
   }
   class NFTIssuedProcessor:::ee {
     idempotency IdempotencyGuard
@@ -1062,6 +1098,7 @@ D.boot = `classDiagram
   Redis --> RedisIdempotencyStore : injected
   Pool --> TokenIssuerFactory : injected
   Pool --> PgNFTLedgerService : injected
+  KyoboCoreBankingAdapter --> PgNFTLedgerService : injected
   RedisIdempotencyStore --> IdempotencyGuard : injected
   InternalGatewayClient --> KyoboCoreBankingAdapter : injected
   ActivityConditionStrategy --> EventConditionService : injected
