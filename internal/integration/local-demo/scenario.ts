@@ -438,8 +438,8 @@ async function scenarioBurst(_userId: string) {
 
 async function scenarioReconcile(userId: string) {
   console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 시나리오 ===');
-  console.log('  1. 정상 발행(CONFIRMED) → mint_requests에 기록됨');
-  console.log('  2. mint_requests 레코드를 수동 삭제 → 원장에서만 사라짐');
+  console.log('  1. 정상 발행(CONFIRMED) → user_nft_holdings에 기록됨');
+  console.log('  2. user_nft_holdings 레코드를 수동 삭제 → 원장에서만 사라짐');
   console.log('  3. POST /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지');
   console.log('  4. GET /admin/reconcile/history → 결과 확인\n');
 
@@ -468,15 +468,14 @@ async function scenarioReconcile(userId: string) {
     if (!confirmed) { console.error('[scenario] CONFIRMED 타임아웃'); return; }
     console.log('[scenario] issuance_requests → CONFIRMED');
 
-    // ② mint_requests 레코드 삭제 → 원장 누락 시뮬레이션
+    // ② user_nft_holdings 삭제 → 원장 누락 시뮬레이션 (ReconcileService는 이 테이블을 원장으로 사용)
     const { rowCount } = await pool.query(
-      `DELETE FROM mint_requests
+      `DELETE FROM user_nft_holdings
        WHERE user_id = $1
-         AND status IN ('CONFIRMED', 'FINALIZED')
-         AND created_at > NOW() - INTERVAL '5 minutes'`,
+         AND acquired_at > NOW() - INTERVAL '5 minutes'`,
       [userId],
     );
-    console.log(`[scenario] mint_requests ${rowCount}건 삭제 (원장 누락 시뮬레이션)`);
+    console.log(`[scenario] user_nft_holdings ${rowCount}건 삭제 (원장 누락 시뮬레이션)`);
 
     // ③ POST /admin/reconcile/run
     console.log('[scenario] POST /admin/reconcile/run...');
