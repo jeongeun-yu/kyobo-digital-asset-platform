@@ -33,7 +33,103 @@ vasp-testing/
 
 ---
 
-## 3. VASPServer — 외부 VASP 시뮬레이터
+## 3. MockVASP 컨트랙트 — 테스트용 스마트 컨트랙트
+
+### 3-1. 역할
+
+`MockVASP.sol`은 실제 운영 컨트랙트(`NFTIssuer` + `KyoboNFT`)를 하나로 합친 테스트 전용 ERC-1155 컨트랙트다.  
+외부 VASP 없이 로컬 Anvil 노드에서 전체 `issuer-service` 파이프라인을 검증하기 위해 존재한다.
+
+```
+운영: IssuerService → ExternalVASPAdapter → [외부 VASP 서버] → KyoboNFT 컨트랙트
+테스트: IssuerService → ExternalVASPAdapter → VASPServer → MockVASP 컨트랙트
+```
+
+### 3-2. 구조
+
+```solidity
+contract MockVASP is ERC1155, AccessControl, ReentrancyGuard {
+
+    enum MintMode { NORMAL, REVERT, NO_EMIT }
+    MintMode public mode;
+
+    event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason);
+
+    // 운영 NFTIssuer와 동일한 시그니처 — ChainEventListener가 구독
+    function issueActivityNFT(address to, uint256 tokenId, uint256 amount, bytes32 reason)
+        external nonReentrant onlyRole(OPERATOR_ROLE);
+
+    // VaspTxClientAdapter.submitMint() 호환 별칭
+    function mint(address to, uint256 tokenId, uint256 amount, bytes32 reason)
+        external nonReentrant onlyRole(OPERATOR_ROLE);
+
+    // 시나리오 전환 — OPERATOR_ROLE 필요
+    function setMode(MintMode _mode) external onlyRole(OPERATOR_ROLE);
+}
+```
+
+### 3-3. 핵심 설계 포인트
+
+**`Issued` 이벤트 시그니처가 운영 컨트랙트와 동일하다**
+
+```solidity
+event Issued(address indexed to, uint256 indexed tokenId, bytes32 reason);
+```
+
+`ChainEventListener`는 이벤트 이름(`Issued`)과 ABI로 이벤트를 구독한다.  
+MockVASP가 동일한 시그니처를 쓰기 때문에 `ChainEventListener` 코드는 한 줄도 바꾸지 않고 테스트할 수 있다.
+
+**AccessControl — OPERATOR_ROLE 분리**
+
+| 역할 | 보유자 | 할 수 있는 일 |
+|---|---|---|
+| `DEFAULT_ADMIN_ROLE` | deployer | OPERATOR_ROLE 부여·회수 |
+| `OPERATOR_ROLE` | operator (VASPServer 서명 키) | `issueActivityNFT` · `mint` · `setMode` |
+
+`VASPServer`는 `OPERATOR_KEY`로 TX를 서명해서 `issueActivityNFT`를 호출한다.  
+`controlVasp`(DEPLOYER_KEY)는 `setMode`로 시나리오를 전환한다.  
+두 역할을 분리해야 nonce 충돌이 없다.
+
+**`_doMint` — 세 가지 모드 분기**
+
+```solidity
+function _doMint(address to, uint256 tokenId, uint256 amount, bytes32 reason) private {
+    if (mode == MintMode.REVERT) {
+        revert(revertReason);           // REVERT: eth_estimateGas 단계에서 실패
+    }
+    _mint(to, tokenId, amount, "");     // ERC-1155 민팅
+    if (mode == MintMode.NORMAL) {
+        emit Issued(to, tokenId, reason); // NORMAL: 이벤트 발행
+    }
+    // NO_EMIT: 민팅 성공, 이벤트 없음
+}
+```
+
+`REVERT` 모드는 `eth_estimateGas` 단계에서 revert되기 때문에 TX 자체가 전송되지 않는다.  
+`VASPServer`의 `_handleSubmit`이 `try-catch`에 걸려 즉시 500을 반환한다.
+
+### 3-4. MockVASP 세 가지 모드 요약
+
+| 모드 | `_doMint` 동작 | 결과 | 검증 시나리오 |
+|---|---|---|---|
+| `NORMAL` | `_mint` + `emit Issued` | TX 성공 + 이벤트 발행 | `[1] NORMAL` |
+| `REVERT` | `revert(revertReason)` | TX 실패 (estimateGas 단계) | `[2] REVERT` |
+| `NO_EMIT` | `_mint` (이벤트 없음) | TX 성공, 이벤트 없음 | `[3] NO_EMIT` · `[poll-1]` |
+
+### 3-5. PENDING · REORG 시나리오와의 관계
+
+PENDING과 REORG는 **컨트랙트 코드가 아니라 Anvil RPC로 제어**한다.
+
+| 시나리오 | 제어 방법 | MockVASP 모드 |
+|---|---|---|
+| `[4] PENDING` | `evm_setAutomine(false)` → TX 채굴 중단 | `NORMAL` |
+| `[5] REORG` | `evm_snapshot` / `evm_revert` → 체인 롤백 | `NORMAL` |
+
+MockVASP는 `NORMAL` 모드로 두고, Anvil이 블록 생성을 제어한다.
+
+---
+
+## 4. VASPServer — 외부 VASP 시뮬레이터
 
 ### 3-1. 역할
 
@@ -130,7 +226,7 @@ NO_EMIT 모드에서는 `_waitAndNotify`가 영수증을 받지만 `Issued` 이�
 
 ---
 
-## 4. ChainVASPAdapterBase — 공통 베이스
+## 5. ChainVASPAdapterBase — 공통 베이스
 
 ### 4-1. 역할
 
@@ -168,7 +264,7 @@ export abstract class ChainVASPAdapterBase implements IVASPAdapter {
 
 ---
 
-## 5. AnvilVASPAdapter — 로컬 체인 제어
+## 6. AnvilVASPAdapter — 로컬 체인 제어
 
 Anvil 전용 RPC를 추가한 확장 클래스다.
 
@@ -204,7 +300,7 @@ await this.provider.send('hardhat_mine', [`0x${count.toString(16)}`]);
 
 ---
 
-## 6. SepoliaVASPAdapter — 테스트넷 전용
+## 7. SepoliaVASPAdapter — 테스트넷 전용
 
 ```typescript
 export class SepoliaVASPAdapter extends ChainVASPAdapterBase {
@@ -217,7 +313,7 @@ REORG 시나리오는 Sepolia에서 DB 상태 직접 주입으로 대체한다(`
 
 ---
 
-## 7. mocks.ts — 단위 테스트용 인메모리 구현체
+## 8. mocks.ts — 단위 테스트용 인메모리 구현체
 
 통합 테스트가 아닌 **단위 테스트**에서 DB·VASP 없이 실행할 수 있게 해주는 인메모리 구현체 모음이다.
 
@@ -248,7 +344,7 @@ const LEDGER_VALID: Record<string, string[]> = {
 
 ---
 
-## 8. 전체 흐름 요약
+## 9. 전체 흐름 요약
 
 ```
 [통합 테스트]
@@ -283,7 +379,7 @@ const LEDGER_VALID: Record<string, string[]> = {
 
 ---
 
-## 9. 핵심 설계 원칙 요약
+## 10. 핵심 설계 원칙 요약
 
 1. **어댑터 패턴** — `IVASPAdapter` 인터페이스 하나로 Anvil·Sepolia·운영(ExternalVASP)을 동일하게 교체 가능
 2. **추상 클래스 + 확장** — 공통 로직은 `ChainVASPAdapterBase`, 네트워크별 차이는 서브클래스에서만 추가
