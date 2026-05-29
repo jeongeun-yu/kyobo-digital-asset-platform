@@ -329,6 +329,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
       .withPassword('kyobo')
       .withNetwork(dockerNetwork)
       .withNetworkAliases('postgres')
+      .withStartupTimeout(120_000)
       .start();
     pool = new Pool({ connectionString: pgContainer.getConnectionUri() });
     const schema = readFileSync(resolve(__dirname, '..', 'setup', 'schema.sql'), 'utf-8');
