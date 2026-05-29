@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>S22 강의 노트 — 이중 채널 상태 동기화</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--font:'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;--sidebar:260px;--radius:8px}
+body{font-family:var(--font);font-size:18px;line-height:1.75;color:#1F2937;background:#F3F4F6;display:flex}
+#nav{width:var(--sidebar);height:100vh;background:#111827;color:#E5E7EB;position:fixed;top:0;left:0;overflow-y:auto;z-index:100;padding:16px 0 80px;transition:transform .3s ease}
+#nav.hidden{transform:translateX(-100%)}
+#nav h2{padding:12px 16px;font-size:15px;font-weight:700;letter-spacing:.08em;color:#9CA3AF;text-transform:uppercase;border-bottom:1px solid #374151;margin-bottom:8px}
+#nav-toggle{position:fixed;top:12px;left:var(--sidebar);z-index:200;background:#1F2D5A;color:#fff;border:none;border-radius:0 6px 6px 0;width:22px;height:44px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:left .3s ease;box-shadow:2px 0 6px rgba(0,0,0,.3)}
+#nav-toggle:hover{background:#2a3d7a}
+.toc-root{list-style:none}
+.ts>a.tslink{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;font-weight:700;font-size:16px;color:#F9FAFB;text-decoration:none;border-left:3px solid var(--sc,#6B7280);background:rgba(255,255,255,.04);margin-bottom:2px;transition:background .15s;cursor:pointer}
+.ts>a.tslink:hover{background:rgba(255,255,255,.1)}
+.ts>a.tslink small{display:block;font-weight:400;font-size:13px;color:#9CA3AF;margin-top:1px}
+.ts>a.tslink .arrow{font-size:11px;color:#9CA3AF;transition:transform .25s;flex-shrink:0;margin-left:8px}
+.ts.open>a.tslink .arrow{transform:rotate(180deg)}
+.tsl{list-style:none;max-height:0;overflow:hidden;transition:max-height .3s ease}
+.ts.open .tsl{max-height:9999px}
+.ts3>a,.ts2>a{display:block;padding:4px 16px 4px 28px;font-size:15px;color:#D1D5DB;text-decoration:none;transition:color .15s}
+.ts2>a{padding-left:20px;font-size:15px;color:#9CA3AF;font-style:italic}
+.ts3>a:hover,.ts2>a:hover{color:#fff}
+#main{margin-left:var(--sidebar);flex:1;padding:32px 40px;max-width:calc(1200px + var(--sidebar));min-height:100vh;transition:margin-left .3s ease}
+.main-title{font-size:32px;font-weight:800;color:#111827;margin-bottom:8px}
+p.summary{color:#6B7280;margin-bottom:32px}
+.session{background:#fff;border-radius:12px;margin-bottom:32px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.session-title{display:flex;align-items:center;gap:12px;padding:18px 24px;background:var(--sc,#374151);color:#fff;font-size:24px;font-weight:800;letter-spacing:.01em}
+.badge{background:rgba(255,255,255,.2);border-radius:6px;padding:3px 10px;font-size:16px;font-weight:900;flex-shrink:0}
+.session > *:not(.session-title){padding-left:24px;padding-right:24px}
+.session > h2.subsec{padding-top:20px;padding-bottom:4px}
+.sep{border:none;border-top:1px solid #E5E7EB;margin:16px 24px}
+.slide-h{font-size:20px;font-weight:700;color:var(--sc,#374151);padding:20px 24px 8px;border-left:4px solid var(--sbd,#E5E7EB);background:var(--sb,#F9FAFB);margin:16px 0 0}
+.speech{background:#FFFDF5;border-left:4px solid #FCD34D;border-radius:0 6px 6px 0;padding:14px 18px;margin:10px 0;font-size:18px;line-height:1.85}
+.speech p{margin-bottom:10px;color:#1F2937}
+.speech p:last-child{margin-bottom:0}
+pre{background:#1E293B;color:#E2E8F0;border-radius:8px;padding:16px;margin:12px 0;overflow-x:auto;font-size:15px;line-height:1.65}
+code{font-family:'JetBrains Mono','Fira Code','Consolas',monospace;font-size:15px}
+p code,li code,td code,th code{background:#F1F5F9;color:#0F172A;border-radius:4px;padding:2px 5px;font-size:15px}
+.tbl-wrap{overflow-x:auto;margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:17px}
+th{background:var(--sc,#374151);color:#fff;padding:8px 12px;text-align:left;font-weight:600}
+td{padding:7px 12px;border-bottom:1px solid #E5E7EB;color:#374151}
+tr:nth-child(even) td{background:#F9FAFB}
+ul{list-style:none;margin:8px 0}
+li{padding:3px 0 3px 18px;position:relative;font-size:18px;color:#374151}
+li::before{content:'•';position:absolute;left:4px;color:var(--sc,#6B7280);font-weight:700}
+li.chk::before{content:'□';font-size:13px}
+blockquote{background:#F0FDF4;border-left:3px solid #22C55E;padding:10px 14px;border-radius:0 6px 6px 0;margin:8px 0;color:#166534;font-size:17px}
+.subsec{font-size:21px;font-weight:700;color:#374151;margin:24px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--sbd,#E5E7EB)}
+.session p{margin:6px 0;font-size:18px;color:#374151}
+[id]{scroll-margin-top:16px}
+.ann-point{display:flex;gap:12px;align-items:flex-start;background:#EFF6FF;border-left:4px solid #2563EB;padding:12px 18px;border-radius:0 8px 8px 0;margin:8px 0}
+.ann-point::before{content:'▶';color:#2563EB;font-weight:900;flex-shrink:0;margin-top:3px;font-size:14px}
+.ann-point p{color:#1D4ED8;font-weight:700;font-size:17px;line-height:1.65;margin:0}
+.ann-term{display:flex;gap:12px;align-items:baseline;background:#FEF2F2;border-left:4px solid #DC2626;padding:9px 18px;border-radius:0 8px 8px 0;margin:6px 0;flex-wrap:wrap}
+.term-badge{background:#DC2626;color:#fff;padding:2px 9px;border-radius:4px;font-weight:700;font-size:15px;white-space:nowrap;flex-shrink:0;font-family:'JetBrains Mono','Fira Code','Consolas',monospace}
+.term-def{color:#7F1D1D;font-size:17px;line-height:1.6}
+.ann-code{display:flex;gap:12px;align-items:flex-start;background:#F5F3FF;border-left:4px solid #7C3AED;padding:12px 18px;border-radius:0 8px 8px 0;margin:8px 0}
+.ann-code::before{content:'💡';flex-shrink:0;margin-top:1px;font-size:16px}
+.ann-code p{color:#5B21B6;font-size:16px;line-height:1.7;font-family:'JetBrains Mono','Fira Code','Consolas',monospace;margin:0;word-break:break-all}
+@media print{
+  #nav{display:none}
+  #main{margin-left:0;padding:16px}
+  .session{box-shadow:none;border:1px solid #E5E7EB;page-break-inside:avoid}
+  .speech{background:#FFFDF5!important;-webkit-print-color-adjust:exact}
+  pre{background:#1E293B!important;-webkit-print-color-adjust:exact}
+}
+#nav a.active{color:#fff;font-weight:700}
+.time-badge{display:inline-block;background:#065F46;color:#D1FAE5;font-size:14px;font-weight:700;padding:2px 10px;border-radius:4px;margin-bottom:8px;letter-spacing:.03em}
+.ann-warn{display:flex;gap:12px;align-items:flex-start;background:#FFF7ED;border-left:4px solid #EA580C;padding:12px 18px;border-radius:0 8px 8px 0;margin:8px 0}
+.ann-warn::before{content:'⚠';flex-shrink:0;margin-top:1px;font-size:16px;color:#EA580C}
+.ann-warn p{color:#9A3412;font-size:17px;line-height:1.65;margin:0}
+</style>
+</head>
+<body>
+<button id="nav-toggle" title="목차 열기/닫기">◀</button>
+<nav id="nav">
+  <h2>강의 목차</h2>
+  <ul class="toc-root">
+    <li class="ts open" style="--sc:#065F46">
+      <a href="#session-22" class="tslink"><span>S22 <small>이중 채널 상태 동기화</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s22-slide01">Slide 01 — 표지</a></li>
+        <li class="ts3"><a href="#s22-slide02">Slide 02 — 두 시스템 간 상태 동기화 문제</a></li>
+        <li class="ts3"><a href="#s22-slide03">Slide 03 — 단일 콜백 방식의 취약점</a></li>
+        <li class="ts3"><a href="#s22-slide04">Slide 04 — 콜백 누락 경로 전체 분석</a></li>
+        <li class="ts3"><a href="#s22-slide05">Slide 05 — 비유 — 택배 수령과 문자 알림</a></li>
+        <li class="ts3"><a href="#s22-slide06">Slide 06 — 두 가지 동기화 전략</a></li>
+        <li class="ts3"><a href="#s22-slide07">Slide 07 — 전체 아키텍처 — 이중 채널 전체 그림</a></li>
+        <li class="ts3"><a href="#s22-slide08">Slide 08 — 멱등성이 이중 채널을 가능하게 한다</a></li>
+        <li class="ts3"><a href="#s22-slide09">Slide 09 — pollStaleRequests 알고리즘 설계 (1/2)</a></li>
+        <li class="ts3"><a href="#s22-slide10">Slide 10 — pollStaleRequests 알고리즘 설계 (2/2)</a></li>
+        <li class="ts3"><a href="#s22-slide11">Slide 11 — pollStaleRequests 전체 구현</a></li>
+        <li class="ts3"><a href="#s22-slide12">Slide 12 — 단일 오류가 전체 배치를 중단시키는 문제</a></li>
+        <li class="ts3"><a href="#s22-slide13">Slide 13 — 운영 흐름 ① — 정상 케이스 (채널 A 성공)</a></li>
+        <li class="ts3"><a href="#s22-slide14">Slide 14 — 운영 흐름 ② — 채널 A 누락 (Webhook 유실)</a></li>
+        <li class="ts3"><a href="#s22-slide15">Slide 15 — 운영 흐름 ③ — 최악 케이스 (채널 A·B 모두 실패)</a></li>
+        <li class="ts3"><a href="#s22-slide16">Slide 16 — 운영 흐름 ④ — VASP 장애 (not_found)</a></li>
+        <li class="ts3"><a href="#s22-slide17">Slide 17 — TxStateMachineService 전이 이후 흐름</a></li>
+        <li class="ts3"><a href="#s22-slide18">Slide 18 — 폴링을 없애고 Webhook만 쓰면 안 되는가?</a></li>
+        <li class="ts3"><a href="#s22-slide19">Slide 19 — ChainEventListener만 쓰면 안 되는가?</a></li>
+        <li class="ts3"><a href="#s22-slide20">Slide 20 — M3 모듈 완료 기준 체크리스트</a></li>
+        <li class="ts3"><a href="#s22-slide21">Slide 21 — M3 핵심 정리</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+<main id="main">
+<h1 class="main-title">S22 강의 노트 — 이중 채널 상태 동기화</h1>
+<blockquote>슬라이드 발표 멘트 + 실습 스크립트 (나래이션 미작성)</blockquote>
+<hr class="sep">
+
+<section id="session-22" class="session" style="--sc:#065F46;--sb:#F0FDF4;--sbd:#86EFAC">
+<h1 class="session-title"><span class="badge">S22</span>이중 채널 상태 동기화</h1>
+<hr class="sep">
+
+<!-- Slide 1 -->
+<h3 id="s22-slide01" class="slide-h">Slide 1 — 표지</h3>
+<hr class="sep">
+
+<!-- Slide 2 -->
+<h3 id="s22-slide02" class="slide-h">Slide 2 — 두 시스템 간 상태 동기화 문제</h3>
+<hr class="sep">
+
+<!-- Slide 3 -->
+<h3 id="s22-slide03" class="slide-h">Slide 3 — 단일 콜백 방식의 취약점</h3>
+<hr class="sep">
+
+<!-- Slide 4 -->
+<h3 id="s22-slide04" class="slide-h">Slide 4 — 콜백 누락 경로 전체 분석</h3>
+
+<div class="speech">이 표는 Webhook이 유실될 수 있는 원인을 위치별로 분해한 겁니다. 각 행을 하나씩 짚어보겠습니다.</div>
+
+<ul>
+  <li><strong>네트워크 단절</strong> — VASP가 발송했지만 KYOBO 서버까지 오는 구간에서 패킷이 유실됩니다. 우리 서버에는 아무것도 도착하지 않으므로 감지 자체가 불가합니다.</li>
+  <li><strong>KYOBO 서버 재시작 — "수신 직후 처리 전"</strong> — Webhook HTTP 요청이 소켓까지는 도착했지만, 애플리케이션이 파싱·검증·Redis 적재를 실행하기 전에 서버 프로세스가 크래시된 경우입니다. TCP 레벨에서는 수신이 됐지만 DB나 Redis에 기록이 전혀 남지 않습니다. 그래서 영향이 "수신 기록 없음"입니다.</li>
+  <li><strong>VASP 발송 버그</strong> — VASP 내부에서 Webhook 자체를 발송하지 않은 경우입니다. KYOBO 입장에서는 아무 신호도 오지 않으니 감지가 불가합니다.</li>
+  <li><strong>처리 큐 포화</strong> — 수신은 됐지만 Redis Stream이나 처리 큐가 꽉 차서 메시지 적재에 실패하는 경우입니다. 큐 길이를 모니터링하면 조건부로 감지할 수 있습니다.</li>
+  <li><strong>DB 트랜잭션 실패</strong> — 처리는 진행됐지만 마지막 상태 업데이트 DB 쓰기가 실패해 롤백된 경우입니다. PENDING이 유지되므로 폴링이 결국 잡아냅니다.</li>
+  <li><strong>파트너사 SLA 미달</strong> — VASP 처리 자체가 지연돼 Webhook 발송이 늦어지는 경우입니다. 우리가 10분 초과 PENDING을 폴링 대상으로 설정해두면 감지 가능합니다.</li>
+</ul>
+
+<div class="ann-point"><p>공통 패턴 — 원인이 어디에 있든 KYOBO DB에는 항상 <code>PENDING</code> 상태가 남습니다. 이 상태가 임계 시간 이상 지속되면 "누락"으로 판단할 수 있고, 그게 폴링 채널의 존재 이유입니다.</p></div>
+
+<hr class="sep">
+
+<!-- Slide 5 -->
+<h3 id="s22-slide05" class="slide-h">Slide 5 — 비유 — 택배 수령과 문자 알림</h3>
+<hr class="sep">
+
+<!-- Slide 6 -->
+<h3 id="s22-slide06" class="slide-h">Slide 6 — 두 가지 동기화 전략</h3>
+<hr class="sep">
+
+<!-- Slide 7 -->
+<h3 id="s22-slide07" class="slide-h">Slide 7 — 전체 아키텍처 — 이중 채널 전체 그림</h3>
+<hr class="sep">
+
+<!-- Slide 8 -->
+<h3 id="s22-slide08" class="slide-h">Slide 8 — 멱등성이 이중 채널을 가능하게 한다</h3>
+<hr class="sep">
+
+<!-- Slide 9 -->
+<h3 id="s22-slide09" class="slide-h">Slide 9 — pollStaleRequests 알고리즘 설계 (1/2)</h3>
+
+<div class="speech"><code>queryEvents()</code>와 <code>pollStaleRequests()</code>가 비슷해 보일 수 있는데, 완전히 다른 함수입니다.</div>
+
+<ul>
+  <li><strong><code>queryEvents()</code></strong> — <code>IBlockchainAdapter</code> 인터페이스 메서드입니다. <code>ChainEventListener</code>가 서비스 재시작 시 호출해서 특정 블록 범위의 온체인 이벤트(<code>Issued</code> 등)를 RPC로 직접 조회합니다. 방향은 블록체인 → 우리 시스템이고, 목적은 서비스 다운 중 놓친 온체인 이벤트 복구입니다.</li>
+  <li><strong><code>pollStaleRequests()</code></strong> — <code>TxStateMachineService</code> 메서드입니다. DB에서 10분 초과 PENDING/SUBMITTED TX를 꺼내 VASP REST API에 상태를 직접 조회합니다. 방향은 우리 시스템 → VASP이고, 목적은 Webhook 누락된 TX 상태 동기화입니다.</li>
+</ul>
+
+<div class="ann-point"><p>조회 대상이 다릅니다 — <code>queryEvents()</code>는 블록체인 RPC, <code>pollStaleRequests()</code>는 VASP REST API. 트리거도 다릅니다 — <code>queryEvents()</code>는 재시작 시 1회, <code>pollStaleRequests()</code>는 스케줄러 5분 주기.</p></div>
+
+<div class="speech">헷갈리면 택배 비유로 생각하세요.</div>
+
+<ul>
+  <li><strong><code>pollStaleRequests()</code> — "내가 보낸 택배 잘 도착했어?"</strong> — 택배사(VASP)에 전화해서 내 운송장 번호로 배송 상태 확인. 우리 DB에 있는 미완성 TX 목록에서 출발해서 VASP에 "이 TX 어떻게 됐어?" 질문합니다. DB에 PENDING TX가 없으면 아무것도 안 합니다.</li>
+  <li><strong><code>queryEvents()</code> — "오늘 우리 집에 배달된 택배가 있어?"</strong> — 블록체인에 직접 물어봅니다. "X블록~Y블록 사이에 우리 컨트랙트에서 Issued 이벤트 발생한 거 다 줘." TX 기준이 아니라 블록 범위 기준입니다. 서비스가 꺼져 있던 1시간 동안 TX를 하나도 제출 안 했어도, 그 시간에 온체인에서 발생한 이벤트를 다 가져옵니다.</li>
+</ul>
+
+<h2 class="subsec">queryEvents() 블록 범위와 컨트랙트 필터링</h2>
+
+<div class="speech">그러면 어디 블록부터 어디 블록까지 뒤지는지, 그리고 전체 블록체인 중 어떻게 우리 것만 골라내는지 설명하겠습니다.</div>
+
+<ul>
+  <li><strong>블록 범위</strong> — <code>fromBlock</code>은 <code>stateStore.getLastProcessedBlock()</code>, 즉 마지막으로 처리한 블록입니다. <code>toBlock</code>은 <code>adapter.getBlockNumber()</code>, 현재 블록입니다. 서비스가 꺼져 있던 구간이 그대로 범위가 됩니다. RPC 과부하 방지를 위해 1000블록씩 청크로 나눠서 조회합니다.</li>
+  <li><strong>우리 트랜잭션 식별</strong> — <code>contract.addr</code>(우리 NFT 컨트랙트 주소)와 <code>eventName</code>(<code>'Issued'</code>)으로 필터링합니다. 블록체인 전체를 뒤지는 게 아니라 RPC 레벨에서 이 컨트랙트 주소 + 이벤트 시그니처로 좁혀서 조회합니다. 이 두 값은 <code>index.ts</code>에서 <code>ChainEventListener</code> 생성 시 <code>NFT_CONTRACT_ADDR</code>와 <code>['Issued']</code>로 주입됩니다.</li>
+</ul>
+
+<div class="ann-point"><p><code>_dispatch()</code>에서 한 번 더 <code>h.contractAddr === event.contractAddr</code>로 핸들러 레벨 필터링도 합니다. RPC + 핸들러 두 단계로 우리 이벤트만 처리합니다.</p></div>
+
+<hr class="sep">
+
+<!-- Slide 10 -->
+<h3 id="s22-slide10" class="slide-h">Slide 10 — pollStaleRequests 알고리즘 설계 (2/2)</h3>
+
+<div class="speech">폴링 대상 조건에 PENDING뿐만 아니라 SUBMITTED도 포함되어 있습니다. SUBMITTED에서 고착되는 시나리오를 설명하겠습니다.</div>
+
+<ul>
+  <li><strong>SUBMITTED 상태의 의미</strong> — <code>submitMint()</code>가 성공해서 VASP로부터 txHash를 받고 DB에 SUBMITTED로 저장까지 완료된 상태입니다. 즉, 우리 시스템은 요청을 넘겼고 txHash도 알고 있습니다.</li>
+  <li><strong>고착 시나리오</strong> — VASP가 txHash는 발급했지만 실제 mempool 브로드캐스트에 실패하거나, 브로드캐스트는 했지만 PENDING 콜백을 보내지 못한 경우입니다. 이 경우 우리 DB는 SUBMITTED에 멈춰 있고 아무 후속 콜백도 오지 않습니다.</li>
+  <li><strong>코드 상 증거</strong> — <code>handleMined()</code>가 PENDING뿐 아니라 SUBMITTED도 허용하는 이유가 여기 있습니다. PENDING 콜백이 누락된 채 MINED 콜백만 오는 경우 SUBMITTED → MINED 직행을 처리해야 하기 때문입니다.</li>
+  <li><strong>폴링의 역할</strong> — 10분 초과 SUBMITTED를 폴링이 잡아 VASP에 직접 상태를 조회하고, confirmed면 MINED → CONFIRMED로 밀어줍니다.</li>
+</ul>
+
+<div class="ann-point"><p>PENDING 고착은 "TX가 mempool에 있는데 콜백이 안 온" 경우, SUBMITTED 고착은 "TX가 mempool에 들어갔는지조차 모르는" 더 불확실한 경우입니다. 폴링이 두 케이스를 모두 커버합니다.</p></div>
+
+<hr class="sep">
+
+<!-- Slide 11 -->
+<h3 id="s22-slide11" class="slide-h">Slide 11 — pollStaleRequests 전체 구현</h3>
+<hr class="sep">
+
+<!-- Slide 12 -->
+<h3 id="s22-slide12" class="slide-h">Slide 12 — 단일 오류가 전체 배치를 중단시키는 문제</h3>
+<hr class="sep">
+
+<!-- Slide 13 -->
+<h3 id="s22-slide13" class="slide-h">Slide 13 — 운영 흐름 ① — 정상 케이스 (채널 A 성공)</h3>
+<hr class="sep">
+
+<!-- Slide 14 -->
+<h3 id="s22-slide14" class="slide-h">Slide 14 — 운영 흐름 ② — 채널 A 누락 (Webhook 유실)</h3>
+<hr class="sep">
+
+<!-- Slide 15 -->
+<h3 id="s22-slide15" class="slide-h">Slide 15 — 운영 흐름 ③ — 최악 케이스 (채널 A·B 모두 실패)</h3>
+<hr class="sep">
+
+<!-- Slide 16 -->
+<h3 id="s22-slide16" class="slide-h">Slide 16 — 운영 흐름 ④ — VASP 장애 (not_found)</h3>
+<hr class="sep">
+
+<!-- Slide 17 -->
+<h3 id="s22-slide17" class="slide-h">Slide 17 — TxStateMachineService 전이 이후 흐름</h3>
+<hr class="sep">
+
+<!-- Slide 18 -->
+<h3 id="s22-slide18" class="slide-h">Slide 18 — 폴링을 없애고 Webhook만 쓰면 안 되는가?</h3>
+<hr class="sep">
+
+<!-- Slide 19 -->
+<h3 id="s22-slide19" class="slide-h">Slide 19 — ChainEventListener만 쓰면 안 되는가?</h3>
+<hr class="sep">
+
+<!-- Slide 20 -->
+<h3 id="s22-slide20" class="slide-h">Slide 20 — M3 모듈 완료 기준 체크리스트</h3>
+<hr class="sep">
+
+<!-- Slide 21 -->
+<h3 id="s22-slide21" class="slide-h">Slide 21 — M3 핵심 정리</h3>
+<hr class="sep">
+
+<!-- issuance-status beforeAll 해석 -->
+<h3 id="s22-beforeall" class="slide-h">부록 — issuance-status 통합 테스트 <code>beforeAll</code> 상세 해석</h3>
+<p style="padding:12px 24px 0;color:#6B7280;font-size:16px">경로: <code>internal/integration/__tests__/issuance-status.integration.test.ts</code></p>
+
+<pre style="margin:12px 24px"><code>beforeAll(() => {
+  pool = new Pool({ connectionString: getPgUrl() });          // ①
+  repo = new PgIssuanceRequestRepository(pool);               // ②
+
+  txRepo = new PgTxRepository(pool);                         // ③
+  const stubVasp = {                                         // ④
+    async submitMint()          { return { txHash: '0x0' }; },
+    async getStatus()           { return { status: 'pending' as const }; },
+    async resubmitWithGasBump() { return { txHash: '0x0' }; },
+  };
+  txStateMachine = new TxStateMachineService(txRepo, stubVasp);  // ⑤
+
+  const ledgerService = new LedgerService(                   // ⑥
+    new PgDatabaseClient(pool),
+    new StubCoreBankingAdapter(),
+  );
+  const bridge = new TxTransitionBridge(ledgerService, repo); // ⑦
+  bridge.attach(txStateMachine);                              // ⑧
+
+  handler = new IssuanceConfirmHandler(                       // ⑨
+    '0xCONTRACT', txRepo, txStateMachine,
+  );
+});</code></pre>
+
+<h2 class="subsec" style="margin:20px 24px 8px">① Pool — 단일 커넥션 풀 공유</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p><code>getPgUrl()</code>는 <code>globalSetup</code>이 띄운 Testcontainers PostgreSQL 컨테이너 URL을 읽어온다. 이 <code>pool</code> 하나를 아래 모든 Repository·Client가 공유한다. 테스트 종료 후 <code>afterAll</code>에서 <code>pool.end()</code>로 연결을 닫는다.</p>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">② PgIssuanceRequestRepository — issuance_requests 테이블 담당</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p>비즈니스 레이어 상태(<code>REQUESTED → SUBMITTED → CONFIRMED/FAILED</code>)를 <code>issuance_requests</code> 테이블에 기록하는 Repository다. 이 테스트의 주된 검증 대상이다.</p>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">③ PgTxRepository — tx_mint_requests 테이블 담당</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p>TX 상태머신 레이어(<code>SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED</code>)를 <code>tx_mint_requests</code> 테이블에 기록하는 Repository다. <code>IssuanceConfirmHandler</code>가 온체인 이벤트를 받으면 이 repo에서 txHash로 요청을 조회한다.</p>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">④ stubVasp — 인라인 페이크 VASP</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p>블록체인에 실제 TX를 보내지 않는다. <code>submitMint()</code>는 <code>0x0</code>을 반환하고, <code>getStatus()</code>는 항상 <code>pending</code>을 반환한다. 이 테스트에서 VASP는 단지 <code>TxStateMachineService</code>를 초기화하는 데 필요한 의존성일 뿐, 실제로 호출되지 않는다.</p>
+</div>
+<div class="ann-point" style="margin:0 24px 12px"><p>tx-status 테스트의 <code>ControlledVaspClient</code>와 역할이 같다. 둘 다 "VASP를 테스트 범위 밖으로 격리"하는 패턴.</p></div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">⑤ TxStateMachineService — TX 상태 전이 엔진</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p><code>txRepo</code>(PgTxRepository)와 <code>stubVasp</code>를 주입해 생성한다. 상태 전이가 발생할 때마다 <code>transition</code> 이벤트를 발행(EventEmitter)한다. 아래 <code>TxTransitionBridge</code>가 이 이벤트를 구독한다.</p>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">⑥ LedgerService — 원장 기록 담당</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p><code>PgDatabaseClient(pool)</code>: PostgreSQL에 직접 쓰는 DB 클라이언트.<br>
+  <code>StubCoreBankingAdapter</code>: 코어뱅킹 시스템 연동을 빈 구현체로 대체. 이 테스트에서 코어뱅킹 잔액 차감은 검증하지 않는다.</p>
+  <p>CONFIRMED 전이 시 <code>user_nft_holdings</code> 테이블에 보유 수량을 기록하는 것이 LedgerService의 역할이다.</p>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">⑦ TxTransitionBridge — TX 전이 → Issuance 동기화 연결부</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p><code>TxStateMachine</code>의 상태 전이 이벤트를 받아 <code>issuance_requests</code> 상태를 동기화하는 브릿지다. 두 Repository를 알고 있다:</p>
+  <ul>
+    <li><code>ledgerService</code>: CONFIRMED 전이 시 원장 기록</li>
+    <li><code>repo</code>(PgIssuanceRequestRepository): IssuanceStatus 업데이트</li>
+  </ul>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">⑧ bridge.attach(txStateMachine) — Observer 연결</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p><code>txStateMachine</code>의 EventEmitter에 <code>TxTransitionBridge</code>를 구독자로 등록한다. 이 한 줄로 TX 레이어 전이가 자동으로 Issuance 레이어에 전파된다.</p>
+</div>
+<div class="tbl-wrap" style="margin:8px 24px 12px">
+  <table>
+    <thead><tr><th>txStateMachine 전이</th><th>bridge가 자동으로 수행하는 것</th></tr></thead>
+    <tbody>
+      <tr><td><code>→ CONFIRMED</code></td><td><code>issuance_requests</code> CONFIRMED + <code>user_nft_holdings</code> 기록</td></tr>
+      <tr><td><code>→ FAILED</code></td><td><code>issuance_requests</code> FAILED</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="ann-point" style="margin:0 24px 12px"><p><code>[9]</code> 테스트에서 TxStatus·MintStatus·IssuanceStatus 세 레이어가 동시에 CONFIRMED로 전이되는 것이 가능한 이유가 바로 이 <code>attach()</code> 한 줄이다.</p></div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">⑨ IssuanceConfirmHandler — 온체인 Issued 이벤트 수신</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p>컨트랙트 주소(<code>'0xCONTRACT'</code>), <code>txRepo</code>, <code>txStateMachine</code>을 주입받는다. 실제 운영에서는 <code>ChainEventListener</code>가 온체인 <code>Issued</code> 이벤트를 감지하면 이 핸들러를 호출한다. 테스트에서는 <code>handler.handle(event)</code>를 직접 호출해 시뮬레이션한다.</p>
+  <p>핸들러 내부 흐름: txHash로 <code>txRepo</code> 조회 → <code>txStateMachine.handleMined()</code> 또는 <code>handleConfirmed()</code> 호출 → <code>TxTransitionBridge</code>를 통해 Issuance 레이어 동기화.</p>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">전체 객체 연결 구조</h2>
+<pre style="margin:0 24px 16px"><code>Pool (PostgreSQL)
+ ├── PgIssuanceRequestRepository (repo)  ─────────────────────┐
+ ├── PgTxRepository (txRepo)                                  │
+ │    └── TxStateMachineService (txStateMachine)              │
+ │         │  EventEmitter: 'transition' 이벤트 발행           │
+ │         └── [attach] ──→ TxTransitionBridge ──────────────┘
+ │                           │  transition 구독
+ │                           ├── LedgerService (원장 기록)
+ │                           │    └── PgDatabaseClient
+ │                           │    └── StubCoreBankingAdapter
+ │                           └── repo.updateStatus() (IssuanceStatus 동기화)
+ │
+ └── IssuanceConfirmHandler
+      └── txRepo.findByTxHash() → txStateMachine.handleMined/Confirmed()</code></pre>
+<div class="ann-warn" style="margin:0 24px 16px"><p><code>beforeAll</code>은 동기(<code>async</code> 없음)다. Pool·Repository 생성은 연결이 아닌 설정만 하므로 비동기가 필요 없다. 실제 DB 연결은 첫 쿼리 실행 시 맺어진다.</p></div>
+
+<hr class="sep">
+
+<!-- [1]~[9] 테스트 의도 -->
+<h3 id="s22-test-cases" class="slide-h">테스트 케이스 [1]~[9] — 무엇을 검증하려는가</h3>
+<p style="padding:12px 24px 4px;color:#6B7280;font-size:16px">코드 레벨이 아닌 의도 중심으로 읽는다. <code>beforeEach</code>에서 매 테스트마다 테이블 전체를 TRUNCATE하므로 각 케이스는 완전히 독립적이다.</p>
+
+<div class="tbl-wrap" style="margin:8px 24px 16px">
+  <table>
+    <thead><tr><th style="width:12%">케이스</th><th style="width:35%">검증 목표</th><th>왜 중요한가</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>[1]</code> 생성</td>
+        <td><code>repo.create()</code> 호출 시 <code>issuance_requests</code>에 <code>REQUESTED</code> 행이 실제로 생성되는가</td>
+        <td>Repository가 DB에 올바르게 INSERT하는지 가장 기초 검증. 이게 안 되면 이후 모든 테스트 전제가 무너진다.</td>
+      </tr>
+      <tr>
+        <td><code>[2]</code> REQUESTED → SUBMITTED</td>
+        <td><code>updateStatus()</code>가 txHash를 함께 기록하는가</td>
+        <td>VASP에 TX를 제출한 뒤 txHash를 DB에 기록해야 이후 콜백·폴링에서 이 TX를 추적할 수 있다. txHash 누락 시 CONFIRMED 경로가 완전히 막힌다.</td>
+      </tr>
+      <tr>
+        <td><code>[3]</code> IssuanceConfirmHandler</td>
+        <td>온체인 <code>Issued</code> 이벤트(<code>txHash + blockNumber</code>)를 받으면 <code>issuance_requests</code>가 CONFIRMED로 전이되는가</td>
+        <td><code>IssuanceConfirmHandler</code>는 TX 레이어(<code>tx_mint_requests</code>)와 Issuance 레이어(<code>issuance_requests</code>) 사이의 연결 고리다. 이 핸들러가 없으면 블록체인 이벤트가 비즈니스 레이어에 도달하지 못한다.</td>
+      </tr>
+      <tr>
+        <td><code>[3-b]</code> 멱등성(핸들러)</td>
+        <td>해당 txHash를 가진 <code>tx_mint_requests</code>가 없을 때 핸들러가 에러 없이 조용히 종료하는가</td>
+        <td>온체인 이벤트는 중복 수신될 수 있다. 대응하는 레코드가 없을 때 예외를 던지면 컨슈머 전체가 멈춘다. 조용한 종료가 맞다.</td>
+      </tr>
+      <tr>
+        <td><code>[4]</code> SUBMITTED → FAILED</td>
+        <td>VASP TX 실패 콜백(VASP_TX_FAILED) 수신 시 txHash로 요청을 찾아 FAILED로 전이하고 사유를 기록하는가</td>
+        <td>실패 경로의 DB 기록이 완전한지 검증. <code>failReason</code>이 없으면 운영자가 실패 원인을 알 수 없다.</td>
+      </tr>
+      <tr>
+        <td><code>[5]</code> 종단 보호 — CONFIRMED</td>
+        <td>CONFIRMED 이후 다시 FAILED로 전이 시도하면 예외가 발생하는가</td>
+        <td>이미 원장에 반영된 NFT 발행을 FAILED로 되돌리면 user_nft_holdings와 issuance_requests가 불일치한다. DB 레벨에서 막아야 한다.</td>
+      </tr>
+      <tr>
+        <td><code>[6]</code> 종단 보호 — FAILED</td>
+        <td>FAILED 이후 SUBMITTED로 전이 시도하면 예외가 발생하는가</td>
+        <td>실패한 요청을 다시 진행 중 상태로 되돌리면 중복 발행이 발생할 수 있다. 종단 상태에서 어떤 전이도 허용하지 않아야 한다.</td>
+      </tr>
+      <tr>
+        <td><code>[7]</code> findPending 멱등성</td>
+        <td>동일 사용자·이벤트·토큰에 대해 진행 중인 요청(<code>REQUESTED/SUBMITTED</code>)이 있으면 감지되고, CONFIRMED 이후엔 감지되지 않는가</td>
+        <td>동일 사용자가 동시에 두 번 요청을 보냈을 때 중복 발행을 방지하는 핵심 로직이다. <code>findPending</code>이 CONFIRMED 이후에도 반환하면 정상 완료된 요청이 "진행 중"으로 오인된다.</td>
+      </tr>
+      <tr>
+        <td><code>[8]</code> findByTxHash</td>
+        <td>txHash가 없는 요청(REQUESTED 상태)은 조회되지 않고, txHash가 기록된 요청(SUBMITTED 이후)은 정확히 조회되는가</td>
+        <td>VASP 콜백·폴링은 txHash를 키로 요청을 찾는다. txHash 미설정 행이 잘못 반환되면 엉뚱한 요청이 CONFIRMED/FAILED로 전이된다.</td>
+      </tr>
+      <tr>
+        <td><code>[9]</code> NFT_ISSUED → 3레이어 동시 CONFIRMED</td>
+        <td>Redis Stream의 <code>NFT_ISSUED</code> 메시지를 <code>NFTIssuedProcessor</code>가 처리했을 때, <code>tx_mint_requests</code>·<code>mint_requests</code>·<code>issuance_requests</code> 세 테이블이 동시에 CONFIRMED로 전이되고 <code>user_nft_holdings</code>에 잔액이 반영되는가</td>
+        <td>이 테스트 전체에서 가장 복잡한 케이스. <code>NFTIssuedProcessor → PgNFTLedgerService → TxStateMachineService → TxTransitionBridge → issuance_requests</code>까지 이어지는 전체 연결 고리가 한 번에 작동하는지 검증한다. 세 레이어 중 하나라도 CONFIRMED가 안 되면 원장 불일치 장애다.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 class="subsec" style="margin:20px 24px 8px">[9] 데이터 준비가 복잡한 이유</h2>
+<div class="speech" style="margin:0 24px 12px">
+  <p><code>[9]</code>는 테스트 시작 전 4개 테이블에 데이터를 직접 INSERT한다. 각각의 이유:</p>
+  <ul>
+    <li><code>user_wallet_mapping</code> — <code>NFTIssuedProcessor</code>가 walletAddr → userId 역방향 조회를 하기 때문</li>
+    <li><code>tx_mint_requests</code> — <code>TxStateMachineService</code>가 txHash로 상태 전이 대상을 찾기 때문</li>
+    <li><code>mint_requests</code> — <code>TxTransitionBridge</code>가 MintStatus를 동기화하기 때문</li>
+    <li><code>issuance_requests</code> — <code>TxTransitionBridge</code>가 IssuanceStatus를 동기화하기 때문</li>
+  </ul>
+  <p>네 테이블이 모두 같은 <code>txHash</code>로 연결되어 있어야 하나의 이벤트가 전체 레이어를 관통한다.</p>
+</div>
+
+<div class="ann-point" style="margin:0 24px 16px"><p><code>await new Promise(r =&gt; setTimeout(r, 300))</code>가 [3]과 [9]에 있는 이유: <code>TxTransitionBridge</code>는 EventEmitter를 통해 비동기로 <code>issuance_requests</code>를 업데이트한다. 300ms를 기다리지 않으면 아직 전이가 완료되기 전에 DB를 조회해 SUBMITTED가 나온다.</p></div>
+
+<hr class="sep">
+
+</section>
+</main>
+
+<script>
+document.getElementById('nav-toggle').addEventListener('click',function(){
+  var n=document.getElementById('nav'),m=document.getElementById('main'),t=document.getElementById('nav-toggle');
+  n.classList.toggle('hidden');
+  if(n.classList.contains('hidden')){m.style.marginLeft='0';t.style.left='0';t.textContent='▶';}
+  else{m.style.marginLeft='var(--sidebar)';t.style.left='var(--sidebar)';t.textContent='◀';}
+});
+document.querySelectorAll('.ts>a.tslink').forEach(function(a){
+  a.addEventListener('click',function(e){
+    var li=this.closest('.ts');
+    li.classList.toggle('open');
+  });
+});
+</script>
+
+</body>
+</html>

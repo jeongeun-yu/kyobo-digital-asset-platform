@@ -1,0 +1,3308 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>M4 S23~S30 강의 노트 — 내부 원장 / 상태 전이 / 감사 로그</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--font:'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;--sidebar:260px;--radius:8px}
+body{font-family:var(--font);font-size:18px;line-height:1.75;color:#1F2937;background:#F3F4F6;display:flex}
+
+/* ── 사이드바 ── */
+#nav{width:var(--sidebar);height:100vh;background:#111827;color:#E5E7EB;position:fixed;top:0;left:0;overflow-y:auto;z-index:100;padding:16px 0 80px;transition:transform .3s ease}
+#nav.hidden{transform:translateX(-100%)}
+#nav h2{padding:12px 16px;font-size:15px;font-weight:700;letter-spacing:.08em;color:#9CA3AF;text-transform:uppercase;border-bottom:1px solid #374151;margin-bottom:8px}
+#nav-toggle{position:fixed;top:12px;left:var(--sidebar);z-index:200;background:#1E40AF;color:#fff;border:none;border-radius:0 6px 6px 0;width:22px;height:44px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:left .3s ease;box-shadow:2px 0 6px rgba(0,0,0,.3)}
+#nav-toggle:hover{background:#2a52c7}
+.toc-root{list-style:none}
+.ts>a.tslink{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;font-weight:700;font-size:16px;color:#F9FAFB;text-decoration:none;border-left:3px solid var(--sc,#6B7280);background:rgba(255,255,255,.04);margin-bottom:2px;transition:background .15s;cursor:pointer}
+.ts>a.tslink:hover{background:rgba(255,255,255,.1)}
+.ts>a.tslink small{display:block;font-weight:400;font-size:13px;color:#9CA3AF;margin-top:1px}
+.ts>a.tslink .arrow{font-size:11px;color:#9CA3AF;transition:transform .25s;flex-shrink:0;margin-left:8px}
+.ts.open>a.tslink .arrow{transform:rotate(180deg)}
+.tsl{list-style:none;max-height:0;overflow:hidden;transition:max-height .3s ease}
+.ts.open .tsl{max-height:9999px}
+.ts3>a,.ts2>a{display:block;padding:4px 16px 4px 28px;font-size:15px;color:#D1D5DB;text-decoration:none;transition:color .15s}
+.ts2>a{padding-left:20px;font-size:15px;color:#9CA3AF;font-style:italic}
+.ts3>a:hover,.ts2>a:hover{color:#fff}
+
+/* ── 메인 ── */
+#main{margin-left:var(--sidebar);flex:1;padding:32px 40px;max-width:calc(1200px + var(--sidebar));min-height:100vh;transition:margin-left .3s ease}
+
+.main-title{font-size:32px;font-weight:800;color:#111827;margin-bottom:8px}
+p.summary{color:#6B7280;margin-bottom:32px}
+
+/* ── 세션 ── */
+.session{background:#fff;border-radius:12px;margin-bottom:32px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.session-title{display:flex;align-items:center;gap:12px;padding:18px 24px;background:var(--sc,#374151);color:#fff;font-size:24px;font-weight:800;letter-spacing:.01em}
+.badge{background:rgba(255,255,255,.2);border-radius:6px;padding:3px 10px;font-size:16px;font-weight:900;flex-shrink:0}
+
+/* ── 섹션 내부 콘텐츠 ── */
+.session > *:not(.session-title){padding-left:24px;padding-right:24px}
+.session > h2.subsec{padding-top:20px;padding-bottom:4px}
+
+/* ── 구분선 ── */
+.sep{border:none;border-top:1px solid #E5E7EB;margin:16px 24px}
+
+/* ── 슬라이드 헤더 ── */
+.slide-h{font-size:20px;font-weight:700;color:var(--sc,#374151);padding:20px 24px 8px;border-left:4px solid var(--sbd,#E5E7EB);background:var(--sb,#F9FAFB);margin:16px 0 0}
+
+/* ── 발화 블록 ── */
+.speech{background:#FFFDF5;border-left:4px solid #FCD34D;border-radius:0 6px 6px 0;padding:14px 18px;margin:10px 0;font-size:18px;line-height:1.85}
+.speech p{margin-bottom:10px;color:#1F2937}
+.speech p:last-child{margin-bottom:0}
+
+/* ── 코드 ── */
+pre{background:#1E293B;color:#E2E8F0;border-radius:8px;padding:16px;margin:12px 0;overflow-x:auto;font-size:15px;line-height:1.65}
+code{font-family:'JetBrains Mono','Fira Code','Consolas',monospace;font-size:15px}
+p code,li code,td code,th code{background:#F1F5F9;color:#0F172A;border-radius:4px;padding:2px 5px;font-size:15px}
+
+/* ── 표 ── */
+.tbl-wrap{overflow-x:auto;margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:17px}
+th{background:var(--sc,#374151);color:#fff;padding:8px 12px;text-align:left;font-weight:600}
+td{padding:7px 12px;border-bottom:1px solid #E5E7EB;color:#374151}
+tr:nth-child(even) td{background:#F9FAFB}
+
+/* ── 목록 ── */
+ul{list-style:none;margin:8px 0}
+li{padding:3px 0 3px 18px;position:relative;font-size:18px;color:#374151}
+li::before{content:'•';position:absolute;left:4px;color:var(--sc,#6B7280);font-weight:700}
+li.chk::before{content:'□';font-size:13px}
+
+/* ── 인용 ── */
+blockquote{background:#F0FDF4;border-left:3px solid #22C55E;padding:10px 14px;border-radius:0 6px 6px 0;margin:8px 0;color:#166534;font-size:17px}
+
+/* ── 소제목 ── */
+.subsec{font-size:21px;font-weight:700;color:#374151;margin:24px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--sbd,#E5E7EB)}
+
+/* ── 일반 p ── */
+.session p{margin:6px 0;font-size:18px;color:#374151}
+
+/* ── 스크롤 타겟 오프셋 ── */
+[id]{scroll-margin-top:16px}
+
+/* ── 어노테이션 ── */
+.ann-point{display:flex;gap:12px;align-items:flex-start;background:#EFF6FF;border-left:4px solid #2563EB;padding:12px 18px;border-radius:0 8px 8px 0;margin:8px 0}
+.ann-point::before{content:'▶';color:#2563EB;font-weight:900;flex-shrink:0;margin-top:3px;font-size:14px}
+.ann-point p{color:#1D4ED8;font-weight:700;font-size:17px;line-height:1.65;margin:0}
+.ann-term{display:flex;gap:12px;align-items:baseline;background:#FEF2F2;border-left:4px solid #DC2626;padding:9px 18px;border-radius:0 8px 8px 0;margin:6px 0;flex-wrap:wrap}
+.term-badge{background:#DC2626;color:#fff;padding:2px 9px;border-radius:4px;font-weight:700;font-size:15px;white-space:nowrap;flex-shrink:0;font-family:'JetBrains Mono','Fira Code','Consolas',monospace}
+.term-def{color:#7F1D1D;font-size:17px;line-height:1.6}
+.ann-code{display:flex;gap:12px;align-items:flex-start;background:#F5F3FF;border-left:4px solid #7C3AED;padding:12px 18px;border-radius:0 8px 8px 0;margin:8px 0}
+.ann-code::before{content:'💡';flex-shrink:0;margin-top:1px;font-size:16px}
+.ann-code p{color:#5B21B6;font-size:16px;line-height:1.7;font-family:'JetBrains Mono','Fira Code','Consolas',monospace;margin:0;word-break:break-all}
+.ann-warn{display:flex;gap:12px;align-items:flex-start;background:#FFF7ED;border-left:4px solid #EA580C;padding:12px 18px;border-radius:0 8px 8px 0;margin:8px 0}
+.ann-warn::before{content:'⚠';flex-shrink:0;margin-top:1px;font-size:16px;color:#EA580C}
+.ann-warn p{color:#9A3412;font-size:17px;line-height:1.65;margin:0}
+
+/* ── 인쇄 ── */
+@media print{
+  #nav{display:none}
+  #main{margin-left:0;padding:16px}
+  .session{box-shadow:none;border:1px solid #E5E7EB;page-break-inside:avoid}
+  .speech{background:#FFFDF5!important;-webkit-print-color-adjust:exact}
+  pre{background:#1E293B!important;-webkit-print-color-adjust:exact}
+  .ann-point{background:#EFF6FF!important;-webkit-print-color-adjust:exact}
+  .ann-term{background:#FEF2F2!important;-webkit-print-color-adjust:exact}
+  .ann-code{background:#F5F3FF!important;-webkit-print-color-adjust:exact}
+}
+
+#nav a.active{color:#fff;font-weight:700}
+.time-badge{display:inline-block;background:#065F46;color:#D1FAE5;font-size:14px;font-weight:700;padding:2px 10px;border-radius:4px;margin-bottom:8px;letter-spacing:.03em}
+</style>
+</head>
+<body>
+<button id="nav-toggle" title="목차 열기/닫기">◀</button>
+<nav id="nav">
+  <h2>강의 목차</h2>
+  <ul class="toc-root">
+
+    <!-- S23 -->
+    <li class="ts open" style="--sc:#1E40AF">
+      <a href="#session-23" class="tslink"><span>S23 <small>내부 원장 데이터 모델</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s23-slide01">Slide 01 — 표지</a></li>
+        <li class="ts3"><a href="#s23-slide02">Slide 02 — 블록체인만 쓰면 안 되는 4가지 이유</a></li>
+        <li class="ts3"><a href="#s23-slide03">Slide 03 — 4개 테이블 역할 분담</a></li>
+        <li class="ts3"><a href="#s23-slide04">Slide 04 — ① mint_requests</a></li>
+        <li class="ts3"><a href="#s23-slide05">Slide 05 — tokenId — 온체인으로 확정되는 값</a></li>
+        <li class="ts3"><a href="#s23-slide06">Slide 06 — pollStaleRequests() — PENDING 복구 폴링</a></li>
+        <li class="ts3"><a href="#s23-slide07">Slide 07 — ② processed_events</a></li>
+        <li class="ts3"><a href="#s23-slide08">Slide 08 — log_index — Etherscan 확인 + Internal Tx vs Event Log</a></li>
+        <li class="ts3"><a href="#s23-slide09">Slide 09 — 왜 이벤트 단위로 관리하는가</a></li>
+        <li class="ts3"><a href="#s23-slide10">Slide 10 — 블록체인 원자성 vs 오프체인 처리</a></li>
+        <li class="ts3"><a href="#s23-slide11">Slide 11 — ON CONFLICT DO NOTHING + RETURNING</a></li>
+        <li class="ts3"><a href="#s23-slide12">Slide 12 — payload — NFTIssued 이벤트 데이터</a></li>
+        <li class="ts3"><a href="#s23-slide13">Slide 13 — ③ user_nft_holdings</a></li>
+        <li class="ts3"><a href="#s23-slide14">Slide 14 — user_nft_holdings Phase 2/3 확장 설계</a></li>
+        <li class="ts3"><a href="#s23-slide15">Slide 15 — Phase 2/3 연관 테이블 변경 범위</a></li>
+        <li class="ts2"><a href="#s23-outbox-pattern">outbox_events — DB 쓰기 + 외부 API 원자성</a></li>
+        <li class="ts3"><a href="#s23-slide16">Slide 16 — ④ audit_log</a></li>
+        <li class="ts3"><a href="#s23-slide17">Slide 17 — Hash Chain 개념</a></li>
+        <li class="ts3"><a href="#s23-slide18">Slide 18 — LedgerService 코드 아키텍처</a></li>
+        <li class="ts3"><a href="#s23-slide19">Slide 19 — MintStatus 7종 + VALID_TRANSITIONS</a></li>
+        <li class="ts3"><a href="#s23-slide20">Slide 20 — MintRequest 인터페이스 + createMintRequest()</a></li>
+        <li class="ts3"><a href="#s23-slide21">Slide 21 — updateMintRequest() — 상태 전이 가드</a></li>
+        <li class="ts3"><a href="#s23-slide22">Slide 22 — getMintRequest() + 에러 클래스</a></li>
+        <li class="ts3"><a href="#s23-slide23">Slide 23 — processed_events UNIQUE(tx_hash, log_index)</a></li>
+        <li class="ts3"><a href="#s23-slide24">Slide 24 — recordProcessedEvent() + ON CONFLICT</a></li>
+        <li class="ts3"><a href="#s23-slide25">Slide 25 — 쓰기 경로 전체 흐름</a></li>
+        <li class="ts3"><a href="#s23-slide26">Slide 26 — LedgerService 메서드 호출 주체</a></li>
+        <li class="ts3"><a href="#s23-slide27">Slide 27 — InternalLedgerBalance 4단계 모델</a></li>
+        <li class="ts3"><a href="#s23-slide28">Slide 28 — 데이터 수명 + 규제 요건</a></li>
+        <li class="ts2"><a href="#s23-design-rationale">★ 이 설계, 이렇게까지 해야 하나?</a></li>
+        <li class="ts3"><a href="#s23-slide29">Slide 29 — 간지: 실습</a></li>
+        <li class="ts3"><a href="#s23-slide30">Slide 30 — 실습 Step 1 — Knex 마이그레이션 스켈레톤</a></li>
+        <li class="ts3"><a href="#s23-slide31">Slide 31 — 실습 Step 1 답안</a></li>
+        <li class="ts3"><a href="#s23-slide32">Slide 32 — 실습 Step 2 — recordProcessedEvent</a></li>
+        <li class="ts3"><a href="#s23-slide33">Slide 33 — 실습 Step 3 — updateMintRequest</a></li>
+        <li class="ts3"><a href="#s23-slide34">Slide 34 — 자주 틀리는 실수 + 흔한 질문</a></li>
+        <li class="ts3"><a href="#s23-slide35">Slide 35 — 쓰기 경로 × 테이블 × 메서드 매핑</a></li>
+        <li class="ts3"><a href="#s23-slide36">Slide 36 — S23 완료 기준</a></li>
+      </ul>
+    </li>
+
+    <!-- S24 -->
+    <li class="ts" style="--sc:#6D28D9">
+      <a href="#session-24" class="tslink"><span>S24 <small>상태 전이 가드</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s24-slide02">Slide 02 — 세션 위치</a></li>
+        <li class="ts3"><a href="#s24-slide03">Slide 03 — 역전이 문제</a></li>
+        <li class="ts3"><a href="#s24-slide05">Slide 05 — VALID_TRANSITIONS 맵</a></li>
+        <li class="ts3"><a href="#s24-slide06">Slide 06 — MintStatus 전이 다이어그램</a></li>
+        <li class="ts3"><a href="#s24-slide08">Slide 08 — updateMintRequest() 3단계 가드</a></li>
+        <li class="ts3"><a href="#s24-slide09">Slide 09 — 필드 유효성 가드</a></li>
+        <li class="ts3"><a href="#s24-slide10">Slide 10 — 두 상태머신 비교 ★</a></li>
+        <li class="ts3"><a href="#s24-diff1">  ├ 차이 1: PENDING 상태 유무</a></li>
+        <li class="ts3"><a href="#s24-diff2">  ├ 차이 2: SUBMITTED 의미 차이</a></li>
+        <li class="ts3"><a href="#s24-diff3">  └ 차이 3: 에러 클래스 이름</a></li>
+        <li class="ts3"><a href="#s24-slide11">Slide 09 — 두 상태머신 직렬 흐름 &amp; 비대칭 설계 이유 ★</a></li>
+        <li class="ts3"><a href="#s24-slide12">Slide 13 — 멱등 이벤트 처리</a></li>
+        <li class="ts3"><a href="#s24-slide17">Slide 17 — TxStateMachineService 구조</a></li>
+        <li class="ts3"><a href="#s24-slide16">Slide 16 — 완료 기준</a></li>
+      </ul>
+    </li>
+
+    <!-- S25 -->
+    <li class="ts" style="--sc:#065F46">
+      <a href="#session-25" class="tslink"><span>S25 <small>ReconcileService</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s25-slide03">Slide 03 — 원장과 온체인이 어긋나는 상황 — 3가지 시나리오</a></li>
+        <li class="ts3"><a href="#s25-slide04">Slide 04 — 단일 진실 원칙 — 온체인이 항상 맞다</a></li>
+        <li class="ts3"><a href="#s25-slide05">Slide 05 — 역방향 금지 — 하는 것 vs 안 하는 것</a></li>
+        <li class="ts3"><a href="#s25-slide06">Slide 06 — 케이스 A: 정상 지연 오인 ★</a></li>
+        <li class="ts3"><a href="#s25-slide07">Slide 07 — 케이스 B: Reorg 구간 ★</a></li>
+        <li class="ts3"><a href="#s25-slide08">Slide 08 — 케이스 C: 보안 공격 경로 ★</a></li>
+        <li class="ts3"><a href="#s25-slide09">Slide 09 — reconcileNftHoldings() 핵심 구현</a></li>
+        <li class="ts3"><a href="#s25-slide10">Slide 10 — IReconcileService 전체 인터페이스</a></li>
+        <li class="ts3"><a href="#s25-slide11">Slide 11 — NftReconcileResult 타입 설계</a></li>
+        <li class="ts3"><a href="#s25-slide12">Slide 12 — ReconcileService 생성자 — 4가지 의존성</a></li>
+        <li class="ts3"><a href="#s25-slide13">Slide 13 — reconcileNftHoldings() 구현 단계</a></li>
+        <li class="ts3"><a href="#s25-slide14">Slide 14 — severity 분류 — 건수 기준</a></li>
+        <li class="ts3"><a href="#s25-slide15">Slide 15 — onMintEvent / onBurnEvent — confirmation depth ★</a></li>
+      </ul>
+    </li>
+
+    <!-- S54 -->
+    <li class="ts" style="--sc:#1E40AF">
+      <a href="#session-54" class="tslink"><span>S54 <small>Reconcile 운영</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s54-slide01">Slide 01 — Reconcile 스케줄링 — Hourly vs Daily 두 계층</a></li>
+        <li class="ts3"><a href="#s54-slide02">Slide 02 — 불일치 알림 설계 — P1/P2/P3 + 원인 분류</a></li>
+        <li class="ts3"><a href="#s54-slide03">Slide 03 — 에스컬레이션 절차 — 역방향 수정 절대 금지</a></li>
+        <li class="ts3"><a href="#s54-slide04">Slide 04 — 실습 1: ReconcileAdminService 스켈레톤 ★</a></li>
+        <li class="ts3"><a href="#s54-slide05">Slide 05 — 실습 2: ReconcileAdminRouter 스켈레톤</a></li>
+        <li class="ts3"><a href="#s54-slide06">Slide 06 — 실습 3: cron 등록</a></li>
+      </ul>
+    </li>
+
+    <!-- S26 -->
+    <li class="ts" style="--sc:#92400E">
+      <a href="#session-26" class="tslink"><span>S26 <small>audit_log SHA-256</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s26-slide01">Slide 01 — 표지</a></li>
+        <li class="ts3"><a href="#s26-slide02">Slide 02 — 왜 감사 로그가 필요한가?</a></li>
+        <li class="ts3"><a href="#s26-slide03">Slide 03 — audit_log 테이블 + RLS</a></li>
+        <li class="ts3"><a href="#s26-slide04">Slide 04 — AuditEntry · LogParams · VerifyResult 타입</a></li>
+        <li class="ts3"><a href="#s26-slide05">Slide 05 — SHA-256 checksum 생성 원리</a></li>
+        <li class="ts3"><a href="#s26-slide06">Slide 06 — DatabaseClient 인터페이스</a></li>
+        <li class="ts3"><a href="#s26-slide07">Slide 07 — log() 전체 구현</a></li>
+        <li class="ts3"><a href="#s26-slide08">Slide 08 — verifyIntegrity()</a></li>
+        <li class="ts3"><a href="#s26-slide09">Slide 09 — queryByResource() / queryByActor()</a></li>
+        <li class="ts3"><a href="#s26-slide10">Slide 10 — _rowToEntry()</a></li>
+        <li class="ts3"><a href="#s26-slide11">Slide 11 — 테스트 9개 케이스</a></li>
+        <li class="ts3"><a href="#s26-slide12">Slide 12 — 실습 Step 1 (간지)</a></li>
+        <li class="ts3"><a href="#s26-slide13">Slide 13 — 실습 TODO</a></li>
+        <li class="ts3"><a href="#s26-slide14">Slide 14 — prevChecksum Race Condition</a></li>
+        <li class="ts3"><a href="#s26-slide15">Slide 15 — 훼손 시나리오 3가지</a></li>
+        <li class="ts3"><a href="#s26-slide16">Slide 16 — S3 Glacier 5년 보관 전략</a></li>
+        <li class="ts3"><a href="#s26-slide17">Slide 17 — makeDb() In-Memory Mock</a></li>
+        <li class="ts3"><a href="#s26-slide18">Slide 18 — 실습 답안</a></li>
+        <li class="ts3"><a href="#s26-slide19">Slide 19 — 커리큘럼 vs 실제 코드 비교</a></li>
+        <li class="ts3"><a href="#s26-slide20">Slide 20 — queryByActor() 감사 대응 시나리오</a></li>
+        <li class="ts3"><a href="#s26-slide21">Slide 21 — generateChecksum() 상세</a></li>
+        <li class="ts3"><a href="#s26-slide22">Slide 22 — S26 완료 기준</a></li>
+      </ul>
+    </li>
+
+    <!-- S26-2 -->
+    <li class="ts" style="--sc:#1E40AF">
+      <a href="#session-26-2" class="tslink"><span>S26-2 <small>내부 원장 Java 구현</small></span><span class="arrow">&#9660;</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s26-2-slide01">Slide 01 &mdash; 표지</a></li>
+        <li class="ts3"><a href="#s26-2-slide02">Slide 02 &mdash; TypeScript vs Java 역할 구분</a></li>
+        <li class="ts3"><a href="#s26-2-slide03">Slide 03 &mdash; TypeScript &rarr; Java 호출 구조</a></li>
+        <li class="ts3"><a href="#s26-2-slide04">Slide 04 &mdash; 왜 Java인가</a></li>
+        <li class="ts3"><a href="#s26-2-slide05">Slide 05 &mdash; 간지: API 계약</a></li>
+        <li class="ts3"><a href="#s26-2-slide06">Slide 06 &mdash; API 계약 &mdash; 4개 엔드포인트</a></li>
+        <li class="ts3"><a href="#s26-2-slide07">Slide 07 &mdash; NftHoldingRequest DTO</a></li>
+        <li class="ts3"><a href="#s26-2-slide08">Slide 08 &mdash; AuditLogRequest DTO</a></li>
+        <li class="ts3"><a href="#s26-2-slide09">Slide 09 &mdash; 간지: Entity &amp; DDL</a></li>
+        <li class="ts3"><a href="#s26-2-slide10">Slide 10 &mdash; NftHolding @Entity</a></li>
+        <li class="ts3"><a href="#s26-2-slide11">Slide 11 &mdash; AuditLogEntry @Entity</a></li>
+        <li class="ts3"><a href="#s26-2-slide12">Slide 12 &mdash; 간지: Service 구현</a></li>
+        <li class="ts3"><a href="#s26-2-slide13">Slide 13 &mdash; InternalLedgerService.recordNftHolding()</a></li>
+        <li class="ts3"><a href="#s26-2-slide14">Slide 14 &mdash; AuditLogService.log() &mdash; REQUIRES_NEW 트랜잭션</a></li>
+        <li class="ts3"><a href="#s26-2-slide15">Slide 15 &mdash; computeChecksum() &mdash; SHA-256 구현</a></li>
+        <li class="ts3"><a href="#s26-2-slide16">Slide 16 &mdash; InternalGatewayClient &mdash; Node.js에서 Java를 부르는 방법</a></li>
+        <li class="ts3"><a href="#s26-2-slide17">Slide 17 &mdash; FINALIZED &rarr; 운영 DB 전체 호출 스택</a></li>
+        <li class="ts3"><a href="#s26-2-slide18">Slide 18 &mdash; S26-2 정리</a></li>
+      </ul>
+    </li>
+
+    <!-- S27 -->
+    <li class="ts" style="--sc:#374151">
+      <a href="#session-27" class="tslink"><span>S27 <small>(추가 예정)</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s27-slide01">Slide 01 — (추가 예정)</a></li>
+      </ul>
+    </li>
+
+    <!-- S28 -->
+    <li class="ts" style="--sc:#374151">
+      <a href="#session-28" class="tslink"><span>S28 <small>(추가 예정)</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s28-slide01">Slide 01 — (추가 예정)</a></li>
+      </ul>
+    </li>
+
+    <!-- S29 -->
+    <li class="ts" style="--sc:#374151">
+      <a href="#session-29" class="tslink"><span>S29 <small>(추가 예정)</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s29-slide01">Slide 01 — (추가 예정)</a></li>
+      </ul>
+    </li>
+
+    <!-- S30 -->
+    <li class="ts" style="--sc:#374151">
+      <a href="#session-30" class="tslink"><span>S30 <small>(추가 예정)</small></span><span class="arrow">▼</span></a>
+      <ul class="tsl">
+        <li class="ts3"><a href="#s30-slide01">Slide 01 — (추가 예정)</a></li>
+      </ul>
+    </li>
+
+  </ul>
+</nav>
+<main id="main">
+<h1 class="main-title">M4 강의 노트 — S23~S30</h1>
+<blockquote>슬라이드 발표 멘트 + 실습 스크립트</blockquote>
+<blockquote>2026-05-18 교보생명 디지털 자산 플랫폼 강의용</blockquote>
+<hr class="sep">
+
+<!-- ════════════════════════════════════════════════════════════
+     S23 — 내부 원장 데이터 모델
+     ════════════════════════════════════════════════════════════ -->
+<section id="session-23" class="session" style="--sc:#1E40AF;--sb:#EFF6FF;--sbd:#93C5FD">
+<h1 class="session-title"><span class="badge">S23</span>내부 원장 데이터 모델 — LedgerService 4-Table 설계</h1>
+<blockquote>강의 30분 + 실습 25분</blockquote>
+<hr class="sep">
+
+<!-- Slide 01 -->
+<h3 id="s23-slide01" class="slide-h">Slide 01 — 표지</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 02 -->
+<h3 id="s23-slide02" class="slide-h">Slide 02 — 블록체인만 쓰면 안 되는 4가지 이유</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 03 -->
+<h3 id="s23-slide03" class="slide-h">Slide 03 — 4개 테이블 역할 분담</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 04 -->
+<h3 id="s23-slide04" class="slide-h">Slide 04 — ① mint_requests — TX in-flight 상태 추적</h3>
+
+<div class="ann-point"><p>mint_requests 테이블에는 인덱스가 두 개 붙는다. 각각 다른 쿼리 패턴을 위한 것이다.</p></div>
+
+<pre><code>CREATE INDEX idx_mint_requests_user   ON mint_requests(user_id);
+CREATE INDEX idx_mint_requests_status ON mint_requests(status);</code></pre>
+
+<div class="ann-term">
+  <span class="term-badge">idx_mint_requests_user</span>
+  <span class="term-def">user_id 컬럼 인덱스. "특정 사용자의 mint 요청 조회" (<code>WHERE user_id = ?</code>) 가 빨라짐</span>
+</div>
+<div class="ann-term">
+  <span class="term-badge">idx_mint_requests_status</span>
+  <span class="term-def">status 컬럼 인덱스. "특정 상태의 요청 조회" (<code>WHERE status = 'PENDING'</code>) 가 빨라짐 — pollStaleRequests가 사용</span>
+</div>
+
+<div class="ann-point"><p>인덱스 없으면 DB가 테이블 전체를 스캔(Full Table Scan). 행이 100만 개면 100만 개를 다 읽음. B-Tree 인덱스가 있으면 O(log N)으로 바로 찾음.</p></div>
+
+<div class="speech">
+  <p>mint_requests 테이블에 인덱스를 두 개 만드는 이유를 설명한다.</p>
+  <p>첫 번째 <code>idx_mint_requests_user</code>는 사용자가 "내 NFT 발행 요청 목록 보여줘"라고 조회할 때 쓰인다. <code>WHERE user_id = ?</code> 조건이 이 인덱스를 탄다.</p>
+  <p>두 번째 <code>idx_mint_requests_status</code>는 방금 Slide 06에서 본 <code>pollStaleRequests()</code>가 사용한다. <code>WHERE status = 'PENDING'</code> 조건이 이 인덱스를 탄다. cron이 5분마다 이 쿼리를 실행하기 때문에, 인덱스 없이 테이블이 커지면 매 폴링마다 풀스캔 부하가 발생한다.</p>
+  <p>인덱스의 원리는 단순하다. B-Tree 자료구조로 컬럼 값을 정렬해 두기 때문에, 원하는 값을 트리를 타고 내려가면서 O(log N)에 찾는다. 행이 100만 개여도 약 20번의 비교로 결과를 찾는다.</p>
+</div>
+<hr class="sep">
+
+<!-- Slide 05 -->
+<h3 id="s23-slide05" class="slide-h">Slide 05 — tokenId — 온체인 이벤트로부터 확정되는 값</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 06 ── pollStaleRequests() ───────────────────────── -->
+<h3 id="s23-slide06" class="slide-h">Slide 06 — pollStaleRequests() — PENDING 장애 복구 폴링</h3>
+
+<div class="ann-point"><p>idx_mint_requests_status 인덱스가 없으면 cron이 매 5분마다 테이블 전체를 풀스캔한다. PENDING 레코드는 전체의 극소수이지만 검색 비용은 전체 행 수에 비례 — 인덱스가 이 쿼리를 O(log n) + 결과 건수로 줄여준다.</p></div>
+
+<div class="ann-term">
+  <span class="term-badge">pollStaleRequests</span>
+  <span class="term-def">PENDING 상태가 30분 이상 지속된 mint_requests를 찾아 VASP에 실제 TX 상태를 조회하고, 결과에 따라 CONFIRMED / FAILED 로 강제 전이시키는 복구 폴링 메서드</span>
+</div>
+
+<div class="speech">
+  <p>슬라이드 06은 <code>pollStaleRequests()</code>다. 이 메서드가 왜 필요한지부터 이야기하자.</p>
+  <p>정상 흐름에서는 VASP webhook이 TX 결과를 알려준다. 그런데 webhook이 유실되거나 네트워크 단절이 생기면, 민팅 요청이 PENDING 상태에서 영원히 멈춘다. 사용자 입장에서는 NFT를 요청했는데 아무 응답이 없는 상태가 된다.</p>
+  <p>이를 해결하는 게 폴링 기반 복구다. cron이 5분마다 <code>pollStaleRequests()</code>를 호출하고, 이 메서드는 30분 이상 PENDING인 레코드를 꺼내서 VASP API로 실제 상태를 확인한다.</p>
+</div>
+
+<p style="margin-top:14px;font-weight:700;color:#374151;">▌ 실제 코드 — TxStateMachineService.ts : 370~397</p>
+<pre><code>async pollStaleRequests(): Promise&lt;{ processed: number }&gt; {
+  // 30분 이상 PENDING 상태인 요청만 조회
+  const stale = await this.repo.findPendingOlderThan(
+    TxStateMachineService.STALE_MINUTES   // 30
+  );
+
+  let processed = 0;
+  for (const req of stale) {
+    if (!req.txHash) continue;            // txHash 없으면 VASP 조회 불가 — skip
+
+    const result = await this.vasp.getStatus(req.txHash);
+    switch (result.status) {
+      case 'confirmed':
+        await this.handleConfirmed(req.id);
+        break;
+      case 'failed':
+        await this.handleFailed(req.id, result.revertReason ?? 'failed');
+        break;
+      case 'not_found':
+        await this.handleFailed(req.id, 'tx not found in mempool');
+        break;
+    }
+    processed++;
+  }
+  return { processed };
+}</code></pre>
+
+<p style="margin-top:14px;font-weight:700;color:#374151;">▌ findPendingOlderThan() 가 실행하는 SQL</p>
+<pre><code>SELECT *
+FROM   mint_requests
+WHERE  status     = 'PENDING'
+  AND  created_at &lt; NOW() - INTERVAL '30 minutes';</code></pre>
+
+<div class="ann-code"><p>WHERE status = 'PENDING' 조건이 idx_mint_requests_status 인덱스를 탄다. 전체 테이블을 스캔하지 않고 PENDING 레코드만 빠르게 추출 — 인덱스 없이 이 쿼리를 분 단위 cron으로 돌리면 테이블이 커질수록 DB 부하가 선형 증가한다.</p></div>
+
+<p style="margin-top:14px;font-weight:700;color:#374151;">▌ 흐름 요약</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>단계</th><th>주체</th><th>동작</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>cron (5분 간격)</td><td><code>pollStaleRequests()</code> 호출</td></tr>
+    <tr><td>2</td><td>TxStateMachineService</td><td><code>findPendingOlderThan(30)</code> → PENDING &amp; created_at &lt; 30분 전 레코드 조회</td></tr>
+    <tr><td>3</td><td>TxStateMachineService</td><td>각 레코드에 대해 <code>vasp.getStatus(txHash)</code> 호출</td></tr>
+    <tr><td>4a</td><td>VASP 응답: confirmed</td><td><code>handleConfirmed(req.id)</code> → PENDING → CONFIRMED 전이</td></tr>
+    <tr><td>4b</td><td>VASP 응답: failed</td><td><code>handleFailed(req.id, reason)</code> → PENDING → FAILED 전이</td></tr>
+    <tr><td>4c</td><td>VASP 응답: not_found</td><td><code>handleFailed(req.id, 'tx not found in mempool')</code> → mempool에서도 사라진 경우</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-warn"><p>txHash가 없는(null) 레코드는 <code>if (!req.txHash) continue</code>로 건너뛴다. VASP에 TX를 제출하기 전에 프로세스가 죽은 케이스 — 이 경우 별도의 재제출 로직이 필요하다. pollStaleRequests는 txHash가 있는(= VASP에 제출은 됐지만 webhook이 안 온) 케이스만 처리한다.</p></div>
+
+<p style="margin-top:14px;font-weight:700;color:#374151;">▌ 인덱스 DDL (복습)</p>
+<pre><code>CREATE INDEX idx_mint_requests_status ON mint_requests(status);
+-- pollStaleRequests의 WHERE status = 'PENDING' 조건에 사용</code></pre>
+
+<div class="speech">
+  <p>코드를 보면 구조가 단순하다. <code>findPendingOlderThan(30)</code>으로 30분 이상 PENDING인 레코드를 가져오고, 각 레코드에 대해 VASP에 상태를 물어본다. 돌아오는 응답이 confirmed면 <code>handleConfirmed</code>, failed나 not_found면 <code>handleFailed</code>를 호출한다.</p>
+  <p>중요한 포인트가 두 개다. 첫째, <code>if (!req.txHash) continue</code> — txHash가 없으면 VASP에 조회할 키가 없으므로 건너뛴다. 이건 VASP 제출 직전에 프로세스가 죽은 극단적인 케이스다. 둘째, 인덱스다. 이 쿼리가 매 5분마다 돌기 때문에, <code>status</code> 컬럼에 인덱스가 없으면 전체 테이블을 스캔한다. 운영 환경에서 mint_requests 테이블은 수십만 건이 될 수 있다 — 인덱스가 없으면 cron 하나가 DB 부하를 잡아먹는 구조가 된다.</p>
+</div>
+<hr class="sep">
+
+<!-- Slide 07 -->
+<h3 id="s23-slide07" class="slide-h">Slide 07 — ② processed_events — 이벤트 중복 방지 장치</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 08 -->
+<h3 id="s23-slide08" class="slide-h">Slide 08 — log_index — Etherscan 확인 + Internal Tx vs Event Log</h3>
+
+<div class="ann-point"><p>log_index는 Etherscan TX 페이지 → Logs 탭에서 바로 확인할 수 있다. NFTIssued는 <code>emit</code>으로 발생하는 Event Log이기 때문에 Internal Transaction이 아니라 logIndex로 식별한다.</p></div>
+
+<div class="ann-term">
+  <span class="term-badge">log_index</span>
+  <span class="term-def">하나의 TX 안에서 이벤트(Event Log)마다 부여되는 순번. 0부터 시작. <code>eth_getTransactionReceipt</code> 표준 응답에 포함</span>
+</div>
+
+<p style="font-weight:700;margin-top:12px;">Etherscan 확인 경로: TX 상세 페이지 → <strong>Logs 탭</strong> → 각 이벤트 항목 왼쪽 번호</p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>log_index</th><th>이벤트</th><th>설명</th></tr></thead>
+  <tbody>
+    <tr><td>158</td><td><code>Transfer(from, to, value)</code></td><td>ERC-20 전송</td></tr>
+    <tr><td>159</td><td><code>Approval(owner, spender, value)</code></td><td>승인</td></tr>
+    <tr><td>160</td><td><code>Wrapped Ether(src, dst, wad)</code></td><td>WETH 래핑</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p style="font-weight:700;margin-top:16px;">왜 Internal Transaction이 아닌가</p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th></th><th>Internal Transaction</th><th>Event Log</th></tr></thead>
+  <tbody>
+    <tr><td><strong>발생</strong></td><td>컨트랙트 → 컨트랙트 호출</td><td><code>emit</code> 키워드</td></tr>
+    <tr><td><strong>표준 RPC</strong></td><td>없음 (<code>debug_traceTransaction</code> 필요)</td><td><code>eth_getTransactionReceipt</code> 표준 포함</td></tr>
+    <tr><td><strong>식별자</strong></td><td>표준 없음 (Etherscan 자체 trace index)</td><td><code>logIndex</code> 공식 스펙</td></tr>
+    <tr><td><strong>노드 일관성</strong></td><td>구현체마다 다를 수 있음</td><td>모든 노드 동일 보장</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-warn"><p>Internal Transaction RPC(<code>debug_traceTransaction</code>)는 노드가 archive mode여야 하고, 상용 RPC(Infura/Alchemy)에서는 별도 요금이 발생한다. NFTIssued는 <code>emit</code>으로 발생하므로 표준 RPC로 충분하다.</p></div>
+
+<div class="speech">
+  <p>수강생들이 자주 하는 질문이다. "Internal Tx 탭에도 뭔가 보이던데 거기서 가져오면 안 되나요?"</p>
+  <p>안 된다. 이유는 두 가지다. 첫째, NFTIssued는 <code>emit</code> 키워드로 발생하는 이벤트 로그다. Internal Transaction이 아니다. Internal Transaction은 컨트랙트가 다른 컨트랙트를 호출할 때 발생하는 것이고, Etherscan에서 보이는 건 Etherscan이 자체적으로 트레이싱한 결과다. 둘째, Internal Transaction에는 표준 식별자가 없다. logIndex처럼 모든 노드에서 동일하게 반환되는 필드가 없기 때문에 DB 키로 쓸 수 없다.</p>
+  <p>반면 Event Log는 <code>eth_getTransactionReceipt</code>라는 표준 RPC 한 번으로 가져올 수 있고, 각 로그에 <code>logIndex</code>가 항상 포함된다. 그래서 <code>(tx_hash, log_index)</code>를 UNIQUE 키로 쓸 수 있다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s23-slide09" class="slide-h">Slide 09 — 왜 TX 단위가 아니라 이벤트 단위로 관리하는가</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<h3 id="s23-slide10" class="slide-h">Slide 10 — 블록체인 TX 원자성 vs 오프체인 처리 원자성</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 11 -->
+<h3 id="s23-slide11" class="slide-h">Slide 11 — ON CONFLICT DO NOTHING + RETURNING id</h3>
+
+<div class="ann-point"><p>RETURNING이 빈 배열을 돌려주는 것 자체가 "이미 처리한 이벤트"라는 신호다 — SELECT 없이 INSERT 한 방으로 중복을 감지한다.</p></div>
+
+<div class="ann-term">
+  <span class="term-badge">SELECT-then-INSERT</span>
+  <span class="term-def">중복 체크를 SELECT + INSERT 두 쿼리로 나눠서 하는 패턴. 두 쿼리 사이 타이밍에 Race Condition 발생 가능</span>
+</div>
+
+<pre><code>-- SELECT-then-INSERT (위험)
+SELECT id FROM processed_events
+WHERE tx_hash = '0x3f2a' AND log_index = 0;
+-- 없으면...
+INSERT INTO processed_events (...) VALUES (...);
+-- ↑ SELECT와 INSERT 사이에 다른 프로세스가 끼어들 수 있음</code></pre>
+
+<div class="ann-warn"><p>프로세스 A와 B가 동시에 SELECT → 둘 다 "없음" 확인 → 둘 다 INSERT → 같은 이벤트 두 번 처리. 테이블에 UNIQUE 제약이 없으면 중복 레코드 삽입까지 가능.</p></div>
+
+<pre><code>-- ON CONFLICT DO NOTHING + RETURNING (안전)
+INSERT INTO processed_events (tx_hash, log_index, ...)
+VALUES ('0x3f2a', 0, ...)
+ON CONFLICT (tx_hash, log_index) DO NOTHING
+RETURNING id;
+
+-- 첫 번째 실행: → [{ id: 42 }]   rows.length === 1
+-- 두 번째 실행: → []              rows.length === 0  ← 중복 감지</code></pre>
+
+<div class="ann-code"><p>ON CONFLICT DO NOTHING은 DB 엔진이 단일 원자 연산으로 처리한다. UNIQUE 제약 확인 + INSERT를 하나의 잠금 범위 안에서 수행하기 때문에 두 프로세스가 동시에 실행되어도 한 쪽만 성공이 보장된다.</p></div>
+
+<pre><code>// TypeScript 구현 패턴
+const rows = await db.query(`
+  INSERT INTO processed_events (tx_hash, log_index, event_name, block_number, payload)
+  VALUES ($1, $2, $3, $4, $5)
+  ON CONFLICT (tx_hash, log_index) DO NOTHING
+  RETURNING id
+`, [txHash, logIndex, eventName, blockNumber, payload]);
+
+if (rows.length === 0) {
+  return { skipped: true };   // 중복 이벤트 → 상위 호출부에서 즉시 return
+}
+// rows.length === 1 → 신규 이벤트 → 계속 진행</code></pre>
+
+<div class="speech">
+  <p>이 패턴을 처음 보면 왜 RETURNING이 비어있는지 헷갈린다. 직관적으로 생각하면 "INSERT가 아무것도 안 했으니까 돌려줄 행도 없다"는 것이다. DB는 ON CONFLICT DO NOTHING을 만나면 "충돌이 있으니 아무것도 하지 않겠다"고 결정하고, INSERT 자체가 실행되지 않는다. RETURNING은 INSERT된 행을 돌려주는 것인데 INSERT가 일어나지 않았으니 반환할 행이 없다.</p>
+  <p>SELECT-then-INSERT의 문제는 두 쿼리가 별개의 DB 왕복이라는 점이다. 그 사이 시간이 아무리 짧아도 틈이 존재한다. 특히 at-least-once delivery 환경에서는 같은 이벤트가 동시에 두 Consumer에게 전달되는 상황이 실제로 발생한다. ON CONFLICT DO NOTHING은 이 틈 자체를 없앤다.</p>
+</div>
+<hr class="sep">
+
+<!-- Slide 09 -->
+<h3 id="s23-slide12" class="slide-h">Slide 12 — payload — NFTIssued 이벤트 데이터</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 08 -->
+<h3 id="s23-slide13" class="slide-h">Slide 13 — ③ user_nft_holdings — 현재 NFT 보유 현황 캐시</h3>
+
+<div class="ann-point"><p>이 테이블은 Java Gateway(internal-ledger)가 관리하는 <strong>영구 금융 원장</strong>이다. Node.js issuer-service는 직접 이 테이블에 접근하지 않고 Java Gateway HTTP API를 통해 기록을 위임한다.</p></div>
+
+<p style="font-weight:700; margin-top:12px;">Phase 1 확정 스키마</p>
+<pre><code class="language-sql">CREATE TABLE user_nft_holdings (
+  id            BIGSERIAL   PRIMARY KEY,
+  user_id       VARCHAR(64) NOT NULL,
+  token_id      BIGINT      NOT NULL,
+  contract_addr VARCHAR(42) NOT NULL,  -- 어떤 컨트랙트의 NFT인가
+  chain_id      INT         NOT NULL,  -- 어떤 체인인가
+  amount        BIGINT      NOT NULL DEFAULT 1,  -- ERC-1155 수량
+  acquired_at   TIMESTAMPTZ NOT NULL,
+  released_at   TIMESTAMPTZ,           -- NULL = 보유 중
+  on_chain_tx   VARCHAR(66) NOT NULL,  -- 취득 TX 해시
+  UNIQUE(user_id, token_id, contract_addr, chain_id)
+);</code></pre>
+
+<p style="font-weight:700; margin-top:12px;">UNIQUE 제약의 두 가지 역할</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>역할</th><th>설명</th></tr></thead>
+  <tbody>
+    <tr><td>비즈니스 규칙</td><td>같은 사람이 같은 (컨트랙트, tokenId, 체인) 조합을 중복 보유 불가</td></tr>
+    <tr><td>at-least-once 방어</td><td>재처리 시에도 <code>ON CONFLICT DO NOTHING</code>으로 중복 INSERT 차단</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-warn"><p><code>user_id</code>를 UNIQUE에 포함하지 않으면 서로 다른 사용자가 같은 tokenId를 보유할 때 두 번째 INSERT가 차단된다 — ERC-1155에서 tokenId는 여러 명이 보유 가능하므로 <code>user_id</code>는 반드시 포함해야 한다.</p></div>
+
+<hr class="sep">
+
+<h3 id="s23-slide14" class="slide-h">Slide 14 — user_nft_holdings Phase 2/3 확장 설계</h3>
+
+<div class="ann-point"><p>Phase 1에서 이미 <code>amount</code>, <code>chain_id</code>, <code>contract_addr</code>, <code>on_chain_tx</code>가 포함됐기 때문에 Phase 2/3에서 추가할 컬럼은 <strong>상태 추적</strong>에 집중된다.</p></div>
+
+<p style="font-weight:700; margin-top:12px;">Phase 2/3에서 추가되는 컬럼</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>컬럼</th><th>이유</th></tr></thead>
+  <tbody>
+    <tr><td><code>status VARCHAR(16)</code></td><td>소각·양도 후 row DELETE하면 감사 기록이 사라진다 — ACTIVE/BURNED/TRANSFERRED로 상태 변경</td></tr>
+    <tr><td><code>updated_at TIMESTAMPTZ</code></td><td>상태가 언제 변경됐는지 추적 필요</td></tr>
+  </tbody>
+</table>
+</div>
+
+<pre><code class="language-sql">-- Phase 2/3 마이그레이션
+ALTER TABLE user_nft_holdings
+  ADD COLUMN status     VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX idx_holdings_status ON user_nft_holdings(status);</code></pre>
+
+<div class="ann-code"><p>Phase 1에서 <code>released_at</code>이 소각·이전 시각을 담는다. Phase 2/3에서는 이를 <code>status</code>로 명시적으로 표현하고, 여러 상태(BURNED / TRANSFERRED)를 구분한다. 기존 <code>released_at</code> 데이터는 마이그레이션 스크립트에서 <code>status = 'BURNED'</code>로 변환할 수 있다.</p></div>
+
+<hr class="sep">
+
+<h3 id="s23-slide15" class="slide-h">Slide 15 — Phase 2/3 연관 테이블 변경 범위</h3>
+
+<div class="ann-point"><p>user_nft_holdings 하나만 바꿔서는 안 된다. CONFIRMED 이벤트가 어떤 컨트랙트의 NFT인지 알아야 holding을 생성할 수 있으므로, <strong>mint_requests</strong>에도 chain_id와 contract_addr이 필요하다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>테이블</th><th>변경</th><th>이유</th></tr></thead>
+  <tbody>
+    <tr><td><code>mint_requests</code></td><td>필수 — <code>chain_id, contract_addr</code> 추가</td><td>CONFIRMED 시 어느 컨트랙트로 holding을 생성할지 알아야 함</td></tr>
+    <tr><td><code>user_nft_holdings</code></td><td>필수 — <code>status, updated_at</code> 추가</td><td>소각·양도 상태 추적. amount · chain_id 등은 Phase 1에 이미 포함</td></tr>
+    <tr><td><code>outbox_events</code></td><td>페이로드만 — <code>status</code> 필드 추가</td><td>JSONB payload가 유연하게 수용, 스키마 변경 불필요</td></tr>
+    <tr><td><code>processed_events</code></td><td>불필요</td><td>JSONB payload로 유연하게 수용</td></tr>
+    <tr><td><code>audit_log</code></td><td>불필요</td><td>before/after_state JSONB — 그대로</td></tr>
+  </tbody>
+</table>
+</div>
+
+<hr class="sep">
+
+<h2 id="s23-outbox-pattern" class="subsec">outbox_events — DB 쓰기 + 외부 API 원자성</h2>
+
+<div class="ann-point"><p><code>outbox_events</code>는 "DB 트랜잭션 안에서 외부 API 호출도 원자적으로 묶겠다"는 문제를 푸는 표준 패턴이다. 직접 API를 호출하는 대신 같은 트랜잭션에 레코드를 남기고, 별도 워커가 그 레코드를 보고 API를 호출한다.</p></div>
+
+<p style="font-weight:700; margin-top:12px;">문제 — 트랜잭션 경계 밖의 API 호출</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>상황</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>DB <code>UPDATE</code> 성공 → VASP API 호출 → 서버 다운</td><td>DB는 반영됐지만 VASP는 모른다 → 불일치</td></tr>
+    <tr><td>VASP API 호출 성공 → DB <code>UPDATE</code> 실패</td><td>VASP는 처리했지만 원장에 기록 없음 → 이중 발급 위험</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p style="font-weight:700; margin-top:16px;">해결 — Outbox 패턴</p>
+<pre><code class="language-sql">-- 비즈니스 로직과 같은 트랜잭션 안에서
+BEGIN;
+  UPDATE mint_requests SET status = 'CONFIRMED' WHERE id = $1;
+  INSERT INTO outbox_events (id, type, payload, status)
+    VALUES (gen_random_uuid(), 'VASP_SUBMIT_MINT', $2::jsonb, 'PENDING');
+COMMIT;
+-- 서버가 여기서 죽어도 outbox 레코드가 남아 있어 재처리 가능</code></pre>
+
+<div class="ann-code"><p><code>outbox_events</code>는 별도 API를 호출하는 게 아니라 같은 DB에 쓰는 것이기 때문에 트랜잭션 범위 안에 들어간다. 서버가 COMMIT 이후에 죽으면 레코드가 남고, COMMIT 이전에 죽으면 롤백된다 — 둘 다 안전하다.</p></div>
+
+<p style="font-weight:700; margin-top:16px;">OutboxWorker 처리 흐름</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>단계</th><th>동작</th></tr></thead>
+  <tbody>
+    <tr><td>1. 폴링</td><td><code>WHERE status = 'PENDING' AND next_retry_at &lt;= NOW()</code> — partial index 사용</td></tr>
+    <tr><td>2. PROCESSING 표시</td><td><code>UPDATE status = 'PROCESSING'</code> — 중복 처리 방지</td></tr>
+    <tr><td>3. 외부 API 호출</td><td>타입별 분기 (VASP_SUBMIT_MINT → VASP API 등)</td></tr>
+    <tr><td>4a. 성공</td><td><code>status = 'PROCESSED', processed_at = NOW()</code></td></tr>
+    <tr><td>4b. 실패</td><td><code>attempt_count++, next_retry_at = 지수 백오프</code> → 5회 후 <code>DEAD</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p style="font-weight:700; margin-top:16px;">4가지 이벤트 타입</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>type</th><th>용도</th></tr></thead>
+  <tbody>
+    <tr><td><code>VASP_SUBMIT_MINT</code></td><td>VASP에 민팅 요청 전송</td></tr>
+    <tr><td><code>VASP_SUBMIT_BURN</code></td><td>VASP에 소각 요청 전송</td></tr>
+    <tr><td><code>LEDGER_UPDATE_HOLDING</code></td><td>내부 원장 user_nft_holdings 갱신</td></tr>
+    <tr><td><code>AUDIT_LOG_EMIT</code></td><td>감사 로그 외부 시스템 전송</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-term">
+  <span class="term-badge">Outbox Pattern</span>
+  <span class="term-def">DB 쓰기와 외부 API 호출을 원자적으로 묶는 중간 버퍼 — "쓰기는 같은 DB 트랜잭션에, 호출은 별도 워커에" 라는 원칙으로 At-least-once 보장을 달성한다</span>
+</div>
+
+<div class="ann-warn"><p>PROCESSING 상태가 오래 머무는 레코드는 워커가 API 호출 중 다운된 케이스다. 모니터링에서 <code>status = 'PROCESSING' AND updated_at &lt; 5분 전</code>을 알람으로 걸어야 한다. DEAD 레코드는 수동 검토 필요.</p></div>
+
+<div class="speech">
+  <p>"outbox_events 테이블은 처음 봤는데, 이게 뭔가요?"</p>
+  <p>이 테이블이 풀려고 하는 문제는 하나다. DB를 업데이트하고 외부 API도 호출해야 하는 상황에서, 둘 중 하나가 실패하면 어떻게 할 것인가. DB UPDATE는 성공했는데 API 호출 직전에 서버가 죽으면? DB에는 반영됐는데 외부 시스템은 모르는 상태가 된다.</p>
+  <p>Outbox 패턴은 외부 API를 직접 호출하는 대신, 같은 DB 트랜잭션 안에서 <code>outbox_events</code>에 레코드를 하나 남긴다. 트랜잭션이 커밋되면 비즈니스 상태 변경과 outbox 레코드가 동시에 확정된다. 그 다음은 OutboxWorker가 이 레코드를 보고 API를 호출한다.</p>
+  <p>서버가 커밋 후 API 호출 전에 죽으면? 워커가 재시작하면서 PENDING 레코드를 발견하고 다시 호출한다. 5번 시도해도 실패하면 DEAD로 표시하고 알람이 뜬다. 이 구조가 있어야 "DB와 외부 시스템이 항상 일치한다"는 보장을 할 수 있다.</p>
+  <p>이 패턴은 현재 Phase 3 설계로 들어가 있는데, Phase 2까지는 없어도 내부 흐름만으로 돌아간다. Phase 3부터 VASP나 외부 감사 시스템과 연동할 때 이게 필요해진다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s23-slide16" class="slide-h">Slide 16 — ④ audit_log — 변경 불가 감사 기록</h3>
+
+<div class="ann-point"><p>audit_log는 시스템 안에서 일어난 모든 상태 변경을 시간 순서대로 기록하는 append-only 테이블이다. UPDATE·DELETE가 없기 때문에 감사 추적의 신뢰성이 보장된다.</p></div>
+
+<p style="font-weight:700; margin-top:12px;">id — 비즈니스 식별자가 아니다</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>컬럼</th><th>의미</th><th>예시</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code></td><td>DB 시퀀스 자동증가 — 삽입 순서 번호</td><td><code>1, 2, 3 …</code></td></tr>
+    <tr><td><code>resource_id</code></td><td>어떤 비즈니스 리소스에 대한 이벤트인가</td><td><code>"a1b2c3d4-..."</code> (mint_request UUID)<br><code>"0x4b08...:1001"</code> (contract:tokenId)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-code"><p><code>id</code>는 <code>verifyIntegrity(id)</code> 같은 내부 API에서 레코드를 특정할 때 쓴다. 감사 조회나 비즈니스 추적에는 <code>resource_type + resource_id</code>를 조합해서 사용한다.</p></div>
+
+<p style="font-weight:700; margin-top:14px;">actor — 이벤트를 발생시킨 주체</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>값</th><th>의미</th><th>발생 경로</th></tr></thead>
+  <tbody>
+    <tr><td><code>"system"</code></td><td>Java Gateway 내부 자동 처리</td><td><code>InternalLedgerService</code> — NFT_ACQUIRED, NFT_RELEASED</td></tr>
+    <tr><td>유저 ID (<code>"K-20240001"</code>)</td><td>실제 사용자가 트리거한 거래</td><td>Node.js <code>KyoboCoreBankingAdapter.recordTransaction()</code> → <code>actor: tx.userId</code></td></tr>
+    <tr><td>서비스명 (<code>"system:IssuerService"</code>)</td><td>내부 서비스 자동 처리</td><td>issuer-service가 직접 <code>POST /api/internal/audit-log</code> 호출 시</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-warn"><p>actor가 <code>"system"</code>으로 통일되면 "누가 이 변경을 일으켰는가"를 역추적할 수 없다. 사용자가 직접 트리거한 동작에는 반드시 userId를, 내부 서비스가 트리거한 동작에는 서비스명을 actor로 남겨야 ISMS-P 감사 추적 요건을 충족한다.</p></div>
+
+<p style="font-weight:700; margin-top:14px;">action vs resource_type — 동사 vs 명사</p>
+<div class="ann-point"><p><code>resource_type</code>은 <strong>무엇</strong>(명사, 객체 종류), <code>action</code>은 <strong>무슨 일이 일어났는가</strong>(동사, 이벤트 종류)다. 같은 resource_type에 여러 action이 붙는다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>resource_type</th><th>action</th><th>의미</th></tr></thead>
+  <tbody>
+    <tr><td><code>NftHolding</code></td><td><code>NFT_ACQUIRED</code></td><td>NFT 보유 기록 생성</td></tr>
+    <tr><td><code>NftHolding</code></td><td><code>NFT_RELEASED</code></td><td>NFT 소각·이전</td></tr>
+    <tr><td><code>MintRequest</code></td><td><code>MINT_REQUESTED</code></td><td>발행 요청 생성</td></tr>
+    <tr><td><code>MintRequest</code></td><td><code>MINT_CONFIRMED</code></td><td>발행 확정</td></tr>
+    <tr><td><code>TRANSACTION</code></td><td><code>TX_SUBMITTED</code></td><td>TX 전송</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p style="font-weight:700; margin-top:12px;">조회 패턴이 달라진다</p>
+<pre><code class="language-sql">-- "이 NFT에 무슨 일이 있었나?" → resource 기준
+SELECT * FROM audit_log
+WHERE resource_type = 'NftHolding'
+  AND resource_id   = '0x4b08...:1001'
+ORDER BY event_time;
+
+-- "오늘 NFT 취득이 몇 건이나 됐나?" → action 기준
+SELECT COUNT(*) FROM audit_log
+WHERE action = 'NFT_ACQUIRED'
+  AND event_time > NOW() - INTERVAL '1 day';</code></pre>
+
+<div class="ann-code"><p>슬라이드의 인덱스 설계도 이 용도를 반영한다. <code>idx_audit_resource (resource_type, resource_id)</code>는 리소스 히스토리 조회용, <code>idx_audit_actor (actor)</code>는 특정 주체의 행위 추적용이다.</p></div>
+
+<p style="font-weight:700; margin-top:14px;">resource_id — 구체적인 인스턴스 식별자</p>
+<div class="ann-point"><p><code>resource_type + resource_id</code>를 합치면 "어떤 종류의 객체 중에서 어떤 것"이 특정된다. 형식은 resource_type마다 다르고, "이 resource_type 안에서 고유하면 된다"는 규칙만 있다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>resource_type</th><th>resource_id 예시</th><th>형식</th></tr></thead>
+  <tbody>
+    <tr><td><code>NftHolding</code></td><td><code>0x4b0897b0...:1001</code></td><td><code>contractAddr:tokenId</code> — 코드에서 직접 조합</td></tr>
+    <tr><td><code>MintRequest</code></td><td><code>a1b2c3d4-e5f6-...</code></td><td>UUID</td></tr>
+    <tr><td><code>TRANSACTION</code></td><td><code>0xaaaa0000bbbb...</code></td><td>TX 해시</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-code"><p><code>InternalLedgerService</code>에서 resource_id를 직접 조합해서 넘긴다:</p></div>
+<pre><code class="language-java">// contractAddr:tokenId 형식으로 조합
+auditLogService.log("system", "NFT_ACQUIRED", "NftHolding",
+    request.contractAddr() + ":" + request.tokenId(), ...);</code></pre>
+
+<p style="font-weight:700; margin-top:14px;">checksum — Hash chain으로 변조 감지</p>
+<div class="ann-point"><p>단순 checksum(레코드 내용만 해시)은 레코드를 수정한 후 checksum도 함께 재계산하면 탐지할 수 없다. <strong>이전 레코드의 checksum을 포함한 hash chain</strong>을 쓰면, 어떤 레코드를 수정하더라도 그 다음 레코드의 <code>prev_checksum</code>과 불일치가 생겨 탐지된다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>방식</th><th>탐지 가능</th><th>탐지 불가</th></tr></thead>
+  <tbody>
+    <tr><td>단순 checksum<br><small>SHA-256(내용만)</small></td><td>레코드 내용 수정</td><td>수정 후 checksum 재계산<br>레코드 삭제</td></tr>
+    <tr><td>Hash chain<br><small>SHA-256(prevChecksum + 내용)</small></td><td>수정 후 checksum 재계산<br>레코드 삭제 (체인 끊김)</td><td>—</td></tr>
+  </tbody>
+</table>
+</div>
+
+<pre><code class="language-java">// checksum 공식
+SHA-256(prevChecksum + eventTime + actor + action + resourceId + afterState)
+
+// 첫 레코드: prevChecksum = "0000...0" (genesis, 64자리)
+// 이후 레코드: prevChecksum = 직전 레코드의 checksum</code></pre>
+
+<div class="ann-warn"><p>레코드 N을 수정하고 checksum을 재계산해도, 레코드 N+1의 <code>prev_checksum</code>은 여전히 원래 N의 checksum을 가리킨다. N+1의 <code>verifyIntegrity()</code>가 실패하므로 변조가 드러난다. 전체 체인을 위조하려면 N 이후 모든 레코드의 checksum을 연쇄적으로 다시 써야 한다.</p></div>
+
+<div class="ann-code"><p>동시 삽입 시 체인 순서 보장을 위해 <code>findLastForUpdate()</code>에 <code>PESSIMISTIC_WRITE</code> 락을 건다. 두 스레드가 동시에 "마지막 checksum"을 읽으면 같은 <code>prev_checksum</code>을 갖는 두 레코드가 생겨 체인이 포크된다.</p></div>
+
+<hr class="sep">
+
+<!-- Slide 09 -->
+<h3 id="s23-slide17" class="slide-h">Slide 17 — Hash Chain 개념</h3>
+
+<p><strong>Hash chain이란?</strong> 각 레코드의 checksum이 이전 레코드의 checksum을 입력으로 포함하는 구조다. 체인 중간 레코드를 변조하면 해당 레코드의 checksum이 바뀌고, 그 결과 다음 레코드의 <code>prev_checksum</code>과 불일치가 발생해 변조를 탐지할 수 있다.</p>
+
+<div class="ann-code">
+<p><strong>단순 checksum의 한계:</strong> 레코드를 수정하고 <code>SHA-256(eventTime + actor + action + ...)</code>를 재계산하면 checksum도 일치하게 만들 수 있다. 변조 후 checksum만 업데이트하면 그만이다.</p>
+<p><strong>Hash chain의 강점:</strong> <code>checksum = SHA-256(prevChecksum + eventTime + actor + action + resourceId + afterState)</code>. 레코드 #2를 변조하면 H2가 H2'로 바뀐다. 그러면 레코드 #3의 <code>prev_checksum</code>이 H2인데 실제 이전 레코드의 checksum은 H2' — 불일치가 발생한다. 이후 모든 레코드를 재계산하지 않는 한 탐지된다.</p>
+<p><strong>첫 레코드(genesis):</strong> 이전 레코드가 없으므로 <code>prev_checksum = "0000...0"</code>(64자리 0) 고정값을 사용한다.</p>
+</div>
+
+<table>
+  <thead><tr><th>방식</th><th>단일 레코드 변조 + checksum 재계산</th><th>이후 레코드</th></tr></thead>
+  <tbody>
+    <tr><td>단순 checksum</td><td>탐지 불가 — checksum 일치</td><td>영향 없음</td></tr>
+    <tr><td>Hash chain</td><td>해당 레코드 checksum 변경</td><td>다음 레코드 <code>prev_checksum</code> 불일치 → 탐지</td></tr>
+  </tbody>
+</table>
+
+<hr class="sep">
+
+<!-- Slide 10 -->
+<h3 id="s23-slide18" class="slide-h">Slide 18 — LedgerService 코드 아키텍처</h3>
+
+<p><strong>ORM(Object-Relational Mapper)이란?</strong> 테이블 행(row)을 언어의 객체(object)에 자동으로 매핑해주는 라이브러리다. TypeScript 생태계에서는 TypeORM, Prisma, Sequelize가 대표적이다. 개발자가 SQL 대신 메서드 체이닝(<code>repo.find({ where: { status: 'PENDING' } })</code>)으로 쿼리를 표현하면 ORM이 SQL로 변환해 실행한다.</p>
+
+<div class="ann-code">
+<p><strong>왜 이 프로젝트에서 ORM을 쓰지 않는가?</strong> LedgerService의 핵심 쿼리 두 개가 PostgreSQL 전용 문법에 의존하기 때문이다.</p>
+<ul>
+  <li><code>INSERT ... ON CONFLICT DO NOTHING RETURNING id</code> — <code>recordProcessedEvent()</code>에서 중복 이벤트를 단일 원자 연산으로 거르는 쿼리. ORM은 이 패턴을 완전히 표현하지 못하거나 내부 구현이 SELECT → INSERT 두 단계로 쪼개져 race condition이 생긴다.</li>
+  <li><code>RETURNING id</code> — INSERT 직후 DB가 생성한 id를 별도 SELECT 없이 바로 반환. ORM은 내부적으로 추가 조회를 하거나 지원이 불완전하다.</li>
+</ul>
+<p>ORM의 추상화 계층이 이 문법들을 감추면 쿼리 의도가 드러나지 않고, "무언가 이상하게 동작하는데 ORM이 뭘 하는지 모르겠다"는 디버깅 지옥에 빠진다. raw SQL은 코드와 실제 DB 동작 사이에 레이어가 없어 의도가 1:1로 보인다.</p>
+</div>
+
+<table>
+  <thead><tr><th></th><th>ORM</th><th>raw SQL (이 프로젝트)</th></tr></thead>
+  <tbody>
+    <tr><td>장점</td><td>타입 자동 완성, 마이그레이션 도구 통합, 보일러플레이트 감소</td><td>DB 전용 문법 100% 활용, 쿼리 의도 명시적, 디버깅 직관적</td></tr>
+    <tr><td>단점</td><td>복잡한 쿼리 표현 불가, 추상화 뒤 동작 불투명</td><td>쿼리 직접 작성 필요, 파라미터 바인딩 수동 관리</td></tr>
+    <tr><td>적합한 상황</td><td>CRUD 위주, DB 전용 문법 불필요</td><td><code>ON CONFLICT</code>, <code>RETURNING</code>, Window Function 등 활용 시</td></tr>
+  </tbody>
+</table>
+
+<p><strong>결정적인 이유는 <code>recordProcessedEvent()</code>다.</strong> 이 함수의 목적 자체가 블록체인 이벤트 중복 처리 방지인데, 그 구현이 <code>INSERT ... ON CONFLICT DO NOTHING RETURNING id</code> 단 하나의 원자 연산이어야 한다. ORM으로 표현하면 내부적으로 SELECT → INSERT 두 단계로 쪼개지는데, 그 사이 타이밍에 두 스레드가 동시에 같은 이벤트를 처리하려 하면 둘 다 SELECT에서 "없음"을 보고 둘 다 INSERT를 시도하는 race condition이 생긴다. 이게 깨지면 같은 NFT 발행 이벤트가 두 번 처리돼 <code>user_nft_holdings</code>에 중복 레코드가 생기거나 감사 로그가 두 번 기록된다.</p>
+
+<p><strong>SQL injection 방지:</strong> raw SQL을 쓸 때는 반드시 파라미터 바인딩(<code>query(sql, [param1, param2])</code>)을 써야 한다. 문자열 템플릿 리터럴로 값을 직접 끼워 넣으면 injection 취약점이 생긴다. <code>DatabaseClient.query(sql, params)</code> 인터페이스가 params 배열을 분리한 이유가 여기 있다.</p>
+<hr class="sep">
+
+<!-- Slide 11 -->
+<h3 id="s23-slide19" class="slide-h">Slide 19 — MintStatus 7종 + VALID_TRANSITIONS</h3>
+
+<p>MintStatus는 NFT 발행 요청 하나의 생애주기를 나타내는 7가지 상태다. <code>VALID_TRANSITIONS</code> 맵이 허용된 전이 경로를 정의하고, <code>updateMintRequest()</code>는 이 맵을 통과한 전이만 DB에 반영한다.</p>
+
+<table>
+  <thead><tr><th>상태</th><th>의미</th><th>설정 주체</th><th>비고</th></tr></thead>
+  <tbody>
+    <tr><td><code>PENDING</code></td><td>발행 요청 생성 (초기 상태)</td><td>LedgerService.createMintRequest()</td><td>txHash = NULL</td></tr>
+    <tr><td><code>SUBMITTED</code></td><td>VASP에 TX 제출 완료</td><td>TxStateMachineService</td><td>txHash 확정</td></tr>
+    <tr><td><code>MINED</code></td><td>블록 포함 — Reorg 가능 구간</td><td>TxStateMachineService</td><td></td></tr>
+    <tr><td><code>CONFIRMED</code></td><td>내부 원장 반영 완료 (종단에 준함)</td><td>ConsumerGroupWorker <strong style="color:#c0392b;">※ 미구현 — M4</strong></td><td>Java 영구 원장 기록 후 전이</td></tr>
+    <tr><td><code>FINALIZED</code></td><td>PoS Finality 확보 — 절대 불변</td><td>TxStateMachineService</td><td>종단</td></tr>
+    <tr><td><code>REORGED</code></td><td>체인 재편으로 TX 소실</td><td>TxStateMachineService</td><td>→ MINED 또는 FAILED 재시작</td></tr>
+    <tr><td><code>FAILED</code></td><td>발행 실패</td><td>TxStateMachineService</td><td>종단</td></tr>
+  </tbody>
+</table>
+
+<div class="ann-code">
+<p><strong>CONFIRMED의 의미가 특이하다.</strong> 일반적으로 "confirmed"는 "온체인 블록 확인 충분"을 뜻하지만, 이 프로젝트에서 CONFIRMED는 <strong>"Java 영구 원장 반영 완료"</strong>를 의미한다. 온체인 확인이 아니라 내부 시스템 기록 완료가 기준이다.</p>
+<p>흐름: NFTIssued 이벤트 → Redis Streams → ConsumerGroupWorker → NFTIssuedProcessor → Java <code>recordNftHolding()</code> 호출 성공 → <code>updateMintRequestConfirmed(requestId)</code> → CONFIRMED</p>
+</div>
+
+<p><strong>⚠️ 현재 미구현 (M4 TODO)</strong></p>
+<p><code>creditNFT()</code> 호출 후 <code>updateMintRequestConfirmed()</code>가 빠져 있다. 현재는 Java 원장에 반영이 됐어도 mint_request 상태가 MINED에 머물러 있다.</p>
+
+<table>
+  <thead><tr><th>파일</th><th>줄</th><th>내용</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>internal/packages/event-engine/src/processors/NFTIssuedProcessor.ts</code></td>
+      <td>30–32</td>
+      <td><code>LedgerService</code> 인터페이스에 <code>updateMintRequestConfirmed?()</code> stub 추가</td>
+    </tr>
+    <tr>
+      <td><code>internal/packages/event-engine/src/processors/NFTIssuedProcessor.ts</code></td>
+      <td>75–78</td>
+      <td><code>creditNFT()</code> 직후 TODO 주석 — 실제 호출 추가 위치</td>
+    </tr>
+  </tbody>
+</table>
+
+<pre><code>// LedgerService 인터페이스 (현재)
+export interface LedgerService {
+  creditNFT(owner: string, tokenId: string, amount?: number): Promise&lt;void&gt;;
+  getNFTBalance(owner: string, tokenId: string): Promise&lt;number&gt;;
+  // TODO(M4): mint_request 상태를 CONFIRMED로 전이
+  updateMintRequestConfirmed?(requestId: string): Promise&lt;void&gt;;
+}
+
+// process() 내부 — TODO 위치
+const processed = await this.idempotency.run(idempotencyKey, async () => {
+  await this.ledger.creditNFT(payload.to, payload.tokenId);
+
+  // TODO(M4): Java 영구 원장 반영 완료 후 CONFIRMED로 전이
+  //   await this.ledger.updateMintRequestConfirmed?.(requestId);
+});</code></pre>
+
+<p><strong>VALID_TRANSITIONS 맵 — 허용 경로 요약:</strong></p>
+<table>
+  <thead><tr><th>from</th><th>to (허용)</th></tr></thead>
+  <tbody>
+    <tr><td>PENDING</td><td>SUBMITTED, FAILED</td></tr>
+    <tr><td>SUBMITTED</td><td>MINED, FAILED</td></tr>
+    <tr><td>MINED</td><td>CONFIRMED, REORGED, FAILED</td></tr>
+    <tr><td>CONFIRMED</td><td>FINALIZED</td></tr>
+    <tr><td>FINALIZED</td><td>(없음 — 종단)</td></tr>
+    <tr><td>FAILED</td><td>(없음 — 종단)</td></tr>
+    <tr><td>REORGED</td><td>MINED, FAILED</td></tr>
+  </tbody>
+</table>
+<hr class="sep">
+
+<!-- Slide 12 -->
+<h3 id="s23-slide20" class="slide-h">Slide 20 — MintRequest 인터페이스 + createMintRequest()</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 13 -->
+<h3 id="s23-slide21" class="slide-h">Slide 21 — updateMintRequest() — 상태 전이 가드</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 14 -->
+<h3 id="s23-slide22" class="slide-h">Slide 22 — getMintRequest() + 에러 클래스</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 15 -->
+<h3 id="s23-slide23" class="slide-h">Slide 23 — processed_events UNIQUE(tx_hash, log_index)</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 16 -->
+<h3 id="s23-slide24" class="slide-h">Slide 24 — recordProcessedEvent() + ON CONFLICT</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 17 -->
+<h3 id="s23-slide25" class="slide-h">Slide 25 — 쓰기 경로 전체 흐름</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 18 -->
+<h3 id="s23-slide26" class="slide-h">Slide 26 — LedgerService 메서드 호출 주체</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 19 -->
+<h3 id="s23-slide27" class="slide-h">Slide 27 — InternalLedgerBalance 4단계 모델</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 20 -->
+<h3 id="s23-slide28" class="slide-h">Slide 28 — 데이터 수명 + 규제 요건</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<h2 id="s23-design-rationale" class="subsec">★ 이 설계, 이렇게까지 해야 하나?</h2>
+
+<div class="ann-point"><p>수강생들이 가장 자주 묻는 질문이다. 결론: 교보생명 같은 금융 서비스에서는 맞다. 단, 이유를 알고 하는 것과 모르고 하는 것은 다르다 — 이유를 알아야 "여기서는 생략해도 된다"는 판단도 할 수 있다.</p></div>
+
+<p style="font-weight:700; margin-top:12px;">복잡성의 원인 3가지</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>원인</th><th>결과로 생긴 설계</th></tr></thead>
+  <tbody>
+    <tr><td>블록체인 비동기성</td><td>상태머신 + pollStaleRequests</td></tr>
+    <tr><td>At-least-once delivery</td><td>이벤트 단위 멱등성 (processed_events)</td></tr>
+    <tr><td>금융 규제</td><td>audit_log + 삭제 불가 기록</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-term">
+  <span class="term-badge">설계 판단력</span>
+  <span class="term-def">"배치 민팅이 없고 항상 1 TX = 1 NFT라면 이벤트 단위 추적은 과하다"는 판단을 할 수 있는 것 — 이 설계를 이해해야 가능하다</span>
+</div>
+
+<div class="ann-warn"><p>이 설계를 안 하고 중복 발급 사고가 나면 긴급 패치가 훨씬 더 고통스럽다. 초기 설계 복잡성 vs 운영 중 사고 비용을 비교하면 금융 서비스에서는 답이 나온다.</p></div>
+
+<div class="speech">
+  <p>수강생들이 자주 하는 말이다. "이렇게까지 해야 하는 게 맞는 건지 모르겠어요."</p>
+  <p>이 복잡성은 세 가지가 겹쳐서 생긴 것이다. 블록체인이 비동기라서 상태머신이 필요하고, 이벤트 전달이 at-least-once라서 멱등성이 필요하고, 금융 규제가 있어서 audit_log가 필요하다. 이 세 가지 중 하나라도 없으면 설계가 단순해진다. 단순 게임 아이템 NFT라면 절반은 생략할 수 있다.</p>
+  <p>근데 중요한 건 "이걸 이해하고 있어야 언제 생략해도 되는지 판단할 수 있다"는 것이다. 모르면 생략해도 되는 상황에서도 무조건 다 만들거나, 반대로 꼭 필요한 상황에서 빠뜨린다. 이 설계를 한 번 제대로 이해해 두면 그 판단 기준이 생긴다.</p>
+  <p>그리고 현실적으로, 이 설계는 한 번 잘 만들어두면 운영 중에는 그냥 돌아간다. 복잡한 건 초기 설계뿐이다.</p>
+</div>
+<hr class="sep">
+
+
+<!-- Slide 21 -->
+<h3 id="s23-slide29" class="slide-h">Slide 29 — 간지: 실습</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 22 -->
+<h3 id="s23-slide30" class="slide-h">Slide 30 — 실습 Step 1 — Knex 마이그레이션 스켈레톤</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 23 -->
+<h3 id="s23-slide31" class="slide-h">Slide 31 — 실습 Step 1 답안</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 24 -->
+<h3 id="s23-slide32" class="slide-h">Slide 32 — 실습 Step 2 — recordProcessedEvent 스켈레톤</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 25 -->
+<h3 id="s23-slide33" class="slide-h">Slide 33 — 실습 Step 3 — updateMintRequest 스켈레톤</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 26 -->
+<h3 id="s23-slide34" class="slide-h">Slide 34 — 자주 틀리는 실수 + 흔한 질문</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 27 -->
+<h3 id="s23-slide35" class="slide-h">Slide 35 — 쓰기 경로 × 테이블 × 메서드 전체 매핑</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+<!-- Slide 28 -->
+<h3 id="s23-slide36" class="slide-h">Slide 36 — S23 완료 기준</h3>
+<!-- 추가 예정 -->
+<hr class="sep">
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════
+     S24 — 상태 전이 가드
+     ════════════════════════════════════════════════════════════ -->
+<section id="session-24" class="session" style="--sc:#6D28D9;--sb:#F5F3FF;--sbd:#C4B5FD">
+<h1 class="session-title"><span class="badge">S24</span>상태 전이 가드 — InvalidStateTransitionError · VALID_TRANSITIONS</h1>
+<hr class="sep">
+
+<!-- Slide 01 -->
+<h3 id="s24-slide01" class="slide-h">Slide 01 — 커버</h3>
+<div class="ann-point"><p>S23에서 원장 데이터 모델(4개 테이블 + ON CONFLICT 패턴)을 설계했다. 테이블이 있다고 원장 일관성이 자동으로 보장되지 않는다. S24는 "어떤 상태에서 어떤 상태로의 전이가 허용되는가"를 코드에 명시하는 VALID_TRANSITIONS 가드와, 멱등 이벤트 처리 순서를 다룬다.</p></div>
+<hr class="sep">
+
+<!-- Slide 02 -->
+<h3 id="s24-slide02" class="slide-h">Slide 02 — 이번 세션의 위치 — S23 다음 단계</h3>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>구분</th><th>S23</th><th>S24</th></tr></thead>
+  <tbody>
+    <tr><td>핵심 질문</td><td>어떤 테이블이 필요한가</td><td>상태 전이를 어떻게 막는가</td></tr>
+    <tr><td>핵심 코드</td><td>Knex 마이그레이션 + INSERT 패턴</td><td>VALID_TRANSITIONS + updateMintRequest()</td></tr>
+    <tr><td>보호 대상</td><td>중복 이벤트 INSERT</td><td>역전이 + 좀비 레코드</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-point"><p>S24에서 배울 것: 분산 환경에서 이벤트 순서가 뒤바뀌면 원장이 어떻게 망가지는가. 이를 막는 3가지 가드 (존재·전이·필드). 멱등 이벤트 처리에서 순서가 왜 중요한가.</p></div>
+<hr class="sep">
+
+<!-- Slide 03 -->
+<h3 id="s24-slide03" class="slide-h">Slide 03 — 분산 시스템 — 메시지 순서는 보장되지 않는다</h3>
+<div class="ann-point"><p>Consumer Group Worker 2개 인스턴스가 동시에 같은 mint_request에 대한 이벤트를 처리할 때, 이벤트 순서가 뒤바뀌거나 네트워크 재전달로 이미 처리된 이벤트가 다시 올 수 있다. 가드가 없으면 FINALIZED 상태가 MINED로 되돌아가는 "역전이"가 발생한다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>케이스</th><th>원인</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>이벤트 순서 역전</td><td>Worker-B 일시 지연 → message-3이 message-2보다 먼저 처리</td><td>SUBMITTED → FINALIZED 직접 전이 시도</td></tr>
+    <tr><td>이벤트 재전달</td><td>XACK 전 Worker 재시작 → Redis가 PEL에서 재전달</td><td>이미 FINALIZED인데 MINED로 되돌리라는 이벤트 도착</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-warn"><p>At-least-once delivery + 여러 Consumer Worker = 이벤트 순서와 중복을 코드가 명시적으로 방어해야 한다. "보통은 순서대로 오니까 괜찮다"는 가정은 장애 시 틀린 것으로 드러난다.</p></div>
+<hr class="sep">
+
+<!-- Slide 04 -->
+<h3 id="s24-slide04" class="slide-h">Slide 04 — 가드가 없으면 어떻게 되나</h3>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>시나리오</th><th>역전이 방향</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>A: 이벤트 재전달</td><td>FINALIZED → MINED</td><td>finality 확보된 TX가 "블록에만 있음"으로 표시 → ReconcileService 오알람 → 담당자 혼란, 감사 추적 파괴</td></tr>
+    <tr><td>B: 종단 상태 이후 전이</td><td>FAILED → CONFIRMED</td><td>없는 NFT가 user_nft_holdings에 추가 → 사용자가 보유하지 않은 토큰 소유</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-term">
+  <span class="term-badge">설계 원칙</span>
+  <span class="term-def">"어떤 상태에서 어떤 상태로의 전이가 허용되는가"를 VALID_TRANSITIONS 맵에 명시 → 코드가 유일한 진실(single source of truth)</span>
+</div>
+<hr class="sep">
+
+<!-- Slide 05 -->
+<h3 id="s24-slide05" class="slide-h">Slide 05 — VALID_TRANSITIONS 맵 — 허용 전이 화이트리스트</h3>
+<pre><code>// LedgerService.ts
+private static readonly VALID_TRANSITIONS: Record&lt;MintStatus, MintStatus[]&gt; = {
+  REQUESTED: ['SUBMITTED', 'FAILED'],             // 발행 요청 생성 → VASP 제출 or 즉시 실패
+  SUBMITTED: ['MINED',     'FAILED'],             // TX 제출 완료 → 블록 포함 or 실패
+  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],  // 블록 포함 → 확인 or 재편 or 실패
+  CONFIRMED: ['FINALIZED'],                       // 충분한 블록 확인 → PoS Finality 대기
+  FINALIZED: [],                                  // 종단 상태 — PoS 절대 불변
+  FAILED:    [],                                  // 종단 상태 — 재발행 시 새 요청 필요
+  REORGED:   ['MINED', 'FAILED'],                 // 재편 → MINED 복귀 or 포기
+};</code></pre>
+<div class="ann-point"><p>FINALIZED와 FAILED의 허용 전이가 <code>[]</code>임을 주목. 이 두 상태에서 어떤 전이 시도든 즉시 <code>InvalidStateTransitionError</code>가 발생한다. 코드 레벨에서 "되돌릴 수 없음"을 강제한다.</p></div>
+<div class="ann-term">
+  <span class="term-badge">왜 두 레이어가 독립적으로?</span>
+  <span class="term-def">TxStateMachineService가 FINALIZED 전이 완료 후 이벤트 방출 → LedgerService FINALIZED 전이 트리거. 두 레이어가 각자 VALID_TRANSITIONS 가드를 갖고 있어야 어느 쪽에서 중복 이벤트가 와도 안전하다.</span>
+</div>
+<hr class="sep">
+
+<!-- Slide 06 -->
+<h3 id="s24-slide06" class="slide-h">Slide 06 — MintStatus 상태 전이 다이어그램 + 상태별 의미</h3>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>상태</th><th>의미</th><th>설정 주체</th><th>txHash</th></tr></thead>
+  <tbody>
+    <tr><td><code>REQUESTED</code></td><td>발행 요청 생성</td><td>IssuerService</td><td>NULL</td></tr>
+    <tr><td><code>SUBMITTED</code></td><td>VASP에 TX 제출, 블록 대기 (txHash 필수)</td><td>TxStateMachine</td><td>있음</td></tr>
+    <tr><td><code>MINED</code></td><td>블록 포함, REORG 가능 구간</td><td>TxStateMachine</td><td>있음</td></tr>
+    <tr><td><code>CONFIRMED</code></td><td>충분한 블록 확인 (N confirmations)</td><td>TxStateMachine</td><td>있음</td></tr>
+    <tr><td><code>FINALIZED</code></td><td>PoS 2/3+ validator 동의 → 절대 불변 (종단)</td><td>TxStateMachine</td><td>있음</td></tr>
+    <tr><td><code>FAILED</code></td><td>TX 실패, 재발행 시 새 요청 필요 (종단)</td><td>TxStateMachine</td><td>있을 수도</td></tr>
+    <tr><td><code>REORGED</code></td><td>체인 재편으로 TX 소실 (임시)</td><td>TxStateMachine</td><td>있음(무효)</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-warn"><p>CONFIRMED와 FINALIZED는 별개다. CONFIRMED = N개 블록이 위에 쌓임 (확률적 불변). FINALIZED = PoS validator 2/3 이상이 투표로 확정 (수학적 불변). 교보생명 서비스에서 NFT 소유권 확정 기준은 FINALIZED.</p></div>
+<hr class="sep">
+
+<!-- Slide 07 -->
+<h3 id="s24-slide07" class="slide-h">Slide 07 — InvalidStateTransitionError + MintRequestNotFoundError</h3>
+<pre><code>// 허용되지 않은 상태 전이
+export class InvalidStateTransitionError extends Error {
+  constructor(from: MintStatus, to: MintStatus) {
+    super(`Invalid state transition: ${from} → ${to}`);
+    this.name = 'InvalidStateTransitionError';
+  }
+}
+
+// 레코드가 DB에 없을 때
+export class MintRequestNotFoundError extends Error {
+  constructor(requestId: string) {
+    super(`MintRequest not found: ${requestId}`);
+    this.name = 'MintRequestNotFoundError';
+  }
+}</code></pre>
+<div class="ann-term">
+  <span class="term-badge">this.name 명시 이유</span>
+  <span class="term-def">TypeScript에서 <code>instanceof</code>는 클래스 계층으로 판별한다. catch 블록에서 <code>err instanceof InvalidStateTransitionError</code>로 에러 종류를 구분하려면 name을 명시해야 minify/transpile 이후에도 정확하게 동작한다.</span>
+</div>
+<hr class="sep">
+
+<!-- Slide 08 -->
+<h3 id="s24-slide08" class="slide-h">Slide 08 — updateMintRequest() — 3단계 가드 전체 구현</h3>
+<pre><code>async updateMintRequest(
+  requestId: string,
+  patch: { status: MintStatus; txHash?: string; tokenId?: bigint; errorMsg?: string },
+): Promise&lt;MintRequest&gt; {
+  // 1. 레코드 존재 확인
+  const current = await this.getMintRequest(requestId);
+  if (!current) throw new MintRequestNotFoundError(requestId);
+
+  // 2. 상태 전이 가드
+  const allowed = LedgerService.VALID_TRANSITIONS[current.status];
+  if (!allowed.includes(patch.status))
+    throw new InvalidStateTransitionError(current.status, patch.status);
+
+  // 3. 필드 유효성 가드
+  if (patch.status === 'SUBMITTED' &amp;&amp; !patch.txHash)
+    throw new Error('txHash is required for SUBMITTED');
+  if (patch.status === 'CONFIRMED' &amp;&amp; !patch.tokenId)
+    throw new Error('tokenId is required for CONFIRMED');
+
+  // 4. DB UPDATE — COALESCE로 기존 값 보존
+  await this.db.query(
+    `UPDATE mint_requests
+     SET status     = $1,
+         tx_hash    = COALESCE($2, tx_hash),
+         token_id   = COALESCE($3, token_id),
+         error_msg  = $4,
+         updated_at = NOW()
+     WHERE request_id = $5`,
+    [patch.status, patch.txHash ?? null,
+     patch.tokenId?.toString() ?? null, patch.errorMsg ?? null, requestId],
+  );
+
+  // 5. Audit log — 상태 변경 기록
+  const afterState = { ...current, ...patch };
+  await this.auditLog.log({
+    actor: 'system', action: `STATUS_${patch.status}`,
+    resourceType: 'MintRequest', resourceId: requestId,
+    beforeState: current, afterState,
+  });
+  return afterState as MintRequest;
+}</code></pre>
+<div class="ann-point"><p>가드 순서가 중요하다. ① 존재 확인이 먼저 없으면 current.status에 접근 불가. ② 상태 전이 가드 없이 필드 유효성 가드만 있으면 역전이를 막을 수 없다. ③ 필드 유효성 가드 없으면 좀비 레코드 발생.</p></div>
+<div class="ann-term">
+  <span class="term-badge">COALESCE($2, tx_hash)</span>
+  <span class="term-def">patch.txHash가 null이면 기존 tx_hash 값을 유지. REORGED → MINED 복귀 시처럼 txHash를 다시 명시하지 않아도 기존 값이 보존된다.</span>
+</div>
+<hr class="sep">
+
+<!-- Slide 09 -->
+<h3 id="s24-slide09" class="slide-h">Slide 09 — 왜 필드 유효성 가드도 필요한가 — 좀비 레코드</h3>
+<div class="ann-warn"><p>상태 전이 가드만으로는 충분하지 않다. REQUESTED→SUBMITTED 전이는 허용되지만, txHash 없이 SUBMITTED가 되면 <code>pollStaleRequests()</code>에서 <code>if (!req.txHash) continue</code>로 건너뛰어 SUBMITTED에 영원히 머무르는 "좀비 레코드"가 된다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>상태</th><th>필수 필드</th><th>없으면</th></tr></thead>
+  <tbody>
+    <tr><td>SUBMITTED</td><td>txHash</td><td>폴링 불가 좀비 레코드 — SUBMITTED에서 영원히 대기</td></tr>
+    <tr><td>MINED</td><td>txHash</td><td>확인 대상 TX를 알 수 없음</td></tr>
+    <tr><td>CONFIRMED</td><td>tokenId</td><td>user_nft_holdings와 연결 불가</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="speech">
+  <p>두 가드의 역할이 다르다. 상태 전이 가드는 "어떤 상태에서 어떤 상태로 가는지"를 검사한다. 필드 유효성 가드는 "그 상태로 전이할 때 필요한 데이터가 있는지"를 검사한다. 두 가드가 모두 있어야 완전한 원장 일관성이 보장된다.</p>
+</div>
+<hr class="sep">
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     Slide 10 — 두 상태머신 비교 (핵심 보충 내용)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<h3 id="s24-slide10" class="slide-h">Slide 10 — 두 상태머신의 관계 — TxStateMachineService vs LedgerService</h3>
+
+<div class="ann-point"><p>M3 TxStateMachineService와 M4 LedgerService는 같은 VALID_TRANSITIONS 패턴을 쓰지만 상태 범위와 의미가 다르다. TxStateMachineService는 8개 상태(PENDING 포함), LedgerService는 7개 상태(PENDING 없음). 단순한 수량 차이가 아니라 각 레이어의 책임 범위를 반영한 설계 결정이다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>구분</th><th>TxStateMachineService (M3)</th><th>LedgerService (M4)</th></tr></thead>
+  <tbody>
+    <tr><td>추적 대상</td><td>VASP/블록체인의 TX 상태</td><td>내부 발행 요청의 원장 상태</td></tr>
+    <tr><td>상태 수</td><td>8개 (<code>TxStatus</code>)</td><td>7개 (<code>MintStatus</code>)</td></tr>
+    <tr><td>PENDING 상태</td><td>있음 (mempool 전파 중)</td><td>없음</td></tr>
+    <tr><td>SUBMITTED 의미</td><td>VASP에 전송됨 (txHash 미획득 가능)</td><td>txHash 필수 (필드 가드 강제)</td></tr>
+    <tr><td>에러 클래스</td><td><code>InvalidStatusTransitionError</code></td><td><code>InvalidStateTransitionError</code></td></tr>
+    <tr><td>VALID_TRANSITIONS export</td><td>exported 상수 (테스트 직접 접근)</td><td>private static (내부 전용)</td></tr>
+    <tr><td>역할</td><td>외부 상태 동기화</td><td>내부 원장 일관성 보장</td></tr>
+    <tr><td>트리거</td><td>VASP 콜백, 블록 이벤트, 폴링</td><td>TxStateMachineService 호출</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-warn"><p>M3 없이 M4가 혼자 동작하지 않는다. TxStateMachineService가 먼저 외부(체인) 상태를 동기화하고, 그 결과가 LedgerService 상태 전이를 트리거한다.</p></div>
+
+<h2 id="s24-diff1" class="subsec">차이 1 — PENDING 상태 유무</h2>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>서비스</th><th>SUBMITTED 전이 목록</th><th>PENDING 전이 목록</th></tr></thead>
+  <tbody>
+    <tr><td>TxStateMachineService</td><td><code>['PENDING', 'MINED', 'FAILED']</code></td><td><code>['MINED', 'FAILED']</code></td></tr>
+    <tr><td>LedgerService</td><td><code>['MINED', 'FAILED']</code></td><td>(상태 없음)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-term">
+  <span class="term-badge">PENDING의 의미</span>
+  <span class="term-def">VASP가 txHash를 반환했지만 아직 mempool에서 검색되지 않는 상태. EVM 노드가 TX를 전파받기까지 수십 ms~수 초 지연이 있을 수 있다. TxStateMachineService는 이 구간을 추적해야 gas bump 재전송(<code>handleTimeout()</code>)과 mempool 조회(<code>pollStaleRequests()</code>)를 올바르게 조율할 수 있다.</span>
+</div>
+
+<div class="ann-warn"><p>LedgerService에 PENDING이 없는 이유: 내부 원장은 "txHash가 있는가 없는가"만 추적하면 충분하다. mempool 전파 여부는 VASP 통신 레이어(TxStateMachineService)의 내부 관심사다. 원장 입장에서 txHash가 있으면 블록 포함을 기다리는 것이고, VASP가 어느 단계에서 txHash를 반환했는지는 관심 밖이다.</p></div>
+
+<div class="speech">
+  <p>M3에서 TxStateMachineService를 먼저 배웠기 때문에 LedgerService에서 PENDING이 없는 것이 이상하게 보일 수 있다. 그런데 생각해보면 자연스럽다. LedgerService.updateMintRequest()가 SUBMITTED를 전이하는 건 TxStateMachineService가 txHash를 이미 확보한 이후다. txHash가 있다는 것 자체가 "VASP에 TX가 제출됐고, 어느 시점엔가는 채굴될 것"을 의미한다. mempool 전파 상태를 원장이 별도로 추적할 이유가 없다.</p>
+</div>
+
+<div class="ann-warn">
+  <p><strong>실제 코드와 슬라이드의 명칭 불일치:</strong>
+  <code>core-banking/src/ledger/LedgerService.ts</code>를 보면 <code>MintStatus</code>에 <code>PENDING</code>이 존재한다.
+  <code>createMintRequest()</code>가 레코드를 INSERT할 때 <code>status = 'PENDING'</code>으로 시작한다.
+  이 PENDING의 의미는 "mint 요청은 생성됐지만 TX를 아직 블록체인에 broadcast하지 않은 초기 상태" —
+  슬라이드에서 <strong>REQUESTED</strong>라고 부른 것과 동일한 pre-TX 단계다.
+  슬라이드는 교육 목적으로 의미가 더 명확한 REQUESTED로 명명했고, 실제 구현은 PENDING을 사용했다.</p>
+  <p>또한 이 파일의 <code>MintStatus</code>는 <code>FINALIZED</code>와 <code>REORGED</code>도 포함하고 있다 (슬라이드 설계에서는 M3 전용).
+  <code>VALID_TRANSITIONS</code>를 보면: <code>MINED → ['CONFIRMED', 'REORGED', 'FAILED']</code>, <code>CONFIRMED → ['FINALIZED']</code>.
+  즉 MintStatus가 온체인 이벤트(Reorg, Finalize)까지 직접 추적하는 더 넓은 설계다.
+  슬라이드는 핵심 4단계(REQUESTED→SUBMITTED→MINED→CONFIRMED)만 강조했을 뿐, 실제 구현은 그 이상을 커버한다.</p>
+</div>
+
+<h2 id="s24-diff2" class="subsec">차이 2 — SUBMITTED 상태의 의미 차이</h2>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th></th><th>TxStateMachineService</th><th>LedgerService</th></tr></thead>
+  <tbody>
+    <tr><td>SUBMITTED 정의</td><td>"VASP에 요청을 보낸 상태" — txHash가 아직 없을 수 있음 (→ PENDING으로 전이해서 획득)</td><td>"txHash를 획득한 상태" — txHash 없으면 필드 가드가 즉시 Error</td></tr>
+    <tr><td>이후 전이</td><td>PENDING (mempool 전파 확인) or MINED (직접) or FAILED</td><td>MINED (블록 포함 확인) or FAILED</td></tr>
+    <tr><td>txHash 보장</td><td>없음 — SUBMITTED 시점에 없을 수 있음</td><td>있음 — <code>if (!patch.txHash) throw Error</code> 강제</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-point"><p>LedgerService에서 SUBMITTED 필드 가드가 txHash를 필수로 강제하는 이유: txHash가 없으면 LedgerService가 이후 폴링이나 상태 확인을 할 수 없다. 원장이 SUBMITTED 상태인데 txHash가 null이면 어떤 TX를 추적해야 하는지 알 수 없다. TxStateMachineService는 txHash를 획득한 다음에만 LedgerService를 호출하도록 설계되어 있으므로, 이 필드 가드는 계층 간 계약을 강제한다.</p></div>
+
+<div class="speech">
+  <p>정리하면 이렇다. TxStateMachineService에서 SUBMITTED는 "VASP API를 호출했다"는 뜻이고, txHash는 그 다음에 반환된다. 그래서 SUBMITTED → PENDING 전이가 존재한다. 반면 LedgerService에서 SUBMITTED는 "txHash를 가지고 VASP 제출이 완료됐다"는 뜻이다. 같은 이름이지만 추상화 레벨이 다르다.</p>
+</div>
+
+<h2 id="s24-diff3" class="subsec">차이 3 — 에러 클래스 이름</h2>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>서비스</th><th>에러 클래스</th><th>네이밍 의도</th></tr></thead>
+  <tbody>
+    <tr><td>TxStateMachineService</td><td><code>InvalidStatusTransitionError</code></td><td>TxStatus enum 값 전이 오류 — <strong>외부 TX의 Status</strong></td></tr>
+    <tr><td>LedgerService</td><td><code>InvalidStateTransitionError</code></td><td>도메인 원장 전이 오류 — <strong>내부 도메인의 State</strong></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-term">
+  <span class="term-badge">Status vs State</span>
+  <span class="term-def">TxStateMachineService는 외부 TX의 "status"(VASP에서 온 값)를 추적. LedgerService는 내부 도메인 객체의 "state"(비즈니스 상태)를 관리. 이름이 달라야 catch 블록에서 두 에러를 구분할 수 있다.</span>
+</div>
+
+<div class="ann-point"><p>실무에서 이벤트 핸들러가 두 레이어를 모두 호출하는 경우, 같은 catch 블록에 두 에러가 올 수 있다. 이름이 달라야 <code>err instanceof InvalidStateTransitionError</code>로 원장 레이어의 전이 실패를 구분해서 대응할 수 있다 — 예를 들어 InvalidStateTransitionError는 DLQ가 아니라 중복 이벤트로 분류해 조용히 무시할 수 있다.</p></div>
+
+<div class="speech">
+  <p>이 세 가지 차이는 각각 독립적인 설계 결정이다. PENDING 유무는 "이 레이어가 mempool 상태까지 추적할 책임이 있는가"에 대한 답이다. SUBMITTED 의미 차이는 "이 레이어에 도달할 때 txHash가 있음이 보장되는가"에 대한 계층 간 계약이다. 에러 클래스 이름은 도메인 언어를 명확히 구분하기 위한 결정이다.</p>
+  <p>수강생들이 "왜 TxStateMachineService처럼 PENDING을 그냥 넣으면 안 되나요?"라고 물을 수 있다. 기술적으로는 넣어도 동작한다. 하지만 LedgerService에서 PENDING 상태는 의미가 없다 — 그 상태에서 할 수 있는 일이 없기 때문이다. txHash가 있으면 블록 포함을 기다리면 된다. 의미 없는 상태를 추가하면 상태머신이 복잡해지고, "이 레코드가 왜 PENDING이지?"라는 혼란이 생긴다.</p>
+</div>
+
+<hr class="sep">
+
+<!-- Slide 11 -->
+<h3 id="s24-slide11" class="slide-h">Slide 09 — 두 상태머신 직렬 작동 — 전체 발행 흐름</h3>
+<p style="font-size:11px;color:#9ca3af;margin-bottom:10px">※ 발표자료 슬라이드 번호 변경: 구 Slide 11 → 새 Slide 09 (가로 타임라인으로 재디자인)</p>
+
+<p>IssuerService · TxStateMachineService · ConsumerGroupWorker 세 구간에 걸쳐 M3(TxStatus)와 M4(MintStatus)가 동일 체인 이벤트를 다른 시점에 반영한다. M3 박스가 M4보다 항상 약간 앞서는 배치가 의도적 설계 — 그 간극이 ReconcileService 대사 윈도우다.</p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>구간</th><th>주체</th><th>M3 TxStatus</th><th>M4 MintStatus</th><th>DB 반영 (mint_requests)</th></tr></thead>
+  <tbody>
+    <tr><td>①</td><td>IssuerService</td><td>—</td><td>→ <code>REQUESTED</code></td><td><code>status='REQUESTED'</code></td></tr>
+    <tr><td>②</td><td>IssuerService</td><td>→ <code>SUBMITTED</code></td><td>→ <code>SUBMITTED</code></td><td><code>status='SUBMITTED'</code>, <code>tx_hash=txHash</code></td></tr>
+    <tr><td>③</td><td>TxStateMachine</td><td><code>SUBMITTED → PENDING</code> (멤풀 대기)</td><td>— <em>(M4 없음)</em></td><td>M3 내부 상태만</td></tr>
+    <tr><td>④</td><td>TxStateMachine</td><td>→ <code>MINED</code></td><td>→ <code>MINED</code></td><td><code>status='MINED'</code>, <code>block_number=N</code><br><small>emit 'transition' → M4 observer가 수신</small></td></tr>
+    <tr><td>⑤</td><td>TxStateMachine</td><td>→ <code>FINALIZED</code></td><td>— <em>(대사 윈도우 시작)</em></td><td>M3 내부 상태만</td></tr>
+    <tr><td>⑥</td><td>ConsumerGroupWorker</td><td>—</td><td>→ <code>CONFIRMED</code></td><td><code>status='CONFIRMED'</code>, <code>token_id</code><br><code>holdings.token_count += 1</code><br><code>processed_events</code> (멱등성 키 기록)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>가로 타임라인에서 두 가지를 눈여겨봐야 한다.</p>
+  <p>첫째, M3와 M4가 SUBMITTED·MINED 같은 이름의 상태를 공유하는 것처럼 보이지만, 슬라이드에서 M4 박스는 M3보다 항상 오른쪽에 그려진다. 블록체인 이벤트가 먼저 M3에 도달하고 M3가 <code>'transition'</code> 이벤트를 방출하면 M4 Observer가 반응하는 구조이기 때문이다. 이 시간차가 의도된 설계다.</p>
+  <p>둘째, M3는 FINALIZED에서 끝나지만 M4는 그 이후에도 ConsumerGroupWorker가 NFTIssued 이벤트를 처리할 때까지 MINED 상태에 머문다. 이 구간이 대사 윈도우다. M3는 이미 블록체인 최종성을 확인했는데 M4는 아직 원장 반영이 완료되지 않은 상태 — ReconcileService가 이 간극을 감시하고, 일정 시간이 지나도 M4가 CONFIRMED가 되지 않으면 알람을 발생시킨다.</p>
+</div>
+
+<div class="ann-point">
+  <p><strong>왜 M3(TxStatus)에 REQUESTED가 없나</strong></p>
+  <p>TxStateMachineService는 블록체인 TX가 생성된 이후부터 추적한다. 사용자 요청이 접수됐지만 <code>vaspClient.submitMint()</code>가 아직 호출되지 않은 구간은 TX 자체가 존재하지 않으므로 M3의 추적 범위 밖이다. REQUESTED는 "TX 없는 원장 상태"를 표현하는 M4 고유 상태다.</p>
+</div>
+
+<div class="ann-point">
+  <p><strong>왜 M4(MintStatus)에 CONFIRMED가 있고 M3에는 없나</strong></p>
+  <p>M4의 CONFIRMED는 블록체인 확인과 별개로 <strong>"원장에 tokenId가 기록되고 holdings가 업데이트된 완료 시점"</strong>을 나타낸다. 이 작업은 ConsumerGroupWorker가 NFTIssued 이벤트를 처리한 뒤 수행하는 원장 레이어의 책임이다. TxStateMachineService는 FINALIZED 이후 블록체인 관점의 역할이 끝나므로 이 상태가 필요하지 않다.</p>
+  <p>따라서 두 상태머신의 상태 집합은 의도적으로 비대칭이다. M3는 앞에 PENDING이 있고, M4는 앞에 REQUESTED, 뒤에 CONFIRMED가 있다. 각 상태머신이 책임지는 레이어가 다르기 때문이다.</p>
+</div>
+
+<div class="ann-term">
+  <span class="term-badge">대사 윈도우 (Reconciliation Window)</span>
+  <span class="term-def">M3와 M4의 상태가 일치하지 않는 모든 구간. 두 가지로 구분한다.<br><br>
+  <strong>① 정상 허용 윈도우</strong> — M3 FINALIZED 이후 ConsumerGroupWorker가 NFTIssued 이벤트를 처리해 M4가 CONFIRMED로 전이하기까지의 정상 지연 구간 (예: 최대 5분). 이 범위 안이면 ReconcileService가 무시한다.<br><br>
+  <strong>② 비정상 불일치 구간 — 알람 대상</strong><br>
+  · M3 = FINALIZED, M4 = MINED 상태로 허용 시간 초과 → Consumer 장애 의심<br>
+  · M3 = REORGED, M4 = MINED 또는 CONFIRMED → 체인 재편 발생, M4 롤백 필요<br>
+  · M3 = FAILED, M4 = SUBMITTED 또는 MINED → TX 실패했는데 원장이 미반영<br>
+  · M3 = MINED, M4 = SUBMITTED 상태로 장시간 유지 → Observer 이벤트 유실 의심<br><br>
+  두 상태머신을 분리한 핵심 이유 중 하나가 바로 이 감시 가능성이다. 만약 합쳤다면 M3·M4 간 간극 자체가 사라져 이벤트 유실·지연·REORG 미반영을 감지할 수 없다.</span>
+</div>
+<hr class="sep">
+
+<!-- Slide 12 -->
+<h3 id="s24-slide12" class="slide-h">Slide 12 — 멱등 이벤트 처리 — 중복 이벤트 도착 시나리오</h3>
+<div class="ann-point"><p>XACK 전에 Worker가 재시작되면 Redis가 PEL에서 같은 메시지를 재전달한다. 상태 전이 가드만 있으면 이미 처리된 이벤트가 <code>InvalidStateTransitionError</code>로 DLQ에 쌓인다. <code>processed_events</code> 테이블이 이를 먼저 막아야 한다.</p></div>
+<div class="ann-term">
+  <span class="term-badge">선점(sentinel) 패턴</span>
+  <span class="term-def">처리 시작을 DB에 먼저 기록 (<code>recordProcessedEvent</code>). 중간에 프로세스가 죽어도 재처리 시 "이미 처리됨"을 판별 가능. 비즈니스 로직보다 반드시 먼저 실행해야 한다.</span>
+</div>
+<hr class="sep">
+
+<!-- Slide 13 -->
+<h3 id="s24-slide13" class="slide-h">Slide 13 — recordProcessedEvent가 첫 번째 줄이어야 하는 이유</h3>
+<pre><code>async handleNFTIssued(event) {
+  // 반드시 첫 번째 — "이 이벤트를 처리 중"임을 DB에 선점 기록
+  const evResult = await ledger.recordProcessedEvent(
+    event.txHash, event.logIndex, 'NFTIssued', event.blockNumber, event.payload,
+  );
+  if (evResult.skipped) {
+    return; // 이미 처리됨 → XACK하고 조용히 종료
+  }
+  // 신규 이벤트만 비즈니스 로직 실행
+  await ledger.updateMintRequest(requestId, { status: 'CONFIRMED', tokenId: event.tokenId });
+  await ledger.addHolding(userId, event.tokenId, policyId);
+}</code></pre>
+<div class="ann-warn"><p>잘못된 순서(updateMintRequest 먼저): Worker 재시작 후 재처리 시 recordProcessedEvent가 "없음"으로 판별 → updateMintRequest 다시 시도 → 이미 CONFIRMED → <code>InvalidStateTransitionError</code> → DLQ, 담당자 알림. 선점 패턴이 이 시나리오를 방어한다.</p></div>
+<hr class="sep">
+
+<!-- Slide 14 -->
+<h3 id="s24-slide14" class="slide-h">Slide 14 — recordProcessedEvent 구현 — ON CONFLICT DO NOTHING</h3>
+<pre><code>async recordProcessedEvent(
+  txHash: string, logIndex: number,
+  eventName: string, blockNumber: bigint, payload: unknown,
+): Promise&lt;ProcessedEventResult&gt; {
+  const result = await this.db.query(
+    `INSERT INTO processed_events (tx_hash, log_index, event_name, block_number, payload)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (tx_hash, log_index) DO NOTHING
+     RETURNING id`,
+    [txHash, logIndex, eventName, blockNumber.toString(), JSON.stringify(payload)],
+  );
+  if (result.rows.length === 0) {
+    return { skipped: true }; // UNIQUE 충돌 → 이미 처리된 이벤트
+  }
+  return { skipped: false, id: result.rows[0].id as number };
+}</code></pre>
+<div class="ann-point"><p>SELECT-then-INSERT는 위험하다. 동시에 두 Worker가 SELECT → 둘 다 "없음" 판별 → 둘 다 INSERT 시도 → 하나는 UNIQUE 위반. <code>ON CONFLICT DO NOTHING</code>이 원자적으로 처리해서 이 race condition을 방어한다.</p></div>
+<hr class="sep">
+
+<!-- Slide 15 -->
+<h3 id="s24-slide15" class="slide-h">Slide 15 — 실습 테스트 케이스 전체</h3>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>케이스</th><th>기대 결과</th></tr></thead>
+  <tbody>
+    <tr><td>REQUESTED → SUBMITTED (txHash 있음)</td><td>통과</td></tr>
+    <tr><td>CONFIRMED → SUBMITTED (역전이)</td><td>InvalidStateTransitionError</td></tr>
+    <tr><td>FAILED → CONFIRMED (종단 이후 전이)</td><td>InvalidStateTransitionError</td></tr>
+    <tr><td>SUBMITTED + txHash 누락</td><td>"txHash is required" 에러</td></tr>
+    <tr><td>REORGED → MINED 복귀</td><td>통과</td></tr>
+    <tr><td>동일 txHash+logIndex 2회</td><td>2번째 skipped: true</td></tr>
+    <tr><td>같은 txHash, 다른 logIndex</td><td>둘 다 skipped: false</td></tr>
+  </tbody>
+</table>
+</div>
+<hr class="sep">
+
+<!-- Slide 16 -->
+<h3 id="s24-slide16" class="slide-h">Slide 16 — S24 완료 기준</h3>
+<ul>
+  <li class="chk">REQUESTED→SUBMITTED→MINED→CONFIRMED→FINALIZED 정방향 모두 통과</li>
+  <li class="chk">CONFIRMED→SUBMITTED, FAILED→CONFIRMED 등 역전이 → InvalidStateTransitionError</li>
+  <li class="chk">SUBMITTED 전이 시 txHash 누락 → 에러</li>
+  <li class="chk">CONFIRMED 전이 시 tokenId 누락 → 에러</li>
+  <li class="chk">REORGED → MINED 복귀 정상 통과</li>
+  <li class="chk">동일 (txHash, logIndex) 2회 → skipped: true</li>
+  <li class="chk">같은 txHash, 다른 logIndex → 각각 skipped: false</li>
+  <li class="chk">recordProcessedEvent가 핸들러 첫 번째 줄이어야 하는 이유 설명 가능</li>
+  <li class="chk">TxStateMachineService vs LedgerService 3가지 차이 설명 가능 (PENDING·SUBMITTED·에러클래스)</li>
+</ul>
+<hr class="sep">
+
+<!-- Slide 17 -->
+<h3 id="s24-slide17" class="slide-h">Slide 17 — TxStateMachineService — 전체 구조와 의존성</h3>
+<pre><code>// M3 S13 — internal/packages/vasp/src/tx/TxStateMachineService.ts
+export const VALID_TRANSITIONS: Record&lt;TxStatus, TxStatus[]&gt; = {
+  REQUESTED: ['SUBMITTED', 'FAILED'],
+  SUBMITTED: ['PENDING', 'MINED', 'FAILED'],  // ← LedgerService와 차이: PENDING 있음
+  PENDING:   ['MINED',    'FAILED'],           // ← LedgerService에 없는 상태
+  MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
+  CONFIRMED: ['FINALIZED'],
+  FINALIZED: [],
+  FAILED:    [],
+  REORGED:   ['MINED', 'FAILED'],
+};</code></pre>
+<div class="ann-point"><p>VALID_TRANSITIONS가 exported 상수다 — LedgerService의 <code>private static</code>과 달리. 테스트에서 직접 import해 허용 전이 목록을 검증할 수 있다. <code>class TxStateMachineService extends EventEmitter</code> — Observer 패턴으로 'transition' 이벤트를 방출해 LedgerService와 느슨하게 결합.</p></div>
+<hr class="sep">
+
+<!-- Slide 18 -->
+<h3 id="s24-slide18" class="slide-h">Slide 18 — _transition() + EventEmitter Observer 패턴</h3>
+<pre><code>private async _transition(req: MintRequest, to: TxStatus, extra?: Partial&lt;MintRequest&gt;): Promise&lt;void&gt; {
+  const from = req.status;
+  if (!VALID_TRANSITIONS[from].includes(to)) {
+    throw new InvalidStatusTransitionError(from, to);
+  }
+  await this.repo.updateStatus(req.id, to, extra);
+  this.emit('transition', {
+    requestId: req.id, from, to,
+    req: { ...req, status: to, ...extra, updatedAt: new Date() },
+  } satisfies TxTransitionEvent);
+}</code></pre>
+<div class="ann-term">
+  <span class="term-badge">Observer 패턴</span>
+  <span class="term-def">TxStateMachineService가 LedgerService를 직접 호출하지 않는다. 'transition' 이벤트를 방출하고, 구독자(ConsumerGroupWorker)가 반응해 LedgerService를 호출한다. 두 서비스 간 직접 의존성이 없다.</span>
+</div>
+<div class="ann-term">
+  <span class="term-badge">satisfies (TS 4.9+)</span>
+  <span class="term-def">타입 확인은 하되 타입 추론은 유지. <code>emit()</code> 인자가 <code>TxTransitionEvent</code> 형태임을 컴파일 타임에 검증하면서, 이후 코드에서 더 좁은 타입으로 추론 가능.</span>
+</div>
+<hr class="sep">
+
+<!-- Slide 19 -->
+<h3 id="s24-slide19" class="slide-h">Slide 19 — handleFailed() + handleTimeout() — 비정상 처리 패턴</h3>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>구분</th><th>REVERT (handleFailed)</th><th>TIMEOUT (handleTimeout)</th></tr></thead>
+  <tbody>
+    <tr><td>원인</td><td>스마트컨트랙트 revert</td><td>TX가 mempool에서 채굴 안 됨</td></tr>
+    <tr><td>상태 전이</td><td>→ FAILED (즉시)</td><td>PENDING 유지 (전이 아님)</td></tr>
+    <tr><td>조치</td><td>자동 재시도 없음</td><td>gas 20% 올려 재전송</td></tr>
+    <tr><td>_transition() 호출</td><td>예</td><td>아니오 (<code>repo.updateStatus()</code> 직접)</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-warn"><p><code>handleTimeout()</code>은 상태 전이가 아니다. PENDING → PENDING이고, txHash와 retryCount만 갱신된다. <code>_transition()</code>을 호출하지 않으므로 observer 이벤트도 방출하지 않는다.</p></div>
+<hr class="sep">
+
+<!-- Slide 20 -->
+<h3 id="s24-slide20" class="slide-h">Slide 20 — handleReorg() — 체인 재편(Chain Reorganization) 처리</h3>
+<div class="ann-point"><p>MINED → REORGED 전이 후 5블록(~60초) 대기 → VASP에서 재조회 → MINED 복귀 or FAILED. FINALIZED 이후에는 REORG 불가(PoS 절대 불변). <code>_waitBlocks(5)</code> = ~60초 블로킹이므로 <code>handleReorg()</code>는 반드시 비동기로 호출해야 한다.</p></div>
+<hr class="sep">
+
+<!-- Slide 21 -->
+<h3 id="s24-slide21" class="slide-h">Slide 21 — pollStaleRequests() — PENDING 30분 초과 건 일괄 처리</h3>
+<div class="ann-point"><p>콜백 유실 방어선. <code>findPendingOlderThan(30)</code>으로 30분 이상 PENDING인 레코드를 조회해 VASP에 직접 상태를 조회한다. <code>if (!req.txHash) continue</code>로 txHash 없는 케이스는 건너뛴다. 5분 크론으로 실행하므로 <code>idx_mint_requests_status</code> 인덱스 필수 — 없으면 매 5분마다 테이블 전체 스캔.</p></div>
+<hr class="sep">
+
+<!-- Slide 22 -->
+<h3 id="s24-slide22" class="slide-h">Slide 22 — VaspTxClient 인터페이스 — Phase 진화 전략</h3>
+<div class="ann-point"><p>OCP(개방-폐쇄 원칙). Phase 1→2→3로 구현체를 교체해도 TxStateMachineService 코드는 한 줄도 수정하지 않는다. <code>submitMint()</code>에 requestId를 전달해 VASP가 멱등 처리 — 같은 요청 재전송 시 TX 중복 발행을 VASP 레벨에서 방지한다.</p></div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════
+     S25 — ReconcileService
+     ════════════════════════════════════════════════════════════ -->
+<section id="session-25" class="session" style="--sc:#065F46;--sb:#ECFDF5;--sbd:#6EE7B7">
+<h1 class="session-title"><span class="badge">S25</span>ReconcileService — 온체인 ↔ 원장 불일치 감지·복구</h1>
+<hr class="sep">
+
+<h3 id="s25-slide03" class="slide-h">Slide 03 — 원장과 온체인이 어긋나는 상황 — 3가지 시나리오</h3>
+
+<div class="ann-point"><p>S24에서 멱등 처리를 구현했지만 그것만으로는 부족하다. 멱등성은 "같은 이벤트가 두 번 처리되지 않도록" 방어하는 것이다. 그런데 이벤트 자체가 처리되지 않으면? 그 간극이 바로 불일치다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>시나리오</th><th>원인</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>Consumer 장애</td><td>DB 서버 순간 장애 → Worker crash → PEL 잔류 → DLQ 지연</td><td>온체인: balanceOf=1 / 원장: holdings 없음</td></tr>
+    <tr><td>블록 Reorg</td><td>블록 #1000 폐기 → TX 소실</td><td>온체인: NFT 없음 / 원장: 보유 기록 남음</td></tr>
+    <tr><td>운영자 실수</td><td>DB 직접 접속 → 레코드 삭제</td><td>온체인: balanceOf=1 / 원장: NFT 없음</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"멱등성 처리를 구현했는데 왜 또 ReconcileService가 필요한가요?"</p>
+  <p>멱등성은 중복 처리를 막는다. 하지만 이벤트가 아예 처리되지 않은 케이스는 다른 문제다. Consumer가 죽어서 DLQ에 쌓인 이벤트는 멱등성 가드가 건드릴 수가 없다. 도달 자체가 안 됐으니까. 또 Reorg는 이미 처리한 이벤트가 온체인에서 사라지는 것이다. 이건 멱등성의 반대 방향 문제다. ReconcileService는 이 두 케이스 모두를 "결과 비교"로 잡아낸다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide04" class="slide-h">Slide 04 — 단일 진실 원칙 — 온체인이 항상 맞다</h3>
+
+<div class="ann-term">
+  <span class="term-badge">Source of Truth</span>
+  <span class="term-def">시스템 내에서 데이터의 최종 기준이 되는 단일 원본. 블록체인에서는 온체인 상태(balanceOf() 반환값)가 이 역할을 한다. 원장은 온체인 이벤트를 읽어 구성한 파생 캐시에 불과하다.</span>
+</div>
+
+<div class="ann-point"><p>원장이 캐시라는 사실이 역방향 금지의 근거다. 캐시는 원본과 달라질 수 있다 — 그게 캐시의 본질이다. 불일치가 생겼을 때 캐시를 원본에 맞추는 게 맞다. 반대로 캐시를 기준으로 원본(온체인)을 수정하는 코드가 있다면, 원장 DB를 조작하는 것만으로 블록체인에 TX를 발생시킬 수 있게 된다.</p></div>
+
+<div class="ann-warn"><p>원장 DB는 일반 PostgreSQL이다. DBA 권한이 있는 사람이라면 직접 UPDATE/INSERT가 가능하다. 이 DB 조작이 온체인 TX를 유발하는 코드가 있다면 — 이것은 권한 분리 원칙 위반이자 보안 취약점이다.</p></div>
+<hr class="sep">
+
+<h3 id="s25-slide05" class="slide-h">Slide 05 — 역방향 금지 — ReconcileService가 하는 것 vs 안 하는 것</h3>
+
+<div class="ann-point"><p>ReconcileService의 경계를 명확히 정의하는 슬라이드다. 무엇을 해도 되는가보다 무엇을 절대 하면 안 되는가가 더 중요하다.</p></div>
+
+<p style="font-weight:700; margin-top:14px;">✅ 하는 것 — 항목별 의미</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>항목</th><th>설명</th><th>핵심 포인트</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>balanceOf(addr, tokenId)</code> 조회</td>
+      <td>ERC-1155 표준 함수. 온체인 어댑터를 통해 호출</td>
+      <td>읽기(view) 함수 — TX 발생 없음, 가스비 없음</td>
+    </tr>
+    <tr>
+      <td><code>user_nft_holdings</code> SELECT</td>
+      <td>원장 DB에서 해당 사용자의 보유 목록 조회</td>
+      <td>SELECT만 — INSERT/UPDATE/DELETE 절대 없음</td>
+    </tr>
+    <tr>
+      <td>LEDGER_ONLY / ONCHAIN_ONLY 분류</td>
+      <td>불일치 유형을 두 가지로 구분</td>
+      <td>원인이 달라서 대응도 달라진다 — 구분이 필수</td>
+    </tr>
+    <tr>
+      <td><code>isHealthy</code> 판정</td>
+      <td><code>discrepancies.length === 0</code>이면 true</td>
+      <td>단 1건도 isHealthy = false. 허용 오차 없음</td>
+    </tr>
+    <tr>
+      <td><code>alerter.fire()</code> 호출</td>
+      <td>불일치 건수 기준 warn / critical 발송</td>
+      <td>알림 발송 후 역할 끝 — 보정은 담당자 몫</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-code"><p><code>balanceOf()</code>는 EVM에서 <code>view</code> 함수로 선언된다. view 함수는 상태를 변경하지 않기 때문에 TX를 발생시키지 않는다. 즉 가스비가 없고, 어떤 노드에 얼마나 많이 호출해도 온체인 상태에 영향을 주지 않는다. ReconcileService가 조회 호출을 많이 해도 괜찮은 이유다.</p></div>
+
+<p style="font-weight:700; margin-top:14px;">❌ 안 하는 것 — 항목별 이유</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>항목</th><th>금지 이유</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>원장 자동 보정 (강제 INSERT)</td>
+      <td>처리 지연(250ms)인지 진짜 불일치인지 코드가 판단 불가 → 이중 삽입으로 데이터 오염 가능</td>
+    </tr>
+    <tr>
+      <td>온체인 mint / burn TX 발행</td>
+      <td>원장 → 온체인 방향 = 보안 공격 경로. DB 권한자가 원장 조작 → TX 유발 가능</td>
+    </tr>
+    <tr>
+      <td>불일치 자동 해소</td>
+      <td>Reorg 구간에서는 노드마다 다른 상태를 반환 → 자동 보정 결과 자체가 신뢰 불가</td>
+    </tr>
+    <tr>
+      <td>원인 판정 없이 DB 직접 수정</td>
+      <td>처리 지연인지, Reorg인지, 버그인지 사람이 먼저 판단해야 한다</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"자동으로 고쳐주면 더 편하지 않나요? 왜 사람이 개입해야 하죠?"</p>
+  <p>편리함과 안전 사이의 선택이다. 자동 보정이 편리한 건 맞다. 그런데 자동 보정이 잘못된 판단을 내리면 문제가 더 커진다. 예를 들어 ConsumerWorker가 250ms 지연 중인데 Reconcile이 먼저 실행됐다고 치자. 자동 보정이 holdings를 강제 삽입하고, 250ms 후 Worker도 삽입하면 — 동일한 tokenId 레코드가 두 개 생긴다. 이중 발행처럼 보이는 데이터 오염이다. 코드는 "이게 지연인지 진짜 불일치인지" 판단할 방법이 없다. 그래서 사람이 봐야 한다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide06" class="slide-h">Slide 06 — 자동 보정 금지: 케이스 A — 정상 지연 오인</h3>
+
+<div class="ann-point"><p><strong>이 슬라이드가 다루는 질문:</strong> "온체인에는 NFT가 있는데 원장에는 없다. 자동으로 원장에 넣으면 되지 않나?" — 이 직관이 왜 틀렸는지 보여주는 케이스다.</p></div>
+
+<p><strong>다이어그램 읽는 법</strong></p>
+<p>슬라이드 다이어그램은 세 줄기의 흐름이 동시에 진행되는 타임라인이다. 왼쪽 세로 축에 세 박스(mint TX → ConsumerWorker → Reconcile 실행)가 시간 순으로 쌓여 있고, 오른쪽에 각 단계의 결과가 나타난다.</p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>다이어그램 요소</th><th>의미</th></tr></thead>
+  <tbody>
+    <tr><td>mint TX (남색 박스)</td><td>스마트 컨트랙트에서 NFT mint 트랜잭션이 블록에 포함된 시점. 이 순간 온체인 balanceOf = 1이 됨</td></tr>
+    <tr><td>ConsumerWorker (주황 박스)</td><td>NFTIssued 이벤트를 Redis Stream에서 읽어 user_nft_holdings에 INSERT하는 작업자. 지금 처리 중 — 아직 끝나지 않았다</td></tr>
+    <tr><td>Reconcile 실행 (빨간 박스)</td><td>스케줄러가 이 타이밍에 실행됨. balanceOf=1이지만 원장에 없으니 "ONCHAIN_ONLY 불일치!" 판정 → 자동 보정: INSERT 강행</td></tr>
+    <tr><td>자동 보정: tokenId 삽입 (빨간 테두리 박스)</td><td>ReconcileService가 직접 user_nft_holdings에 INSERT한 결과</td></tr>
+    <tr><td>Worker도 삽입 완료 (빨간 테두리 박스)</td><td>250ms 지연이 끝난 ConsumerWorker가 정상적으로 INSERT 완료</td></tr>
+    <tr><td>동일 tokenId 2행 생성 (진한 빨간 박스)</td><td>최종 결과 — 같은 tokenId에 대한 holdings 레코드가 두 개. 이중발행처럼 보이는 데이터 오염</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><strong>핵심 메커니즘 — 왜 이런 일이 생기는가</strong></p>
+<p>ReconcileService가 balanceOf(addr, tokenId)를 호출하면 스마트 컨트랙트는 현재 온체인 상태를 그대로 돌려준다. mint TX가 블록에 포함된 직후이므로 balance = 1. 그런데 원장 DB를 보면 user_nft_holdings에 아직 행이 없다. ConsumerWorker가 처리 중이기 때문이다.</p>
+<p>ReconcileService 입장에서 이 상황과 "진짜 Consumer 장애로 이벤트가 영영 처리 안 된 상황"은 <strong>완전히 동일하게 보인다.</strong> 두 경우 모두 온체인 = 1, 원장 = 없음. 코드는 구분할 방법이 없다.</p>
+
+<div class="ann-warn"><p>자동 보정이 개입하면 원래라면 250ms 후 자연스럽게 해소될 문제가 데이터 오염으로 바뀐다. "치료가 병을 만드는" 케이스다. 이중 행을 정리하려면 어떤 행이 Reconcile이 넣은 것이고 어떤 행이 Worker가 넣은 것인지 파악하는 추가 수동 작업이 필요해진다. 문제가 더 커진 것이다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>타임라인</th><th>온체인 상태</th><th>원장 상태</th><th>자동 보정 있을 때</th></tr></thead>
+  <tbody>
+    <tr><td>T+0ms (mint TX 확정)</td><td>balanceOf = 1</td><td>holdings 없음</td><td>—</td></tr>
+    <tr><td>T+50ms (Worker 처리 시작)</td><td>balanceOf = 1</td><td>holdings 없음 (처리 중)</td><td>—</td></tr>
+    <tr><td>T+100ms (Reconcile 실행)</td><td>balanceOf = 1</td><td>holdings 없음</td><td>INSERT 강행 → holdings 1행</td></tr>
+    <tr><td>T+300ms (Worker 완료)</td><td>balanceOf = 1</td><td>holdings 2행 (중복)</td><td>데이터 오염 완성</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+<p><strong>Q: Reconcile 실행 주기를 아주 짧게 하면 해결되지 않나요?</strong></p>
+<p>아니다. 주기 문제가 아니라 설계 문제다. Reconcile을 10ms마다 실행해도 Worker가 11ms 걸리면 그 사이에 Reconcile이 실행되고 동일한 문제가 생긴다. 근본 원인은 "실행 타이밍"이 아니라 "자동으로 수정한다"는 행위 자체다.</p>
+</div>
+
+<div class="speech">
+<p><strong>Q: 그럼 INSERT하기 전에 이미 행이 있는지 확인하면 되지 않나요?</strong></p>
+<p>좋은 시도지만 Race Condition이 남는다. 확인(SELECT)과 삽입(INSERT) 사이에 Worker가 먼저 INSERT하면 동일한 중복 문제가 생긴다. 트랜잭션과 UNIQUE 제약으로 막을 수 있지만, 그러면 Worker의 정상 INSERT가 오류로 처리되어 DLQ로 빠진다. 해결하려 할수록 복잡성이 커지고 새로운 문제가 생긴다. 애초에 자동 보정을 안 하는 것이 가장 단순한 해법이다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide07" class="slide-h">Slide 07 — 자동 보정 금지: 케이스 B — Reorg 구간</h3>
+
+<div class="ann-point"><p><strong>이 슬라이드가 다루는 질문:</strong> "케이스 A는 그렇다 치더라도, 원인이 확실한 경우엔 자동 보정해도 되지 않나?" — 케이스 B는 온체인 자체가 불안정한 순간이 있다는 것을 보여준다. Source of Truth가 흔들리면 Reconcile의 전제가 무너진다.</p></div>
+
+<p><strong>먼저 Reorg가 무엇인지부터</strong></p>
+<p>블록체인은 여러 노드가 블록을 동시에 제안하고 합의하는 구조다. 드물게 두 노드가 거의 동시에 서로 다른 블록을 만들어 네트워크에 전파하면 일시적으로 두 개의 체인이 공존한다. 이후 더 긴 체인이 승리하고 짧은 체인의 블록들은 폐기된다. 이 과정을 Reorg(체인 재구성)라고 한다. 폐기된 블록 안의 트랜잭션은 없었던 일이 된다.</p>
+
+<p><strong>다이어그램 읽는 법</strong></p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>다이어그램 요소</th><th>의미</th></tr></thead>
+  <tbody>
+    <tr><td>#998 (남색 박스)</td><td>정상 확정된 블록. 이 시점까지는 모든 노드가 동일한 상태를 본다</td></tr>
+    <tr><td>#999 (남색 박스, NFTIssued 표시)</td><td>NFT mint 트랜잭션이 포함된 블록. 아직 깊이가 얕아 확정 여부가 불분명</td></tr>
+    <tr><td>#1000 (주황 점선 박스, "미확정")</td><td>Reorg가 시작된 지점. 이 블록이 살아남을지 폐기될지 아직 모른다</td></tr>
+    <tr><td>#1000' (초록 박스, "Reorg 분기")</td><td>다른 노드가 제안한 경쟁 블록. 이 블록이 승리하면 #999도 함께 폐기된다</td></tr>
+    <tr><td>#999 폐기 (진한 빨간 박스)</td><td>Reorg가 확정된 후의 결과. NFTIssued가 포함된 블록이 사라짐 → mint 없었던 일</td></tr>
+    <tr><td>Reconcile 이 순간 실행 (보라색 박스)</td><td>Reorg 진행 중 Reconcile이 실행된 타이밍. 노드마다 다른 상태를 반환하는 구간</td></tr>
+    <tr><td>하단 두 박스</td><td>자동 보정을 어느 방향으로 해도 결국 잘못된 결과가 나온다는 것을 보여줌</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><strong>핵심 메커니즘 — Source of Truth가 흔들리는 순간</strong></p>
+<p>Reconcile의 대전제는 "온체인이 항상 진실"이다. 그런데 Reorg 진행 중에는 이 전제가 성립하지 않는다. 같은 순간 노드 A에 balanceOf를 물으면 1을 반환하고, 노드 B에 물으면 0을 반환할 수 있다. 어느 노드를 Source of Truth로 삼느냐에 따라 자동 보정의 방향이 정반대가 된다.</p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>자동 보정 방향</th><th>Reorg 결과 = #999 폐기</th><th>Reorg 결과 = #999 생존</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>원장에 NFT 삽입 (노드 A 기준)</td>
+      <td>온체인엔 NFT 없는데 원장엔 있음 → LEDGER_ONLY 불일치 발생</td>
+      <td>원장과 온체인 일치 → 정상 (운 좋은 경우)</td>
+    </tr>
+    <tr>
+      <td>원장에서 NFT 삭제 (노드 B 기준)</td>
+      <td>원장과 온체인 모두 없음 → 일치 (운 좋은 경우)</td>
+      <td>온체인엔 NFT 있는데 원장엔 없음 → 실제 자산이 원장에서 사라짐</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-warn"><p>어느 방향으로 보정해도 결과의 절반은 틀린다. Reorg가 어떻게 확정될지 Reconcile이 실행되는 시점에는 알 수 없기 때문이다. 이 상황에서 올바른 대응은 "아무것도 하지 않는 것"이다. 불확실성이 해소될 때까지 기다리고, Reorg가 확정된 이후에 상태를 대조한다.</p></div>
+
+<div class="ann-point"><p><strong>Confirmation Depth(확정 깊이)</strong> — 실제 운영 시스템에서는 블록이 충분히 깊이 쌓인 뒤에만 해당 트랜잭션을 최종 확정으로 간주한다. 이더리움 기준으로 통상 12블록(약 2.5분) 이후를 안전 구간으로 본다. ReconcileService는 "12블록 이상 지난 이벤트"만 대조 대상으로 삼아야 Reorg 구간을 피할 수 있다. 실습 코드에서는 단순화를 위해 이 로직을 생략하지만, 실제 금융 서비스에서는 반드시 구현해야 한다.</p></div>
+
+<div class="speech">
+<p><strong>Q: Reorg가 얼마나 자주 일어나나요? 드문 케이스 아닌가요?</strong></p>
+<p>이더리움 메인넷에서 1~2블록 Reorg는 가끔 발생한다. 12블록 이상의 깊은 Reorg는 매우 드물다. 하지만 드물다는 것이 "무시해도 된다"를 의미하지 않는다. 특히 금융 시스템에서는 빈도가 낮아도 발생 시 피해가 크면 반드시 설계에 반영해야 한다. 사용자의 NFT 자산이 원장에서 사라지는 사건은 발생 빈도에 관계없이 절대 허용되지 않는다.</p>
+</div>
+
+<div class="speech">
+<p><strong>Q: Reorg를 감지하는 방법이 있나요?</strong></p>
+<p>있다. 이미 처리한 블록 번호보다 낮은 번호의 블록에서 이벤트가 다시 들어오면 Reorg가 발생한 것이다. 또는 이미 저장한 블록 해시와 현재 노드의 블록 해시가 다를 때도 Reorg를 감지할 수 있다. 이 케이스를 탐지하면 해당 구간의 이벤트 처리를 일시 중단하고 Reorg 확정을 기다린 뒤 재처리해야 한다. S26(AuditLogService)에서 이 흐름을 다룬다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide08" class="slide-h">Slide 08 — 자동 보정 금지: 케이스 C — 보안 공격 경로</h3>
+
+<div class="ann-point"><p><strong>이 슬라이드가 다루는 질문:</strong> "케이스 A·B는 기술적 상황이고, 운영자가 실수하거나 악의적으로 DB를 조작하는 건 다른 문제 아닌가?" — 케이스 C는 자동 보정 설계 자체가 이 조작을 온체인에 연결하는 통로가 된다는 것을 보여준다.</p></div>
+
+<p><strong>다이어그램 읽는 법 — 좌우 비교 구조</strong></p>
+<p>슬라이드는 동일한 사건(운영자 DB 조작)이 자동 보정 유무에 따라 어떻게 다른 결과로 이어지는지를 좌우로 나란히 보여준다.</p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>단계</th><th>자동 보정 있을 때 (왼쪽)</th><th>자동 보정 없을 때 (오른쪽)</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>1. 운영자 DB 조작</td>
+      <td colspan="2">운영자가 DB에 직접 접속해서 user_nft_holdings에 INSERT. 온체인에는 실제 NFT가 없다.</td>
+    </tr>
+    <tr>
+      <td>2. Reconcile 탐지</td>
+      <td>balanceOf = 0, 원장 = 있음 → LEDGER_ONLY 발견. "온체인에 없는데 원장에 있네 → 온체인에 맞춰야지" 판단.</td>
+      <td>balanceOf = 0, 원장 = 있음 → LEDGER_ONLY 발견. 경보만 발송. 끝.</td>
+    </tr>
+    <tr>
+      <td>3. 결과</td>
+      <td>자동 보정 로직: "원장에 있으니 온체인에도 있어야 한다 → mint() 호출". 실제 NFT가 발행된다.</td>
+      <td>온체인 변화 없음. DB 조작 사실이 경보로 드러난다. 보안팀이 조사한다.</td>
+    </tr>
+    <tr>
+      <td>권한의 의미</td>
+      <td>DB INSERT 권한 = 온체인 NFT 발행 권한. DB 접근 계정 하나면 자산을 무한 발행할 수 있다.</td>
+      <td>DB INSERT 권한은 DB INSERT 권한일 뿐. 온체인에 영향 없음. 권한 분리가 유지된다.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-warn"><p><strong>자동 보정의 방향 문제</strong> — 케이스 C에서 Reconcile이 탐지한 불일치는 LEDGER_ONLY다. 원장에는 NFT가 있고, 온체인에는 없다. "온체인이 진실"이라는 원칙을 따르면 원장의 기록을 삭제해야 한다. 그런데 만약 자동 보정이 반대 방향(원장 → 온체인)으로 동작하도록 설계됐다면 — 즉 "원장에 있으니 온체인에도 있어야 한다"고 판단하면 — mint()가 호출된다. 어떤 방향이든 자동 보정 자체가 위험하다. LEDGER_ONLY를 자동으로 삭제하도록 만들었다면? 정상적인 이유로 원장이 먼저 업데이트된 경우를 실수로 삭제할 수 있다.</p></div>
+
+<div class="ann-warn"><p><strong>역설 — 자동 보정이 없어야 보안 도구가 된다</strong><br>
+자동 보정이 있으면: 운영자 조작 → Reconcile 실행 → 온체인 반영. ReconcileService가 공격의 실행 경로가 된다.<br>
+자동 보정이 없으면: 운영자 조작 → Reconcile 탐지 → 경보 발송. ReconcileService가 공격을 발견하는 보안 시스템이 된다.<br>
+같은 시스템이 설계 하나로 공격 도구와 방어 도구 중 하나가 된다.</p></div>
+
+<div class="ann-point"><p><strong>수동 보정의 올바른 의미</strong> — "자동 보정 금지 = 운영자가 DB를 직접 고쳐도 된다"가 아니다. DB 직접 조작도 금지다. 수동 보정이란 다음을 의미한다.</p>
+<ul>
+  <li><strong>ONCHAIN_ONLY 불일치</strong> → 원인 파악 (Consumer DLQ 확인) → 이벤트 재발행 또는 DLQ 재처리 → Consumer가 정상 경로로 원장을 업데이트</li>
+  <li><strong>LEDGER_ONLY 불일치</strong> → 원인 파악 (Reorg인지, DB 조작인지) → Reorg면 해당 holdings 레코드 status를 REVERTED로 변경 → DB 조작이면 보안 인시던트로 처리</li>
+  <li>모든 보정 행위는 AuditLog에 기록. 누가, 언제, 왜, 무엇을 바꿨는지 추적 가능해야 한다.</li>
+</ul>
+</div>
+
+<div class="speech">
+<p><strong>Q: 자동 보정이 없으면 불일치가 계속 쌓이지 않나요? 운영팀이 다 처리할 수 있을까요?</strong></p>
+<p>불일치가 자주 발생한다면 그건 ReconcileService의 문제가 아니라 Consumer 안정성이나 체인 신뢰성의 문제다. 그 근본 원인을 고쳐야 한다. ReconcileService의 역할은 "불일치를 없애는 것"이 아니라 "불일치가 생겼다는 사실을 알리는 것"이다. 진단 도구가 치료까지 담당하면 안 된다. 의사가 있어야 치료한다.</p>
+</div>
+
+<div class="speech">
+<p><strong>Q: 케이스 C에서 "자동 보정이 없으면 조작이 드러난다"고 했는데, 운영자가 경보도 무시하면요?</strong></p>
+<p>맞다. 그래서 ReconcileService 경보는 단순 로그가 아니라 별도 시스템(Slack, PagerDuty, 이메일)으로 발송하고, 24시간 내 확인 의무가 있는 Incident로 관리된다. 또한 경보를 무시했는지 자체도 AuditLog로 추적된다. 보안은 단일 장치로 완성되지 않는다. ReconcileService는 그 레이어 중 하나다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide09" class="slide-h">Slide 09 — reconcileNftHoldings() — 핵심 구현</h3>
+
+<div class="ann-point"><p>5단계 순서가 중요하다. 특히 3단계(LEDGER_ONLY 탐지)와 4단계(ONCHAIN_ONLY 탐지)가 다른 데이터 소스를 보기 때문에 순서를 바꾸면 안 된다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>단계</th><th>동작</th><th>주의점</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>user_nft_holdings WHERE status='ACTIVE' 조회</td><td>ACTIVE만 — REDEEMED 등 비활성 제외</td></tr>
+    <tr><td>2</td><td>user_wallets에서 온체인 지갑 주소 조회</td><td>없으면 Error — 지갑 없는 사용자는 불가</td></tr>
+    <tr><td>3</td><td>각 tokenId → ERC-1155 balanceOf(addr, tokenId)</td><td>balance===0n이면 LEDGER_ONLY. 순차 루프 (Rate Limit)</td></tr>
+    <tr><td>4</td><td>getOnchainNftHoldings(userId)로 온체인 목록 획득</td><td>원장에 없으면 ONCHAIN_ONLY</td></tr>
+    <tr><td>5</td><td>discrepancies.length >= 10 → critical / 미만 → warn</td><td>0건이면 alerter 호출 안 함</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ann-code"><p>3단계에서 RPC 호출이 tokenId 수만큼 발생한다. 사용자가 NFT를 100개 보유하면 100번의 RPC 호출이 필요하다. 운영 환경에서는 Promise.all로 병렬 처리하되 batchSize로 청크를 나눠야 노드의 Rate Limit에 걸리지 않는다. 실습에서는 단순화해서 순차 처리.</p></div>
+
+<div class="speech">
+  <p>"LEDGER_ONLY와 ONCHAIN_ONLY 중 어느 쪽이 더 위험한가요?"</p>
+  <p>LEDGER_ONLY가 더 위험하다. 원장에는 NFT 보유 기록이 있는데 온체인에 없다는 건 — Reorg로 TX가 소실됐거나, 누군가 원장을 직접 조작했다는 뜻이다. 두 경우 모두 즉각 원인을 파악해야 한다. 반면 ONCHAIN_ONLY는 이벤트 미처리 때문인 경우가 많다. Consumer가 복구되면 자연히 해소된다. 그래도 방치하면 사용자 화면에 "내 NFT가 없다"고 보이니 빠르게 처리해야 한다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide10" class="slide-h">Slide 10 — IReconcileService 전체 인터페이스</h3>
+
+<div class="ann-point"><p>인터페이스를 별도 파일(<code>IReconcileService.ts</code>)로 분리하는 이유가 있다. 테스트 코드, 운영 레이어(S54 ReconcileAdminService), 상위 모듈 모두 구현체가 아닌 인터페이스에 의존한다. 구현을 바꿔도 의존 코드가 깨지지 않는다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>메서드</th><th>Phase</th><th>역할</th></tr></thead>
+  <tbody>
+    <tr><td><code>reconcile()</code></td><td>1</td><td>KRW 총발행량 vs 수탁 잔액 대조 → warn / critical 분류</td></tr>
+    <tr><td><code>getLastResult()</code></td><td>1</td><td>최근 대조 결과 인메모리 캐싱 — 재실행 없이 조회</td></tr>
+    <tr><td><code>reconcileNftHoldings(userId)</code></td><td>1</td><td>단일 사용자 NFT 원장 ↔ 온체인 대조</td></tr>
+    <tr><td><code>reconcileAllNftHoldings()</code></td><td>1</td><td>전 사용자 일괄 배치 대조</td></tr>
+    <tr><td><code>onMintEvent(tokenId, amount, blockNumber)</code></td><td>2</td><td>Mint 이벤트 수신 → confirmation depth 확인 → reconcile() 트리거</td></tr>
+    <tr><td><code>onBurnEvent(tokenId, amount, blockNumber)</code></td><td>2</td><td>Burn 이벤트 수신 → confirmation depth 확인 → reconcile() 트리거</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"mintBatch()나 sendTransaction()은 왜 인터페이스에 없나요?"</p>
+  <p>ReconcileService는 탐지 전용이다. 보정 권한이 없다. 만약 인터페이스에 mintBatch()가 있다면 — 누군가 "불일치 발견 → 자동 mint로 보정" 로직을 짤 수 있다. 이게 케이스 C에서 배운 공격 경로다. 인터페이스에서 아예 없애버림으로써 설계 단계에서 차단한다. 이 인터페이스를 구현하는 클래스는 구조적으로 탐지만 할 수 있다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide11" class="slide-h">Slide 11 — NftReconcileResult 타입 설계</h3>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>필드</th><th>타입</th><th>의미</th></tr></thead>
+  <tbody>
+    <tr><td><code>isHealthy</code></td><td><code>boolean</code></td><td>불일치 0건이면 true. 단 1건도 false.</td></tr>
+    <tr><td><code>discrepancies[]</code></td><td><code>Array&lt;{userId, tokenId, type}&gt;</code></td><td>불일치 목록. type은 'LEDGER_ONLY' | 'ONCHAIN_ONLY'</td></tr>
+    <tr><td><code>checkedAt</code></td><td><code>number</code></td><td>대조 실행 시각 (Date.now()). 언제 확인했는지 추적용.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"severity는 왜 NftReconcileResult에 포함되지 않나요?"</p>
+  <p>severity는 건수에 따라 결정되는 정책 값이다. 결과 타입에 넣으면 비즈니스 로직이 데이터 구조에 섞인다. 현재 구현은 alerter.fire()를 호출할 때만 severity를 계산한다 — 결과를 반환하기 전에. 이렇게 하면 severity 임계값이 바뀌어도 타입 정의를 바꿀 필요가 없다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide12" class="slide-h">Slide 12 — ReconcileService 생성자 — 4가지 의존성</h3>
+
+<div class="ann-point"><p>생성자 파라미터 4개가 각각 다른 시스템 경계를 담당한다. coreBanking은 사용자 지갑 주소 조회, onchain은 블록체인 RPC, ledger는 내부 원장 DB, alerter는 알림 시스템. 이 네 경계가 모두 인터페이스(덕타입)로 주입되기 때문에 테스트 코드에서 makeCoreBanking(), makeOnchain() 같은 인메모리 스텁으로 교체할 수 있다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>의존성</th><th>핵심 메서드</th><th>역할</th></tr></thead>
+  <tbody>
+    <tr><td><strong>coreBanking</strong></td><td><code>getUserAccount(userId)</code></td><td>NFT 대조 시 온체인 지갑 주소(walletAddr) 확인</td></tr>
+    <tr><td rowspan="3"><strong>onchain</strong></td><td><code>getTotalSupply() / getCustodyAccountBalance()</code></td><td>KRW 발행량 vs 수탁 잔액 대조</td></tr>
+    <tr><td><code>balanceOf(addr, tokenId) / getNftHoldings(addr)</code></td><td>ERC-1155 NFT 보유 확인</td></tr>
+    <tr><td><code>getBlockNumber()</code></td><td>confirmation depth 계산 (onMintEvent/onBurnEvent용)</td></tr>
+    <tr><td><strong>ledger</strong></td><td><code>getHoldings(userId) / getAllUserIds()</code></td><td>원장 기준 NFT 목록 조회 + 배치 대조용 전체 사용자 목록</td></tr>
+    <tr><td><strong>alerter</strong></td><td><code>fire(message, severity)</code></td><td>불일치 감지 시 warn / critical 알림 발송</td></tr>
+  </tbody>
+</table>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide13" class="slide-h">Slide 13 — reconcileNftHoldings() 구현 단계</h3>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>단계</th><th>동작</th><th>주의점</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>ledger.getHoldings(userId)</code> — 원장 NFT tokenId 목록</td><td>지갑 주소가 아닌 userId 기준</td></tr>
+    <tr><td>2</td><td><code>coreBanking.getUserAccount(userId)</code> — walletAddr 조회</td><td>null이면 Error throw (지갑 없는 사용자 불가)</td></tr>
+    <tr><td>3</td><td>원장 각 tokenId → <code>onchain.balanceOf(addr, tokenId)</code></td><td>balance === 0n → <strong>LEDGER_ONLY</strong> 추가</td></tr>
+    <tr><td>4</td><td><code>onchain.getNftHoldings(addr)</code> → 원장 Set에 없는 tokenId</td><td>→ <strong>ONCHAIN_ONLY</strong> 추가</td></tr>
+    <tr><td>5</td><td>불일치 ≥ 10건 → critical / 1~9건 → warn / 0건 → 알림 없음</td><td>alerter.fire()는 불일치 있을 때만 호출</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"3단계와 4단계를 합치면 안 되나요? 둘 다 원장과 온체인을 비교하는 거잖아요."</p>
+  <p>데이터 소스가 다르다. 3단계는 원장 목록을 기준으로 온체인을 확인한다 — LEDGER_ONLY 탐지. 4단계는 온체인 목록을 기준으로 원장을 확인한다 — ONCHAIN_ONLY 탐지. 한 방향으로만 비교하면 반대쪽 불일치를 놓친다. 두 방향을 모두 확인해야 완전한 대조다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide14" class="slide-h">Slide 14 — severity 분류 — 건수 기준</h3>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>불일치 건수</th><th>isHealthy</th><th>severity</th><th>의미</th></tr></thead>
+  <tbody>
+    <tr><td>0건</td><td>true</td><td>없음</td><td>정상 운영</td></tr>
+    <tr><td>1~9건</td><td>false</td><td>warn</td><td>단발성 이슈 — Consumer 복구 대기 가능</td></tr>
+    <tr><td>10건 이상</td><td>false</td><td>critical</td><td>시스템 수준 장애 가능성 — 즉시 대응</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"10건 임계값은 어떻게 정하나요?"</p>
+  <p>리스크팀과 운영팀이 협의해서 결정한다. 1건도 critical로 보면 알림이 너무 많아져서 "알림 피로"가 생긴다. 담당자가 매번 울리는 알림을 무시하기 시작한다. 반면 임계값이 너무 높으면 심각한 장애를 늦게 발견한다. 10건이 절대적인 수치가 아니다. 코드에서 상수(<code>SEVERITY_THRESHOLD</code>)로 분리해두면 운영 중에도 설정으로 조정할 수 있다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s25-slide15" class="slide-h">Slide 15 — onMintEvent / onBurnEvent — confirmation depth ★</h3>
+
+<div class="ann-point"><p>confirmation depth는 이 세션에서 처음 등장하는 블록체인 운영 개념이다. Reorg 가능 구간에서 reconcile을 실행하면 False Positive(가짜 불일치)가 발생한다. 이벤트가 수신된 블록 번호 기준으로 현재 블록과의 거리를 계산해서, 12블록 미만이면 아직 Reorg 가능 구간이므로 대조를 건너뛴다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>조건</th><th>동작</th><th>이유</th></tr></thead>
+  <tbody>
+    <tr><td><code>currentBlock - eventBlock &lt; 12</code></td><td>return (대조 건너뜀)</td><td>Reorg 가능 구간 — 아직 최종 확정 아님</td></tr>
+    <tr><td><code>currentBlock - eventBlock ≥ 12</code></td><td><code>reconcile()</code> 실행</td><td>12블록(약 2.5분) 이후 = 실질적 최종성 확보</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"왜 12블록인가요? 더 적어도 되지 않나요?"</p>
+  <p>이더리움에서 12블록은 통상적인 안전 구간이다. 블록 생성 간격이 약 12초이므로 12블록은 약 2.5분이다. 역사적으로 이더리움의 Reorg는 대부분 1~3블록 수준에서 발생했다. 12블록을 기다리면 Reorg로 인한 False Positive를 거의 완전히 제거할 수 있다. 실제 서비스에서는 리스크팀 협의로 결정하고 <code>CONFIRMATION_DEPTH = 12</code> 상수로 관리한다.</p>
+  <p>"이 값이 틀리면 어떻게 되나요?"</p>
+  <p>너무 작으면 Reorg 구간에서 reconcile이 실행돼 가짜 불일치 알림이 발생한다 — 담당자가 아무 문제 없는 상황에 불려간다. 너무 크면 실제 불일치를 늦게 발견한다. 12는 보수적인 쪽이다. 금융 서비스이므로 False Negative(놓침)보다 False Positive(오탐)가 낫다고 판단한 값이다.</p>
+</div>
+<hr class="sep">
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════
+     S54 — Reconcile 운영
+     ════════════════════════════════════════════════════════════ -->
+<section id="session-54" class="session" style="--sc:#1E40AF;--sb:#EFF6FF;--sbd:#93C5FD">
+<h1 class="session-title"><span class="badge">S54</span>Reconcile 운영 — 스케줄 설계 · 알림 · 관리 API</h1>
+<hr class="sep">
+
+<h3 id="s54-slide01" class="slide-h">Slide 01 — Reconcile 스케줄링 — Hourly vs Daily 두 계층</h3>
+
+<div class="ann-point"><p>S25에서 구현한 <code>reconcileNftHoldings()</code>는 단일 사용자 검증 로직이다. S54는 "언제, 누구를 대상으로 실행하는가"를 결정하는 운영 레이어다. 비용과 실시간성의 트레이드오프를 두 계층으로 해결한다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>계층</th><th>실행 주기</th><th>대상</th><th>비용</th><th>목적</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Hourly</strong></td><td>매시간 정각</td><td>최근 1시간 변경 사용자만</td><td>낮음</td><td>Consumer 누락·지연 조기 감지</td></tr>
+    <tr><td><strong>Daily</strong></td><td>새벽 3시 KST</td><td>전체 user_nft_holdings</td><td>높음</td><td>Reorg·수동 DB 조작·코드 버그 누적 오차 감지</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"왜 두 계층을 분리하나요? 그냥 매시간 전체 실행하면 안 되나요?"</p>
+  <p>사용자 10,000명 기준으로 한 번의 reconcile = 10,000번의 RPC 호출이다. 매시간 실행하면 하루 240,000번의 RPC 호출이 발생한다. 비용과 처리 시간 모두 부담이다. Hourly는 "최근에 변경된 사람들만" — 실제로 이벤트가 처리된 사용자만 확인한다. Daily는 전체를 훑어 누적 오차를 잡는다. 이 분리가 비용과 실시간성을 모두 잡는 방법이다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s54-slide02" class="slide-h">Slide 02 — 불일치 알림 설계 — P1/P2/P3 + 원인 분류</h3>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>건수</th><th>심각도</th><th>알림 채널</th><th>의미</th></tr></thead>
+  <tbody>
+    <tr><td>1~4건</td><td>P3</td><td>담당자 Slack DM</td><td>단발성. 로그 조회 → 원인 파악 → 이벤트 재처리</td></tr>
+    <tr><td>5~9건</td><td>P2</td><td>팀 채널 @ 태그</td><td>반복 누락 가능성. Consumer + DLQ 조회</td></tr>
+    <tr><td>10건+</td><td>P1</td><td>즉시 에스컬레이션</td><td>시스템 전반 장애 가능성. 파이프라인 전체 점검</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>원인</th><th>증상</th><th>확인</th><th>조치</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A. Consumer 누락</strong></td><td>DLQ에 txHash 존재</td><td>GET /admin/dlq/pending</td><td>DLQ requeue</td></tr>
+    <tr><td><strong>B. Reorg 미처리</strong></td><td>원장 있음, 온체인 없음</td><td>getReceipt(txHash) = null</td><td>원장 레코드 무효 처리</td></tr>
+    <tr><td><strong>C. 수동 DB 조작</strong></td><td>감사 로그에 직접 쿼리 이력</td><td>DB 접근 로그 + 감사 로그</td><td>보안팀 보고</td></tr>
+    <tr><td><strong>D. 코드 버그</strong></td><td>특정 이벤트 타입 반복</td><td>불일치 사용자 × 이벤트 패턴</td><td>코드 수정 + 배포</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"P1이면 무조건 즉시 서비스 중단인가요?"</p>
+  <p>아니다. Reconcile 불일치는 탐지 결과다. 서비스 자체가 멈춘 게 아니라 원장과 온체인이 일치하지 않는다는 신호다. 서비스 중단 여부는 불일치 방향과 원인을 파악한 뒤 결정한다. ONCHAIN_ONLY 10건이 Consumer 재시작으로 해소될 상황이라면 중단이 불필요하다. 판단은 항상 운영자가 한다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s54-slide03" class="slide-h">Slide 03 — 에스컬레이션 절차 — 역방향 수정 절대 금지</h3>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>단계</th><th>동작</th><th>주의</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>불일치 감지 → reconcile_history 자동 기록 + 건수별 알림 발송</td><td>자동</td></tr>
+    <tr><td>2</td><td>원인 분류 — DLQ / getReceipt / DB 로그 / 이벤트 패턴 분석</td><td>읽기 전용 조사</td></tr>
+    <tr><td>3</td><td>보정 방향 확인 — <strong>온체인 기준으로 원장 보정</strong></td><td>역방향 금지 ❌</td></tr>
+    <tr><td>4</td><td>보정 실행 (2인 확인) → AuditLogService.log() 기록 필수</td><td>감사 로그 없으면 미완료</td></tr>
+    <tr><td>5</td><td>POST /admin/reconcile/run → mismatch: false 확인 후 종료</td><td>재대조 필수</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"보정 코드를 짤 때 어떻게 역방향인지 확인하나요?"</p>
+  <p>간단하다. 보정 코드 안에 <code>mintBatch()</code>, <code>mint()</code>, <code>sendTransaction()</code>이 있으면 역방향이다. 이 함수들은 온체인 상태를 변경하는 TX를 발행한다. ReconcileAdminService 안에 이 함수들이 있으면 안 된다. 코드 리뷰 체크리스트에 넣어도 된다. 실제로는 <code>grep mintBatch ReconcileAdminService.ts</code> 결과가 비어야 완료 기준을 통과한다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s54-slide04" class="slide-h">Slide 04 — 실습 1: ReconcileAdminService 스켈레톤 ★</h3>
+
+<div class="ann-point"><p>S54 핵심 실습이다. ReconcileAdminService는 S25 ReconcileService를 호출하는 운영 레이어다. S25가 "한 명을 어떻게 검증하는가"라면, S54는 "언제, 어떤 사람들을 검증하는가"를 결정한다.</p></div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>메서드</th><th>TODO 핵심</th></tr></thead>
+  <tbody>
+    <tr><td><code>runHourlyReconcile()</code></td><td>updated_at >= NOW() - INTERVAL '1 hour' 쿼리로 대상 필터링 → _runReconcileForUsers()</td></tr>
+    <tr><td><code>runDailyReconcile()</code></td><td>SELECT DISTINCT user_id FROM user_nft_holdings → 전체 순회</td></tr>
+    <tr><td><code>runManualReconcile(userId, operator)</code></td><td>auditLog.log(RECONCILE_MANUAL_TRIGGER) 먼저 기록 → [userId] 단건 실행</td></tr>
+    <tr><td><code>_runReconcileForUsers()</code></td><td>reconcileNftHoldings() 루프 → 불일치 시 RECONCILE_MISMATCH_DETECTED 로그 → reconcile_history INSERT → _sendMismatchAlert()</td></tr>
+    <tr><td><code>_sendMismatchAlert()</code></td><td>10건+ → P1 / 5~9건 → P2 / 1~4건 → P3 → notifier.sendAlert()</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"_runReconcileForUsers()에서 한 사용자가 오류를 던지면 전체 루프가 멈추나요?"</p>
+  <p>스켈레톤을 보면 try-catch로 감싸서 개별 오류는 로그만 남기고 계속 진행한다. Daily reconcile이 사용자 8,923명을 순회할 때 한 명이 오류를 던진다고 전체가 중단되면 안 된다. 오류 사용자는 로그에 남겨두고 나머지를 계속 처리한다. 오류 건수도 result에 포함시키는 게 좋은 구현이다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s54-slide05" class="slide-h">Slide 05 — 실습 2: ReconcileAdminRouter 스켈레톤</h3>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>엔드포인트</th><th>입력</th><th>TODO</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /admin/reconcile/history</code></td><td>query: limit, runType</td><td>reconcile_history 조회 → runType 필터 → <code>{ history: [...] }</code></td></tr>
+    <tr><td><code>POST /admin/reconcile/run</code></td><td>body: userId, operator, reason</td><td>userId/operator 없으면 400 → runManualReconcile() → <code>{ mismatch, mismatchCount, durationMs }</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"POST /admin/reconcile/run에 인증이 없어도 되나요?"</p>
+  <p>스켈레톤에는 없다. 실제 운영이라면 JWT 또는 API Key 미들웨어가 앞에 붙어야 한다. 교육용 스켈레톤이니 인증 레이어는 생략했지만, 완료 기준에 "operator 필드가 감사 로그에 기록된다"는 항목이 있다. 누가 트리거했는지 항상 기록되는 설계다. 인증 없어도 추적은 된다 — 하지만 운영에서는 둘 다 필요하다.</p>
+</div>
+<hr class="sep">
+
+<h3 id="s54-slide06" class="slide-h">Slide 06 — 실습 3: cron 등록</h3>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>스케줄</th><th>cron 식</th><th>timezone</th><th>오류 심각도</th></tr></thead>
+  <tbody>
+    <tr><td>Hourly</td><td><code>'0 * * * *'</code></td><td>Asia/Seoul</td><td>P2</td></tr>
+    <tr><td>Daily</td><td><code>'0 3 * * *'</code></td><td>Asia/Seoul</td><td>P1</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="speech">
+  <p>"Daily를 새벽 3시에 하는 이유가 있나요?"</p>
+  <p>두 가지다. 첫째, 트래픽이 가장 낮은 시간이다. 10,000명 × RPC 호출이 서비스 응답 시간에 영향을 주지 않도록. 둘째, 업무 시작 전(9시)에 결과가 나와 있어야 한다. 새벽 3시에 실행하면 오전 9시 출근 전에 이미 결과가 쌓여있고, 불일치가 있으면 출근 즉시 대응할 수 있다. Daily는 수 분에서 수십 분 걸리기도 하므로 여유 시간이 필요하다.</p>
+  <p>"cron이 실패하면 어떻게 아나요?"</p>
+  <p>try-catch 안에서 notifier.sendAlert()를 호출한다. Hourly는 P2, Daily는 P1. Daily가 더 심각한 이유는 — Hourly는 한 번 실패해도 다음 시간에 다시 실행된다. Daily는 하루에 한 번 전체를 확인하는 기회인데 실패하면 24시간 전체 대조가 누락된다.</p>
+</div>
+<hr class="sep">
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════
+     S26 — audit_log SHA-256
+     ════════════════════════════════════════════════════════════ -->
+<section id="session-26" class="session" style="--sc:#92400E;--sb:#FFFBEB;--sbd:#FCD34D">
+<h1 class="session-title"><span class="badge">S26</span>audit_log SHA-256 — 변경 불가 감사 기록 설계</h1>
+<hr class="sep">
+
+<!-- ── Slide 01 ── -->
+<h3 id="s26-slide01" class="slide-h">Slide 01 — 표지</h3>
+<div class="ann-point"><p>S26은 "기록을 남기는 것"이 아니라 "기록이 변조됐는지 증명하는 것"을 다룬다. 금융 시스템에서 감사 로그는 단순한 로그 파일이 아니라 법적 증거 수단이다.</p></div>
+<p>이번 세션에서 구현하는 <code>AuditLogService</code>는 세 가지 금융 규정을 동시에 충족하는 서비스다 — 전자금융감독규정 §34(접근 기록 1년 보존), 가상자산이용자보호법 §15(거래 기록 5년 보존), ISMS-P(암호 무결성 검증). 규정마다 요구하는 것이 다르고, 이 세 가지를 하나의 테이블과 하나의 서비스로 동시에 만족시킨다.</p>
+<div class="ann-term"><span class="term-badge">ISMS-P</span><span class="term-def">Information Security Management System - Personal information. 개인정보보호위원회 + 과학기술정보통신부가 운영하는 <strong>정보보호 및 개인정보보호 관리체계 인증</strong>. 연간 매출 1,500억 이상 또는 일평균 이용자 100만 이상 기업은 의무 인증 대상 — 교보생명이 해당한다. 심사관이 "로그가 변조되지 않았다는 걸 어떻게 증명하느냐"고 물으면 SHA-256 체크섬으로 <code>verifyIntegrity(id)</code>를 돌려서 보여주면 된다. 그것이 checksum 필드가 ISMS-P 항목에 대응하는 이유다.</span></div>
+<p>핵심 메서드는 세 개다. <code>log()</code>는 감사 이벤트를 기록하고 SHA-256 체크섬을 함께 저장한다. <code>verifyIntegrity(id)</code>는 특정 레코드가 저장 이후 변조됐는지 확인한다. <code>queryByResource()</code>&#183;<code>queryByActor()</code>는 규정 보고 및 감사 추적을 위한 조회 메서드다.</p>
+<div class="speech">
+<p>강의는 20분, 실습은 35분이다. SHA-256 체크섬 공식과 generateChecksum() 구현을 새롭게 다룬다. 실습에서는 <code>log()</code>와 <code>verifyIntegrity()</code> 두 메서드만 완성하면 된다. <code>generateChecksum()</code>은 스켈레톤에 이미 구현돼 있다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 02 ── -->
+<h3 id="s26-slide02" class="slide-h">Slide 02 — 왜 감사 로그가 필요한가?</h3>
+<div class="ann-point"><p>이 슬라이드의 질문은 "왜 일반 로그가 아니라 감사 로그인가"다. 일반 로그(console.log, winston)는 검색용이고, 감사 로그는 법적 증거용이다. 요구 수준이 전혀 다르다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>규정</th><th>요건</th><th>AuditLogService 구현</th></tr></thead>
+  <tbody>
+    <tr><td>전자금융감독규정 §34</td><td>접근 기록 1년 이상 보존</td><td>INSERT + actor + 타임스탬프 → 누가 언제 접근했는지 기록</td></tr>
+    <tr><td>가상자산이용자보호법 §15</td><td>거래 기록 5년 보존</td><td>S3 Glacier 백업 정책 → PostgreSQL 1년 + Glacier 5년</td></tr>
+    <tr><td>ISMS-P</td><td>암호 무결성 검증</td><td>SHA-256 checksum 필드 → 기록이 변조됐는지 언제든 검증 가능</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-point"><p>Append-only 원칙 — 감사 로그는 한 번 쓰면 수정&#183;삭제가 불가능해야 한다. 수정이 가능하다면 "기록을 남겼다"는 사실 자체가 의미 없어진다. 조작된 기록을 규제 기관에 제출하면 법적 책임이 더 커진다.</p></div>
+<p><strong>Append-only 구현 방식</strong> — INSERT만 허용한다. 보정이 필요할 때도 기존 레코드를 수정하지 않고 새 INSERT로 처리한다. "id=42 레코드가 잘못됐다"면, 새 레코드에 <code>action: 'CORRECTION'</code>과 <code>beforeState: 원래값</code>을 기록한다. 원래 id=42는 그대로 둔다.</p>
+<p><strong>CORRECTION 패턴 예시</strong></p>
+<pre><code>id=42 : action='KRW_MINT',   afterState={amount: 1000}          ← 잘못 기록된 원본
+id=43 : action='CORRECTION', beforeState={id: 42, amount: 1000},
+                              afterState={correctedAmount: 500, reason: '입력 오류'}</code></pre>
+<p>id=42는 그대로 남는다. id=43이 "id=42가 잘못됐고 실제 값은 이것"이라는 증거 역할을 한다. 규제 기관 입장에서는 수정 흔적까지 포함한 전체 이력이 오히려 더 신뢰할 수 있다 — 레코드를 지우거나 덮어쓰면 "은폐 시도"로 해석될 수 있기 때문이다.</p>
+<div class="ann-warn"><p>UPDATE/DELETE 정책이 없는 것이 실수가 아니다. PostgreSQL RLS는 명시적으로 허용하지 않으면 차단한다. INSERT 정책만 만들면 UPDATE/DELETE는 묵시적으로 거부된다. 코드에서 실수로 UPDATE를 날려도 DB 레벨에서 차단된다 — 이것이 RLS를 사용하는 이유다.</p></div>
+<div class="speech">
+<p><strong>Q: 실제 운영에서 감사 로그 테이블을 UPDATE해야 하는 상황이 생기지 않나요?</strong></p>
+<p>절대 없어야 한다. 그래서 설계 시 "보정이 필요한 상황"을 상정하고 처음부터 CORRECTION 레코드 패턴을 도입한다. 운영 중 "이 레코드 잘못됐으니 지워달라"는 요청이 오면, 그 요청 자체를 감사 로그에 기록하고 법무팀이 처리한다. 기술적으로 수정하는 것이 아니라 프로세스로 처리한다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 03 ── -->
+<h3 id="s26-slide03" class="slide-h">Slide 03 — audit_log 테이블 + Row Level Security</h3>
+<div class="ann-point"><p>테이블 설계에서 컬럼 하나하나가 의도를 가진다. 왜 이 컬럼이 있고, 왜 NOT NULL인지 이해해야 실습에서 INSERT 파라미터 순서를 외우지 않고도 쓸 수 있다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>컬럼</th><th>타입</th><th>의미</th><th>규정 근거</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code></td><td>BIGSERIAL PK</td><td>자동 증가 고유 ID</td><td>—</td></tr>
+    <tr><td><code>event_time</code></td><td>TIMESTAMPTZ NOT NULL</td><td>이벤트 발생 시각 (서버 시간, UTC 저장)</td><td>§34 "언제" 증명</td></tr>
+    <tr><td><code>actor</code></td><td>TEXT NOT NULL</td><td>행위자 — userId 또는 'system'</td><td>§34 "누가" 증명</td></tr>
+    <tr><td><code>action</code></td><td>TEXT NOT NULL</td><td>행위 코드 — 'MINT_REQUESTED', 'KRW_MINT', ...</td><td>§34 "무엇을" 증명</td></tr>
+    <tr><td><code>resource_type</code></td><td>TEXT NOT NULL</td><td>대상 리소스 종류 — 'MintRequest', 'KRWToken', ...</td><td>—</td></tr>
+    <tr><td><code>resource_id</code></td><td>TEXT NOT NULL</td><td>대상 리소스 식별자</td><td>—</td></tr>
+    <tr><td><code>before_state</code></td><td>JSONB (nullable)</td><td>변경 전 상태 — 최초 생성 이벤트는 null</td><td>감사 추적</td></tr>
+    <tr><td><code>after_state</code></td><td>JSONB NOT NULL</td><td>변경 후 상태 — 항상 필수</td><td>§15 거래 내용</td></tr>
+    <tr><td><code>checksum</code></td><td>CHAR(64) NOT NULL</td><td>SHA-256 hex 64자 — 무결성 증명</td><td>ISMS-P</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>RLS 설정 흐름</strong></p>
+<p>① <code>ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY</code> — RLS 활성화. 이 시점부터 정책 없이는 테이블 접근이 전면 차단된다. ② <code>CREATE POLICY audit_insert_only ON audit_log FOR INSERT TO app_role WITH CHECK (true)</code> — INSERT만 허용. ③ UPDATE, DELETE 정책은 만들지 않는다 — 명시적 차단이 아니라 묵시적 차단.</p>
+<div class="ann-warn"><p>RLS를 활성화한 뒤 SELECT 정책도 없으면 SELECT도 차단된다. <code>app_role</code>이 조회도 해야 하면 별도 SELECT 정책이 필요하다. 실습 코드에서는 <code>verifyIntegrity()</code>와 쿼리 메서드가 SELECT를 사용하므로, 실제 운영에서는 <code>FOR SELECT TO app_role USING (true)</code> 정책도 함께 추가해야 한다.</p></div>
+<div class="speech">
+<p><strong>Q: superuser는 RLS를 우회할 수 있지 않나요?</strong></p>
+<p>맞다. PostgreSQL superuser는 RLS를 무시한다. 그래서 애플리케이션이 superuser 계정으로 DB에 연결하면 RLS가 의미 없다. <code>app_role</code>은 일반 유저여야 하고, superuser 계정은 마이그레이션과 관리 작업에만 사용해야 한다. 운영 환경에서 애플리케이션 DB 연결 계정 권한 최소화는 필수다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 04 ── -->
+<h3 id="s26-slide04" class="slide-h">Slide 04 — AuditEntry · LogParams · VerifyResult 타입</h3>
+<div class="ann-point"><p>인터페이스 3종을 먼저 읽어야 구현 코드가 보인다. 특히 <code>LogParams</code>와 <code>AuditEntry</code>의 차이를 이해해야 한다 — 호출자가 전달하는 것(LogParams)과 DB에서 읽어온 것(AuditEntry)은 다르다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>인터페이스</th><th>역할</th><th>핵심 필드</th></tr></thead>
+  <tbody>
+    <tr><td><code>LogParams</code></td><td><code>log()</code> 호출 시 입력값</td><td>actor, action, resourceType, resourceId, afterState(필수), beforeState?(선택), ipAddress?, sessionId?</td></tr>
+    <tr><td><code>AuditEntry</code></td><td>DB 조회 결과 — 완전한 레코드</td><td>LogParams의 모든 필드 + id, eventTime, checksum</td></tr>
+    <tr><td><code>VerifyResult</code></td><td><code>verifyIntegrity()</code> 반환값</td><td>id, valid(boolean), storedChecksum, computedChecksum</td></tr>
+  </tbody>
+</table>
+</div>
+<p><code>LogParams</code>에 <code>eventTime</code>이 없다는 점에 주목한다. 호출자가 시간을 전달하지 않는다 — <code>log()</code> 내부에서 <code>new Date()</code>로 서버 시간을 찍는다. 호출자가 시간을 조작할 수 없도록 의도적으로 설계된 것이다. 마찬가지로 <code>checksum</code>도 호출자가 전달하지 않고 <code>log()</code> 내부에서 계산한다.</p>
+<div class="ann-warn"><p><code>VerifyResult</code>에 <code>storedChecksum</code>과 <code>computedChecksum</code>을 모두 반환하는 이유 — <code>valid: false</code>만 반환하면 "왜 다른가"를 알 수 없다. 두 값을 모두 반환해야 어드민이 어떤 필드가 변조됐는지 역추적할 수 있고, 감사 보고서에 증거로 첨부할 수 있다.</p></div>
+<div class="speech">
+<p><strong>Q: beforeState가 optional인데, 나중에 "이전 상태가 뭔지 모른다"는 문제가 생기지 않나요?</strong></p>
+<p>생긴다. 그래서 MINT_REQUESTED 같은 최초 생성 이벤트를 제외하고는 beforeState를 채우는 것이 권장 사항이다. 코드가 optional로 허용하더라도, 운영 정책으로 "상태 변경 이벤트에는 beforeState 필수"를 강제하는 것이 좋다. 타입이 아니라 팀 규칙으로 강제하는 영역이다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 05 ── -->
+<h3 id="s26-slide05" class="slide-h">Slide 05 — SHA-256 checksum 생성 원리</h3>
+<div class="ann-point"><p>SHA-256은 단방향 해시 함수다 — 입력이 조금이라도 바뀌면 출력이 완전히 달라진다. 슬라이드는 5개 필드를 이어 붙이는 공식과 구체적인 예시를 함께 보여준다. 이 공식을 정확히 이해해야 verifyIntegrity()에서 동일한 raw를 재현할 수 있다.</p></div>
+<p><strong>체크섬 공식</strong></p>
+<pre><code>checksum = SHA-256(eventTime + actor + action + resourceId + JSON(afterState))
+
+예시:
+  eventTime  = "2026-05-18T10:00:00.000Z"
+  actor      = "system"
+  action     = "KRW_MINT"
+  resourceId = "0xminthash"
+  afterState = {"amount": "1000000", "status": "confirmed"}
+
+  raw = "2026-05-18T10:00:00.000ZsystemKRW_MINT0xminthash{\"amount\":\"1000000\",\"status\":\"confirmed\"}"
+  checksum = sha256(raw) → 64자 소문자 hex</code></pre>
+<p>5개 필드를 구분자 없이 이어 붙인다. SHA-256에 UTF-8 문자열로 넣고 hex 다이제스트를 뽑는다. 결과는 항상 64자 소문자 16진수 문자열이다.</p>
+<div class="ann-point"><p><strong>beforeState를 포함하지 않는 이유</strong> — checksum의 목적은 "이 레코드에서 일어난 일"을 보호하는 것이다. afterState("무엇이 됐는가")가 핵심 증거이고, beforeState는 참조용 맥락 정보다. 또한 beforeState는 null일 수 있어서 raw에 포함하면 null 처리가 복잡해진다. afterState만으로 무결성 보장이 충분하다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>공격 시도</th><th>감지 원리</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>after_state 수정</td><td>JSON.stringify 결과가 달라짐 → raw가 달라짐</td><td>computedChecksum ≠ storedChecksum → valid: false</td></tr>
+    <tr><td>actor 수정</td><td>actor 문자열이 raw에 직접 포함됨</td><td>computedChecksum ≠ storedChecksum → valid: false</td></tr>
+    <tr><td>event_time 위조</td><td>toISOString() 결과가 달라짐</td><td>computedChecksum ≠ storedChecksum → valid: false</td></tr>
+    <tr><td>레코드 삭제</td><td>SELECT 결과 없음</td><td>throw Error('AuditLog not found')</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="speech">
+<p><strong>Q: SHA-256 대신 MD5나 SHA-1을 쓰면 안 되나요?</strong></p>
+<p>MD5와 SHA-1은 충돌 공격(collision attack)이 실용적으로 가능하다는 것이 증명됐다 — 다른 두 입력이 같은 해시 값을 가지도록 만들 수 있다는 뜻이다. 감사 로그는 무결성 증명 도구이므로 충돌 저항성이 확보된 SHA-256 이상을 사용해야 한다. ISMS-P도 SHA-256 이상을 명시적으로 요구한다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 06 ── -->
+<h3 id="s26-slide06" class="slide-h">Slide 06 — generateChecksum() — Node.js crypto 구현</h3>
+<div class="ann-point"><p>Node.js 내장 <code>crypto</code> 모듈의 <code>createHash()</code>를 사용한다. 외부 라이브러리가 필요 없다. 파라미터는 <code>Date</code> 객체로 받고 내부에서 <code>toISOString()</code>을 호출한다 — string으로 받으면 포맷 불일치 위험이 있다.</p></div>
+<pre><code>import { createHash } from 'crypto';
+
+private generateChecksum(
+  eventTime: Date, actor: string, action: string,
+  resourceId: string, afterState: unknown,
+): string {
+  const raw = eventTime.toISOString() + actor + action
+            + resourceId + JSON.stringify(afterState);
+  return createHash('sha256').update(raw, 'utf8').digest('hex');
+}</code></pre>
+<div class="ann-point"><p>파라미터가 5개인 것에 주목한다 — <code>eventTime, actor, action, resourceId, afterState</code>. <code>resourceType</code>은 INSERT에는 들어가지만 체크섬 계산에는 포함되지 않는다. 이 차이를 모르면 <code>verifyIntegrity()</code>에서 잘못된 인자를 넘겨 항상 <code>valid: false</code>가 나온다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>주의사항</th><th>잘못된 코드</th><th>올바른 코드</th></tr></thead>
+  <tbody>
+    <tr><td>파라미터 타입</td><td><code>row['event_time'] as string</code> 그대로 전달</td><td><code>new Date(row['event_time'] as string)</code></td></tr>
+    <tr><td>잘못된 필드 포함</td><td><code>generateChecksum(..., params.resourceType, ...)</code></td><td><code>generateChecksum(..., params.resourceId, ...)</code></td></tr>
+  </tbody>
+</table>
+</div>
+<div class="speech">
+<p><strong>Q: crypto 모듈 대신 bcrypt나 argon2 같은 라이브러리를 써도 되나요?</strong></p>
+<p>bcrypt와 argon2는 패스워드 해싱 전용이다 — 의도적으로 느리게 만들어져 있다. 감사 로그는 매 INSERT마다 체크섬을 계산하므로 빠른 해시가 필요하다. SHA-256은 단방향 무결성 검증에 적합하고, Node.js crypto 내장이라 별도 의존성도 없다.</p>
+</div>
+<div class="speech">
+<p><strong>Q: SHA-256 체크섬에 사용되는 키는 어디에 저장하나요?</strong></p>
+<p>우리 구현의 SHA-256은 <strong>키가 없다</strong>. 입력값이 같으면 누구나 같은 해시를 만들 수 있으므로 변조 감지는 되지만 위조 방지는 안 된다. DB 접근 권한이 있는 공격자가 행을 바꾸고 새 체크섬을 직접 계산해 덮어쓰면 탐지가 불가능하다.</p>
+<p>위조까지 막으려면 비밀 키가 있는 <strong>HMAC-SHA256</strong>을 써야 한다.</p>
+<pre><code class="language-typescript">// HMAC — 키 없이는 올바른 해시를 만들 수 없음
+createHmac('sha256', process.env.AUDIT_HMAC_SECRET!)
+  .update(eventTime + actor + action + resourceId + JSON.stringify(afterState))
+  .digest('hex')</code></pre>
+<table>
+  <thead><tr><th>환경</th><th>키 저장 위치</th></tr></thead>
+  <tbody>
+    <tr><td>로컬 개발</td><td><code>.env</code> 파일 (<code>AUDIT_HMAC_SECRET=...</code>)</td></tr>
+    <tr><td>스테이징 / 운영</td><td>AWS Secrets Manager / GCP Secret Manager / HashiCorp Vault</td></tr>
+    <tr><td>Kubernetes</td><td><code>kubectl create secret</code> → Pod 환경변수로 주입</td></tr>
+    <tr><td style="color:#ef4444"><strong>절대 금지</strong></td><td>코드 하드코딩, git 커밋</td></tr>
+  </tbody>
+</table>
+<p>강의 코드는 SHA-256(키 없음)으로 단순화했다. 실제 운영 감사 로그는 HMAC-SHA256 + Secrets Manager 조합이 표준이다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 07 ── -->
+<h3 id="s26-slide07" class="slide-h">Slide 07 — checksum 필드별 역할 — 무결성 보장 원리</h3>
+<div class="ann-point"><p>5개 필드 중 하나라도 바뀌면 체크섬이 불일치한다. 슬라이드는 actor 수정, afterState 수정, eventTime 위조, 레코드 삭제 시도 네 가지 시나리오를 층별로 보여준다. RLS·checksum·verifyIntegrity()가 각각 어떤 역할을 하는지 층별로 이해해야 한다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>변조 시도</th><th>SQL</th><th>감지 방법</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>actor 수정</td><td><code>UPDATE audit_log SET actor = 'admin' WHERE id = 55</code></td><td>raw 재계산 시 actor 달라짐 → storedChecksum ≠ computed</td><td>valid: false</td></tr>
+    <tr><td>afterState 수정</td><td><code>UPDATE audit_log SET after_state = '{...}' WHERE id = 42</code></td><td>JSON.stringify 결과 달라짐 → checksum 불일치</td><td>valid: false</td></tr>
+    <tr><td>eventTime 위조</td><td><code>UPDATE audit_log SET event_time = '...' WHERE id = 33</code></td><td>toISOString() 결과 달라짐 → raw 달라짐</td><td>valid: false</td></tr>
+    <tr><td>레코드 삭제</td><td><code>DELETE FROM audit_log WHERE id = 20</code></td><td>RLS 정책이 DELETE 차단 — checksum 이전에 막힘</td><td>DB 레벨 거부</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>3중 방어 요약</strong> — ① RLS: UPDATE/DELETE 자체를 DB 레벨에서 차단. ② checksum: RLS가 뚫렸을 경우(superuser 오남용 등) 내용 변조를 사후 감지. ③ <code>verifyIntegrity(id)</code>: 언제든 단건 재검증 가능.</p>
+<div class="ann-warn"><p>공격자가 after_state를 바꾸고 checksum도 직접 재계산해서 함께 덮어쓰면 감지되지 않는다. 이 공격을 막는 것이 RLS다 — RLS가 UPDATE를 차단하므로 checksum 필드도 수정할 수 없다. RLS와 checksum이 함께 있어야 의미 있다.</p></div>
+<div class="speech">
+<p><strong>Q: verifyIntegrity()를 언제 호출해야 하나요? 매 조회마다 부르면 너무 느리지 않나요?</strong></p>
+<p>매 조회마다 호출할 필요는 없다. 정기 감사(월 1회, 분기 1회), 규제 기관 제출 직전, 이상 거래 감지 시 특정 레코드 검증 등 이벤트 기반으로 호출한다. 대량 검증이 필요하면 배치 Job을 별도로 만든다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 08 ── -->
+<h3 id="s26-slide08" class="slide-h">Slide 08 — DatabaseClient 인터페이스 — raw SQL 추상화</h3>
+<div class="ann-point"><p>AuditLogService가 ORM(TypeORM, Prisma)을 사용하지 않는 이유가 있다. ORM은 편리하지만, Append-only 원칙을 ORM 레벨에서 강제하기 어렵다. raw SQL로 의도를 명확히 표현해야 "실수로 UPDATE를 날린다"는 시나리오 자체를 줄일 수 있다.</p></div>
+<pre><code>interface DatabaseClient {
+  query(
+    sql: string,
+    params?: unknown[],
+  ): Promise&lt;{ rows: Record&lt;string, unknown&gt;[] }&gt;;
+}
+
+export class AuditLogService {
+  constructor(private readonly db: DatabaseClient) {}
+}</code></pre>
+<p>인터페이스는 딱 하나의 메서드만 있다 — <code>query()</code>. 이 인터페이스를 생성자에서 받기 때문에 테스트할 때는 In-Memory 구현을 주입하고, 운영에서는 실제 PostgreSQL 클라이언트를 주입한다. 테스트와 운영 코드가 동일하다.</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>상황</th><th>주입하는 구현체</th><th>특징</th></tr></thead>
+  <tbody>
+    <tr><td>단위 테스트</td><td><code>makeDb()</code> (In-Memory Mock)</td><td>PostgreSQL 불필요. 빠름. checksum 조작 테스트 가능</td></tr>
+    <tr><td>통합 테스트</td><td>실제 PostgreSQL 클라이언트</td><td>RLS 동작 포함 검증</td></tr>
+    <tr><td>운영</td><td>실제 PostgreSQL 클라이언트</td><td>Connection pool, TIMESTAMPTZ 처리 포함</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="speech">
+<p><strong>Q: TypeORM 쓰면 안 되나요? 저희 프로젝트는 TypeORM을 씁니다.</strong></p>
+<p>쓸 수 있다. 단, <code>@UpdateDateColumn</code>, <code>.save()</code>, <code>.update()</code> 등을 AuditLogService에서 절대 사용하지 않아야 한다. TypeORM Entity에 <code>@Column({ update: false })</code>를 설정해도 TypeORM 레이어에서만 막히고 DB 직접 접근은 막지 못한다. 결국 RLS가 없으면 불완전하다.</p>
+</div>
+<div class="ann-point"><p><strong>DatabaseClient의 핵심 역할 — 의존성 역전.</strong> 실제 PostgreSQL 클라이언트(<code>pg</code>)를 직접 받는 게 아니라 <code>query()</code> 하나만 있으면 되는 인터페이스를 받는다. 운영에서는 실제 <code>pg.Pool</code> 래퍼가, 테스트에서는 <code>makeDb()</code> In-Memory Mock이 들어온다. 코드는 동일하고 주입되는 구현체만 다르다.</p></div>
+<p><strong>왜 ORM이 아니라 raw SQL인가</strong> — ORM은 내부적으로 UPDATE 쿼리를 자동 생성할 수 있다. 감사 로그는 Append-only가 핵심인데, ORM이 실수로 UPDATE를 날리면 RLS가 막더라도 의도가 불명확해진다. raw SQL로 INSERT만 쓰면 코드만 봐도 "이 서비스는 절대 UPDATE 안 한다"가 명확하다.</p>
+<p><strong>테스트에서의 이점</strong> — checksum 조작 시나리오를 실제 DB 없이 테스트할 수 있다.</p>
+<pre><code>const db = makeDb();
+const svc = new AuditLogService(db);
+await svc.log({...});
+db.rows[0]['checksum'] = '0'.repeat(64);  // checksum 직접 조작
+const result = await svc.verifyIntegrity(1);
+// result.valid === false → 변조 감지 테스트 완료</code></pre>
+<hr class="sep">
+
+<!-- ── Slide 09 ── -->
+<h3 id="s26-slide09" class="slide-h">Slide 09 — log() — 전체 구현</h3>
+<div class="ann-point"><p>log()는 AuditLogService에서 가장 많이 호출되는 메서드다. 구현은 단순하지만 파라미터 순서와 타입 변환에서 실수가 많이 나온다. 실습 답안에서 가장 많은 오류가 여기서 나온다.</p></div>
+<p><strong>4단계 흐름</strong></p>
+<p>① <code>const eventTime = new Date()</code> — 서버 시간 고정. 호출자가 시간을 넘기지 않는다. ② <code>this.generateChecksum(eventTime, params.actor, params.action, params.resourceId, params.afterState)</code> — 5개 필드로 체크섬 생성. 주의: resourceType이 아니라 resourceId. ③ <code>INSERT INTO audit_log ... RETURNING id</code> — 10개 파라미터를 순서대로. ④ <code>return rows[0]!['id'] as number</code> — 반환값은 삽입된 레코드의 id.</p>
+<pre><code>async log(params: LogParams): Promise&lt;number&gt; {
+  const eventTime = new Date();
+  const checksum  = this.generateChecksum(
+    eventTime, params.actor, params.action, params.resourceId, params.afterState,
+  );
+  const { rows } = await this.db.query(
+    `INSERT INTO audit_log
+       (event_time, actor, action, resource_type, resource_id,
+        before_state, after_state, ip_address, session_id, checksum)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    [ eventTime.toISOString(),
+      params.actor, params.action, params.resourceType, params.resourceId,
+      params.beforeState !== undefined ? JSON.stringify(params.beforeState) : null,
+      JSON.stringify(params.afterState),
+      params.ipAddress ?? null, params.sessionId ?? null, checksum ],
+  );
+  return rows[0]!['id'] as number;
+}</code></pre>
+<div class="ann-warn"><p><strong>beforeState null 변환이 필수인 이유</strong> — <code>JSON.stringify(undefined)</code>는 JavaScript <code>undefined</code>를 반환한다 — <code>null</code>이 아니라. 이걸 SQL 파라미터로 넘기면 드라이버마다 동작이 다르고, 대부분 에러가 난다. <code>params.beforeState !== undefined ? JSON.stringify(params.beforeState) : null</code>로 명시적으로 null을 넣어야 한다.</p></div>
+<div class="speech">
+<p><strong>Q: RETURNING id 대신 INSERT 후 별도 SELECT로 id를 가져오면 안 되나요?</strong></p>
+<p>동작은 하지만 두 가지 문제가 있다. 첫째, 두 번의 쿼리가 필요하다 — RETURNING은 한 번의 왕복으로 해결한다. 둘째, 동시에 두 INSERT가 실행되면 별도 SELECT가 내 레코드가 아닌 다른 레코드의 id를 가져올 수 있다. RETURNING은 원자적(atomic)으로 해당 INSERT의 결과만 반환하기 때문에 동시성 문제가 없다.</p>
+</div>
+<div class="speech">
+<p><strong>Q: eventTime을 DB 서버 시간(NOW())으로 하면 더 정확하지 않나요?</strong></p>
+<p>DB NOW()를 쓰면 INSERT 전에 체크섬을 계산할 수 없다. 먼저 DB에 넣고, 반환된 event_time을 가져와서 체크섬을 계산하고, 다시 UPDATE해야 한다 — 이렇게 하면 Append-only 원칙이 깨진다. 그래서 서버 시간을 먼저 고정하고 체크섬도 그 시간으로 계산한다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 10 ── -->
+<h3 id="s26-slide10" class="slide-h">Slide 10 — verifyIntegrity() — 단일 레코드 무결성 검증</h3>
+<div class="ann-point"><p>verifyIntegrity()는 "이 레코드가 저장된 이후 단 한 글자라도 바뀌었는지"를 확인한다. DB에서 읽은 값으로 체크섬을 다시 계산하고, 저장된 체크섬과 비교하는 것이 전부다 — 단순하지만 강력하다.</p></div>
+<p><strong>3단계 흐름</strong></p>
+<p>① <code>SELECT * FROM audit_log WHERE id = $1</code> — 레코드 조회. 없으면 즉시 <code>throw new Error('AuditLog not found: ${id}')</code>. ② DB 행의 event_time, actor, action, resource_id, after_state 필드로 <code>generateChecksum()</code>을 재호출. row['event_time']은 string이므로 <code>new Date()</code>로 Date 변환 필요. ③ <code>storedChecksum === computedChecksum</code>이면 <code>valid: true</code>, 다르면 <code>valid: false</code>. 두 값 모두 반환.</p>
+<pre><code>async verifyIntegrity(id: number): Promise&lt;VerifyResult&gt; {
+  const { rows } = await this.db.query(
+    'SELECT * FROM audit_log WHERE id = $1', [id],
+  );
+  if (rows.length === 0) throw new Error(`AuditLog not found: ${id}`);
+
+  const row              = rows[0]!;
+  const storedChecksum   = row['checksum'] as string;
+  const computedChecksum = this.generateChecksum(
+    new Date(row['event_time'] as string),
+    row['actor']       as string,
+    row['action']      as string,
+    row['resource_id']  as string,
+    JSON.parse(row['after_state'] as string),
+  );
+
+  return { id, valid: storedChecksum === computedChecksum, storedChecksum, computedChecksum };
+}</code></pre>
+<div class="ann-warn"><p>DB에서 읽을 때 after_state는 JSONB로 저장돼 있지만, PostgreSQL 드라이버에 따라 이미 파싱된 객체로 반환될 수 있다. generateChecksum()은 JSON.stringify(afterState)를 raw에 포함시키는데, 이미 파싱된 객체를 다시 stringify하면 키 순서가 달라질 수 있다. 실습 코드에서는 In-Memory Mock이 문자열로 저장하므로 이 문제가 없지만, 실제 PostgreSQL에서는 주의가 필요하다.</p></div>
+<div class="speech">
+<p><strong>Q: verifyIntegrity()를 매 요청마다 호출하면 성능이 괜찮나요?</strong></p>
+<p>쿼리 한 번 + SHA-256 계산 한 번이다. 단건 검증은 거의 부담이 없다. 문제는 대량 검증 — 수만 건을 한꺼번에 verifyIntegrity()하면 DB 쿼리 N번이 되므로 배치로 처리해야 한다. 금감원 조사처럼 전체 기간 검증이 필요한 경우는 별도 검증 배치 Job을 만드는 것이 일반적이다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 11 ── -->
+<h3 id="s26-slide11" class="slide-h">Slide 11 — queryByResource() / queryByActor() — 조회 메서드</h3>
+<div class="ann-point"><p>두 조회 메서드는 서로 다른 감사 시나리오를 위한 것이다. queryByResource()는 "이 NFT 토큰에 무슨 일이 있었나"를 추적하고, queryByActor()는 "이 운영자가 무슨 행위를 했나"를 추적한다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>메서드</th><th>WHERE 조건</th><th>정렬</th><th>페이지네이션</th><th>사용 시나리오</th></tr></thead>
+  <tbody>
+    <tr><td><code>queryByResource()</code></td><td>resource_type = $1 AND resource_id = $2</td><td>event_time ASC</td><td>limit=100, offset=0 기본값</td><td>특정 MintRequest의 전체 이력 추적</td></tr>
+    <tr><td><code>queryByActor()</code></td><td>actor = $1 AND event_time BETWEEN $2 AND $3</td><td>event_time ASC</td><td>날짜 범위로 제한</td><td>금감원 조사: 특정 운영자 행위 기간 조회</td></tr>
+  </tbody>
+</table>
+</div>
+<p>두 메서드 모두 결과를 <code>rows.map(this._rowToEntry)</code>로 변환해 <code>AuditEntry[]</code>로 반환한다. DB raw 행을 그대로 노출하지 않고 타입이 확정된 객체로 변환하는 것이 핵심이다.</p>
+<div class="ann-point">
+  <p><strong>왜 변환이 필요한가 — DB raw 행의 타입은 <code>Record&lt;string, unknown&gt;</code></strong></p>
+  <p>PostgreSQL 드라이버(<code>pg</code>)가 돌려주는 행은 모든 필드가 <code>unknown</code>이다. <code>event_time</code>은 <code>Date</code>가 아니라 ISO 문자열, <code>after_state</code>는 객체가 아니라 JSON 문자열, <code>id</code>는 숫자인데 string으로 올 수도 있다. TypeScript 컴파일러는 이를 알 방법이 없다.</p>
+  <pre><code class="language-typescript">// DB raw 행 — 타입이 모두 unknown
+{
+  id:          &quot;42&quot;,                        // string (숫자인데)
+  event_time:  &quot;2026-05-20T10:00:00.000Z&quot;, // string (Date 아님)
+  after_state: &#39;{&quot;amount&quot;:1000}&#39;,          // string (객체 아님)
+  checksum:    &quot;a3f1...&quot;
+}
+
+// _rowToEntry() 통과 후 — 타입 확정
+{
+  id:         42,                           // number
+  eventTime:  new Date(&quot;2026-05-...&quot;),     // Date
+  afterState: { amount: 1000 },            // object
+  checksum:   &quot;a3f1...&quot;
+}</code></pre>
+  <p><code>_rowToEntry()</code>가 이 변환을 담당한다. <code>as string</code> 같은 캐스팅이 이 메서드 하나에만 집중되고, 나머지 서비스·컨트롤러·테스트 코드는 타입이 이미 보장된 <code>AuditEntry</code>만 다룬다. DB 컬럼 이름이 바뀌어도 수정 지점이 하나다.</p>
+  <p>이 패턴을 <strong>경계 변환(Boundary Mapping)</strong> 또는 <strong>Anti-Corruption Layer</strong>라 부른다. 외부 시스템(DB)의 표현 방식이 내부 도메인 객체를 오염시키지 않도록 경계에서 차단하는 것이다.</p>
+</div>
+<p><strong>인덱스 설계</strong> — <code>idx_audit_resource ON audit_log(resource_type, resource_id)</code>와 <code>idx_audit_actor_time ON audit_log(actor, event_time)</code>. event_time 단독 인덱스로는 actor 필터를 효율적으로 처리할 수 없다.</p>
+<div class="speech">
+<p><strong>Q: queryByActor()에 limit이 없는데 메모리 문제가 생기지 않나요?</strong></p>
+<p>생긴다. 날짜 범위로 자연스럽게 제한된다고 가정하지만, 범위가 길면 수만 건이 반환될 수 있다. 실제 운영에서는 limit을 추가하거나 cursor 기반 페이지네이션으로 바꿔야 한다. 규정 보고용이라면 결과를 CSV로 스트리밍해서 메모리를 최소화하는 방법도 있다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 12 ── -->
+<h3 id="s26-slide12" class="slide-h">Slide 12 — _rowToEntry() — DB 행 → AuditEntry 변환</h3>
+<div class="ann-point"><p>_rowToEntry()는 private 메서드지만 이 서비스에서 가장 세심하게 작성해야 하는 부분이다. DB 타입과 TypeScript 타입 사이의 변환에서 버그가 많이 발생한다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>필드</th><th>DB 타입</th><th>TypeScript 타입</th><th>변환 방법</th><th>주의점</th></tr></thead>
+  <tbody>
+    <tr><td>id</td><td>BIGINT</td><td>number</td><td><code>row['id'] as number</code></td><td>BIGINT가 string으로 오는 드라이버도 있음</td></tr>
+    <tr><td>eventTime</td><td>TIMESTAMPTZ(string)</td><td>Date</td><td><code>new Date(row['event_time'] as string)</code></td><td>Date 객체로 반드시 변환</td></tr>
+    <tr><td>beforeState</td><td>JSONB(nullable)</td><td>unknown | undefined</td><td><code>row['before_state'] ? JSON.parse(...) : undefined</code></td><td>null 체크 필수</td></tr>
+    <tr><td>afterState</td><td>JSONB(NOT NULL)</td><td>unknown</td><td><code>JSON.parse(row['after_state'] as string)</code></td><td>null 체크 불필요</td></tr>
+    <tr><td>checksum</td><td>CHAR(64)</td><td>string</td><td><code>row['checksum'] as string</code></td><td>—</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-warn"><p>beforeState의 truthy 체크 — <code>row['before_state']</code>가 null이면 falsy. <code>row['before_state'] ? JSON.parse(...) : undefined</code>는 null일 때 JSON.parse를 건너뛴다. 만약 <code>JSON.parse(null)</code>을 호출하면 null을 JSON 리터럴로 파싱해서 JavaScript null을 반환한다 — 에러는 안 나지만 의도와 다른 결과가 나온다. undefined를 반환해야 타입이 맞다.</p></div>
+<hr class="sep">
+
+<!-- ── Slide 13 ── -->
+<h3 id="s26-slide13" class="slide-h">Slide 13 — prevChecksum Race Condition — 동시성 함정</h3>
+<div class="ann-point"><p>이 슬라이드는 "체인 방식의 체크섬을 실운영에 적용하면 어떤 문제가 생기는가"를 다룬다. 단일 레코드 방식에서는 이 문제가 없다 — 실습에서 구현한 log()는 체인이 없으므로 Race Condition이 없다. "왜 우리가 체인 방식을 쓰지 않았는가"에 대한 추가 설명이다.</p></div>
+<p><strong>Race Condition 발생 과정</strong></p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>시점</th><th>Worker A</th><th>Worker B</th></tr></thead>
+  <tbody>
+    <tr><td>t=0</td><td>SELECT checksum ORDER BY id DESC LIMIT 1 → 'abc123'</td><td>SELECT checksum ORDER BY id DESC LIMIT 1 → 'abc123' (동일!)</td></tr>
+    <tr><td>t=1</td><td>generateChecksum('abc123' + ...) → 'def456'</td><td>generateChecksum('abc123' + ...) → 'ghi789'</td></tr>
+    <tr><td>t=2</td><td>INSERT → id=101, prevChecksum='abc123'</td><td>INSERT → id=102, prevChecksum='abc123' ← id=100 기준 계산됨</td></tr>
+    <tr><td>검증 시</td><td colspan="2">id=102의 prevChecksum이 id=101의 checksum과 달라야 하는데 'abc123' → 체인 끊김</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>해결책 1 — SELECT FOR UPDATE (트랜잭션 잠금)</strong></p>
+<pre><code>await db.transaction(async trx => {
+  const last = await trx.query(
+    `SELECT checksum FROM audit_log
+     ORDER BY id DESC LIMIT 1
+     FOR UPDATE`  // 행 잠금 — Worker B는 A의 COMMIT까지 대기
+  );
+  const prev = last.rows[0]?.checksum ?? '';
+  // INSERT ...
+});</code></pre>
+<p><strong>해결책 2 — PQueue concurrency:1 (애플리케이션 레벨 직렬화)</strong></p>
+<pre><code>private readonly queue = new PQueue({ concurrency: 1 });
+
+async log(params) {
+  return this.queue.add(async () => {
+    // SELECT prevChecksum + INSERT가 순차 실행됨
+  });
+}</code></pre>
+<div class="ann-warn"><p>PQueue 방식은 단일 Node.js 프로세스 안에서만 유효하다. 여러 Pod(컨테이너)가 동시에 실행되는 환경에서는 Pod 간 Race Condition은 막을 수 없다. 멀티 Pod 환경에서는 반드시 DB 레벨의 SELECT FOR UPDATE가 필요하다.</p></div>
+<div class="speech">
+<p><strong>Q: 그러면 현재 실습 코드의 단일 레코드 방식은 Race Condition이 없나요?</strong></p>
+<p>맞다. 단일 레코드 방식은 prevChecksum을 읽을 필요가 없으므로 Race Condition 자체가 없다. 동시에 두 Worker가 log()를 호출해도, 각자 자신의 checksum을 독립적으로 계산해서 INSERT한다. 순서가 뒤바뀌어도 각 레코드 자체의 무결성은 보장된다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 14 ── -->
+<h3 id="s26-slide14" class="slide-h">Slide 14 — 감사 로그 훼손 시나리오 3가지</h3>
+<div class="ann-point"><p>RLS + checksum + 체인은 각자 막는 공격 유형이 다르다. 세 층이 모두 있어야 완전한 방어가 된다. 이 슬라이드는 "어떤 공격을 어떤 층이 막는가"를 보여준다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>시나리오</th><th>공격 방법</th><th>막는 층</th><th>감지 방법</th></tr></thead>
+  <tbody>
+    <tr><td>1 · 내용 변조</td><td>UPDATE audit_log SET after_state = '{위조}' WHERE id = 42</td><td>RLS(UPDATE 차단) + checksum</td><td>RLS가 1차 차단. 만약 뚫렸다면 verifyIntegrity(42) → valid: false</td></tr>
+    <tr><td>2 · 행위자 수정</td><td>UPDATE audit_log SET actor = 'admin' WHERE id = 55</td><td>RLS(UPDATE 차단) + checksum</td><td>actor가 checksum raw에 포함되므로 재계산 시 불일치 → valid: false</td></tr>
+    <tr><td>3 · 가짜 레코드 삽입</td><td>id=100과 101 사이에 가짜 레코드 INSERT</td><td>체인(prevChecksum)</td><td>id=101의 prevChecksum은 id=100의 checksum을 가리켜야 함. 가짜가 끼면 id=101 체인 끊김 감지</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>3중 방어의 역할 분담</strong></p>
+<ul>
+  <li><strong>RLS</strong> — UPDATE/DELETE 자체를 DB 레벨에서 원천 차단. 1&#183;2번 시나리오의 1차 방어선.</li>
+  <li><strong>checksum</strong> — RLS가 뚫렸을 경우(superuser 오남용, 직접 접속 등) 내용 변조를 사후 감지.</li>
+  <li><strong>prevChecksum 체인</strong> — 삽입&#183;삭제&#183;순서 조작처럼 체크섬만으로 감지 불가능한 공격을 탐지.</li>
+</ul>
+<div class="ann-warn"><p>RLS 없이 checksum만 있으면 공격자가 after_state를 바꾸고 새 checksum도 함께 계산해서 UPDATE할 수 있다. RLS가 UPDATE를 막기 때문에 checksum 조작이 불가능하다. RLS가 전제조건이다.</p></div>
+<div class="speech">
+<p><strong>Q: 시나리오 3에서 삽입된 가짜 레코드가 id=101보다 작은 id를 받으면 감지가 더 어렵지 않나요?</strong></p>
+<p>BIGSERIAL은 자동 증가라서 임의 id를 지정해서 INSERT할 수 없다. 가짜 레코드는 현재 최대값+1을 받게 되므로, 단순 삽입으로는 체인이 안 끊긴다. 실질적인 체인 위협은 "삭제 후 다른 레코드 삽입"인데, 삭제가 RLS로 막히므로 결국 RLS가 핵심이다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 15 ── -->
+<h3 id="s26-slide15" class="slide-h">Slide 15 — 5년 보관 전략 — S3 Glacier 아카이빙</h3>
+<div class="ann-point"><p>가상자산이용자보호법 §15는 거래 기록 5년 보존을 요구한다. PostgreSQL에 5년치 데이터를 쌓으면 비용과 성능 모두 문제가 된다. 계층형 보관 전략으로 비용을 최적화하면서 규정을 충족한다.</p></div>
+<p><strong>4단계 보관 계층</strong></p>
+<ul>
+  <li><strong>1단계 — PostgreSQL (0~1년)</strong>: 실시간 조회. 규정 감사&#183;운영 조회 모두 여기서. 비용이 가장 높지만 즉시 조회가 필요한 기간이므로 불가피하다.</li>
+  <li><strong>2단계 — 30일마다 S3 Export</strong>: 배치 Job이 30일 단위로 audit_log를 JSON/Parquet으로 S3에 내보낸다. S3 Standard로 적재.</li>
+  <li><strong>3단계 — S3 Standard → Glacier IR 자동 전환 (90일 후)</strong>: Lifecycle Policy가 자동 처리. 운영자가 수동으로 옮길 필요 없다.</li>
+  <li><strong>4단계 — S3 Glacier Instant Retrieval (5년)</strong>: 1825일(=5년) 후 자동 Expiration. 규정 기간이 끝나면 삭제. 필요 시 수시간 내 복원 가능.</li>
+</ul>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>보관 단계</th><th>기간</th><th>조회 속도</th><th>비용(상대)</th><th>비고</th></tr></thead>
+  <tbody>
+    <tr><td>PostgreSQL</td><td>0~1년</td><td>즉시 (ms)</td><td>높음</td><td>실시간 verifyIntegrity() 가능</td></tr>
+    <tr><td>S3 Standard</td><td>이관 후 90일</td><td>즉시</td><td>중간</td><td>자주 필요한 최근 데이터</td></tr>
+    <tr><td>S3 Glacier IR</td><td>90일~5년</td><td>수초~수분</td><td>낮음</td><td>규정 보존. 평소엔 조회 안 함</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="speech">
+<p><strong>Q: Glacier에서 꺼낼 때 verifyIntegrity()를 할 수 있나요?</strong></p>
+<p>할 수 있다. Glacier에서 복원한 데이터에도 checksum 필드가 있다. 꺼낸 JSON을 파싱해서 generateChecksum()으로 재계산하면 된다. 단, PostgreSQL 없이 파일에서 직접 검증해야 하므로 별도 검증 스크립트가 필요하다. 규정 감사 때는 이 스크립트로 전체 검증을 수행한다.</p>
+</div>
+<div class="ann-warn"><p><strong>강의 코드의 S3 Glacier는 레퍼런스 아키텍처다.</strong> 실제 교보생명에는 내부 IT 정책과 법무팀이 결정한 별도 아카이브 정책이 존재한다 — 온프레미스 테이프 백업, 금융보안원 지침 기반 아카이브, 내부 DRM·암호화 정책 등이 추가로 적용된다. 강의에서 S3 Glacier를 쓴 이유는 "5년 보존 의무를 비용 효율적으로 구현한다면 이런 방식"을 보여주는 것이다. 실제 현장에서는 회사 인프라 정책에 맞게 대체하면 된다.</p></div>
+<hr class="sep">
+
+<!-- ── Slide 16 ── -->
+<h3 id="s26-slide16" class="slide-h">Slide 16 — makeDb() In-Memory Mock — 테스트 구조</h3>
+<div class="ann-point"><p>makeDb()는 실제 PostgreSQL 없이 AuditLogService를 테스트하기 위한 In-Memory 구현체다. SQL 문자열을 파싱해서 rows 배열에 직접 조작하는 방식이다. 이 패턴을 이해하면 테스트 코드 읽는 속도가 빨라진다.</p></div>
+<p><strong>makeDb() 동작 원리</strong></p>
+<pre><code>function makeDb() {
+  let nextId = 1;
+  const rows: Record&lt;string, unknown&gt;[] = [];
+
+  return {
+    rows,  // 테스트 코드에서 직접 접근 가능 (checksum 조작 등)
+    async query(sql, params = []) {
+      const s = sql.trim().toUpperCase();
+
+      if (s.startsWith('INSERT INTO AUDIT_LOG')) {
+        const [eventTime, actor, action, resourceType, resourceId,
+               beforeState, afterState, ipAddress, sessionId, checksum] = params;
+        const row = { id: nextId++, event_time: eventTime, actor, action, ... };
+        rows.push(row);
+        return { rows: [{ id: row.id }] };  // RETURNING id 시뮬레이션
+      }
+
+      if (s.startsWith('SELECT * FROM AUDIT_LOG WHERE ID')) {
+        return { rows: rows.filter(r => r.id === params[0]) };
+      }
+      // resource_type, actor 필터 등...
+    },
+  };
+}</code></pre>
+<p><strong>핵심 테스트 패턴 — checksum 조작</strong></p>
+<pre><code>const db = makeDb();
+const svc = new AuditLogService(db);
+const id = await svc.log({ actor: 'user', action: 'MINT', ... });
+
+// DB row를 직접 조작
+db.rows[0]['checksum'] = '0'.repeat(64);
+
+// verifyIntegrity는 generateChecksum()으로 재계산 → '0'*64와 다름
+const result = await svc.verifyIntegrity(id);
+expect(result.valid).toBe(false);</code></pre>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>그룹</th><th>케이스 수</th><th>특이 패턴</th></tr></thead>
+  <tbody>
+    <tr><td>log() 기본</td><td>6개</td><td>beforeState null/직렬화 각각 검증</td></tr>
+    <tr><td>verifyIntegrity()</td><td>3개</td><td>db.rows 직접 조작으로 변조 시뮬레이션</td></tr>
+    <tr><td>queryByResource()</td><td>2개</td><td>여러 resource 중 해당 resource만 필터</td></tr>
+    <tr><td>queryByActor()</td><td>2개</td><td>시간 범위 필터 + 없으면 빈 배열</td></tr>
+  </tbody>
+</table>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 17 ── -->
+<h3 id="s26-slide17" class="slide-h">Slide 17 — 커리큘럼 vs 실제 코드 — 체크섬 방식 비교</h3>
+<div class="ann-point"><p>수강생이 day07.md 커리큘럼을 읽고 오면 "체인 체크섬"을 구현하려 한다. 실제 AuditLogService는 단일 레코드 방식이다. 이 슬라이드가 없으면 수강생이 혼란스러울 수 있으므로, 차이를 명확히 설명한다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>항목</th><th>커리큘럼 (체인 방식)</th><th>실제 코드 (단일 레코드)</th></tr></thead>
+  <tbody>
+    <tr><td>체크섬 공식</td><td>SHA256(prev_checksum + eventTime + actor + action + resourceId + afterState)</td><td>SHA256(eventTime + actor + action + resourceId + afterState)</td></tr>
+    <tr><td>prevChecksum 참조</td><td>있음 — 이전 레코드의 checksum 조회 필요</td><td>없음 — 각 레코드 독립</td></tr>
+    <tr><td>검증 방식</td><td>verifyChainRange(from, to) — 전체 순서 검증</td><td>verifyIntegrity(id) — 단건 독립 검증</td></tr>
+    <tr><td>장점</td><td>중간 레코드 삭제 시 이후 전체 체크섬 불일치 → 감지</td><td>병렬 검증 가능. 단건 검증. Race Condition 없음</td></tr>
+    <tr><td>단점</td><td>Race Condition. 전체 순서대로 검증 필요. 성능 저하</td><td>레코드 삭제 자체는 체크섬으로 감지 불가 → RLS로 보완</td></tr>
+    <tr><td>RLS 의존도</td><td>체인이 있어도 RLS 필요</td><td>체인 없으므로 RLS가 핵심 방어선</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>실제 코드가 단일 레코드를 선택한 이유</strong></p>
+<p>RLS가 DELETE 자체를 차단하기 때문에 체인이 막는 "레코드 삭제 감지"가 이미 해결돼 있다. 체인을 추가하면 Race Condition, 성능 저하, 검증 복잡도 증가가 더 크다. <code>verifyIntegrity(id)</code>처럼 인자 하나로 단건 검증이 가능한 것이 운영 편의성 측면에서 훨씬 낫다. 체인 방식은 Phase 3에서 감사 추적 강도 요건이 높아질 때 재검토 대상이다.</p>
+<div class="speech">
+<p><strong>Q: 교재에 체인 방식이 더 안전하다고 나와 있는데, 왜 실제 코드는 단일 레코드를 쓰나요?</strong></p>
+<p>교재는 "원리"를 가르치기 위해 체인 방식을 다룬다. 블록체인 자체가 체인 방식이고, 이 원리를 이해하는 것이 목적이다. 실제 시스템에서는 동일한 보안 수준을 RLS + 단일 레코드 checksum으로 더 단순하게 달성할 수 있다. "더 복잡한 것이 더 안전한 것"은 아니다. 단순한 설계가 버그도 적고 검증하기도 쉽다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 18 ── -->
+<h3 id="s26-slide18" class="slide-h">Slide 18 — queryByActor() — 규정 감사 대응 시나리오</h3>
+<div class="ann-point"><p>이 슬라이드는 "코드 설명"이 아니라 "이 코드가 실제로 어떤 상황에서 쓰이는가"를 보여준다. 금융감독원 서면 조사 요청이 들어오면 이 메서드 하나로 대응한다.</p></div>
+<p><strong>실제 시나리오 — 금감원 서면 조사</strong></p>
+<p>금융감독원에서 다음과 같은 공문이 온다: "2026년 3월 1일부터 3월 31일 사이, 귀 기관 운영자 kim@kyobo.com의 모든 접근&#183;거래 처리 행위 내역을 제출하라." 이때 실행하는 코드:</p>
+<pre><code>const logs = await auditLog.queryByActor(
+  'kim@kyobo.com',
+  new Date('2026-03-01T00:00:00.000Z'),
+  new Date('2026-03-31T23:59:59.999Z'),
+);
+
+// 각 레코드 무결성 검증 후 보고서 생성
+for (const entry of logs) {
+  const result = await auditLog.verifyIntegrity(entry.id);
+  if (!result.valid) {
+    // 변조 감지 → 보고서에 플래그, 법무팀 에스컬레이션
+  }
+}</code></pre>
+<p><strong>인덱스 설계</strong> — 금감원 조사는 대용량 쿼리다. <code>CREATE INDEX idx_audit_actor_time ON audit_log(actor, event_time)</code>가 없으면 전체 테이블 스캔이 발생한다. 복합 인덱스 순서도 중요하다 — actor가 먼저여야 actor로 필터링 후 event_time 범위 검색을 할 수 있다.</p>
+<div class="ann-warn"><p>KST vs UTC — 공문에는 "한국 시간 기준"으로 날짜가 명시된다. 2026-03-01 00:00 KST는 UTC로 2026-02-28T15:00:00Z다. queryByActor()에 넘기는 Date 객체를 UTC 기준으로 잘못 계산하면 첫날 9시간치 데이터가 누락된다. KST = UTC+9임을 항상 확인하고, 쿼리 파라미터를 UTC로 변환해서 넣어야 한다.</p></div>
+<div class="speech">
+<p><strong>Q: 조회 결과를 바로 제출하면 되나요, 아니면 검증을 반드시 해야 하나요?</strong></p>
+<p>실무에서는 반드시 verifyIntegrity()를 먼저 돌린다. "우리 기록은 변조되지 않았다"는 것을 증명해야 하는데, 그 증명 수단이 checksum이다. 제출 전에 전체 레코드를 검증하고, valid: true인 것만 "무결성 확인됨"으로 첨부한다. 만약 valid: false가 나오면 그 자체가 내부 보안 사고이므로 별도 보고가 필요하다.</p>
+</div>
+<hr class="sep">
+
+<!-- ── Slide 19 ── -->
+<h3 id="s26-slide19" class="slide-h">Slide 19 — generateChecksum() 상세 — createHash + beforeState 처리</h3>
+<div class="ann-point"><p>generateChecksum()은 이미 구현돼 있어서 수강생이 직접 작성하지 않는다. 하지만 내부 동작을 이해해야 verifyIntegrity()에서 같은 인자를 정확히 넘길 수 있다.</p></div>
+<p><strong>전체 구현</strong></p>
+<pre><code>import { createHash } from 'crypto';
+
+private generateChecksum(
+  eventTime: Date,
+  actor: string,
+  action: string,
+  resourceId: string,
+  afterState: unknown,
+): string {
+  const raw =
+    eventTime.toISOString()       // "2026-05-18T10:00:00.000Z"
+    + actor                        // 구분자 없음
+    + action
+    + resourceId
+    + JSON.stringify(afterState);  // 객체 → JSON 문자열
+
+  return createHash('sha256')
+    .update(raw, 'utf8')
+    .digest('hex');
+    // → 64자 소문자 16진수
+}</code></pre>
+<p><strong>beforeState를 체크섬에 포함하지 않는 이유</strong></p>
+<p>checksum의 목적은 "이 레코드에서 일어난 일"을 보호하는 것이다. afterState — "무엇이 됐는가" — 가 핵심 증거다. beforeState는 참조용 맥락 정보이고, null일 수 있다. null을 raw에 포함하면 <code>JSON.stringify(null)</code>이 'null' 문자열이 되는데, undefined와 null의 처리가 달라져 일관성 문제가 생긴다. afterState만으로 무결성 보장이 충분하다.</p>
+<div class="ann-warn"><p><strong>구분자 없음의 이론적 함정</strong> — raw = "A" + "B" + "CD" 와 "AB" + "C" + "D"는 같은 문자열이다. 즉 필드 경계가 없으면 이론상 충돌이 가능하다. 실제 코드에서는 eventTime이 항상 'Z'로 끝나는 ISO 8601 고정 형식이고, actor는 이메일 형식, action은 대문자 snake_case로 패턴이 고정돼 있어서 실용적으로 충돌 가능성이 없다. 더 엄격하게 하려면 각 필드 사이에 <code>'\0'</code> 같은 구분자를 추가하면 된다.</p></div>
+<hr class="sep">
+
+<!-- ── Slide 20 ── -->
+<h3 id="s26-slide20" class="slide-h">Slide 20 — S26 완료 기준 — 전체 체크리스트</h3>
+<div class="ann-point"><p>S26이 M4(내부 원장&#183;상태 전이&#183;감사 로그)의 마지막 세션이다. 이 슬라이드는 S26 완료 체크리스트와 M4 전체를 마무리하는 M5 예고를 함께 담는다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>구분</th><th>체크 항목</th><th>검증 방법</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="7">구현&#183;코드</td><td>log() — eventTime 서버 시간 + checksum 생성 + INSERT + id 반환</td><td>log() 테스트 6개 PASS</td></tr>
+    <tr><td>verifyIntegrity(id) — 재계산 checksum 비교 + VerifyResult 반환</td><td>verifyIntegrity() 테스트 3개 PASS</td></tr>
+    <tr><td>queryByResource() — resource_type + resource_id 복합 필터</td><td>queryByResource() 테스트 2개 PASS</td></tr>
+    <tr><td>queryByActor() — actor + 날짜 범위 필터</td><td>queryByActor() 테스트 2개 PASS</td></tr>
+    <tr><td>_rowToEntry() — beforeState null 처리 + JSON.parse 역직렬화</td><td>beforeState 역직렬화 테스트 PASS</td></tr>
+    <tr><td>generateChecksum() — 5개 필드 raw + createHash('sha256').digest('hex')</td><td>checksum 64자 hex 테스트 PASS</td></tr>
+    <tr><td>전체 11개 테스트 PASS</td><td>npm test 또는 jest 실행</td></tr>
+    <tr><td rowspan="6">개념&#183;설명</td><td>단일 레코드 vs 체인 체크섬 — 각각의 장단점과 선택 이유</td><td>슬라이드 17 설명 가능</td></tr>
+    <tr><td>beforeState를 checksum에 포함하지 않는 이유 2가지</td><td>슬라이드 19 설명 가능</td></tr>
+    <tr><td>RLS + checksum 이중 방어 — 각 층이 막는 공격 유형</td><td>슬라이드 07&#183;14 설명 가능</td></tr>
+    <tr><td>규정 3가지: 전자금융 §34(1년), 가상자산법 §15(5년), ISMS-P(SHA-256)</td><td>슬라이드 02 설명 가능</td></tr>
+    <tr><td>S3 Glacier 4단계 보관 전략과 비용 최적화 원리</td><td>슬라이드 15 설명 가능</td></tr>
+    <tr><td>Race Condition 발생 원인과 SELECT FOR UPDATE + PQueue 해결책</td><td>슬라이드 13 설명 가능</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>M4 &#8594; M5 진입</strong></p>
+<p>M4는 내부 원장(S23), 상태 전이(S24), Reconcile(S25), 감사 로그(S26)로 구성됐다. 이 네 개가 금융 시스템의 데이터 레이어를 완성한다. M5는 외부 연동 레이어를 다룬다 — S27 WalletProvisioningService(교보생명 외부 지갑 발급), S28 WalletMappingService + auto-provisioning, S29 EIP-191 서명 기반 지갑 소유권 검증(<code>verifyOwnership()</code>), S30 EventConditionService(온체인 이벤트 조건 평가).</p>
+<div class="speech">
+<p>M4를 마친 상태에서 내부 원장, 상태 기계, Reconcile, 감사 로그가 어떻게 연결되는지 한 문장으로 설명할 수 있어야 한다 — "모든 상태 변경은 상태 기계를 통해 원장에 기록되고, 온체인과 주기적으로 Reconcile되며, 모든 행위는 SHA-256 체크섬이 달린 감사 로그로 남는다." 이 한 문장이 M4의 핵심이다.</p>
+</div>
+<hr class="sep">
+
+</section>
+
+<!-- &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; S26-2 &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; -->
+<section id="session-26-2" class="session" style="--sc:#1E40AF;--sb:#EFF6FF;--sbd:#BFDBFE">
+<h1 class="session-title"><span class="badge">S26-2</span>내부 원장 Java 구현 &mdash; Entity&middot;API&middot;Service</h1>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 01 &#9472;&#9472; -->
+<h3 id="s26-2-slide01" class="slide-h">Slide 01 &mdash; 표지</h3>
+<div class="ann-point"><p>S26-2는 S26(Node.js AuditLogService)에 이어지는 Java 구현 세션이다. S26이 "단일 레코드 SHA-256 체크섬"을 TypeScript로 다뤘다면, S26-2는 "영구 금융 원장과 Hash Chain"을 Spring Boot로 구현한다. 두 레이어가 함께 동작해야 교보생명 NFT 시스템 전체가 완성된다.</p></div>
+<p>이번 세션의 기술 스택은 Java 17 &middot; Spring Boot 3.2 &middot; JPA/Hibernate &middot; 영구 원장 DB다. 핵심은 세 가지다 &mdash; &#9312; TypeScript와 Java의 역할 분리, &#9313; <code>@Transactional(REQUIRES_NEW)</code>로 감사 로그를 메인 트랜잭션과 독립시키는 설계, &#9314; PESSIMISTIC_WRITE로 Hash Chain 순서를 보장하는 방법이다.</p>
+<div class="speech">
+<p>S26에서 Node.js로 감사 로그를 만들었는데, 왜 Java를 또 만드는가? 라고 생각할 수 있다. 이 세션의 핵심 질문이다 &mdash; Node.js가 하는 것과 Java가 하는 것은 목적이 다르다. Node.js는 블록체인 이벤트를 빠르게 처리하는 레이어이고, Java는 가상자산이용자보호법이 요구하는 5년 보존 의무를 지는 영구 원장 레이어다. 이 경계를 명확히 이해하는 것이 S26-2의 출발점이다.</p>
+</div>
+<h2 class="subsec">패키지 구조 — dto / entity / repository / service / controller / client</h2>
+<p>Java 코드를 처음 열면 폴더가 6개다. 각각의 역할과 데이터 흐름을 먼저 잡아야 개별 클래스가 보인다.</p>
+<pre><code>gateway/
+├── dto/          ← 입출력 데이터 형태 정의 (외부와의 계약)
+├── entity/       ← DB 테이블과 1:1 매핑 (@Entity, JPA)
+├── repository/   ← DB 접근 전담 — JPA가 SQL 자동 생성
+├── service/      ← 비즈니스 로직
+├── controller/   ← HTTP 요청 수신 (진입점)
+└── client/       ← 다른 서비스(TypeScript 등) 호출</code></pre>
+<p><strong>데이터 흐름</strong></p>
+<pre><code>HTTP 요청 → Controller → Service → Repository → DB
+                ↑              ↑
+              DTO           Entity</code></pre>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>폴더</th><th>역할</th><th>예시</th></tr></thead>
+  <tbody>
+    <tr><td><code>dto/</code></td><td>HTTP 요청·응답의 모양 정의. 외부와의 계약</td><td><code>NftHoldingRequest.java</code> — Node.js가 보내는 JSON 구조</td></tr>
+    <tr><td><code>entity/</code></td><td>DB 테이블 구조를 Java 클래스로 표현 (<code>@Entity</code>)</td><td><code>NftHolding.java</code> — <code>user_nft_holdings</code> 테이블</td></tr>
+    <tr><td><code>repository/</code></td><td><code>entity</code>를 DB에서 읽고 쓰는 인터페이스. JPA가 SQL 자동 생성</td><td><code>NftHoldingRepository.java</code></td></tr>
+    <tr><td><code>service/</code></td><td>실제 비즈니스 로직. DTO → Entity 변환 후 repository 호출</td><td><code>InternalLedgerService.java</code></td></tr>
+    <tr><td><code>controller/</code></td><td>URL 매핑, 요청 수신, service 호출</td><td><code>BlockchainGatewayController.java</code></td></tr>
+    <tr><td><code>client/</code></td><td>외부 서비스(TypeScript core-banking 등) 호출</td><td><code>CoreBankingClient.java</code></td></tr>
+  </tbody>
+</table>
+</div>
+<div class="ann-point"><p><strong>DTO vs Entity 핵심 구분</strong> — DTO는 "외부에서 받은 데이터의 모양"으로 DB와 무관하다. Entity는 "DB 테이블의 Java 표현"으로 외부에 노출하지 않는다. 분리하는 이유는 두 가지다 — DB 컬럼명(snake_case)과 API 필드명(camelCase)이 다르고, <code>prevChecksum</code>처럼 외부에 노출하면 안 되는 내부 필드가 Entity에 있기 때문이다.</td></p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 02 &#9472;&#9472; -->
+<h3 id="s26-2-slide02" class="slide-h">Slide 02 &mdash; TypeScript vs Java 역할 구분</h3>
+<div class="ann-point"><p>이 슬라이드는 "TypeScript와 Java 중 어느 것이 더 좋은가"를 묻는 것이 아니다. 동일한 데이터(<code>user_nft_holdings</code>)를 두 레이어가 어떤 목적으로 각각 다루는지 &mdash; 임시 상태(PostgreSQL) vs 영구 원장(운영 DB) &mdash; 를 명확히 구분하는 것이 핵심이다.</p></div>
+<p>TypeScript(Node.js) 레이어가 담당하는 테이블은 네 가지다. <code>mint_requests</code>는 TX가 처리되는 동안 상태를 추적하는 임시 테이블이고, <code>processed_events</code>는 이벤트 중복 방지용이다. <code>AuditLogService</code>는 단일 레코드 SHA-256 체크섬을 생성하고, <code>user_nft_holdings</code>는 Reconcile 조회 시 읽기 전용으로 사용한다.</p>
+<p>Java(Spring Boot) 레이어는 두 가지만 담당한다. <code>user_nft_holdings</code> &mdash; 이것이 <strong>영구 원장의 단일 진실 원천</strong>으로서 쓰기 권한은 Java만 가진다. <code>audit_log</code>는 SHA-256 Hash Chain 방식으로 append-only 기록된다.</p>
+<div class="ann-warn"><p>같은 이름의 테이블(<code>user_nft_holdings</code>)이 두 DB에 존재한다. Node.js의 PostgreSQL에 있는 것은 Reconcile 조회용 읽기 레플리카 성격이고, Java의 운영 DB에 있는 것이 법적 의무를 지는 원본이다. "어디에 쓰느냐"가 두 레이어의 책임을 가른다.</p></div>
+<div class="ann-point">
+  <p><strong>테이블별 읽기/쓰기 주체 정리</strong></p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>테이블</th><th>쓰기 주체</th><th>읽기 주체</th><th>비고</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>audit_log</code></td>
+        <td>
+          Node.js 직접 (<code>LedgerService</code>, <code>ReconcileAdminService</code>)<br>
+          + Java 위임 (<code>KyoboCoreBankingAdapter</code> → <code>InternalGatewayClient</code> → HTTP → Java INSERT)
+        </td>
+        <td>Node.js (<code>AuditLogService</code> 조회 메서드)</td>
+        <td>두 경로가 공존 — Node.js 운영 이벤트는 직접, 원장 핵심 이벤트는 Java 위임</td>
+      </tr>
+      <tr>
+        <td><code>user_nft_holdings</code></td>
+        <td>Java 전담 (<code>InternalLedgerService.recordNftHolding()</code>)</td>
+        <td>Node.js SELECT만 (<code>ReconcileAdminService</code>)</td>
+        <td>법적 의무 원본. Node.js는 직접 INSERT 불가</td>
+      </tr>
+      <tr>
+        <td><code>mint_requests</code></td>
+        <td>Node.js 전담 (<code>LedgerService</code>)</td>
+        <td>Node.js</td>
+        <td>CONFIRMED 후 30일 만료 — 임시 상태 추적용</td>
+      </tr>
+      <tr>
+        <td><code>processed_events</code></td>
+        <td>Node.js 전담 (<code>LedgerService</code>)</td>
+        <td>Node.js</td>
+        <td><code>ON CONFLICT DO NOTHING</code> — 이벤트 중복 방지. 90일 보존</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p><code>audit_log</code>는 두 경로가 같은 테이블에 기록된다. <code>LedgerService</code>가 주입받는 <code>AuditLogClient</code> 인터페이스 덕분에 — 운영 시 <code>AuditLogService</code>(DB 직접) 또는 <code>KyoboCoreBankingAdapter</code>(Java 위임) 어느 구현체든 교체 가능하다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 03 &#9472;&#9472; -->
+<h3 id="s26-2-slide03" class="slide-h">Slide 03 &mdash; TypeScript &rarr; Java 호출 구조</h3>
+<div class="ann-point"><p>이 슬라이드는 FINALIZED 이후의 데이터 흐름을 보여준다. 블록체인 이벤트가 최종 확정되는 순간, Node.js가 HTTP로 Java internal-ledger에 두 가지 작업을 위임한다 &mdash; NFT 보유 이력 INSERT와 감사 로그 INSERT. 이 위임이 일어나는 경계가 "임시 상태에서 영구 원장으로 넘어가는 지점"이다.</p></div>
+<p>Node.js 레이어 흐름: <code>LedgerService.updateMintRequest()</code>가 상태를 FINALIZED로 변경하면, <code>ICoreBankingAdapter</code> 인터페이스를 통해 <code>KyoboCoreBankingAdapter</code>가 호출되고, 이것이 <code>InternalGatewayClient</code>를 거쳐 Java로 HTTP 요청을 보낸다. 두 엔드포인트로 분기한다 &mdash; <code>POST /users/{userId}/nft-holdings</code>와 <code>POST /audit-log</code>.</p>
+<p>Java 레이어에서는 <code>BlockchainGatewayController</code>가 요청을 수신하고, <code>InternalLedgerService</code>(중복 방지 &rarr; save)와 <code>AuditLogService</code>(REQUIRES_NEW TX)로 각각 위임한 뒤 영구 원장 DB에 INSERT한다.</p>
+<p>두 레이어 사이의 통신은 내부망 HTTP다. 외부 인터넷을 경유하지 않으며, <code>X-Internal-Secret</code> 헤더로 인증한다.</p>
+<div class="speech">
+<p>"ICoreBankingAdapter가 왜 필요한가요? 바로 Java를 호출하면 안 되나요?" &mdash; 인터페이스를 통한 추상화다. 지금은 교보생명 내부망 HTTP 방식이지만, 나중에 gRPC나 메시지 큐로 바뀔 수 있다. 어댑터 패턴을 쓰면 LedgerService는 전혀 바꾸지 않고 KyoboCoreBankingAdapter만 교체하면 된다.</p>
+</div>
+<div class="speech">
+<p><strong>Q: 같은 내부망인데 REST API를 굳이 써야 하나요? 직접 DB를 공유하면 안 되나요?</strong></p>
+<p>같은 내부망이라도 Node.js와 Java는 <strong>별개의 프로세스</strong>다. 메모리를 공유할 수 없으므로 프로세스 간 통신(IPC) 메커니즘이 반드시 필요하다. REST API는 그 메커니즘 중 하나일 뿐이다.</p>
+<p>DB를 직접 공유하는 방식(Shared Database 패턴)은 가능하지만 안티패턴으로 취급된다.</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>방식</th><th>장점</th><th>단점</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Shared DB</strong><br>(Node.js가 Java 테이블에 직접 INSERT)</td>
+      <td>구현 단순</td>
+      <td>스키마 변경 시 두 서비스 동시 배포 필요 &mdash; 강결합. Java 비즈니스 로직(중복 방지, SHA-256 체인) 우회 가능 &mdash; 데이터 무결성 깨짐</td>
+    </tr>
+    <tr>
+      <td><strong>REST API</strong><br>(현재 구현)</td>
+      <td>서비스 독립 배포. Java 비즈니스 로직 강제 통과. 계약(DTO)이 명시적</td>
+      <td>네트워크 직렬화/역직렬화 오버헤드 (내부망이라 실제 영향은 미미)</td>
+    </tr>
+    <tr>
+      <td><strong>gRPC</strong><br>(REST 대체 옵션)</td>
+      <td>REST보다 빠름(HTTP/2 + 바이너리 protobuf). 타입 계약이 .proto 파일로 강제됨</td>
+      <td>protobuf 스키마 관리 필요. 디버깅이 REST보다 불편</td>
+    </tr>
+    <tr>
+      <td><strong>Message Queue</strong><br>(Kafka, RabbitMQ)</td>
+      <td>비동기 &mdash; Java 장애 시 Node.js 블로킹 없음</td>
+      <td>인프라 추가. 결과 확인(응답)이 어려움. 순서 보장 복잡</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<p>현재 <code>InternalGatewayClient</code> 주석에도 "향후 mTLS + gRPC 전환 예정"이 명시돼 있다. REST로 시작해 계약(인터페이스)을 확정한 뒤 gRPC로 교체하는 것이 현실적인 진화 경로다. <code>ICoreBankingAdapter</code> 인터페이스가 그 교체를 <code>LedgerService</code> 수정 없이 가능하게 한다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 04 &#9472;&#9472; -->
+<h3 id="s26-2-slide04" class="slide-h">Slide 04 &mdash; 왜 Java인가</h3>
+<div class="ann-point"><p>이 슬라이드는 Java를 선택한 이유가 "기술적 선호"가 아니라 "규제와 기존 인프라"에 있음을 보여준다. 교보생명의 Core Banking 시스템은 Java로 구성되어 있고, 금감원 감독 하의 금융기관은 Java 스택이 표준 경로다. 기술 선택이 아니라 제약 조건 안에서 최선의 설계를 찾는 것이다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>이유</th><th>설명</th><th>연결 규제&#183;요건</th></tr></thead>
+  <tbody>
+    <tr><td><strong>교보생명 Core Banking 연동</strong></td><td>기존 Java 스택과 동일 언어 &mdash; 내부망 직접 연결, 팀 간 기술 장벽 없음</td><td>내부망 데이터 이동 최소화</td></tr>
+    <tr><td><strong>금융사 표준 기술 스택</strong></td><td>Java EE &rarr; Spring Boot 전환이 금융권 표준 경로. 감사&#183;컴플라이언스 팀 친숙</td><td>금감원 전자금융감독규정</td></tr>
+    <tr><td><strong>강력한 트랜잭션 보장</strong></td><td>JPA <code>@Transactional</code> + SELECT FOR UPDATE &mdash; 금융 ACID 요건 충족</td><td>가상자산이용자보호법 &sect;15 5년 보존</td></tr>
+    <tr><td><strong>@Transactional REQUIRES_NEW</strong></td><td>감사 로그는 메인 TX 롤백 시에도 반드시 남아야 함</td><td>ISMS-P A.9 접근 제어 로그 보존</td></tr>
+    <tr><td><strong>JPA Sequence 전략</strong></td><td>DB Sequence &rarr; 연속 ID 보장. Hash chain prevChecksum 순서 의존</td><td>감사 로그 순서 무결성</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="speech">
+<p>"Node.js도 트랜잭션을 지원하는데 왜 Java가 필요한가요?" &mdash; 기술적으로는 Node.js도 가능하다. 하지만 교보생명 입장에서 감사팀, 법무팀, 컴플라이언스팀이 운영 원장에 접근할 때 Java 스택이 더 익숙하다. 기술 부채를 최소화하면서 기존 인프라와 통합하는 현실적인 선택이다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 05 &#9472;&#9472; -->
+<h3 id="s26-2-slide05" class="slide-h">Slide 05 &mdash; 간지: API 계약 (섹션 전환)</h3>
+<div class="ann-point"><p>섹션 1 전환 &mdash; API 계약. 내부망 엔드포인트 4개, DTO 구조, X-Internal-Secret 보안 헤더를 다룬다. Node.js와 Java 사이의 계약이 명확해야 두 팀이 독립적으로 개발할 수 있다.</p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 06 &#9472;&#9472; -->
+<h3 id="s26-2-slide06" class="slide-h">Slide 06 &mdash; API 계약 &mdash; 4개 엔드포인트</h3>
+<div class="ann-point"><p><code>BlockchainGatewayController</code>는 내부망 전용 Controller다. 외부 인터넷에서 절대로 접근되어서는 안 되며, 방화벽과 헤더 인증이 이중으로 보호한다. 4개 엔드포인트 중 실질적으로 핵심은 2개 &mdash; NFT 보유 이력 기록과 감사 로그 기록이다.</p></div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>엔드포인트</th><th>메서드</th><th>역할</th><th>호출 시점</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /users/{userId}</code></td><td>GET</td><td>KYC 상태 + 지갑 주소 조회 &mdash; NFT 발행 전 검증</td><td>mint 요청 수신 시</td></tr>
+    <tr><td><code>POST /users/{userId}/nft-holdings</code></td><td>POST</td><td>NFT 취득 이력 영구 원장 DB 영구 기록</td><td>on-chain Transfer FINALIZED</td></tr>
+    <tr><td><code>POST /audit-log</code></td><td>POST</td><td>감사 로그 append-only 기록 (SHA-256 chain)</td><td>모든 상태 변경 시</td></tr>
+    <tr><td><code>POST /rewards/notify</code></td><td>POST</td><td>NFT 발행 완료 &rarr; Core Banking 포인트/혜택 지급 알림</td><td>FINALIZED 후</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>보안 &mdash; 인증 방식</strong>: <code>X-Internal-Secret</code> 헤더 필수. 값은 환경변수 <code>INTERNAL_GATEWAY_SECRET</code>에서 주입한다. 하드코딩 절대 금지. 향후 mTLS로 전환 예정이다.</p>
+<p><strong>네트워크 레벨 접근 제어</strong>: 이 Controller는 내부망 IP에서만 접근 가능하도록 방화벽 레벨에서 외부를 차단한다. Node.js issuer-service만 호출 허용이다.</p>
+<div class="ann-warn"><p><code>X-Internal-Secret</code>은 공유 비밀(shared secret) 방식이다. 단순하지만 비밀이 유출되면 내부망 전체가 노출된다. 운영 환경에서는 mTLS(상호 TLS 인증)로 전환해야 하고, 중간 단계로 각 서비스별 개별 토큰을 사용할 수도 있다.</p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 07 &#9472;&#9472; -->
+<h3 id="s26-2-slide07" class="slide-h">Slide 07 &mdash; NftHoldingRequest DTO</h3>
+<div class="ann-point"><p>Java 17의 <code>record</code>는 TypeScript의 <code>interface</code>나 <code>type</code>과 비슷하지만 다르다 &mdash; 컴파일러가 생성자&#183;equals&#183;hashCode&#183;toString을 자동으로 생성하고, 필드가 <strong>불변(immutable)</strong>이다. Bean Validation 어노테이션(@NotNull, @NotBlank, @Min)이 붙으면 Controller에서 <code>@Valid</code>만 붙여도 자동으로 검증된다.</p></div>
+<pre><code>// Java 17 record &mdash; 불변 DTO
+public record NftHoldingRequest(
+    @NotNull  Long    tokenId,
+    @NotBlank String  contractAddr,
+    @NotNull  Integer chainId,
+    @NotNull
+    @Min(1)   Long    amount,
+    @NotNull  Instant acquiredAt,
+    @NotBlank String  onChainTx
+) {}</code></pre>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>필드</th><th>타입</th><th>설명</th></tr></thead>
+  <tbody>
+    <tr><td><code>tokenId</code></td><td>Long</td><td>ERC-1155 token ID</td></tr>
+    <tr><td><code>contractAddr</code></td><td>String</td><td>NFT 컨트랙트 주소 (0x...)</td></tr>
+    <tr><td><code>chainId</code></td><td>Integer</td><td>블록체인 체인 ID</td></tr>
+    <tr><td><code>amount</code></td><td>Long</td><td>발행 수량 (최소 1)</td></tr>
+    <tr><td><code>acquiredAt</code></td><td>Instant</td><td>온체인 취득 시각 (UTC)</td></tr>
+    <tr><td><code>onChainTx</code></td><td>String</td><td>TX 해시 (66자, 0x...)</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Node.js 측에는 <code>GatewayNftHoldingRequest</code>라는 미러 타입이 있다. Java의 <code>Instant</code>는 JSON 직렬화 시 ISO-8601 문자열(예: <code>"2025-01-01T00:00:00Z"</code>)로 전송되고, TypeScript에서는 <code>string</code>으로 받는다.</p>
+<div class="speech">
+<p>"TypeScript의 interface와 Java record의 차이가 뭔가요?" &mdash; TypeScript의 interface는 런타임에 존재하지 않는 타입 힌트다. Java record는 런타임 클래스로, JVM에서 실제로 객체를 생성한다. 불변성도 Java record는 컴파일러가 강제하지만 TypeScript interface는 <code>readonly</code>를 명시적으로 붙여야 한다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 08 &#9472;&#9472; -->
+<h3 id="s26-2-slide08" class="slide-h">Slide 08 &mdash; AuditLogRequest DTO</h3>
+<div class="ann-point"><p>이 DTO는 Node.js <code>AuditLogService</code>(S26)와 Java <code>AuditLogService</code>(S26-2)의 계약서다. Node.js가 HTTP POST로 Java에 감사 이벤트를 위임할 때 이 구조로 직렬화해서 보낸다. S26에서 다뤘던 <code>LogParams</code>와 필드 구조를 비교하면 두 레이어의 역할 차이가 명확히 보인다.</p></div>
+<pre><code>public record AuditLogRequest(
+    @NotBlank String actor,
+    @NotBlank String action,
+    @NotBlank String resourceType,
+    @NotBlank String resourceId,
+    String beforeState,   // nullable
+    @NotBlank String afterState
+) {}</code></pre>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>필드</th><th>설명</th></tr></thead>
+  <tbody>
+    <tr><td><code>actor</code></td><td>행위자 (operator ID, "SYSTEM")</td></tr>
+    <tr><td><code>action</code></td><td>이벤트 코드 (NFT_ACQUIRED, RECONCILE_MISMATCH_DETECTED 등)</td></tr>
+    <tr><td><code>resourceType</code></td><td>대상 엔티티 유형 (USER, NftHolding&hellip;)</td></tr>
+    <tr><td><code>resourceId</code></td><td>대상 ID (userId, contractAddr:tokenId)</td></tr>
+    <tr><td><code>beforeState</code></td><td>변경 전 JSON &mdash; 신규 생성 시 null</td></tr>
+    <tr><td><code>afterState</code></td><td>변경 후 JSON &mdash; checksum 입력값</td></tr>
+  </tbody>
+</table>
+</div>
+<p>SHA-256 입력값: <code>prevChecksum + eventTime + actor + action + resourceId + afterState</code>. <code>beforeState</code>는 체크섬 대상에 포함되지 않는다 &mdash; 참조용 스냅샷으로만 사용된다. 이는 S26(Node.js)과 동일한 설계 원칙이다.</p>
+<div class="ann-warn"><p><code>beforeState</code>를 체크섬에 넣지 않는 이유는 두 가지다 &mdash; &#9312; beforeState 자체가 이전 레코드의 afterState와 동일한 내용이므로 중복이다. &#9313; beforeState가 null인 경우(신규 생성)와 비어 있는 경우를 구분하기 어려워 체크섬 재현성이 깨질 수 있다. prevChecksum이 이미 이전 상태의 연속성을 보장한다.</p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 09 &#9472;&#9472; -->
+<h3 id="s26-2-slide09" class="slide-h">Slide 09 &mdash; 간지: Entity &amp; DDL (섹션 전환)</h3>
+<div class="ann-point"><p>섹션 2 전환 &mdash; Entity &amp; DDL. <code>NftHolding</code>과 <code>AuditLogEntry</code> JPA 엔티티 설계를 다룬다. JPA 어노테이션이 DB 스키마를 어떻게 매핑하는지, 그리고 각 설계 결정이 왜 필요한지를 이해하는 것이 목표다.</p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 10 &#9472;&#9472; -->
+<h3 id="s26-2-slide10" class="slide-h">Slide 10 &mdash; NftHolding @Entity</h3>
+<div class="ann-point"><p><code>NftHolding</code>은 <code>user_nft_holdings</code> 테이블과 1:1로 매핑되는 JPA 엔티티다. 이 엔티티의 설계에는 "영구 원장"이라는 요구사항이 직접 반영되어 있다 &mdash; DELETE 없음, releasedAt으로 소각&#183;이전을 표현, UniqueConstraint로 멱등성 확보.</p></div>
+<pre><code>@Entity
+@Table(name = "user_nft_holdings",
+  uniqueConstraints = @UniqueConstraint(
+    columnNames = {"user_id","token_id",
+                   "contract_addr","chain_id"}))
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class NftHolding {
+  @Id @GeneratedValue(strategy = SEQUENCE,
+    generator = "nft_holding_seq")
+  private Long    id;
+  private String  userId;      // 64자
+  private Long    tokenId;
+  private String  contractAddr; // 42자
+  private Integer chainId;
+  private Long    amount;
+  private Instant acquiredAt;
+  private Instant releasedAt;  // null = 현재 보유
+  private String  onChainTx;   // TX 해시 66자
+}</code></pre>
+<p><strong>설계 결정 4가지</strong></p>
+<p>&#9312; <code>releasedAt = NULL</code> &rarr; 현재 보유 중. <code>releasedAt &ne; NULL</code> &rarr; 소각&#183;이전됨. 영구 원장이므로 DELETE는 없다 &mdash; 레코드를 지우는 것 자체가 규정 위반이다.</p>
+<p>&#9313; <code>Unique(userId, tokenId, contractAddr, chainId)</code> &mdash; 동일 토큰 중복 INSERT를 DB 레벨에서 방지한다. 멱등성(Idempotency) 확보의 첫 번째 방어선이다.</p>
+<p>&#9314; <code>onChainTx</code> 보관 &mdash; 감사 시 블록 익스플로러에서 TX 해시로 직접 검증할 수 있다. 오프체인 기록과 온체인 TX가 연결된다.</p>
+<p>&#9315; 역방향 동기화 절대 금지 &mdash; 오프체인 원장에서 온체인으로 쓰는 방향은 없다. 온체인이 단일 진실 원천이고, 오프체인은 그것을 읽어서 기록한다.</p>
+<div class="speech">
+<p>"TypeScript에서는 class에 데코레이터를 붙였는데, Java에서는 어노테이션을 붙이는 게 비슷한 개념인가요?" &mdash; 맞다. TypeScript 데코레이터와 Java 어노테이션은 메타데이터를 클래스/메서드에 붙이는 개념적으로 유사한 메커니즘이다. 차이는 Java 어노테이션이 컴파일 타임에 처리되어 바이트코드에 포함되고, Spring이 런타임에 리플렉션으로 읽어서 동작을 결정한다는 점이다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 11 &#9472;&#9472; -->
+<h3 id="s26-2-slide11" class="slide-h">Slide 11 &mdash; AuditLogEntry @Entity</h3>
+<div class="ann-point"><p><code>AuditLogEntry</code>는 S26(Node.js)의 <code>AuditEntry</code> 타입과 구조는 비슷하지만 핵심 차이가 있다 &mdash; <code>prevChecksum</code> 필드가 추가된다. Node.js는 단일 레코드 체크섬이었지만 Java는 Hash Chain을 형성한다. 첫 레코드의 <code>prevChecksum</code>은 64자리 0으로 채운 genesis 값이다.</p></div>
+<pre><code>@Entity
+@Table(name = "audit_log")
+@Getter @NoArgsConstructor(access = PROTECTED)
+public class AuditLogEntry {
+  @Id @GeneratedValue(strategy = SEQUENCE)
+  private Long    id;
+  private Instant eventTime;
+  private String  actor;        // 64자
+  private String  action;       // 64자
+  private String  resourceType; // 32자
+  private String  resourceId;   // 128자
+  @JdbcTypeCode(SqlTypes.JSON)
+  private String  beforeState;  // jsonb, nullable
+  @JdbcTypeCode(SqlTypes.JSON)
+  private String  afterState;   // jsonb, not null
+  private String  prevChecksum; // 이전 레코드 체크섬
+  private String  checksum;     // SHA-256(64자)
+}</code></pre>
+<p><strong>Hash Chain 구조</strong>: 첫 레코드는 <code>prevChecksum = "0000...0"</code>(64자리 genesis). 이후 레코드는 직전 레코드의 <code>checksum</code>을 <code>prevChecksum</code>으로 사용한다.</p>
+<pre><code>레코드 1: checksum = SHA-256(GENESIS + ...)
+레코드 2: checksum = SHA-256(레코드1.checksum + ...)
+레코드 3: checksum = SHA-256(레코드2.checksum + ...)
+  &darr;
+레코드 N 변조 &rarr; 레코드 N+1의 prevChecksum 불일치 &rarr; 탐지</code></pre>
+<p><strong>S26(Node.js)과의 차이</strong>: Node.js <code>AuditLogService</code>는 단일 레코드 체크섬 &mdash; 레코드 하나를 독립적으로 검증한다. Java는 Chain &mdash; <code>prevChecksum</code>으로 순서&#183;연속성까지 보장한다. 레코드 N만 변조해도 N+1의 <code>prevChecksum</code>과 불일치하므로 탐지된다.</p>
+<div class="ann-warn"><p><code>@JdbcTypeCode(SqlTypes.JSON)</code>은 Hibernate 6.x(Spring Boot 3.x)에서 <code>jsonb</code> 컬럼을 매핑하는 방법이다. 구버전 Hibernate에서는 <code>@Type(JsonType.class)</code>나 <code>@Column(columnDefinition="jsonb")</code>를 사용했다. 버전마다 다르므로 의존성 확인이 필요하다.</p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 12 &#9472;&#9472; -->
+<h3 id="s26-2-slide12" class="slide-h">Slide 12 &mdash; 간지: Service 구현 (섹션 전환)</h3>
+<div class="ann-point"><p>섹션 3 전환 &mdash; Service 구현. <code>InternalLedgerService</code>와 <code>AuditLogService</code> 두 서비스의 핵심 로직을 다룬다. <code>@Transactional(REQUIRES_NEW)</code>와 <code>PESSIMISTIC_WRITE</code>가 이 섹션의 핵심 개념이다.</p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 13 &#9472;&#9472; -->
+<h3 id="s26-2-slide13" class="slide-h">Slide 13 &mdash; InternalLedgerService.recordNftHolding()</h3>
+<div class="ann-point"><p>이 메서드는 세 단계로 동작한다 &mdash; 중복 방지 &rarr; JPA save &rarr; 감사 로그 자동 기록. 순서가 중요하다. 중복 체크를 먼저 하지 않으면 동일한 TX 이벤트가 두 번 처리될 때 DB UniqueConstraint 예외가 발생한다. 예외를 던지는 것이 아니라 warn 로그 후 return하는 것이 멱등성 처리의 핵심이다.</p></div>
+<p>파일 위치: <code>internal-ledger/.../service/InternalLedgerService.java</code>, 메서드: <code>recordNftHolding(String userId, NftHoldingRequest request)</code></p>
+<p><strong>&#9312; 중복 방지 (멱등성)</strong>: <code>existsBy&hellip;</code> 쿼리로 <code>Unique(userId + tokenId + contractAddr + chainId)</code>를 확인한다. 이미 존재하면 warn 로그 후 return &mdash; 예외를 던지지 않는다. 예외를 던지면 호출한 Node.js 쪽에서 오류로 인식해서 재시도 루프가 시작된다. 이미 처리됐음을 조용히 인정하는 것이 올바른 멱등성 처리다.</p>
+<p><strong>&#9313; JPA save()</strong>: <code>NftHolding.of()</code> 팩토리 메서드로 엔티티를 생성하고 <code>nftHoldingRepository.save()</code>를 호출한다. <code>@Transactional</code>이 붙어 있으므로 실패 시 전체가 롤백된다.</p>
+<p><strong>&#9314; 감사 로그 자동 기록</strong>: <code>auditLogService.log()</code>를 호출한다. 이 메서드는 <code>REQUIRES_NEW</code> 트랜잭션으로 동작하므로 별도 TX를 생성한다. 메인 TX 롤백과 무관하게 audit_log는 보존된다.</p>
+<div class="ann-point"><p><strong>왜 REQUIRES_NEW가 필요한가</strong> &mdash; NFT save()가 실패하면 메인 TX가 롤백된다. 그래도 "이 사용자에 대해 NFT 기록을 시도했다"는 사실은 규제 증거로 남아야 한다. REQUIRES_NEW가 없으면 메인 TX 롤백 시 감사 로그도 함께 사라진다 &mdash; 규정 위반이다.</p></div>
+<div class="speech">
+<p>"TypeScript에서는 try-catch로 처리했는데, Java에서는 어떻게 다른가요?" &mdash; Java에서 @Transactional은 AOP(Aspect-Oriented Programming)로 동작한다. 메서드 호출 전후를 Spring이 가로채서 트랜잭션을 시작하고 커밋&#183;롤백을 결정한다. TypeScript에서 try-catch 안에 db.transaction()을 쓰는 것과 개념은 같지만, 어노테이션 하나로 인프라 코드를 서비스 로직에서 완전히 분리한다는 것이 차이다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 14 &#9472;&#9472; -->
+<h3 id="s26-2-slide14" class="slide-h">Slide 14 &mdash; AuditLogService.log() &mdash; REQUIRES_NEW 트랜잭션</h3>
+<div class="ann-point"><p>이 슬라이드는 S26-2에서 가장 중요한 개념을 담고 있다 &mdash; <code>REQUIRES_NEW</code>와 <code>PESSIMISTIC_WRITE</code>. 두 기술적 결정이 왜 필요한지, 없으면 어떤 문제가 생기는지를 이해해야 한다.</p></div>
+<p>파일 위치: <code>internal-ledger/.../service/AuditLogService.java</code>, 어노테이션: <code>@Transactional(propagation = REQUIRES_NEW)</code></p>
+<p><strong>REQUIRED vs REQUIRES_NEW 비교</strong></p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>Propagation</th><th>동작</th><th>감사 로그 결과</th></tr></thead>
+  <tbody>
+    <tr><td><strong>REQUIRED</strong></td><td>메인 TX에 합류</td><td>메인 TX 롤백 &rarr; 감사 로그도 롤백 (규정 위반)</td></tr>
+    <tr><td><strong>REQUIRES_NEW</strong></td><td>별도 TX 생성</td><td>메인 TX 롤백 무관 &rarr; 감사 로그 보존 (규정 준수)</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>실행 순서</strong>: &#9312; <code>Instant.now()</code>로 이벤트 시각 기록 &rarr; &#9313; <code>findLastForUpdate()</code>로 마지막 레코드 잠금(PESSIMISTIC_WRITE) &rarr; &#9314; <code>prevChecksum</code> 추출 (없으면 GENESIS "0000&hellip;0") &rarr; &#9315; <code>computeChecksum()</code> &rarr; INSERT</p>
+<p><strong>PESSIMISTIC_WRITE (SELECT FOR UPDATE)</strong>: 동시에 두 스레드가 <code>audit_log</code> INSERT를 시도하면 어떻게 되는가 &mdash; 한 쪽이 잠금을 획득하고 나머지는 대기한다. 순차 처리가 보장되므로 <code>prevChecksum</code> 순서도 보장된다. S26(Node.js)에서 PQueue concurrency:1로 해결했던 문제를 Java에서는 DB 잠금으로 해결한다.</p>
+<div class="ann-warn"><p>TypeScript의 PQueue는 단일 Node.js 프로세스 안에서만 유효하다. Java의 PESSIMISTIC_WRITE는 DB 레벨 잠금이므로 여러 JVM 인스턴스(Pod)가 동시에 실행되어도 안전하다. 멀티 Pod 환경에서는 DB 잠금이 필수다.</p></div>
+<div class="speech">
+<p><strong>Q: prevChecksum race condition이 실제로 어떻게 발생하나요?</strong></p>
+<p>두 요청이 동시에 들어오면 아래 시나리오가 가능하다.</p>
+<pre><code>Thread A: findLastForUpdate() → prevChecksum = &quot;a3f1...&quot;
+Thread B: findLastForUpdate() → prevChecksum = &quot;a3f1...&quot;  ← 동시에 같은 값 읽음
+
+Thread A: INSERT (prevChecksum=&quot;a3f1...&quot;, checksum=&quot;bb22...&quot;)
+Thread B: INSERT (prevChecksum=&quot;a3f1...&quot;, checksum=&quot;cc44...&quot;)  ← 체인 분기
+</code></pre>
+<p>두 레코드가 같은 <code>prevChecksum</code>을 가지면 Hash Chain이 분기한다. 이후 어느 레코드가 정상 체인인지 판별 불가 &mdash; 감사 로그 전체 무결성이 의심받는다.</p>
+<p><strong>PESSIMISTIC_WRITE 적용 후:</strong> Thread A가 <code>findLastForUpdate()</code>를 호출하는 순간 마지막 행에 DB 행 잠금(<code>SELECT ... FOR UPDATE</code>)이 걸린다. Thread B는 A의 트랜잭션이 커밋될 때까지 대기 → 커밋 후 최신 <code>prevChecksum</code>을 읽음 → 체인 순서 보장.</p>
+</div>
+<div class="speech">
+<p><strong>Q: PQueue와 PESSIMISTIC_WRITE는 같은 문제를 푸는 건가요?</strong></p>
+<p>맞다. 둘 다 <code>prevChecksum</code> race condition을 해결한다. 하지만 잠금 위치가 다르다.</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th></th><th>PESSIMISTIC_WRITE (현재 Java 구현)</th><th>PQueue (애플리케이션 계층)</th></tr></thead>
+  <tbody>
+    <tr><td>잠금 위치</td><td>DB 행 레벨</td><td>애플리케이션 메모리</td></tr>
+    <tr><td>동작</td><td>Thread B가 DB에서 대기</td><td>Thread B가 큐에서 대기 (DB 미도달)</td></tr>
+    <tr><td>멀티 Pod</td><td>안전 — DB가 중재자</td><td>위험 — Pod마다 별도 큐, 공유 안 됨</td></tr>
+    <tr><td>DB 부하</td><td>잠금 경합 발생 가능</td><td>DB까지 직렬화 후 도달</td></tr>
+    <tr><td>프로세스 재시작</td><td>영향 없음</td><td>큐에 쌓인 항목 유실 위험</td></tr>
+  </tbody>
+</table>
+</div>
+<p>멀티 Pod(Kubernetes 수평 확장) 환경에서는 PESSIMISTIC_WRITE가 필수다. PQueue는 단일 프로세스 안에서만 유효하므로 Pod가 2개 이상이면 race condition이 재발한다. 현재 Java 코드가 DB 잠금을 선택한 이유다.</p>
+</div>
+<div class="speech">
+<p>"PESSIMISTIC_WRITE를 쓰면 성능이 느려지지 않나요?" &mdash; 맞다. 잠금을 걸면 다른 스레드가 대기한다. 하지만 감사 로그는 처리량(throughput)보다 정확성이 중요하다. Hash Chain 순서가 깨지면 감사 로그 전체의 무결성이 의심받는다. 성능을 위해 정확성을 포기할 수 없는 영역이다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 15 &#9472;&#9472; -->
+<h3 id="s26-2-slide15" class="slide-h">Slide 15 &mdash; computeChecksum() &mdash; SHA-256 구현</h3>
+<div class="ann-point"><p>Java의 SHA-256 구현은 <code>MessageDigest</code>를 사용한다. S26(Node.js)의 <code>crypto.createHash('sha256')</code>와 동일한 알고리즘이지만, 입력값이 다르다 &mdash; Java는 <code>prevChecksum</code>을 포함해서 Hash Chain을 형성한다.</p></div>
+<pre><code>private String computeChecksum(
+    String prevChecksum,
+    String eventTime,
+    String actor,
+    String action,
+    String resourceId,
+    String afterState) {
+
+  String input =
+    prevChecksum + eventTime +
+    actor + action +
+    resourceId + afterState;
+
+  MessageDigest digest =
+    MessageDigest.getInstance("SHA-256");
+  byte[] hash = digest.digest(
+    input.getBytes(StandardCharsets.UTF_8));
+
+  return HexFormat.of().formatHex(hash);
+}</code></pre>
+<p><strong>S26(Node.js)과의 비교</strong></p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>항목</th><th>Node.js (S26)</th><th>Java (S26-2)</th></tr></thead>
+  <tbody>
+    <tr><td>라이브러리</td><td><code>crypto.createHash</code></td><td><code>MessageDigest</code></td></tr>
+    <tr><td>입력값</td><td>단일 레코드 필드</td><td>prevChecksum + 필드</td></tr>
+    <tr><td>Chain</td><td>없음 (단독 체크섬)</td><td>있음 (hash chain)</td></tr>
+    <tr><td>잠금</td><td>PQueue 직렬화</td><td>PESSIMISTIC_WRITE</td></tr>
+  </tbody>
+</table>
+</div>
+<p><code>verifyIntegrity(auditLogId)</code>: 레코드를 꺼내서 <code>computeChecksum</code>을 재계산한 뒤 저장된 <code>checksum</code>과 비교한다. 불일치 = 변조 감지. 외부 감사 시 사용하는 메서드다.</p>
+<div class="ann-point"><p><code>HexFormat.of().formatHex(hash)</code>는 Java 17에서 추가된 표준 라이브러리다. 이전에는 Apache Commons Codec의 <code>Hex.encodeHexString(hash)</code>나 직접 구현한 hex 변환 로직을 사용했다. Java 17 이상에서는 표준 라이브러리를 쓰는 것이 외부 의존성을 줄인다.</p></div>
+<div class="speech">
+<p>"Node.js에서도 prevChecksum을 추가하면 Hash Chain을 만들 수 있는 건 아닌가요?" &mdash; 맞다. 기술적으로는 가능하다. 하지만 Node.js는 여러 인스턴스(Pod)가 동시에 실행되므로 PQueue로는 Pod 간 Race Condition을 막을 수 없다. DB 레벨의 SELECT FOR UPDATE가 필요한데, Node.js에서도 가능하지만 Java의 @Transactional + PESSIMISTIC_WRITE 조합이 더 선언적이고 관리하기 쉽다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 16 &#9472;&#9472; -->
+<h3 id="s26-2-slide16" class="slide-h">Slide 16 &mdash; InternalGatewayClient &mdash; Node.js에서 Java를 부르는 방법</h3>
+<div class="ann-point"><p>이 슬라이드는 Node.js 쪽의 클라이언트 코드를 보여준다. Java API를 호출하는 TypeScript 코드다. 네 가지 설계 결정이 있다 &mdash; X-Internal-Secret 인증, Java DTO 미러 타입, 내부망 전용, void 응답 처리.</p></div>
+<p>파일 위치: <code>core-banking/src/adapters/InternalGatewayClient.ts</code>, 메서드: <code>recordNftHolding(userId, req)</code> &middot; <code>recordAuditLog(req)</code></p>
+<p><strong>X-Internal-Secret 헤더</strong>: 하드코딩 금지. 환경변수 <code>INTERNAL_GATEWAY_SECRET</code>에서 주입한다. 향후 mTLS로 전환 예정(Phase 2)이다.</p>
+<p><strong>Java DTO 미러 타입</strong>: <code>GatewayNftHoldingRequest</code>와 <code>GatewayAuditLogRequest</code>. Java record와 필드&#183;타입 1:1 대응. Java의 <code>Instant</code>는 TypeScript에서 ISO-8601 string으로 처리한다.</p>
+<p><strong>내부망 전용</strong>: 방화벽 레벨에서 외부 접근을 차단한다. Node.js issuer-service만 호출 허용이다.</p>
+<p><strong>void 엔드포인트</strong>: Java Controller는 <code>ResponseEntity&lt;Void&gt;</code>를 반환한다. Node.js 클라이언트는 content-type을 확인한 뒤 body를 파싱하지 않는다. 200 OK = 성공이다.</p>
+<div class="ann-warn"><p>Node.js 18+ built-in fetch를 사용한다. axios나 node-fetch 등 외부 HTTP 라이브러리 불필요. 단, fetch의 기본 동작은 HTTP 오류(4xx, 5xx)에서 예외를 던지지 않는다 &mdash; <code>response.ok</code>를 확인하거나 <code>response.status</code>를 체크해야 한다.</p></div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 17 &#9472;&#9472; -->
+<h3 id="s26-2-slide17" class="slide-h">Slide 17 &mdash; FINALIZED &rarr; 운영 DB 전체 호출 스택</h3>
+<div class="ann-point"><p>이 슬라이드는 온체인 이벤트가 최종 확정된 순간부터 영구 원장에 기록될 때까지의 전체 흐름을 7단계로 보여준다. S23~S26-2에서 배운 모든 컴포넌트가 하나의 파이프라인으로 연결된다.</p></div>
+<p><strong>1단계</strong>: <code>BlockchainEventListener</code> &mdash; Transfer(from=0x0) 이벤트 수신 &rarr; CONFIRMED &rarr; FINALIZED 전이</p>
+<p><strong>2단계</strong>: <code>LedgerService.updateMintRequest(requestId, { status: 'FINALIZED' })</code> &mdash; <code>mint_requests</code> 상태를 FINALIZED로 업데이트 (PostgreSQL, 임시 상태). <code>finalize()</code>라는 별도 메서드는 없다 &mdash; 상태 전이는 <code>updateMintRequest()</code> 하나가 <code>VALID_TRANSITIONS</code> 가드를 통해 처리한다.</p>
+<p><strong>3단계</strong>: <code>KyoboCoreBankingAdapter.recordNftHolding()</code> &mdash; <code>ICoreBankingAdapter</code> 인터페이스 구현체 호출</p>
+<p><strong>4단계</strong>: <code>InternalGatewayClient.recordNftHolding()</code> &mdash; Circuit Breaker 통과 &rarr; <code>POST /api/internal/users/{userId}/nft-holdings</code> HTTP 전송</p>
+<p><strong>5단계</strong>: <code>BlockchainGatewayController</code> (Java) &mdash; <code>@Valid</code> 검증 &rarr; <code>ledgerService.recordNftHolding()</code> 위임</p>
+<p><strong>6단계</strong>: <code>InternalLedgerService</code> (Java) &mdash; 중복 방지 &rarr; <code>nftHoldingRepository.save()</code> &rarr; 운영 DB INSERT</p>
+<p><strong>7단계</strong>: <code>AuditLogService.log()</code> (Java) &mdash; REQUIRES_NEW TX &rarr; prevChecksum 조회 &rarr; SHA-256 &rarr; 운영 DB INSERT</p>
+<p>3단계에서 4단계로 넘어가는 경계가 "PostgreSQL(임시) &rarr; 운영 DB(영구)" 경계다. 이 경계를 넘는 순간 가상자산이용자보호법 &sect;15 보존 의무 테이블에 기록된다.</p>
+<div class="speech">
+<p>"Circuit Breaker가 왜 필요한가요?" &mdash; Java internal-ledger 서비스가 장애나면 어떻게 되는가. Circuit Breaker 없이는 Node.js가 타임아웃까지 기다리는 HTTP 요청을 무한히 시도한다. 스레드&#183;커넥션이 고갈되어 Node.js 전체가 응답 불능 상태가 된다. Circuit Breaker는 일정 횟수 실패하면 OPEN 상태가 되어 즉시 fallback을 반환한다 &mdash; "지금 Java가 죽었으니 나중에 재시도하라"는 신호를 빠르게 주는 메커니즘이다.</p>
+</div>
+<div class="ann-point">
+  <p><strong>코드 기준 전체 흐름 — 어떤 클래스가 어느 테이블에 접근하는가</strong></p>
+  <pre><code>NFT 발행 요청
+  └─ LedgerService.createMintRequest()
+       ├─ INSERT mint_requests          (Node.js → PostgreSQL)
+       └─ auditLog.log()
+            └─ INSERT audit_log         (Node.js → PostgreSQL)
+
+온체인 Transfer 확정 (FINALIZED)
+  └─ LedgerService.updateMintRequest(FINALIZED)
+       ├─ UPDATE mint_requests          (Node.js → PostgreSQL)
+       ├─ auditLog.log()
+       │    └─ INSERT audit_log         (Node.js → PostgreSQL)
+       └─ KyoboCoreBankingAdapter.recordNftHolding()
+            └─ InternalGatewayClient
+                 └─ HTTP POST /api/internal/users/{userId}/nft-holdings
+                      └─ Java InternalLedgerService
+                           ├─ INSERT user_nft_holdings  (Java → 운영 DB)
+                           └─ AuditLogService.log()
+                                └─ INSERT audit_log      (Java → 운영 DB)
+
+Reconcile
+  └─ ReconcileAdminService
+       ├─ SELECT user_nft_holdings      (Node.js → PostgreSQL, 읽기 전용)
+       └─ mismatch 감지 시
+            └─ auditLog.log()
+                 └─ INSERT audit_log    (Node.js → PostgreSQL)</code></pre>
+  <p><strong>경계</strong>: <code>InternalGatewayClient</code>의 HTTP 호출 시점이 PostgreSQL(임시) → 운영 DB(영구) 경계다. 이 선을 넘는 순간 가상자산이용자보호법 §15 보존 의무 테이블에 기록된다.</p>
+</div>
+<hr class="sep">
+
+<!-- &#9472;&#9472; Slide 18 &#9472;&#9472; -->
+<h3 id="s26-2-slide18" class="slide-h">Slide 18 &mdash; S26-2 정리</h3>
+<div class="ann-point"><p>S26-2의 핵심 4가지를 정리한다. 이 세션은 기술 구현이 목적이 아니라 "왜 이렇게 설계했는가"를 이해하는 것이 목적이다. 각 결정의 동기를 설명할 수 있어야 한다.</p></div>
+<p><strong>&#9312; 역할 분리</strong>: Node.js는 블록체인 이벤트 처리(빠름&#183;경량), Java는 금융 규제 영구 저장(안전&#183;검증). API 계약(HTTP)으로 경계가 명확하다. 두 팀이 독립적으로 개발&#183;배포할 수 있다.</p>
+<p><strong>&#9313; REQUIRES_NEW 감사 로그</strong>: 메인 TX 롤백 &ne; 감사 로그 롤백. "시도했다"는 사실이 규제 증거다. PESSIMISTIC_WRITE로 Hash Chain 순서를 보장한다.</p>
+<p><strong>&#9314; 멱등성 (Idempotency)</strong>: <code>existsByUserIdAndTokenId...</code> 쿼리 + DB UniqueConstraint 이중 방어. 동일 TX 이벤트가 재수신되어도 중복 INSERT 없음. 네트워크 재시도에 안전하다.</p>
+<p><strong>&#9315; Circuit Breaker</strong>: Java 장애 &rarr; Node.js 요청 폭주 방지. 5회 실패 &rarr; OPEN &rarr; 30초 쿨다운. 상위 레이어에서 즉시 fallback 처리 가능하다.</p>
+<div class="speech">
+<p>다음 세션은 S54 &mdash; ReconcileAdmin (Hourly&#183;Daily&#183;Manual) + Cron 스케줄링 + 운영 알림. ReconcileAdmin은 S25에서 구현한 <code>reconcileNftHoldings()</code>를 운영 레벨에서 어떻게 스케줄링하고 관리하는지를 다룬다. S26-2에서 완성한 영구 원장이 있어야 Reconcile의 기준이 생긴다 &mdash; 원장과 온체인의 차이를 대조하는 것이 Reconcile의 본질이다.</p>
+</div>
+<hr class="sep">
+
+</section>
+
+
+
+<!-- ════════════════════════════════════════════════════════════
+     S27~S30 — 플레이스홀더
+     ════════════════════════════════════════════════════════════ -->
+<section id="session-27" class="session" style="--sc:#374151;--sb:#F9FAFB;--sbd:#D1D5DB">
+<h1 class="session-title"><span class="badge">S27</span>(추가 예정)</h1>
+<hr class="sep">
+<h3 id="s27-slide01" class="slide-h">Slide 01 — (추가 예정)</h3>
+<hr class="sep">
+</section>
+
+<section id="session-28" class="session" style="--sc:#374151;--sb:#F9FAFB;--sbd:#D1D5DB">
+<h1 class="session-title"><span class="badge">S28</span>(추가 예정)</h1>
+<hr class="sep">
+<h3 id="s28-slide01" class="slide-h">Slide 01 — (추가 예정)</h3>
+<hr class="sep">
+</section>
+
+<section id="session-29" class="session" style="--sc:#374151;--sb:#F9FAFB;--sbd:#D1D5DB">
+<h1 class="session-title"><span class="badge">S29</span>(추가 예정)</h1>
+<hr class="sep">
+<h3 id="s29-slide01" class="slide-h">Slide 01 — (추가 예정)</h3>
+<hr class="sep">
+</section>
+
+<section id="session-30" class="session" style="--sc:#374151;--sb:#F9FAFB;--sbd:#D1D5DB">
+<h1 class="session-title"><span class="badge">S30</span>(추가 예정)</h1>
+<hr class="sep">
+<h3 id="s30-slide01" class="slide-h">Slide 01 — (추가 예정)</h3>
+<hr class="sep">
+</section>
+
+</main>
+
+<script>
+// 사이드바 토글
+const nav    = document.getElementById('nav');
+const toggle = document.getElementById('nav-toggle');
+const main   = document.getElementById('main');
+toggle.addEventListener('click', () => {
+  nav.classList.toggle('hidden');
+  main.style.marginLeft  = nav.classList.contains('hidden') ? '0' : 'var(--sidebar)';
+  toggle.style.left      = nav.classList.contains('hidden') ? '0' : 'var(--sidebar)';
+  toggle.textContent     = nav.classList.contains('hidden') ? '▶' : '◀';
+});
+
+// 아코디언
+document.querySelectorAll('.ts > a.tslink').forEach(link => {
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    const ts = link.parentElement;
+    ts.classList.toggle('open');
+    const href = link.getAttribute('href');
+    if (href && href !== '#') {
+      const target = document.querySelector(href);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
+
+// 활성 링크 하이라이트
+const allLinks = document.querySelectorAll('#nav a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      allLinks.forEach(a => a.classList.remove('active'));
+      const active = document.querySelector(`#nav a[href="#${id}"]`);
+      if (active) active.classList.add('active');
+    }
+  });
+}, { rootMargin: '0px 0px -60% 0px' });
+document.querySelectorAll('[id]').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
+
+
+
+
+
