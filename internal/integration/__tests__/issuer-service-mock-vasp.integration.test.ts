@@ -329,6 +329,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
       .withPassword('kyobo')
       .withNetwork(dockerNetwork)
       .withNetworkAliases('postgres')
+      .withStartupTimeout(120_000)
       .start();
     pool = new Pool({ connectionString: pgContainer.getConnectionUri() });
     const schema = readFileSync(resolve(__dirname, '..', 'setup', 'schema.sql'), 'utf-8');
@@ -505,7 +506,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
     await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log, reconcile_history');
 
     // evm_revert 이후 NonceManager 내부 카운터가 체인과 어긋날 수 있으므로 재동기화
-    vaspServer.resetNonce();
+    await vaspServer.resetNonce();
   }, 20_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────

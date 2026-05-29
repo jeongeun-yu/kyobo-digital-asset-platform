@@ -248,6 +248,7 @@ async function main() {
 
   await waitPort('localhost', PG_PORT,    'PostgreSQL');
   await waitForPg(PG_URL, 'PostgreSQL');
+  await new Promise(r => setTimeout(r, 1000)); // PG 초기화 완료 버퍼
   await waitPort('localhost', REDIS_PORT, 'Redis');
 
   // ── 3. DB 스키마 + 시드 ──────────────────────────────────────────────────────

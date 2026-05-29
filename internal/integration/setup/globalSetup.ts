@@ -46,6 +46,7 @@ export default async function globalSetup() {
     .withDatabase('kyobo_test')
     .withUsername('kyobo')
     .withPassword('kyobo')
+    .withStartupTimeout(120_000)
     .start();
 
   const pgUrl = pgContainer.getConnectionUri();
