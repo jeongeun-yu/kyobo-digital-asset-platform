@@ -150,3 +150,16 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_time
 
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY audit_log_insert_only ON audit_log FOR INSERT WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS reconcile_history (
+  id               BIGSERIAL    PRIMARY KEY,
+  run_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  run_type         VARCHAR(16)  NOT NULL,  -- 'HOURLY' | 'DAILY' | 'MANUAL'
+  target_count     INT          NOT NULL,
+  mismatch_count   INT          NOT NULL,
+  mismatch_user_ids JSONB       NOT NULL DEFAULT '[]',
+  duration_ms      INT          NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reconcile_history_run_at
+  ON reconcile_history(run_at DESC);

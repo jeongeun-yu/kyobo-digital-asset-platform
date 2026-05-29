@@ -1,34 +1,70 @@
 /**
  * issuer-service Sepolia 통합 테스트
  *
- * 실제 흐름:
- *   HTTP POST → WebhookServer → WebhookPublishHandler → Redis Stream → ActivityProcessor → IssuerService
+ * 발행 경로 (Phase 1 — 동기 구간):
+ *   HTTP POST → WebhookServer → WebhookPublishHandler → Redis Stream XADD
+ *   → ConsumerGroupWorker XREADGROUP → ActivityProcessor → IssuerService
  *   → ExternalVASPAdapter → VASPServer (HTTP) → MockVASP (Sepolia 테스트넷)
- *   → VASPServer NFT_ISSUED 콜백 → WebhookServer → Redis Stream → NFTIssuedProcessor
- *   → ChainEventListener (Issued 이벤트) → IssuanceConfirmHandler
- *   → TxStateMachineService → PostgreSQL CONFIRMED
+ *   → 서명·브로드캐스트 → issuance_requests SUBMITTED
  *
- * 9가지 시나리오:
- *   [1] NORMAL     : 정상 발행 → Issued 이벤트 → CONFIRMED
- *   [2] REVERT     : TX revert → issuance_requests FAILED
- *   [3] NO_EMIT    : mint 성공, 이벤트 없음 → SUBMITTED 유지
- *   [4] PENDING    : 자연 발생 mempool pending 구간 포착 → CONFIRMED
- *   [5] REORG      : DB 상태 주입 → tx_mint_requests REORGED → 상태머신 검증
- *   [stream-2]     : 중복 requestId → 멱등성 보장 (Redis Stream 독립 검증)
- *   [stream-3]     : retryCount >= 3 → DLQ 이동
- *   [stream-4]     : XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
- *   [poll-1]       : pollStaleRequests — PENDING 10분 초과 → getTransferStatus → CONFIRMED
+ * 발행 경로 (Phase 2A — VASP 콜백):
+ *   VASPServer (TX 확정) → NFT_ISSUED 콜백 → WebhookServer
+ *   → WebhookPublishHandler → Redis Stream XADD
+ *   → NFTIssuedProcessor → PgNFTLedgerService.creditNFT → user_nft_holdings
  *
- * Sepolia 제약 및 대체 구현:
- *   [4] PENDING — evm_setAutomine 불가 → nonce 블로커 TX(maxFeePerGas=1 wei)로 대체
- *   [5] REORG   — evm_snapshot 불가 → DB 상태 직접 주입(UPDATE status='REORGED')으로 대체
+ * 발행 경로 (Phase 2B — 체인 이벤트 폴링):
+ *   ChainEventListener (Issued 이벤트 폴링, 최대 10블록 범위)
+ *   → IssuanceConfirmHandler → TxStateMachineService → emit('transition', CONFIRMED)
+ *   → TxTransitionBridge → issuance_requests CONFIRMED + audit_log
+ *   → ProcessedEventHandler → processed_events
+ *
+ * 세 레이어 상태머신:
+ *   tx_mint_requests  (TxStatus)      : REQUESTED → SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED
+ *   mint_requests     (MintStatus)    : TxStatus와 동기화
+ *   issuance_requests (IssuanceStatus): SUBMITTED → CONFIRMED → COMPLETED
+ *   ※ TxTransitionBridge가 'transition' 이벤트를 받아 세 테이블을 cascade 업데이트
+ *
+ * 10가지 시나리오:
+ *   [1] NORMAL      : 정상 발행 → Issued 이벤트 → CONFIRMED
+ *                     + processed_events 기록 + audit_log(ISSUANCE_CONFIRMED) 검증
+ *   [2] REVERT      : TX revert → VASPServer 500 → issuance_requests FAILED
+ *   [3] NO_EMIT     : mint 성공, 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
+ *   [4] PENDING     : 자연 발생 mempool pending 구간 포착 (blockNumber=null 확인) → CONFIRMED
+ *   [5] REORG       : DB 상태 직접 주입 → tx_mint_requests REORGED → 상태머신 동작 검증
+ *   [stream-2]      : 동일 requestId 두 번 XADD → IdempotencyGuard → creditNFT 1회
+ *   [stream-3]      : _retryCount >= 3 → DLQ 이동 (AlwaysFailProcessor 사용)
+ *   [stream-4]      : CRASH_CONSUMER XREADGROUP without XACK → PEL 잔류
+ *                     → minIdleMs(200ms) 초과 → NEW_CONSUMER XAUTOCLAIM 재수신
+ *   [poll-1]        : NO_EMIT → SUBMITTED → DB PENDING 조작(-11분)
+ *                     → pollStaleRequests → GET /transfers/:txHash → VASPServer 'completed'
+ *                     → handleMined → handleConfirmed → CONFIRMED
+ *   [reconcile-1]   : NO_EMIT → user_nft_holdings 미기록 상태에서 pollStaleRequests → CONFIRMED
+ *                     → runManualReconcile → ONCHAIN_ONLY 불일치
+ *                     → reconcile_history(MANUAL, mismatch_count=1)
+ *                     + audit_log(RECONCILE_MANUAL_TRIGGER, RECONCILE_MISMATCH_DETECTED)
+ *
+ * Sepolia 제약 및 대체 구현 (Anvil과 차이점):
+ *   [4] PENDING     — evm_setAutomine 불가 → 자연 발생 mempool pending 구간 포착으로 대체
+ *   [5] REORG       — evm_snapshot/evm_revert 불가 → DB 상태 직접 주입으로 대체
+ *   TOKEN_ID        — Date.now() 사용 (이전 실행 잔액과 충돌 방지)
+ *   ChainEventListener — Alchemy eth_getLogs 10블록 범위 제한 준수
+ *   minIdleMs       — 300_000ms (5분): 이전 테스트 PEL 잔류 메시지의 의도치 않은
+ *                     XAUTOCLAIM 재시도로 추가 Sepolia TX 발생하는 것을 방지
+ *   beforeEach      — vaspServer.resetNonce() 로 NonceManager 내부 카운터 재동기화
+ *                     (Sepolia TX 완료 후 카운터가 체인 nonce와 어긋날 수 있음)
  *
  * 인프라:
  *   - Sepolia 테스트넷 (SEPOLIA_RPC_URL 환경변수)
  *   - MockVASP 고정 주소 (SEPOLIA_MOCK_VASP_ADDR 환경변수)
+ *   - VASPServer (HTTP, 포트 19877) — 서명·브로드캐스트·콜백·NonceManager
+ *   - Java internal-ledger 컨테이너 — recordNftHolding / recordAuditLog (운영과 동일 경로)
  *   - PostgreSQL — @testcontainers/postgresql
  *   - Redis — testcontainers GenericContainer
- *   - Java internal-ledger — testcontainers GenericContainer
+ *
+ * 주의:
+ *   - PgHybridCoreBankingAdapter: 테스트 전용 클래스
+ *     getUserAccount()만 로컬 DB(user_wallet_mapping) 조회로 우회,
+ *     recordNftHolding / recordAuditLog는 Java 컨테이너 경유 (운영과 동일)
  */
 
 import { readFileSync }                 from 'fs';
@@ -45,7 +81,6 @@ import { GenericContainer, Network, StartedNetwork, Wait } from 'testcontainers'
 import { TokenIssuerFactory }                    from '../../apps/issuer-service/src/factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from '../../apps/issuer-service/src/services/EventConditionService';
 import { IssuanceConfirmHandler }                from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
-import { HttpInternalLedgerClient }             from '../../apps/issuer-service/src/infra/HttpInternalLedgerClient';
 import type { IEventHandler }                    from '@kyobo/event-engine/interfaces';
 import { IoRedisAdapter }                        from '../../apps/issuer-service/src/infra/RedisAdapter';
 import {
@@ -55,9 +90,9 @@ import {
   WebhookPublishHandler,
   WebhookPayload,
 }                                                from '@kyobo/event-engine/webhook';
-import { StubCoreBankingAdapter }                from '@kyobo/core-banking';
+import { KyoboCoreBankingAdapter, InternalGatewayClient } from '@kyobo/core-banking';
 import { LedgerService }                         from '../../packages/core-banking/src/ledger/LedgerService';
-import { PgDatabaseClient }                      from '../../packages/core-banking/src/ledger/PgDatabaseClient';
+import { PgDatabaseClient }                      from '../../apps/issuer-service/src/infra/PgDatabaseClient';
 import { EVMAdapter }                            from '@kyobo/chain-adapters';
 import type { ChainEvent }                       from '@kyobo/chain-adapters';
 import { ChainEventListener }                    from '@kyobo/event-engine/listener';
@@ -77,6 +112,8 @@ import { ExternalVASPAdapter }                   from '@kyobo/vasp';
 import { TxStateMachineService }                 from '../../packages/vasp/src/tx/TxStateMachineService';
 
 import MOCK_VASP_ABI                             from '../vasp-testing/MockVASP.abi.json';
+import { ReconcileService, ReconcileAdminService } from '@kyobo/core-banking';
+import { PgNftHoldingRepository }                from '../../apps/issuer-service/src/infra/PgNftHoldingRepository';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
@@ -92,8 +129,12 @@ const TOKEN_ID_BN = BigInt(TOKEN_ID);
 
 // ── PgHybridCoreBankingAdapter ────────────────────────────────────────────────
 
-class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
-  constructor(private readonly pool: Pool) { super(); }
+// getUserAccount: 테스트용 로컬 DB (user_wallet_mapping) 조회
+// recordNftHolding / recordAuditLog: Java internal-ledger 경유 (운영과 동일 경로)
+class PgHybridCoreBankingAdapter extends KyoboCoreBankingAdapter {
+  constructor(private readonly pool: Pool, gateway: InternalGatewayClient) {
+    super(gateway);
+  }
 
   override async getUserAccount(userId: string) {
     const { rows } = await this.pool.query(
@@ -103,7 +144,7 @@ class PgHybridCoreBankingAdapter extends StubCoreBankingAdapter {
     if (!rows[0]) return null;
     return {
       userId,
-      accountId: `acc-${userId}`,
+      accountId:  `acc-${userId}`,
       walletAddr: rows[0].wallet_addr as string,
       status:     'active' as const,
     };
@@ -168,17 +209,22 @@ function elapsed(startMs: number): string {
 }
 
 async function logDbState(pool: Pool, label: string, startMs: number): Promise<void> {
-  const { rows } = await pool.query(
-    'SELECT status, fail_reason, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 1',
-  );
-  if (rows.length === 0) {
-    console.log(`  [DB ${elapsed(startMs)}] ${label} — issuance_requests: (없음)`);
-    return;
-  }
-  const r = rows[0];
-  const failPart = r.fail_reason ? ` fail=${String(r.fail_reason).slice(0, 60)}` : '';
-  const txPart   = r.tx_hash    ? ` tx=${String(r.tx_hash).slice(0, 14)}…` : '';
-  console.log(`  [DB ${elapsed(startMs)}] ${label} — status=${r.status}${txPart}${failPart}`);
+  const [iss, mint, tx] = await Promise.all([
+    pool.query('SELECT status, fail_reason, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 1'),
+    pool.query('SELECT status,              tx_hash FROM mint_requests     ORDER BY created_at DESC LIMIT 1'),
+    pool.query('SELECT status,              tx_hash FROM tx_mint_requests  ORDER BY created_at DESC LIMIT 1'),
+  ]);
+  const fmt = (rows: any[], table: string) => {
+    if (rows.length === 0) return `${table}: (없음)`;
+    const r = rows[0];
+    const fail = r.fail_reason ? ` fail=${String(r.fail_reason).slice(0, 50)}` : '';
+    const tx   = r.tx_hash    ? ` tx=${String(r.tx_hash).slice(0, 14)}…`      : '';
+    return `${table}: ${r.status.padEnd(10)}${tx}${fail}`;
+  };
+  console.log(`  [DB ${elapsed(startMs)}] ${label}`);
+  console.log(`    · ${fmt(iss.rows,  '[issuance_requests]')}`);
+  console.log(`    · ${fmt(mint.rows, '[mint_requests]    ')}`);
+  console.log(`    · ${fmt(tx.rows,   '[tx_mint_requests] ')}`);
 }
 
 async function logRedisStream(redis: Redis, label: string, startMs: number): Promise<void> {
@@ -261,7 +307,7 @@ class ProcessedEventHandler implements IEventHandler {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () => {
+describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', () => {
 
   // ── beforeAll ──────────────────────────────────────────────────────────────
 
@@ -302,7 +348,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     redis = new Redis(redisUrl);
     console.log(`  [2/6] Redis 준비 완료 → ${redisUrl}`);
 
-    // ③ PostgreSQL Testcontainer
+    // ③ PostgreSQL + Java internal-ledger 컨테이너
     console.log('\n  [3/6] PostgreSQL + Java 컨테이너 시작...');
     dockerNetwork = await new Network().start();
     pgContainer = await new PostgreSqlContainer('postgres:16-alpine')
@@ -318,7 +364,6 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     await pool.query(schema);
     console.log('  [3/6] PostgreSQL 준비 완료');
 
-    // ④ Java internal-ledger 컨테이너
     javaContainer = await new GenericContainer('kyobo/internal-ledger:test')
       .withNetwork(dockerNetwork)
       .withEnvironment({
@@ -354,7 +399,8 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     });
 
     // ⑥ Core Banking 어댑터 + 정적 데이터 시드
-    coreBanking = new PgHybridCoreBankingAdapter(pool);
+    const gateway = new InternalGatewayClient({ baseUrl: javaBaseUrl, secret: 'test-secret' });
+    coreBanking = new PgHybridCoreBankingAdapter(pool, gateway);
 
     await pool.query(
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
@@ -384,10 +430,9 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     const conditionSvc = new EventConditionService([new ActivityConditionStrategy()]);
     const factory      = new TokenIssuerFactory({
       chainAdapter,
-      vaspAdapter:           externalVasp,
+      vaspAdapter: externalVasp,
       coreBanking,
       pool,
-      internalLedgerClient:  new HttpInternalLedgerClient(javaBaseUrl),
     });
 
     const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
@@ -429,7 +474,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     // ConsumerGroupPool: activity-consumers → ActivityProcessor → IssuerService
     //                    nft-consumers      → NFTIssuedProcessor → PgNFTLedgerService
-    ledger = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    ledger = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     const activityProcessor  = new ActivityProcessor(issuerService, idempotency);
     const nftIssuedProcessor = new NFTIssuedProcessor(idempotency, ledger);
     const streamDlq = new DLQHandler(
@@ -438,7 +483,9 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     );
     consumerPool = new ConsumerGroupPool(
       redisAdapter, streamDlq,
-      { streamKey: 'kyobo:events', batchSize: 10, blockMs: 3_000, minIdleMs: 60_000 },
+      // minIdleMs=300_000: 이전 테스트의 PEL 잔류 메시지가 후속 테스트 중
+      // XAUTOCLAIM으로 재시도되어 추가 Sepolia TX를 발생시키는 것을 방지한다.
+      { streamKey: 'kyobo:events', batchSize: 10, blockMs: 3_000, minIdleMs: 300_000 },
       [
         { groupName: 'activity-consumers', consumerId: 'activity-1', processors: [activityProcessor] },
         { groupName: 'nft-consumers',      consumerId: 'nft-1',      processors: [nftIssuedProcessor] },
@@ -465,10 +512,11 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     await dockerNetwork?.stop().catch(() => {});
   });
 
-  // ── beforeEach: 이전 테스트 드레인 → 테이블 초기화 ──────────────────────────
+  // ── beforeEach: 이전 테스트 드레인 → 테이블 초기화 → NonceManager 재동기화 ─
 
   beforeEach(async () => {
     // Sepolia 블록타임 고려 — 이전 TX가 confirm될 때까지 최대 2분 대기
+    // NO_EMIT 테스트 후에는 SUBMITTED 상태가 남아 드레인이 타임아웃되므로 .catch()로 무시
     await waitFor(async () => {
       const { rows } = await pool.query(
         "SELECT COUNT(*) AS cnt FROM issuance_requests WHERE status NOT IN ('CONFIRMED','FAILED')",
@@ -476,7 +524,11 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       return parseInt(rows[0].cnt, 10) === 0;
     }, 120_000, 'drain previous test').catch(() => {});
 
-    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log');
+    await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log, reconcile_history');
+
+    // 이전 테스트에서 발생한 Sepolia TX(PEL 재시도 포함)로 NonceManager 카운터가
+    // 체인 실제 nonce와 어긋날 수 있으므로 각 테스트 전에 강제 재동기화한다.
+    vaspServer?.resetNonce();
   }, 180_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
@@ -525,7 +577,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
         const txShort = rows[0].tx_hash ? ` tx=${String(rows[0].tx_hash).slice(0, 16)}…` : '';
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}${txShort}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
       }
       return rows[0].status !== 'REQUESTED';
     }, 60_000, 'SUBMITTED');
@@ -551,7 +603,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     const { rows } = await pool.query('SELECT status, tx_hash, wallet_addr FROM issuance_requests');
     console.log(`\n  ── CONFIRMED 달성 ──────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
     console.log(`  · tx_hash      ${rows[0].tx_hash}`);
     console.log(`  · wallet_addr  ${rows[0].wallet_addr}`);
     await logRedisStream(redis, 'CONFIRMED 직후', t0);
@@ -617,7 +669,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     expect(nftRows[0].on_chain_tx.toLowerCase()).toBe(txHash.toLowerCase());
     console.log(`  ✔ user_nft_holdings 자동 기록 확인 (creditNFT 경로)  token_id=${nftRows[0].token_id}`);
 
-    // audit_log — TxTransitionBridge CONFIRMED 전이 시 HttpInternalLedgerClient 자동 호출
+    // audit_log — TxTransitionBridge CONFIRMED 전이 시 coreBanking.recordAuditLog 자동 호출
     await waitFor(async () => {
       const { rows } = await pool.query(
         "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request'",
@@ -629,7 +681,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     );
     expect(auditRows[0].actor).toBe('user-sepolia-001');
     expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
-    console.log(`  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → HttpInternalLedgerClient)`);
+    console.log(`  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → coreBanking.recordAuditLog)`);
 
     console.log(`\n  ✔ [1] NORMAL 전체 완료 (총 ${elapsed(t0)})`);
   }, 300_000);
@@ -671,7 +723,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
         const failPart = rows[0].fail_reason
           ? ` fail=${String(rows[0].fail_reason).slice(0, 60)}`
           : '';
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}${failPart}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
         await logRedisStream(redis, `status=${lastStatus}`, t0);
       }
       return rows[0].status !== 'REQUESTED';
@@ -679,7 +731,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     const { rows } = await pool.query('SELECT status, fail_reason FROM issuance_requests');
     console.log(`\n  ── 최종 상태 ───────────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
     console.log(`  · fail_reason  ${String(rows[0].fail_reason).slice(0, 120)}`);
     await logRedisStream(redis, '최종 상태', t0);
 
@@ -733,7 +785,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
         const txShort = rows[0].tx_hash ? ` tx=${String(rows[0].tx_hash).slice(0, 16)}…` : '';
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}${txShort}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
         await logRedisStream(redis, `status=${lastStatus}`, t0);
       }
       return rows[0].status === 'SUBMITTED';
@@ -761,7 +813,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     });
 
     console.log(`\n  ── 최종 상태 ───────────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
     console.log(`  · TX receipt.status          ${receipt!.status} (1=성공)`);
     console.log(`  · TX 내 Issued 이벤트 수     ${issuedLogs.length} (0이어야 함)`);
     console.log(`  · ledger 잔액 (최종)         ${await ledger.getNFTBalance(operatorAddr, TOKEN_ID)} (변화 없어야 함)`);
@@ -820,7 +872,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows.length === 0) return false;
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
       }
       if (rows[0].status === 'SUBMITTED' && rows[0].tx_hash) {
         submittedTxHash = rows[0].tx_hash as string;
@@ -861,7 +913,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     const { rows } = await pool.query('SELECT status, tx_hash FROM issuance_requests');
     console.log(`\n  ── CONFIRMED 달성 ──────────────────────────────────────────`);
-    console.log(`  [DB ${elapsed(t0)}] status=${rows[0].status}`);
+    await logDbState(pool, `최종 확인`, t0);
 
     expect(rows[0].status).toBe('CONFIRMED');
     expect(rows[0].tx_hash).toMatch(/^0x/);
@@ -903,7 +955,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       if (rows[0].status === 'FAILED') throw new Error(`TX FAILED: ${rows[0].fail_reason}`);
       if (rows[0].status !== lastStatus) {
         lastStatus = rows[0].status as string;
-        console.log(`  [DB ${elapsed(t0)}] status=${lastStatus}`);
+        await logDbState(pool, `폴링: ${lastStatus}`, t0);
       }
       if (rows[0].status === 'SUBMITTED' && rows[0].tx_hash) {
         txHash = rows[0].tx_hash as string;
@@ -983,7 +1035,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ('user-idem-002', '0xOWNER002', 'SEPOLIA', true) ON CONFLICT (user_id) DO NOTHING`,
     );
-    const idemLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    const idemLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     let creditCount       = 0;
     const origCredit      = idemLedger.creditNFT.bind(idemLedger);
     idemLedger.creditNFT  = async (owner, tokenId, amount, txHash) => {
@@ -1039,7 +1091,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dlqIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
-    const dlqLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    const dlqLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     const failProcessor  = new AlwaysFailProcessor(dlqIdempotency, dlqLedger);
 
     const dlqHandler = new DLQHandler(
@@ -1098,7 +1150,7 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
       `INSERT INTO user_wallet_mapping (user_id, wallet_addr, vasp_type, verified)
        VALUES ('user-xclaim-004', '0xOWNER004', 'SEPOLIA', true) ON CONFLICT (user_id) DO NOTHING`,
     );
-    const claimLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111);
+    const claimLedger      = new PgNFTLedgerService(pool, mockVaspAddr, 11155111, coreBanking);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const claimIdempotency = new IdempotencyGuard(new RedisIdempotencyStore(redis as any));
     const claimProcessor   = new NFTIssuedProcessor(claimIdempotency, claimLedger);
@@ -1228,5 +1280,148 @@ describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () 
     await controlVasp.setMode('NORMAL');
     console.log('  · setMode(NORMAL) 복원 완료');
   }, 120_000);
+
+  // ── [reconcile-1] NFT Reconcile 대사 (Sepolia) ───────────────────────────────
+  //
+  // 시나리오:
+  //   ① NO_EMIT 모드: TX 확정, Issued 이벤트 없음 → VASP 콜백 없음 → user_nft_holdings 미기록
+  //   ② pollStaleRequests → CONFIRMED (user_nft_holdings는 여전히 없음)
+  //   ③ runManualReconcile → ONCHAIN_ONLY 불일치 감지
+  //   ④ reconcile_history 기록 검증
+
+  it('[reconcile-1] NFT Reconcile — Sepolia 온체인 보유 / 원장 없음 → ONCHAIN_ONLY 감지', async () => {
+    console.log('\n──────────────────────────────────────────────────────────────');
+    console.log('  [reconcile-1] Reconcile — ONCHAIN_ONLY (Sepolia)');
+    console.log('──────────────────────────────────────────────────────────────');
+
+    const t0     = Date.now();
+    const userId = 'user-sepolia-001';
+
+    // ① NO_EMIT: TX 확정, Issued 이벤트/콜백 없음 → user_nft_holdings 미기록
+    await controlVasp.setMode('NO_EMIT');
+
+    // Alchemy 무료 티어 eth_getLogs 10-block 범위 제한 대응:
+    // webhook 전송 직전 블록을 fromBlock으로 고정 → TX 이후 ~2-3블록만 스캔
+    const reconcileFromBlock = await chainAdapter.getBlockNumber();
+
+    const statusCode = await postWebhook(makePayload({
+      eventType: 'ACTIVITY_ACHIEVED',
+      data: {
+        userId,
+        activityId: randomUUID(),
+        eventType:  TEST_EVENT_TYPE,
+        eventCode:  1,
+        data:       { steps: 15_000 },
+      },
+    }));
+    expect(statusCode).toBe(202);
+
+    let txHash = '';
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT tx_hash FROM tx_mint_requests WHERE status = 'SUBMITTED' AND tx_hash IS NOT NULL",
+      );
+      if (rows.length > 0 && rows[0].tx_hash) { txHash = rows[0].tx_hash as string; return true; }
+      return false;
+    }, 60_000, 'SUBMITTED in tx_mint_requests');
+    console.log(`  · tx_hash=${txHash.slice(0, 18)}… (${elapsed(t0)})`);
+
+    // Sepolia TX 채굴 대기
+    await provider.waitForTransaction(txHash, 1, 60_000);
+    console.log(`  · TX 채굴 완료 (${elapsed(t0)})`);
+
+    // VASPServer txStatuses='completed' 대기
+    // VASPServer._waitAndNotify(tx.wait(1))가 완료된 후 txStatuses='completed'로 설정됨
+    // provider.waitForTransaction과 tx.wait(1)은 독립적으로 폴링하므로 race condition 가능
+    await waitFor(async () => {
+      const res = await fetch(`http://localhost:${VASP_PORT}/transfers/${txHash}`);
+      if (!res.ok) return false;
+      const body = await res.json() as { status: string };
+      return body.status === 'completed';
+    }, 30_000, 'VASPServer txStatuses=completed');
+    console.log(`  · VASPServer txStatuses=completed 확인 (${elapsed(t0)})`);
+
+    // pollStaleRequests로 CONFIRMED 전이
+    await pool.query(
+      "UPDATE tx_mint_requests SET status = 'PENDING', created_at = NOW() - INTERVAL '11 minutes' WHERE status = 'SUBMITTED'",
+    );
+    const pollResult = await txStateMachine.pollStaleRequests();
+    expect(pollResult.processed).toBe(1);
+
+    await waitFor(async () => {
+      const { rows } = await pool.query('SELECT status FROM issuance_requests');
+      return rows[0]?.status === 'CONFIRMED';
+    }, 15_000, 'issuance_requests CONFIRMED');
+    console.log(`  · issuance_requests CONFIRMED (${elapsed(t0)})`);
+
+    // user_nft_holdings 기록 없음 확인 (NO_EMIT → 콜백 없음 → NFTIssuedProcessor 미실행)
+    const { rows: emptyHoldings } = await pool.query(
+      'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
+    );
+    expect(emptyHoldings.length).toBe(0);
+    console.log('  · user_nft_holdings 비어 있음 확인 (NO_EMIT 시뮬)');
+
+    // ③ Reconcile 실행
+    const holdingRepo = new PgNftHoldingRepository(pool);
+    const reconcileService = new ReconcileService(
+      coreBanking,
+      {
+        getTotalSupply:           async () => 0n,
+        getCustodyAccountBalance: async () => 0n,
+        balanceOf: (addr, tokenId) =>
+          chainAdapter.getBalance(mockVaspAddr, addr, tokenId),
+        getNftHoldings: (addr) =>
+          chainAdapter.getNftHoldings(mockVaspAddr, addr, reconcileFromBlock),
+        getBlockNumber: () => chainAdapter.getBlockNumber(),
+      },
+      holdingRepo,
+      { fire: async (msg, sev) => console.log(`  · [Reconcile alert] ${sev}: ${msg}`) },
+    );
+    const reconcileAdmin = new ReconcileAdminService(
+      new PgDatabaseClient(pool),
+      reconcileService,
+      coreBanking,
+      { sendAlert: async (p) => console.log(`  · [ReconcileAlert] ${p.severity}: ${p.title}`) },
+    );
+
+    console.log(`  · runManualReconcile 시작 (${elapsed(t0)})`);
+    const result = await reconcileAdmin.runManualReconcile(userId, 'test-operator');
+    console.log(`  · runManualReconcile 완료 — mismatchCount=${result.mismatchCount} (${elapsed(t0)})`);
+
+    expect(result.mismatchCount).toBe(1);
+    expect(result.mismatchUserIds).toContain(userId);
+    console.log('  ✔ mismatchCount=1, mismatchUserIds에 userId 포함');
+
+    // ④ reconcile_history 검증
+    const { rows: histRows } = await pool.query(
+      "SELECT run_type, target_count, mismatch_count, mismatch_user_ids FROM reconcile_history ORDER BY run_at DESC LIMIT 1",
+    );
+    expect(histRows[0]?.run_type).toBe('MANUAL');
+    expect(histRows[0]?.mismatch_count).toBe(1);
+    const mismatchIds = histRows[0]?.mismatch_user_ids as string[];  // JSONB → auto-parsed by pg
+    expect(mismatchIds).toContain(userId);
+    console.log('  ✔ reconcile_history 기록 확인 (run_type=MANUAL, mismatch_count=1)');
+
+    // audit_log 검증 (Java 경유)
+    await waitFor(async () => {
+      const { rows } = await pool.query(
+        "SELECT action FROM audit_log WHERE resource_id = $1 AND action LIKE 'RECONCILE%'",
+        [userId],
+      );
+      return rows.length >= 2;
+    }, 10_000, 'reconcile audit_log entries');
+
+    const { rows: auditRows } = await pool.query(
+      "SELECT action FROM audit_log WHERE resource_id = $1 AND action LIKE 'RECONCILE%' ORDER BY event_time",
+      [userId],
+    );
+    const actions = auditRows.map(r => r.action as string);
+    expect(actions).toContain('RECONCILE_MANUAL_TRIGGER');
+    expect(actions).toContain('RECONCILE_MISMATCH_DETECTED');
+    console.log('  ✔ audit_log 기록 확인 (RECONCILE_MANUAL_TRIGGER + RECONCILE_MISMATCH_DETECTED)');
+
+    await controlVasp.setMode('NORMAL');
+    console.log(`  ✔ [reconcile-1] 완료 (총 ${elapsed(t0)})`);
+  }, 300_000);
 
 });

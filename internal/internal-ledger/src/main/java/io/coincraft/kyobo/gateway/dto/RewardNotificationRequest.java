@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotNull;
 
 public record RewardNotificationRequest(
     @NotBlank String userId,
-    @NotBlank String policyId,
-    @NotNull Long tokenId,
-    @NotBlank String onChainTx
+    @NotBlank String rewardType,
+    @NotBlank String tokenId,
+    @NotBlank String txHash
 ) {}

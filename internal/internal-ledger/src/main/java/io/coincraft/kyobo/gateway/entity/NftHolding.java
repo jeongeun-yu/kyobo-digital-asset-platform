@@ -64,6 +64,11 @@ public class NftHolding {
         return h;
     }
 
+    public void addAmount(Long delta, String latestOnChainTx) {
+        this.amount += delta;
+        this.onChainTx = latestOnChainTx;
+    }
+
     public void release() {
         this.releasedAt = Instant.now();
     }

@@ -25,11 +25,11 @@ import {
   PgIssuanceRequestRepository,
 }                                  from '../../apps/issuer-service/src/services/IssuanceRequestRepository';
 import { IssuanceConfirmHandler }  from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
-import { PgTxRepository }          from '../../packages/vasp/src/tx/PgTxRepository';
+import { PgTxRepository }          from '../../apps/issuer-service/src/infra/PgTxRepository';
 import { TxStateMachineService }   from '../../packages/vasp/src/tx/TxStateMachineService';
 import { TxTransitionBridge }      from '../../apps/issuer-service/src/services/TxTransitionBridge';
 import { LedgerService }           from '../../packages/core-banking/src/ledger/LedgerService';
-import { PgDatabaseClient }        from '../../packages/core-banking/src/ledger/PgDatabaseClient';
+import { PgDatabaseClient }        from '../../apps/issuer-service/src/infra/PgDatabaseClient';
 import { StubCoreBankingAdapter }  from '@kyobo/core-banking';
 import { PgNFTLedgerService }      from '../../apps/issuer-service/src/infra/PgNFTLedgerService';
 import {
@@ -37,6 +37,26 @@ import {
   IdempotencyGuard,
   InMemoryIdempotencyStore,
 }                                  from '@kyobo/event-engine';
+
+// recordNftHolding을 실제 DB에 기록하는 테스트용 어댑터
+class PgRecordingCoreBankingAdapter extends StubCoreBankingAdapter {
+  constructor(private readonly pool: Pool) { super(); }
+  override async recordNftHolding(params: {
+    userId: string; tokenId: bigint; contractAddr: string;
+    chainId: number; amount: bigint; acquiredAt: Date; onChainTx: string;
+  }): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO user_nft_holdings
+         (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (user_id, token_id, contract_addr, chain_id)
+       DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount,
+                     on_chain_tx = EXCLUDED.on_chain_tx`,
+      [params.userId, params.tokenId, params.contractAddr, params.chainId,
+       params.amount, params.acquiredAt, params.onChainTx],
+    );
+  }
+}
 
 const TX_HASH = '0xaabbcc0000000000000000000000000000000000000000000000000000000001';
 
@@ -295,7 +315,7 @@ describe('IssuanceStatus 상태 전이 — PgIssuanceRequestRepository', () => {
 
     // ⑤ NFTIssuedProcessor 구성 — PgNFTLedgerService에 txStateMachine + txRepo 주입
     const webhookLedger = new PgNFTLedgerService(
-      pool, '0xCONTRACT', 31337, txStateMachine, txRepo,
+      pool, '0xCONTRACT', 31337, new PgRecordingCoreBankingAdapter(pool), txStateMachine, txRepo,
     );
     const idempotency = new IdempotencyGuard(new InMemoryIdempotencyStore());
     const processor   = new NFTIssuedProcessor(idempotency, webhookLedger);

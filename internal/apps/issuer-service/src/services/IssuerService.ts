@@ -1,5 +1,4 @@
 import type { IBlockchainAdapter }        from '@kyobo/chain-adapters';
-import type { IVASPAdapter }               from '@kyobo/vasp';
 import type { ICoreBankingAdapter }        from '@kyobo/core-banking';
 import type { ActivityEvent }              from './EventConditionService';
 import { EventConditionService }           from './EventConditionService';
@@ -7,7 +6,6 @@ import { IssuancePolicyService }           from './IssuancePolicyService';
 import type { IIssuanceRequestRepository } from './IssuanceRequestRepository';
 import { TxStateMachineService }           from '../../../../packages/vasp/src/tx/TxStateMachineService';
 import type { LedgerService }              from '../../../../packages/core-banking/src/ledger/LedgerService';
-import type { IInternalLedgerClient }      from '../interfaces/IInternalLedgerClient';
 
 /**
  * IssuerService — NFT 발행 오케스트레이터
@@ -17,7 +15,7 @@ import type { IInternalLedgerClient }      from '../interfaces/IInternalLedgerCl
  *   ② 조건 판단   — EventConditionService.evaluate()            → eligible 여부
  *   ③ 멱등성 체크  — issuanceRepo.findPending()                 → 중복 요청 방지
  *   ④ REQUESTED   — issuanceRepo.create()
- *   ⑤ KYC/AML    — coreBanking + vaspAdapter.screenAddress()   → 실패 시 FAILED
+ *   ⑤ 지갑 조회   — coreBanking.getUserAccount()               → walletAddr 획득, 실패 시 FAILED
  *   ⑥ TX 위탁     — txStateMachine.submitMintRequest()          → tx_mint_requests REQUESTED→SUBMITTED
  *                   issuanceRepo SUBMITTED / 실패 시 FAILED
  *
@@ -30,7 +28,6 @@ import type { IInternalLedgerClient }      from '../interfaces/IInternalLedgerCl
 export class IssuerService {
   constructor(private readonly deps: {
     chainAdapter:          IBlockchainAdapter;
-    vaspAdapter:           IVASPAdapter;
     coreBanking:           ICoreBankingAdapter;
     nftIssuerAddr:         string;
     policyService:         IssuancePolicyService;
@@ -38,7 +35,6 @@ export class IssuerService {
     issuanceRepo:          IIssuanceRequestRepository;
     txStateMachine:        TxStateMachineService;
     ledgerService:         LedgerService;
-    internalLedgerClient?: IInternalLedgerClient;
   }) {}
 
   /**
@@ -53,7 +49,7 @@ export class IssuerService {
     userId:     string;
     activityId: string;
     event:      ActivityEvent;
-  }): Promise<{ requestId: string; eligible: boolean; txHash?: string; tokenId?: string }> {
+  }): Promise<{ requestId: string; eligible: boolean; txHash?: string; tokenId?: string; failed?: boolean }> {
     const { userId, activityId, event } = params;
 
     // ── ① 정책 조회 — NoPolicyError 상위 전파 ────────────────────────
@@ -84,25 +80,20 @@ export class IssuerService {
       txHash:     null,
       failReason: null,
     });
-    this.deps.internalLedgerClient?.recordAuditLog({
+    this.deps.coreBanking.recordAuditLog({
       actor:        userId,
       action:       'ISSUANCE_REQUESTED',
       resourceType: 'issuance_request',
       resourceId:   req.id,
-      beforeState:  null,
       afterState:   { status: 'REQUESTED', eventType: event.eventType, tokenId: String(policy.tokenId) },
     }).catch(err => console.error('[IssuerService] audit-log 오류:', err));
     const ledgerReq  = await this.deps.ledgerService.createMintRequest(userId, String(policy.id));
 
-    // ── ⑤ KYC / AML / 지갑 조회 — 실패 → FAILED + throw ─────────────
+    // ── ⑤ 지갑 조회 — 실패 → FAILED + throw ────────────────────────────
     let walletAddr: string;
     try {
       const account = await this.deps.coreBanking.getUserAccount(userId);
       if (!account) throw new Error(`user not found: ${userId}`);
-      if (account.status !== 'active') throw new Error(`account not active: ${userId}`);
-
-      const aml = await this.deps.vaspAdapter.screenAddress(account.walletAddr);
-      if (aml.flagged) throw new Error(`AML flagged: ${aml.reason}`);
 
       walletAddr = account.walletAddr;
       await this.deps.issuanceRepo.setWalletAddr(req.id, walletAddr);
@@ -110,7 +101,7 @@ export class IssuerService {
       const failReason = (err as Error).message;
       await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
-      this.deps.internalLedgerClient?.recordAuditLog({
+      this.deps.coreBanking.recordAuditLog({
         actor:        userId,
         action:       'ISSUANCE_FAILED',
         resourceType: 'issuance_request',
@@ -138,7 +129,7 @@ export class IssuerService {
       // (txHash가 설정된 후 이벤트가 발행되므로 bridge에서 findByTxHash 가능)
       // 단, SUBMITTED 전이 이벤트 시점에 mint_requests.tx_hash가 아직 없으므로 직접 업데이트
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'SUBMITTED', txHash });
-      this.deps.internalLedgerClient?.recordAuditLog({
+      this.deps.coreBanking.recordAuditLog({
         actor:        userId,
         action:       'ISSUANCE_SUBMITTED',
         resourceType: 'issuance_request',
@@ -150,7 +141,7 @@ export class IssuerService {
       const failReason = (err as Error).message;
       await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
-      this.deps.internalLedgerClient?.recordAuditLog({
+      this.deps.coreBanking.recordAuditLog({
         actor:        userId,
         action:       'ISSUANCE_FAILED',
         resourceType: 'issuance_request',
@@ -158,7 +149,10 @@ export class IssuerService {
         beforeState:  { status: 'REQUESTED' },
         afterState:   { status: 'FAILED', failReason },
       }).catch(e => console.error('[IssuerService] audit-log 오류:', e));
-      throw err;
+      // VASP 실패(REVERT 포함)는 issuance_requests에 FAILED로 기록 후 정상 반환.
+      // throw하면 IdempotencyGuard.unmark() → ConsumerGroupWorker가 PEL 재시도 →
+      // setMode(NORMAL) 후 TX 성공 → user_nft_holdings 오중복. 복구는 VaspRecoveryService 경로.
+      return { requestId: req.id, eligible: true, failed: true };
     }
 
     // ── CoreBanking 보상 알림 (fire-and-forget) ───────────────────────
@@ -187,7 +181,7 @@ export class IssuerService {
     if (!req || req.status !== 'SUBMITTED') return;
     const failReason = params.reason ?? 'VASP TX failed on-chain';
     await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
-    this.deps.internalLedgerClient?.recordAuditLog({
+    this.deps.coreBanking.recordAuditLog({
       actor:        req.userId,
       action:       'ISSUANCE_FAILED',
       resourceType: 'issuance_request',

@@ -1,5 +1,6 @@
 package io.coincraft.kyobo.gateway.service;
 
+import io.coincraft.kyobo.gateway.dto.AuditLogRequest;
 import io.coincraft.kyobo.gateway.entity.AuditLogEntry;
 import io.coincraft.kyobo.gateway.repository.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -40,8 +41,10 @@ public class AuditLogService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void log(String actor, String action, String resourceType,
                     String resourceId, String beforeState, String afterState) {
+        // advisory lock으로 직렬화 — SELECT FOR UPDATE LIMIT 1은 빈 테이블에서 잠글 행이 없어 race 발생
+        auditLogRepository.acquireChainLock();
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
-        String prevChecksum = auditLogRepository.findLastForUpdate()
+        String prevChecksum = auditLogRepository.findLast()
                 .map(AuditLogEntry::getChecksum)
                 .orElse(GENESIS);
         String checksum = computeChecksum(prevChecksum, now.toString(), actor, action, resourceId, afterState);
@@ -52,7 +55,7 @@ public class AuditLogService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void log(io.coincraft.kyobo.gateway.dto.AuditLogRequest request) {
+    public void log(AuditLogRequest request) {
         log(request.actor(), request.action(), request.resourceType(),
             request.resourceId(), request.beforeState(), request.afterState());
     }

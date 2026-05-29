@@ -14,7 +14,7 @@
 
 import http   from 'http';
 import crypto from 'crypto';
-import { ethers } from 'ethers';
+import { ethers, NonceManager } from 'ethers';
 import MOCK_VASP_ABI               from './MockVASP.abi.json';
 import { MINT_MODE_INDEX }         from './ChainVASPAdapterBase';
 import type { MintMode }           from './ChainVASPAdapterBase';
@@ -34,7 +34,7 @@ export interface VASPServerConfig {
 export class VASPServer {
   private readonly server:     http.Server;
   private readonly provider:   ethers.JsonRpcProvider;
-  private readonly signer:     ethers.Wallet;
+  private readonly signer:     ethers.Signer;
   private readonly contract:   ethers.Contract;
   private readonly cfg:        VASPServerConfig;
   // txHash → 'pending' | 'completed' | 'failed' — GET /transfers/:txHash 응답용
@@ -43,7 +43,7 @@ export class VASPServer {
   constructor(config: VASPServerConfig) {
     this.cfg      = config;
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    this.signer   = new ethers.Wallet(config.signerKey, this.provider);
+    this.signer   = new NonceManager(new ethers.Wallet(config.signerKey, this.provider));
     this.contract = new ethers.Contract(config.contractAddr, MOCK_VASP_ABI, this.signer);
 
     if (config.pollingInterval !== undefined) {
@@ -59,7 +59,13 @@ export class VASPServer {
   }
 
   async start(): Promise<void> {
-    await new Promise<void>(resolve => this.server.listen(this.cfg.port, resolve));
+    await new Promise<void>((resolve, reject) => {
+      this.server.once('error', reject);
+      this.server.listen(this.cfg.port, () => {
+        this.server.removeListener('error', reject);
+        resolve();
+      });
+    });
     console.log(`[VASPServer] 기동 완료 → :${this.cfg.port}  contract=${this.cfg.contractAddr}`);
   }
 
@@ -67,6 +73,14 @@ export class VASPServer {
     await new Promise<void>((resolve, reject) =>
       this.server.close(err => (err ? reject(err) : resolve())),
     );
+  }
+
+  // NonceManager를 체인 현재 상태와 재동기화한다.
+  // beforeEach에서 호출해 이전 테스트의 TX로 인한 nonce 불일치를 방지한다.
+  resetNonce(): void {
+    if (this.signer instanceof NonceManager) {
+      (this.signer as NonceManager).reset();
+    }
   }
 
   // ── 라우팅 ─────────────────────────────────────────────────────────────────
@@ -124,7 +138,9 @@ export class VASPServer {
       tx = await fn(to, tokenId, amount, reason32);
     } catch (err) {
       // REVERT 모드: eth_estimateGas 단계에서 실패 → 즉시 오류 반환
-      // ExternalVASPAdapter → IssuerService → issuance_requests FAILED
+      // NonceManager는 populateTransaction에서 nonce를 미리 증가시키므로
+      // estimateGas 실패 시 reset()으로 카운터를 체인과 재동기화한다
+      if (this.signer instanceof NonceManager) (this.signer as NonceManager).reset();
       console.log(`[VASPServer] tx 제출 실패 (REVERT): ${(err as Error).message.slice(0, 80)}`);
       res.writeHead(500, { 'Content-Type': 'application/json' }).end(
         JSON.stringify({ error: (err as Error).message }),

@@ -31,16 +31,16 @@ import { IoRedisAdapter }          from './infra/RedisAdapter';
 import { ExternalVASPAdapter, KyoboVASPAdapter } from '@kyobo/vasp';
 // Phase 3 전환 시: ExternalVASPAdapter → KyoboVASPAdapter 로 교체
 // KyoboVASPAdapter는 @kyobo/vasp 패키지에 stub 구현 완료 (IVASPAdapter 동일 인터페이스)
-import { KyoboCoreBankingAdapter, InternalGatewayClient } from '@kyobo/core-banking';
-import { ISMSChecklist }           from '@kyobo/compliance';
+import { KyoboCoreBankingAdapter, InternalGatewayClient, ReconcileService, ReconcileAdminService } from '@kyobo/core-banking';
 
 import { TokenIssuerFactory }      from './factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from './services/EventConditionService';
 import { ActivityRouter }          from './api/ActivityRouter';
 import { IssuanceConfirmHandler }  from './handlers/IssuanceConfirmHandler';
 import { ProcessedEventHandler }   from './handlers/ProcessedEventHandler';
-import { HttpInternalLedgerClient } from './infra/HttpInternalLedgerClient';
 import { PgIssuanceRequestRepository } from './services/IssuanceRequestRepository';
+import { PgNftHoldingRepository }  from './infra/PgNftHoldingRepository';
+import { PgDatabaseClient }        from './infra/PgDatabaseClient';
 import NFTIssuerABI                from './abi/NFTIssuer.json';
 
 async function bootstrap() {
@@ -110,10 +110,7 @@ async function bootstrap() {
   ]);
 
   // ── 발행 서비스 (Factory 경유 — policyService·issuanceRepo 자동 주입) ─────────
-  const internalLedgerClient = process.env.INTERNAL_LEDGER_URL
-    ? new HttpInternalLedgerClient(process.env.INTERNAL_LEDGER_URL)
-    : undefined;
-  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool, internalLedgerClient });
+  const factory       = new TokenIssuerFactory({ chainAdapter, vaspAdapter, coreBanking, pool: pgPool });
   const {
     issuerService,
     confirmHandler: issuanceConfirmHandler,
@@ -158,42 +155,25 @@ async function bootstrap() {
     maxBodyKb: 64,
   });
 
-  // 내부 인바운드 → Redis Stream
-  webhookServer.on('ACTIVITY_ACHIEVED', webhookPublisher.createHandler());
-  webhookServer.on('COUPON_CLAIM',      webhookPublisher.createHandler());
-
-  // VASP 콜백 → Redis Stream
-  webhookServer.on('NFT_ISSUED', webhookPublisher.createHandler());
-
-  // VASP_TX_FAILED: 직접 처리 (실패 TX → issuance_requests FAILED 즉시 전이)
-  // 지연 없이 DB 상태를 갱신해야 하므로 Redis Stream 우회
-  webhookServer.on('VASP_TX_FAILED', async (payload) => {
-    const data = payload.data as { txHash: string; reason?: string };
-    await issuerService.handleVaspTxFailed({ txHash: data.txHash, reason: data.reason });
-  });
-
-  // ── ISMS 자동 점검 (주기적 실행) ─────────────────────────────────────────────
-  const isms = new ISMSChecklist({
-    rpcUrl:          process.env.RPC_URL!,
-    nftContractAddr: process.env.NFT_CONTRACT_ADDR!,
-    contractCall:    (addr, abi, method) =>
-      chainAdapter.call({ contractAddr: addr, abi, method, args: [] }),
-    queryLatestAuditLog: async () => null,  // Phase 2: DB 연동으로 교체
-  });
-  setInterval(async () => {
-    const results = await isms.runAll();
-    const summary = isms.getSummary(results);
-    if (summary.failed.length > 0) {
-      console.error('[ISMS] 점검 실패 항목:', summary.failed);
-    }
-  }, 60 * 60 * 1000);  // 1시간마다
+  webhookServer
+    // 내부 인바운드 → Redis Stream
+    .on('ACTIVITY_ACHIEVED', webhookPublisher.createHandler())
+    .on('COUPON_CLAIM',      webhookPublisher.createHandler())
+    // VASP 콜백 → Redis Stream
+    .on('NFT_ISSUED', webhookPublisher.createHandler())
+    // VASP_TX_FAILED: 직접 처리 (실패 TX → issuance_requests FAILED 즉시 전이)
+    // 지연 없이 DB 상태를 갱신해야 하므로 Redis Stream 우회
+    .on('VASP_TX_FAILED', async (payload) => {
+      const data = payload.data as { txHash: string; reason?: string };
+      await issuerService.handleVaspTxFailed({ txHash: data.txHash, reason: data.reason });
+    });
 
   // ── Redis Streams Consumer (NFT_ISSUED) ──────────────────────────────────────
   const streamDlq = new DLQHandler(
     redisAdapter,
     { async sendAlert(msg) { console.error('[DLQ]', msg); } },
   );
-  const ledger = new PgNFTLedgerService(pgPool, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID ?? '11155111'), txStateMachine, txRepo);
+  const ledger = new PgNFTLedgerService(pgPool, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID ?? '11155111'), coreBanking, txStateMachine, txRepo);
 
   const nftIssuedProcessor  = new NFTIssuedProcessor(idempotency, ledger);
   const activityProcessor   = new ActivityProcessor(issuerService, idempotency);
@@ -210,23 +190,91 @@ async function bootstrap() {
     ],
   );
 
+  // ── Reconcile ────────────────────────────────────────────────────────────────
+  const pgHoldingRepo   = new PgNftHoldingRepository(pgPool);
+  const reconcileService = new ReconcileService(
+    coreBanking,
+    {
+      getTotalSupply:          async () => 0n,  // Phase 2: KRW 스테이블코인 컨트랙트 연동
+      getCustodyAccountBalance: async () => 0n,
+      balanceOf: (addr, tokenId) =>
+        chainAdapter.getBalance(process.env.NFT_CONTRACT_ADDR!, addr, tokenId),
+      getNftHoldings: (addr) =>
+        chainAdapter.getNftHoldings(
+          process.env.NFT_CONTRACT_ADDR!, addr, Number(process.env.CHAIN_START_BLOCK ?? 0),
+        ),
+      getBlockNumber: () => chainAdapter.getBlockNumber(),
+    },
+    pgHoldingRepo,
+    { fire: async (msg, sev) => console.warn('[Reconcile]', sev, msg) },
+  );
+  const reconcileAdmin = new ReconcileAdminService(
+    new PgDatabaseClient(pgPool),
+    reconcileService,
+    coreBanking,
+    { sendAlert: async (p) => console.warn('[ReconcileAlert]', p.severity, p.title) },
+  );
+
   // ── Admin HTTP (데모/테스트 전용 — ADMIN_PORT 설정 시에만 활성화) ───────────────
-  // pollStaleRequests 수동 트리거 용도. 운영에서는 ADMIN_PORT 미설정.
+  // pollStaleRequests / reconcile 수동 트리거 용도. 운영에서는 ADMIN_PORT 미설정.
   const adminPort = Number(process.env.ADMIN_PORT ?? 0);
   if (adminPort > 0) {
     http.createServer(async (req, res) => {
-      if (req.method === 'POST' && req.url === '/admin/poll-stale') {
-        try {
+      try {
+        if (req.method === 'POST' && req.url === '/admin/poll-stale') {
           const result = await txStateMachine.pollStaleRequests();
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(result));
-        } catch (e) {
-          res.writeHead(500).end(JSON.stringify({ error: String(e) }));
+
+        } else if (req.method === 'POST' && req.url === '/admin/reconcile/run') {
+          const body = await new Promise<string>((ok, ng) => {
+            let buf = '';
+            req.on('data', c => { buf += c; });
+            req.on('end',  () => ok(buf));
+            req.on('error', ng);
+          });
+          const { userId, operator = 'admin' } = JSON.parse(body) as { userId: string; operator?: string };
+          const result = await reconcileAdmin.runManualReconcile(userId, operator);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result, (_k, v) => typeof v === 'bigint' ? v.toString() : v));
+
+        } else if (req.method === 'GET' && req.url?.startsWith('/admin/reconcile/history')) {
+          const limit = Number(new URL(req.url, 'http://localhost').searchParams.get('limit') ?? '20');
+          const rows  = await reconcileAdmin.getHistory(limit);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(rows));
+
+        } else if (req.method === 'POST' && req.url === '/admin/credit-nft') {
+          // 임시 — 데모/테스트 전용: 특정 userId에 NFT +amount 직접 기록
+          const body = await new Promise<string>((ok, ng) => {
+            let buf = '';
+            req.on('data', c => { buf += c; });
+            req.on('end',  () => ok(buf));
+            req.on('error', ng);
+          });
+          const { userId, tokenId, amount = 1, txHash: onChainTx = '', operator = 'admin' } =
+            JSON.parse(body) as { userId: string; tokenId: string; amount?: number; txHash?: string; operator?: string };
+          await reconcileAdmin.creditNft({
+            userId,
+            tokenId:      BigInt(tokenId),
+            contractAddr: process.env.NFT_CONTRACT_ADDR!,
+            chainId:      Number(process.env.CHAIN_ID!),
+            amount:       BigInt(amount),
+            onChainTx,
+            operator,
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, userId, tokenId, amount }));
+
+        } else {
+          res.writeHead(404).end('{}');
         }
-      } else {
-        res.writeHead(404).end('{}');
+      } catch (e) {
+        res.writeHead(500).end(JSON.stringify({ error: String(e) }));
       }
-    }).listen(adminPort, () => console.log(`[admin] :${adminPort} /admin/poll-stale`));
+    }).listen(adminPort, () =>
+      console.log(`[admin] :${adminPort} /admin/poll-stale | /admin/reconcile/run | /admin/reconcile/history | /admin/credit-nft`),
+    );
   }
 
   // ── 시작 ─────────────────────────────────────────────────────────────────────

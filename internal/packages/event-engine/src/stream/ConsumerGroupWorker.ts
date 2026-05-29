@@ -164,6 +164,14 @@ export class ConsumerGroupWorker {
     const eventType  = msg.fields['eventType'] ?? '';
     const retryCount = parseInt(msg.fields['_retryCount'] ?? '0', 10);
 
+    logger.info('message received', {
+      consumer:  this.config.consumerId,
+      group:     this.config.groupName,
+      messageId: msg.id,
+      eventType,
+      attempt:   retryCount + 1,
+    });
+
     if (retryCount >= this.MAX_RETRIES) {
       // 3회 초과 → DLQ
       await this.dlq.move({

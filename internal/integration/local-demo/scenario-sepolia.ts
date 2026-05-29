@@ -84,6 +84,8 @@ async function verifyContractDeployed(): Promise<void> {
   }
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function setMode(mode: MintModeValue, label: string): Promise<void> {
   const contract = getMockVasp();
   console.log(`[scenario-sepolia] MockVASP.setMode(${label}) 브로드캐스트 중...`);
@@ -160,13 +162,42 @@ async function scenarioRevert(userId: string) {
   console.log('  → issuance_requests.status: FAILED\n');
 
   await verifyContractDeployed();
+
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
   await setMode(MintMode.REVERT, 'REVERT');
 
   try {
+    const webhookSentAt = new Date();
     const status = await sendWebhook({ userId });
-    console.log(`[scenario-sepolia] HTTP ${status}`);
+    console.log(`[scenario-sepolia] HTTP ${status} — issuance_requests FAILED 대기 중...`);
+
+    // REVERT 모드에서 issueActivityNFT()는 estimateGas 단계에서 revert → tx_hash 미생성
+    // tx_hash 폴링 대신 issuance_requests.status = FAILED/CONFIRMED 를 확인한다.
+    // tx_hash 기반 폴링은 이전 시나리오의 잔여 tx_hash(60초 이내)를 잘못 집어올 수 있음.
+    const deadline = Date.now() + 45_000;
+    let finalStatus: string | undefined;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT status FROM issuance_requests
+         WHERE user_id = $1 AND created_at > $2
+         ORDER BY created_at DESC LIMIT 1`,
+        [userId, webhookSentAt.toISOString()],
+      );
+      const s = rows[0]?.status as string | undefined;
+      if (s === 'FAILED' || s === 'CONFIRMED') {
+        finalStatus = s;
+        console.log(`[scenario-sepolia] issuance_requests.status = ${s} — NORMAL 복원`);
+        break;
+      }
+      await sleep(1_000);
+    }
+    if (!finalStatus) console.warn('[scenario-sepolia] 상태 확정 타임아웃 — DB를 직접 확인하세요');
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
+    await pool.end();
   }
 
   printDbHint([
@@ -183,15 +214,45 @@ async function scenarioNoEmit(userId: string) {
   await verifyContractDeployed();
   await setMode(MintMode.NO_EMIT, 'NO_EMIT');
 
+  // sendWebhook() 직후 즉시 NORMAL로 복원하면 파이프라인이 VASPServer를 호출하기 전에
+  // 모드가 바뀌어 TX가 NORMAL로 브로드캐스트된다. tx_hash 등록 = TX 브로드캐스트 완료이므로
+  // DB에서 tx_hash가 나타날 때까지 대기한 뒤 모드를 복원한다.
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+  const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
+
   try {
     const status = await sendWebhook({ userId });
-    console.log(`[scenario-sepolia] HTTP ${status}`);
+    console.log(`[scenario-sepolia] HTTP ${status} — NO_EMIT TX 브로드캐스트 대기 중...`);
+
+    const deadline = Date.now() + 30_000;
+    let txHash: string | undefined;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT tx_hash FROM tx_mint_requests
+         WHERE tx_hash IS NOT NULL AND created_at > NOW() - INTERVAL '60 seconds'
+         ORDER BY created_at DESC LIMIT 1`,
+      );
+      if (rows[0]?.tx_hash) {
+        txHash = String(rows[0].tx_hash);
+        console.log(`[scenario-sepolia] TX 브로드캐스트 확인: ${txHash.slice(0, 16)}… — Sepolia 채굴 대기 중 (~12s)`);
+        break;
+      }
+      await sleep(500);
+    }
+    if (!txHash) console.warn('[scenario-sepolia] TX 브로드캐스트 타임아웃 — DB를 직접 확인하세요');
+
+    if (txHash) {
+      await provider.waitForTransaction(txHash, 1, 60_000);
+      console.log('[scenario-sepolia] Sepolia 채굴 완료 — NO_EMIT 모드 복원');
+    }
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
+    await pool.end();
   }
 
   printDbHint([
-    'SELECT status, tx_hash FROM mint_requests ORDER BY created_at DESC LIMIT 3;',
     'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;',
   ]);
 }
@@ -245,14 +306,14 @@ async function scenarioPending(userId: string) {
   console.log(`[scenario-sepolia] OPERATOR nonce(pending)=${pendingNonce}`);
   console.log(`[scenario-sepolia] Sepolia baseFee=${ethers.formatUnits(baseFee, 'gwei')} gwei`);
 
-  // blocker TX: 1 wei maxFeePerGas → base fee 훨씬 밑 → mempool 체류
-  console.log('[scenario-sepolia] 블로커 TX 전송 (maxFeePerGas=1 wei)...');
+  // blocker TX: maxFeePerGas=baseFee+1 → mempool 진입, tip=0 → 채굴 유인 없음 → 체류
+  console.log(`[scenario-sepolia] 블로커 TX 전송 (maxFeePerGas=baseFee+1=${ethers.formatUnits(baseFee + 1n, 'gwei')} gwei, tip=0)...`);
   const blockerTx = await signer.sendTransaction({
     to:           signer.address,   // 자기 자신에게 0 ETH
     value:        0n,
     nonce:        pendingNonce,
-    maxFeePerGas: 1n,               // 1 wei — base fee 이하 → mempool 체류
-    maxPriorityFeePerGas: 0n,
+    maxFeePerGas:         baseFee + 1n,  // baseFee+1 → mempool 진입 가능
+    maxPriorityFeePerGas: 0n,            // tip=0 → validator 채굴 유인 없음 → 체류
     gasLimit:     21_000n,
   });
   console.log(`[scenario-sepolia] 블로커 TX hash: ${blockerTx.hash} (체류 중)`);
@@ -269,20 +330,28 @@ async function scenarioPending(userId: string) {
   console.log(`[scenario-sepolia] ${PENDING_SEC}초 대기 후 블로커 취소...`);
   await new Promise(r => setTimeout(r, PENDING_SEC * 1000));
 
-  // EIP-1559 replacement TX: 같은 nonce, 충분한 gas (기존 maxFeePerGas의 110% 이상)
-  const replaceFee = baseFee * 2n + ethers.parseUnits('2', 'gwei');
-  console.log('[scenario-sepolia] 블로커 replacement TX 전송...');
-  const replaceTx = await signer.sendTransaction({
-    to:                  signer.address,
-    value:               0n,
-    nonce:               pendingNonce,   // 동일 nonce → replacement
-    maxFeePerGas:        replaceFee,
-    maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei'),
-    gasLimit:            21_000n,
-  });
-  console.log(`[scenario-sepolia] replacement TX hash: ${replaceTx.hash}`);
-  await replaceTx.wait(1);
-  console.log('[scenario-sepolia] 블로커 취소 완료 → 발행 TX 순차 처리됨');
+  // 블로커 채굴 여부 확인 (Sepolia는 tip=0 TX도 빠르게 채굴될 수 있음)
+  const confirmedNonce = await provider.getTransactionCount(signer.address, 'latest');
+  if (confirmedNonce > pendingNonce) {
+    // 블로커가 이미 채굴됨 → replacement 불필요, 발행 TX도 순차 처리 중
+    console.log(`[scenario-sepolia] 블로커 이미 채굴됨 (confirmedNonce=${confirmedNonce}, blockerNonce=${pendingNonce})`);
+    console.log('[scenario-sepolia] → 발행 TX도 순차 처리됨 (PENDING 체류 시간이 짧았음)');
+  } else {
+    // EIP-1559 replacement TX: 같은 nonce, 충분한 gas (기존 maxFeePerGas의 110% 이상)
+    const replaceFee = baseFee * 2n + ethers.parseUnits('2', 'gwei');
+    console.log('[scenario-sepolia] 블로커 replacement TX 전송...');
+    const replaceTx = await signer.sendTransaction({
+      to:                  signer.address,
+      value:               0n,
+      nonce:               pendingNonce,   // 동일 nonce → replacement
+      maxFeePerGas:        replaceFee,
+      maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei'),
+      gasLimit:            21_000n,
+    });
+    console.log(`[scenario-sepolia] replacement TX hash: ${replaceTx.hash}`);
+    await replaceTx.wait(1);
+    console.log('[scenario-sepolia] 블로커 취소 완료 → 발행 TX 순차 처리됨');
+  }
 
   printDbHint([
     'SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 3;',
@@ -361,12 +430,8 @@ async function scenarioPollStale(userId: string) {
   console.log('  Sepolia TX 채굴 확인 후 DB 조작: SUBMITTED → PENDING + created_at -11분');
   console.log('  → POST /admin/poll-stale → getTransferStatus(VASPServer) → CONFIRMED\n');
 
-  const pgUrl = process.env['POSTGRES_URL'] ?? process.env['DATABASE_URL'];
-  if (!pgUrl) {
-    console.error('[scenario-sepolia] POSTGRES_URL 환경변수가 필요합니다.');
-    console.error('  예: POSTGRES_URL="postgresql://postgres:demo@localhost:15432/postgres" npm run demo:scenario-sepolia -- poll-stale');
-    return;
-  }
+  // 시나리오 스크립트는 호스트에서 실행 → Docker 노출 포트(15432) 고정
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
 
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
@@ -422,8 +487,34 @@ async function scenarioPollStale(userId: string) {
 
     // issuance_requests CONFIRMED 확인
     await new Promise(r => setTimeout(r, 1000));
-    const { rows } = await pool.query('SELECT status FROM issuance_requests ORDER BY created_at DESC LIMIT 1');
+    const { rows } = await pool.query(
+      'SELECT status, token_id FROM issuance_requests ORDER BY created_at DESC LIMIT 1',
+    );
     console.log(`[scenario-sepolia] issuance_requests.status = ${rows[0]?.status}`);
+
+    // user_nft_holdings +1 (임시 admin API — poll-stale 경로에서 원장 미반영 보정)
+    if (rows[0]?.status === 'CONFIRMED') {
+      const tokenId = String(rows[0].token_id);
+      const creditResult = await new Promise<{ ok: boolean }>((resolve, reject) => {
+        const body = JSON.stringify({ userId, tokenId, amount: 1, txHash });
+        const req2 = http.request(
+          {
+            hostname: 'localhost', port: ADMIN_PORT,
+            method: 'POST', path: '/admin/credit-nft',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+          },
+          res => {
+            let buf = '';
+            res.on('data', d => { buf += d; });
+            res.on('end', () => resolve(JSON.parse(buf)));
+          },
+        );
+        req2.on('error', reject);
+        req2.write(body);
+        req2.end();
+      });
+      console.log(`[scenario-sepolia] /admin/credit-nft → ${JSON.stringify(creditResult)}`);
+    }
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
     await pool.end();
@@ -436,12 +527,171 @@ async function scenarioPollStale(userId: string) {
   ]);
 }
 
+async function scenarioBurst(_userId: string) {
+  const COUNT = 5;
+  console.log(`\n=== BURST: ${COUNT}개 발행 요청 동시 전송 (Sepolia) ===`);
+  console.log('  demo-user-001 ~ demo-user-005 에 대해 동시에 NFT 발행 요청.');
+  console.log('  VASPServer NonceManager가 nonce 충돌 없이 순번 처리.');
+  console.log('  Sepolia 블록 ~12s — 전체 완료까지 최대 3분 소요.\n');
+
+  await verifyContractDeployed();
+
+  const users = Array.from({ length: COUNT }, (_, i) => `demo-user-${String(i + 1).padStart(3, '0')}`);
+  const start = Date.now();
+
+  console.log(`[scenario-sepolia] ${COUNT}개 웹훅 동시 전송...`);
+  const statuses = await Promise.all(users.map(u => sendWebhook({ userId: u })));
+  statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
+
+  console.log('\n[scenario-sepolia] 전체 CONFIRMED 대기 중 (최대 3분)...');
+  // POSTGRES_URL 명시 시 우선 사용, 없으면 start-sepolia.ts 기본 데모 DB로 fallback
+  const DEMO_PG_URL = 'postgresql://postgres:demo@localhost:15432/postgres';
+  const pgUrl = process.env['POSTGRES_URL'] ?? DEMO_PG_URL;
+  console.log(`[scenario-sepolia] DB 연결 중... (${pgUrl.replace(/:\/\/[^@]+@/, '://*@')})`);
+
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  let queryErr: Error | undefined;
+  try {
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT user_id, status FROM issuance_requests
+         WHERE user_id = ANY($1) ORDER BY created_at DESC`,
+        [users],
+      );
+      const done = rows.filter(r => ['CONFIRMED', 'FAILED'].includes(r.status as string));
+      console.log(`  [+${((Date.now() - start) / 1000).toFixed(1)}s] ${done.length}/${COUNT} 완료`);
+      if (done.length >= COUNT) {
+        console.log('\n[scenario-sepolia] 최종 결과:');
+        rows.forEach(r => console.log(`  ${r.user_id}: ${r.status}`));
+        break;
+      }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  } catch (e) {
+    queryErr = e as Error;
+    console.error('[scenario-sepolia] DB 쿼리 오류:', (e as Error)?.message, (e as Error)?.stack);
+  } finally {
+    await pool.end().catch(e =>
+      console.error('[scenario-sepolia] pool.end() 오류:', (e as Error)?.message));
+  }
+  if (queryErr) throw queryErr;
+
+  printDbHint([
+    'SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT user_id, token_id, balance FROM user_nft_holdings ORDER BY user_id LIMIT 5;',
+  ]);
+}
+
+async function scenarioReconcile(userId: string) {
+  console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 시나리오 (Sepolia) ===');
+  console.log('  정상 발행(CONFIRMED) → mint_requests 수동 삭제 → /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지\n');
+
+  await verifyContractDeployed();
+
+  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  try {
+    // ① 정상 발행 → CONFIRMED 대기 (Sepolia 블록 ~12s, 최대 120초)
+    const status = await sendWebhook({ userId });
+    console.log(`[scenario-sepolia] HTTP ${status} — CONFIRMED 대기 중 (최대 120초)...`);
+
+    const deadline = Date.now() + 180_000;
+    let confirmed = false;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT status FROM issuance_requests
+         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [userId],
+      );
+      if (rows[0]?.status === 'CONFIRMED') { confirmed = true; break; }
+      await sleep(3_000);
+    }
+    if (!confirmed) { console.error('[scenario-sepolia] CONFIRMED 타임아웃'); return; }
+    console.log('[scenario-sepolia] issuance_requests → CONFIRMED');
+
+    // ② mint_requests 레코드 삭제 → 원장 누락 시뮬레이션
+    const { rowCount } = await pool.query(
+      `DELETE FROM mint_requests
+       WHERE user_id = $1
+         AND status IN ('CONFIRMED', 'FINALIZED')
+         AND created_at > NOW() - INTERVAL '5 minutes'`,
+      [userId],
+    );
+    console.log(`[scenario-sepolia] mint_requests ${rowCount}건 삭제 (원장 누락 시뮬레이션)`);
+
+    // ③ POST /admin/reconcile/run
+    console.log('[scenario-sepolia] POST /admin/reconcile/run...');
+    const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const body = JSON.stringify({ userId, operator: 'demo-admin' });
+      const req = http.request(
+        {
+          hostname: 'localhost',
+          port:     ADMIN_PORT,
+          method:   'POST',
+          path:     '/admin/reconcile/run',
+          headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        },
+        res => {
+          let buf = '';
+          res.on('data', d => { buf += d; });
+          res.on('end', () => resolve(JSON.parse(buf)));
+        },
+      );
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+    console.log('[scenario-sepolia] reconcile 결과:');
+    console.log(JSON.stringify(result, null, 2));
+
+    // ④ GET /admin/reconcile/history
+    const history = await new Promise<unknown[]>((resolve, reject) => {
+      const req = http.request(
+        { hostname: 'localhost', port: ADMIN_PORT, method: 'GET', path: '/admin/reconcile/history?limit=3' },
+        res => {
+          let buf = '';
+          res.on('data', d => { buf += d; });
+          res.on('end', () => resolve(JSON.parse(buf)));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    console.log('[scenario-sepolia] reconcile_history (최근 3건):');
+    console.log(JSON.stringify(history, null, 2));
+  } finally {
+    await pool.end();
+  }
+
+  printDbHint([
+    `SELECT user_id, token_id, discrepancy_type FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
+    `SELECT status FROM issuance_requests WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 3;`,
+  ]);
+}
+
 async function scenarioReset() {
   console.log('\n=== RESET: MockVASP mode 복원 (Sepolia) ===');
   await verifyContractDeployed();
-  await setMode(MintMode.NORMAL, 'NORMAL');
-  const current = await (getMockVasp()['mode'] as Function)();
-  console.log(`[scenario-sepolia] 현재 mode=${current} (0=NORMAL, 1=REVERT, 2=NO_EMIT)`);
+  try {
+    await setMode(MintMode.NORMAL, 'NORMAL');
+    const current = await (getMockVasp()['mode'] as Function)();
+    console.log(`[scenario-sepolia] 현재 mode=${current} (0=NORMAL, 1=REVERT, 2=NO_EMIT)`);
+  } catch (err: any) {
+    // 0xe2517d3f = AccessControlUnauthorizedAccount — 이 키에 OPERATOR_ROLE 없음
+    if (String(err?.data ?? err?.message ?? '').includes('e2517d3f')) {
+      console.error(`[scenario-sepolia] ❌ AccessControl 오류: OPERATOR 키가 이 컨트랙트의 OPERATOR_ROLE이 없습니다.`);
+      console.error(`  컨트랙트: ${MOCK_VASP_ADDR}`);
+      console.error(`  → start-sepolia.ts를 먼저 실행하세요. 매 실행마다 신규 컨트랙트를 배포하므로 reset이 필요 없습니다.`);
+      process.exit(1);
+    }
+    throw err;
+  }
 }
 
 // ── 엔트리포인트 ──────────────────────────────────────────────────────────────
@@ -454,6 +704,8 @@ const SCENARIOS: Record<string, (userId: string) => Promise<void>> = {
   'pending':      scenarioPending,
   'reorg':        scenarioReorg,
   'poll-stale':   scenarioPollStale,
+  'burst':        scenarioBurst,
+  'reconcile':    scenarioReconcile,
   'reset':        () => scenarioReset(),
 };
 
@@ -472,6 +724,8 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   pending       nonce 블로커 TX → 발행 TX mempool 체류 → 30초 후 자동 복원
   reorg         정상 발행 후 DB 상태 주입 → REORGED 시뮬레이션
   poll-stale    NO_EMIT → PENDING 조작 → pollStaleRequests() → CONFIRMED
+  burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
+  reconcile     정상 발행 후 mint_requests 삭제 → /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지
   reset         MockVASP mode → NORMAL 복원
 
 구현 방식:
@@ -485,8 +739,14 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   process.exit(1);
 }
 
-SCENARIOS[scenarioName]!(userId).catch(err => {
-  console.error('\n[scenario-sepolia] 오류:', err.message);
-  console.error('  → start-sepolia.ts가 실행 중인지, .env 환경변수를 확인하세요.');
-  process.exit(1);
-});
+const DIVIDER = '\n' + '─'.repeat(65);
+
+SCENARIOS[scenarioName]!(userId)
+  .then(() => console.log(DIVIDER))
+  .catch(err => {
+    console.error('\n[scenario-sepolia] 오류:', err?.message ?? String(err));
+    if (err?.stack) console.error(err.stack);
+    console.error('  → start-sepolia.ts가 실행 중인지, .env 환경변수를 확인하세요.');
+    console.log(DIVIDER);
+    process.exit(1);
+  });

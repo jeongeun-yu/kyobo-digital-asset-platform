@@ -17,7 +17,7 @@
 import { Pool }                    from 'pg';
 import { randomUUID }              from 'crypto';
 import { getPgUrl }                from '../helpers/state';
-import { PgTxRepository }          from '@kyobo/vasp';
+import { PgTxRepository }          from '../../apps/issuer-service/src/infra/PgTxRepository';
 import {
   TxStateMachineService,
   InvalidStatusTransitionError,

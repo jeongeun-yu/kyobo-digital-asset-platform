@@ -13,6 +13,7 @@
  *   unknown-user  wallet mapping 없는 userId → 발행 FAILED
  *   pending       evm_setAutomine(false) → TX mempool 체류 → 30초 후 자동 복원
  *   reorg         정상 발행 후 evm_revert로 체인 롤백 → REORGED 상태 검증
+ *   reconcile     정상 발행 후 /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지
  *   reset         MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구용)
  */
 
@@ -170,22 +171,47 @@ async function scenarioNoEmit(userId: string) {
   console.log('\n=== NO_EMIT: Issued 이벤트 없음 시나리오 ===');
   console.log('  ERC-1155 mint()는 성공하지만 Issued 이벤트를 emit하지 않는다.');
   console.log('  → ChainEventListener가 이벤트를 수신하지 못해 CONFIRMED 전이 없음.');
-  console.log('  → mint_requests.status가 SUBMITTED 또는 MINED에서 멈춤 (폴백 경로 동작)\n');
+  console.log('  → issuance_requests.status가 SUBMITTED에서 멈춤\n');
 
   await verifyContractDeployed();
   await setMode(MintMode.NO_EMIT, 'NO_EMIT');
 
+  // setMode(NORMAL) 복원 전에 NO_EMIT TX가 먼저 채굴되어야 한다.
+  // sendWebhook() 직후 NORMAL 복원 시 Hardhat 즉시 채굴 때문에
+  // 파이프라인이 VASPServer를 호출하기 전에 NORMAL로 되돌아가 Issued 이벤트가 발생한다.
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
   try {
     const status = await sendWebhook({ userId });
-    console.log(`[scenario] HTTP ${status}`);
+    console.log(`[scenario] HTTP ${status} — NO_EMIT TX 채굴 대기 중...`);
+
+    // tx_hash 등록 = VASPServer가 TX 브로드캐스트 완료 = Hardhat이 NO_EMIT 모드로 채굴됨
+    const deadline = Date.now() + 15_000;
+    let confirmed = false;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT tx_hash FROM tx_mint_requests
+         WHERE tx_hash IS NOT NULL AND created_at > NOW() - INTERVAL '30 seconds'
+         ORDER BY created_at DESC LIMIT 1`,
+      );
+      if (rows[0]?.tx_hash) {
+        console.log(`[scenario] NO_EMIT TX 채굴 확인: ${String(rows[0].tx_hash).slice(0, 16)}…`);
+        confirmed = true;
+        break;
+      }
+      await sleep(300);
+    }
+    if (!confirmed) console.warn('[scenario] TX 확인 타임아웃 — DB를 직접 확인하세요');
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
+    await pool.end();
   }
 
   printDbHint([
-    'SELECT status, tx_hash FROM mint_requests ORDER BY created_at DESC LIMIT 3;',
-    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;',
     'SELECT user_id, status FROM issuance_requests ORDER BY created_at DESC LIMIT 3;',
+    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 3;',
   ]);
 }
 
@@ -361,6 +387,146 @@ async function scenarioPollStale(userId: string) {
   ]);
 }
 
+async function scenarioBurst(_userId: string) {
+  const COUNT = 5;
+  console.log(`\n=== BURST: ${COUNT}개 발행 요청 동시 전송 ===`);
+  console.log('  demo-user-001 ~ demo-user-005 에 대해 동시에 NFT 발행 요청.');
+  console.log('  VASPServer NonceManager가 nonce 충돌 없이 순번 처리.\n');
+
+  await verifyContractDeployed();
+
+  const users = Array.from({ length: COUNT }, (_, i) => `demo-user-${String(i + 1).padStart(3, '0')}`);
+  const start = Date.now();
+
+  console.log(`[scenario] ${COUNT}개 웹훅 동시 전송...`);
+  const statuses = await Promise.all(users.map(u => sendWebhook({ userId: u })));
+  statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
+
+  console.log('\n[scenario] 전체 CONFIRMED 대기 중...');
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  try {
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT user_id, status FROM issuance_requests
+         WHERE user_id = ANY($1) ORDER BY created_at DESC`,
+        [users],
+      );
+      const done = rows.filter(r => ['CONFIRMED', 'FAILED'].includes(r.status as string));
+      console.log(`  [+${((Date.now() - start) / 1000).toFixed(1)}s] ${done.length}/${COUNT} 완료`);
+      if (done.length >= COUNT) {
+        console.log('\n[scenario] 최종 결과:');
+        rows.forEach(r => console.log(`  ${r.user_id}: ${r.status}`));
+        break;
+      }
+      await sleep(2000);
+    }
+  } finally {
+    await pool.end();
+  }
+
+  printDbHint([
+    'SELECT user_id, status, tx_hash FROM issuance_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT status, tx_hash FROM tx_mint_requests ORDER BY created_at DESC LIMIT 5;',
+    'SELECT user_id, token_id, balance FROM user_nft_holdings ORDER BY user_id LIMIT 5;',
+  ]);
+}
+
+async function scenarioReconcile(userId: string) {
+  console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 시나리오 ===');
+  console.log('  1. 정상 발행(CONFIRMED) → mint_requests에 기록됨');
+  console.log('  2. mint_requests 레코드를 수동 삭제 → 원장에서만 사라짐');
+  console.log('  3. POST /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지');
+  console.log('  4. GET /admin/reconcile/history → 결과 확인\n');
+
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  await verifyContractDeployed();
+
+  try {
+    // ① 정상 발행
+    const status = await sendWebhook({ userId });
+    console.log(`[scenario] HTTP ${status} — CONFIRMED 대기 중...`);
+
+    const deadline = Date.now() + 30_000;
+    let confirmed = false;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        `SELECT status FROM issuance_requests
+         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [userId],
+      );
+      if (rows[0]?.status === 'CONFIRMED') { confirmed = true; break; }
+      await sleep(1000);
+    }
+    if (!confirmed) { console.error('[scenario] CONFIRMED 타임아웃'); return; }
+    console.log('[scenario] issuance_requests → CONFIRMED');
+
+    // ② mint_requests 레코드 삭제 → 원장 누락 시뮬레이션
+    const { rowCount } = await pool.query(
+      `DELETE FROM mint_requests
+       WHERE user_id = $1
+         AND status IN ('CONFIRMED', 'FINALIZED')
+         AND created_at > NOW() - INTERVAL '5 minutes'`,
+      [userId],
+    );
+    console.log(`[scenario] mint_requests ${rowCount}건 삭제 (원장 누락 시뮬레이션)`);
+
+    // ③ POST /admin/reconcile/run
+    console.log('[scenario] POST /admin/reconcile/run...');
+    const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const body = JSON.stringify({ userId, operator: 'demo-admin' });
+      const req = http.request(
+        {
+          hostname: 'localhost',
+          port:     ADMIN_PORT,
+          method:   'POST',
+          path:     '/admin/reconcile/run',
+          headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        },
+        res => {
+          let buf = '';
+          res.on('data', d => { buf += d; });
+          res.on('end', () => resolve(JSON.parse(buf)));
+        },
+      );
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+    console.log('[scenario] reconcile 결과:');
+    console.log(JSON.stringify(result, null, 2));
+
+    // ④ GET /admin/reconcile/history
+    const history = await new Promise<unknown[]>((resolve, reject) => {
+      const req = http.request(
+        { hostname: 'localhost', port: ADMIN_PORT, method: 'GET', path: '/admin/reconcile/history?limit=3' },
+        res => {
+          let buf = '';
+          res.on('data', d => { buf += d; });
+          res.on('end', () => resolve(JSON.parse(buf)));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    console.log('[scenario] reconcile_history (최근 3건):');
+    console.log(JSON.stringify(history, null, 2));
+  } finally {
+    await pool.end();
+  }
+
+  printDbHint([
+    `SELECT user_id, token_id, discrepancy_type FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
+    `SELECT status FROM issuance_requests WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 3;`,
+  ]);
+}
+
 async function scenarioReset() {
   console.log('\n=== RESET: MockVASP mode 복원 ===');
   await verifyContractDeployed();
@@ -379,6 +545,8 @@ const SCENARIOS: Record<string, (userId: string) => Promise<void>> = {
   'pending':      scenarioPending,
   'reorg':        scenarioReorg,
   'poll-stale':   scenarioPollStale,
+  'burst':        scenarioBurst,
+  'reconcile':    scenarioReconcile,
   'reset':        () => scenarioReset(),
 };
 
@@ -397,13 +565,20 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   pending       evm_setAutomine(false) → TX mempool 체류 (30초 후 자동 복원)
   reorg         정상 발행 후 evm_revert → 체인 롤백 → REORGED 상태
   poll-stale    NO_EMIT → PENDING 조작 → pollStaleRequests() → CONFIRMED
+  burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
+  reconcile     정상 발행 후 mint_requests 삭제 → reconcile/run → ONCHAIN_ONLY 감지
   reset         MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구)
 `);
   process.exit(1);
 }
 
-SCENARIOS[scenarioName]!(userId).catch(err => {
-  console.error('\n[scenario] 오류:', err.message);
-  console.error('  → start.ts가 실행 중인지 확인하세요.');
-  process.exit(1);
-});
+const DIVIDER = '\n' + '─'.repeat(65);
+
+SCENARIOS[scenarioName]!(userId)
+  .then(() => console.log(DIVIDER))
+  .catch(err => {
+    console.error('\n[scenario] 오류:', err.message);
+    console.error('  → start.ts가 실행 중인지 확인하세요.');
+    console.log(DIVIDER);
+    process.exit(1);
+  });

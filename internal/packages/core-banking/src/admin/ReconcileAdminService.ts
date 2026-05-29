@@ -114,6 +114,44 @@ export class ReconcileAdminService {
     return this._runReconcileForUsers([userId], 'MANUAL', start, runAt);
   }
 
+  // ── 임시: NFT 원장 직접 보정 (데모/테스트 전용) ──────────────
+  /**
+   * poll-stale 등 온체인 이벤트 없이 CONFIRMED 처리된 경우
+   * user_nft_holdings에 반영되지 않은 발행분을 수동으로 보정한다.
+   *
+   * @param operator 요청자 식별자 (감사 로그용)
+   */
+  async creditNft(params: {
+    userId:       string;
+    tokenId:      bigint;
+    contractAddr: string;
+    chainId:      number;
+    amount:       bigint;
+    onChainTx:    string;
+    operator:     string;
+  }): Promise<void> {
+    await this.auditLog.recordAuditLog({
+      actor:        params.operator,
+      action:       'ADMIN_CREDIT_NFT',
+      resourceType: 'user_nft_holdings',
+      resourceId:   params.userId,
+      afterState:   {
+        tokenId:  params.tokenId.toString(),
+        amount:   params.amount.toString(),
+        onChainTx: params.onChainTx,
+      },
+    });
+    await this.auditLog.recordNftHolding({
+      userId:       params.userId,
+      tokenId:      params.tokenId,
+      contractAddr: params.contractAddr,
+      chainId:      params.chainId,
+      amount:       params.amount,
+      acquiredAt:   new Date(),
+      onChainTx:    params.onChainTx,
+    });
+  }
+
   // ── 공통 실행 로직 ────────────────────────────────────────────
   private async _runReconcileForUsers(
     userIds:  string[],
@@ -133,7 +171,12 @@ export class ReconcileAdminService {
             action:       'RECONCILE_MISMATCH_DETECTED',
             resourceId:   userId,
             resourceType: 'USER',
-            afterState:   { discrepancies: result.discrepancies },
+            afterState: {
+              discrepancies: result.discrepancies.map(d => ({
+                ...d,
+                tokenId: String(d.tokenId),
+              })),
+            },
           });
         }
       } catch (err) {

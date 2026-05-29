@@ -26,6 +26,9 @@ server:
 kyobo:
   core-banking:
     base-url: ${CORE_BANKING_URL:http://localhost:9090}  # TODO: KyoboDTS actual URL
+  demo:
+    mode: ${DEMO_MODE:false}
+    users: ${DEMO_USERS:}
 
 management:
   endpoints:

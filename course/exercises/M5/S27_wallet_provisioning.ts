@@ -2,6 +2,7 @@
  * S27 실습 — 사용자 레이어 진입점 설계 · VASP별 지갑 프로비저닝 분기
  *
  * 사전 준비:
+ *   npm install pg @types/pg
  *   npm run exercise:s27:db:up
  *
  * 실행:

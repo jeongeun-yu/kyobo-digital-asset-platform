@@ -2,7 +2,6 @@ import type { Pool }                    from 'pg';
 import type { IBlockchainAdapter }     from '@kyobo/chain-adapters';
 import type { IVASPAdapter }           from '@kyobo/vasp';
 import type { ICoreBankingAdapter }    from '@kyobo/core-banking';
-import type { IInternalLedgerClient }  from '../interfaces/IInternalLedgerClient';
 import { IssuerService }            from '../services/IssuerService';
 import {
   IssuancePolicyService,
@@ -11,10 +10,10 @@ import {
 import { PgIssuanceRequestRepository } from '../services/IssuanceRequestRepository';
 import { EventConditionService }    from '../services/EventConditionService';
 import { TxStateMachineService }    from '../../../../packages/vasp/src/tx/TxStateMachineService';
-import { PgTxRepository }           from '../../../../packages/vasp/src/tx/PgTxRepository';
+import { PgTxRepository }           from '../infra/PgTxRepository';
 import { VaspTxClientAdapter }      from '../../../../packages/vasp/src/tx/VaspTxClientAdapter';
 import { LedgerService }            from '../../../../packages/core-banking/src/ledger/LedgerService';
-import { PgDatabaseClient }         from '../../../../packages/core-banking/src/ledger/PgDatabaseClient';
+import { PgDatabaseClient }         from '../infra/PgDatabaseClient';
 import { TxTransitionBridge }       from '../services/TxTransitionBridge';
 import { IssuanceConfirmHandler }   from '../handlers/IssuanceConfirmHandler';
 
@@ -44,11 +43,10 @@ import { IssuanceConfirmHandler }   from '../handlers/IssuanceConfirmHandler';
 export class TokenIssuerFactory {
   constructor(
     private readonly deps: {
-      chainAdapter:          IBlockchainAdapter;
-      vaspAdapter:           IVASPAdapter;
-      coreBanking:           ICoreBankingAdapter;
-      pool:                  Pool;
-      internalLedgerClient?: IInternalLedgerClient;
+      chainAdapter: IBlockchainAdapter;
+      vaspAdapter:  IVASPAdapter;
+      coreBanking:  ICoreBankingAdapter;
+      pool:         Pool;
     },
   ) {}
 
@@ -79,23 +77,21 @@ export class TokenIssuerFactory {
     const ledgerService  = new LedgerService(dbClient, this.deps.coreBanking);
 
     // TxTransitionBridge: TxStatus 전이 → MintStatus·IssuanceStatus 동기화
-    const bridge         = new TxTransitionBridge(ledgerService, issuanceRepo, this.deps.internalLedgerClient);
+    const bridge         = new TxTransitionBridge(ledgerService, issuanceRepo, this.deps.coreBanking);
     bridge.attach(txStateMachine);
 
     // IssuanceConfirmHandler: 온체인 이벤트 → TxStateMachineService 경유 전이
     const confirmHandler = new IssuanceConfirmHandler(nftIssuerAddr, txRepo, txStateMachine);
 
     const issuerService  = new IssuerService({
-      chainAdapter:          this.deps.chainAdapter,
-      vaspAdapter:           this.deps.vaspAdapter,
-      coreBanking:           this.deps.coreBanking,
+      chainAdapter:  this.deps.chainAdapter,
+      coreBanking:   this.deps.coreBanking,
       nftIssuerAddr,
       policyService,
       conditionService,
       issuanceRepo,
       txStateMachine,
       ledgerService,
-      internalLedgerClient:  this.deps.internalLedgerClient,
     });
 
     return { issuerService, confirmHandler, txStateMachine, txRepo, ledgerService };
