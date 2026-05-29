@@ -118,6 +118,29 @@ async function waitPort(host: string, port: number, label: string, maxMs = 30_00
   throw new Error(`Timeout waiting for ${label} :${port}`);
 }
 
+async function waitForRpc(url: string, label: string, maxMs = 60_000): Promise<void> {
+  const deadline = Date.now() + maxMs;
+  const body = JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 });
+  while (Date.now() < deadline) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const req = http.request(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        }, res => { res.resume(); res.statusCode === 200 ? resolve() : reject(new Error(`HTTP ${res.statusCode}`)); });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+      });
+      console.log(`  [ready] ${label} RPC`);
+      return;
+    } catch {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  throw new Error(`Timeout waiting for ${label} RPC`);
+}
+
 async function waitHttp(url: string, label: string, maxMs = 60_000): Promise<void> {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
@@ -177,6 +200,7 @@ async function main() {
   dockerRun('kyobo-demo-redis',    'redis:7-alpine',          `${REDIS_PORT}:6379`, [], NETWORK_NAME);
 
   await waitPort('localhost', HARDHAT_PORT, 'Hardhat');
+  await waitForRpc(RPC_URL, 'Hardhat');
   await waitPort('localhost', PG_PORT,      'PostgreSQL');
   await waitPort('localhost', REDIS_PORT,   'Redis');
 
