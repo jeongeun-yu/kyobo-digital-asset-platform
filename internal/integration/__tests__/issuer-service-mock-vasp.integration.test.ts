@@ -1,34 +1,65 @@
 /**
  * issuer-service MockVASP 통합 테스트
  *
- * 실제 흐름:
- *   HTTP POST → WebhookServer → ActivityRouter → IssuerService
+ * 발행 경로 (Phase 1 — 동기 구간):
+ *   HTTP POST → WebhookServer → WebhookPublishHandler → Redis Stream XADD
+ *   → ConsumerGroupWorker XREADGROUP → ActivityProcessor → IssuerService
  *   → ExternalVASPAdapter → VASPServer (POST /transactions)
- *   → 서명 → Hardhat 블록체인 → TX 확정
- *   → VASPServer → NFT_ISSUED 콜백 → WebhookServer
+ *   → 서명·브로드캐스트 → Hardhat 블록체인 → TX 확정
+ *   → issuance_requests SUBMITTED
+ *
+ * 발행 경로 (Phase 2A — VASP 콜백):
+ *   VASPServer (TX 확정) → NFT_ISSUED 콜백 → WebhookServer
  *   → WebhookPublishHandler → Redis Stream XADD
- *   → ConsumerGroupWorker XREADGROUP → NFTIssuedProcessor → InMemoryLedger
+ *   → NFTIssuedProcessor → PgNFTLedgerService.creditNFT → user_nft_holdings
  *
- * 폴백 경로 (병행):
+ * 발행 경로 (Phase 2B — 체인 이벤트 폴링):
  *   ChainEventListener (Issued 이벤트 폴링) → IssuanceConfirmHandler
- *   → TxStateMachineService → PostgreSQL issuance_requests CONFIRMED
+ *   → TxStateMachineService → emit('transition', CONFIRMED)
+ *   → TxTransitionBridge → issuance_requests CONFIRMED + audit_log
+ *   → ProcessedEventHandler → processed_events (중복 처리 방지 마킹)
  *
- * 9가지 시나리오:
- *   [1] NORMAL    : 정상 발행 → NFT_ISSUED 콜백 → Redis Stream → ledger + CONFIRMED
- *   [2] REVERT    : TX revert → VASPServer 500 → IssuerService FAILED
- *   [3] NO_EMIT   : mint 성공, Issued 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
- *   [4] PENDING   : 블록 중단 → TX mempool 체류 → mineBlock → 콜백 → CONFIRMED
- *   [5] REORG     : snapshot → 발행 → revertToSnapshot → 온체인 상태 원복 확인
- *   [stream-2]    : 중복 requestId → 멱등성 보장 (Redis Stream 독립 검증)
- *   [stream-3]    : retryCount >= 3 → DLQ 이동
- *   [stream-4]    : XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
- *   [poll-1]      : pollStaleRequests — PENDING 10분 초과 → GET /transfers/:txHash → CONFIRMED
+ * 세 레이어 상태머신:
+ *   tx_mint_requests  (TxStatus)      : REQUESTED → SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED
+ *   mint_requests     (MintStatus)    : TxStatus와 동기화
+ *   issuance_requests (IssuanceStatus): SUBMITTED → CONFIRMED → COMPLETED
+ *   ※ TxTransitionBridge가 'transition' 이벤트를 받아 세 테이블을 cascade 업데이트
+ *
+ * 11가지 시나리오:
+ *   [1] NORMAL      : 정상 발행 → NFT_ISSUED 콜백 → Redis Stream → ledger + CONFIRMED
+ *                     + processed_events 기록 + audit_log(ISSUANCE_CONFIRMED) 검증
+ *   [2] REVERT      : TX revert → VASPServer 500 → ExternalVASPAdapter throws → FAILED
+ *   [3] NO_EMIT     : mint 성공, Issued 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
+ *   [4] PENDING     : evm_setAutomine(false) → TX mempool 체류 → mineBlock → 콜백 → CONFIRMED
+ *   [5] REORG       : evm_snapshot → 발행 → evm_revert → 온체인 원복, DB CONFIRMED 유지
+ *   [stream-2]      : 동일 requestId 두 번 XADD → IdempotencyGuard → creditNFT 1회
+ *   [stream-3]      : _retryCount >= 3 → DLQ 이동 (AlwaysFailProcessor 사용)
+ *   [stream-4]      : CRASH_CONSUMER XREADGROUP without XACK → PEL 잔류
+ *                     → minIdleMs(200ms) 초과 → NEW_CONSUMER XAUTOCLAIM 재수신
+ *   [poll-1]        : NO_EMIT → SUBMITTED → DB PENDING 조작(-11분)
+ *                     → pollStaleRequests → GET /transfers/:txHash → VASPServer 'completed'
+ *                     → handleMined → handleConfirmed → CONFIRMED
+ *   [reconcile-1]   : 정상 발행 후 user_nft_holdings DELETE
+ *                     → runManualReconcile → ONCHAIN_ONLY 불일치
+ *                     → reconcile_history(MANUAL, mismatch_count=1)
+ *                     + audit_log(RECONCILE_MANUAL_TRIGGER, RECONCILE_MISMATCH_DETECTED)
+ *   [burst]         : 5명 동시 발행 → VASPServer NonceManager 직렬화
+ *                     → nonce 충돌 없이 전체 CONFIRMED
  *
  * 인프라:
  *   - Hardhat 로컬 노드 (Docker) — MockVASP 컨트랙트 배포
- *   - VASPServer (HTTP, 포트 19876) — 서명·브로드캐스트·콜백
+ *   - VASPServer (HTTP, 포트 19876) — 서명·브로드캐스트·콜백·NonceManager
+ *   - Java internal-ledger 컨테이너 — recordNftHolding / recordAuditLog (운영과 동일 경로)
  *   - PostgreSQL — @testcontainers/postgresql
  *   - Redis — testcontainers GenericContainer
+ *
+ * 주의:
+ *   - beforeEach에서 vaspServer.resetNonce() 필수
+ *     evm_revert 후 체인 nonce는 롤백되지만 NonceManager 내부 카운터는 유지되므로
+ *     강제 재동기화하지 않으면 "nonce too high" 에러 발생
+ *   - PgHybridCoreBankingAdapter: 테스트 전용 클래스
+ *     getUserAccount()만 로컬 DB(user_wallet_mapping) 조회로 우회,
+ *     recordNftHolding / recordAuditLog는 Java 컨테이너 경유 (운영과 동일)
  */
 
 import { readFileSync }  from 'fs';
@@ -265,7 +296,7 @@ class ProcessedEventHandler implements IEventHandler {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 5가지 시나리오', () => {
+describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가지 시나리오', () => {
 
   // ── beforeAll ──────────────────────────────────────────────────────────────
 

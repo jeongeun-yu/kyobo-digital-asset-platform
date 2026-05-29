@@ -1,33 +1,70 @@
 /**
  * issuer-service Sepolia 통합 테스트
  *
- * 실제 흐름:
- *   HTTP POST → WebhookServer → WebhookPublishHandler → Redis Stream → ActivityProcessor → IssuerService
+ * 발행 경로 (Phase 1 — 동기 구간):
+ *   HTTP POST → WebhookServer → WebhookPublishHandler → Redis Stream XADD
+ *   → ConsumerGroupWorker XREADGROUP → ActivityProcessor → IssuerService
  *   → ExternalVASPAdapter → VASPServer (HTTP) → MockVASP (Sepolia 테스트넷)
- *   → VASPServer NFT_ISSUED 콜백 → WebhookServer → Redis Stream → NFTIssuedProcessor
- *   → ChainEventListener (Issued 이벤트) → IssuanceConfirmHandler
- *   → TxStateMachineService → PostgreSQL CONFIRMED
+ *   → 서명·브로드캐스트 → issuance_requests SUBMITTED
  *
- * 9가지 시나리오:
- *   [1] NORMAL     : 정상 발행 → Issued 이벤트 → CONFIRMED
- *   [2] REVERT     : TX revert → issuance_requests FAILED
- *   [3] NO_EMIT    : mint 성공, 이벤트 없음 → SUBMITTED 유지
- *   [4] PENDING    : 자연 발생 mempool pending 구간 포착 → CONFIRMED
- *   [5] REORG      : DB 상태 주입 → tx_mint_requests REORGED → 상태머신 검증
- *   [stream-2]     : 중복 requestId → 멱등성 보장 (Redis Stream 독립 검증)
- *   [stream-3]     : retryCount >= 3 → DLQ 이동
- *   [stream-4]     : XAUTOCLAIM — PEL 잔류 메시지 재수신 처리
- *   [poll-1]       : pollStaleRequests — PENDING 10분 초과 → getTransferStatus → CONFIRMED
+ * 발행 경로 (Phase 2A — VASP 콜백):
+ *   VASPServer (TX 확정) → NFT_ISSUED 콜백 → WebhookServer
+ *   → WebhookPublishHandler → Redis Stream XADD
+ *   → NFTIssuedProcessor → PgNFTLedgerService.creditNFT → user_nft_holdings
  *
- * Sepolia 제약 및 대체 구현:
- *   [4] PENDING — evm_setAutomine 불가 → nonce 블로커 TX(maxFeePerGas=1 wei)로 대체
- *   [5] REORG   — evm_snapshot 불가 → DB 상태 직접 주입(UPDATE status='REORGED')으로 대체
+ * 발행 경로 (Phase 2B — 체인 이벤트 폴링):
+ *   ChainEventListener (Issued 이벤트 폴링, 최대 10블록 범위)
+ *   → IssuanceConfirmHandler → TxStateMachineService → emit('transition', CONFIRMED)
+ *   → TxTransitionBridge → issuance_requests CONFIRMED + audit_log
+ *   → ProcessedEventHandler → processed_events
+ *
+ * 세 레이어 상태머신:
+ *   tx_mint_requests  (TxStatus)      : REQUESTED → SUBMITTED → PENDING → MINED → CONFIRMED → FINALIZED
+ *   mint_requests     (MintStatus)    : TxStatus와 동기화
+ *   issuance_requests (IssuanceStatus): SUBMITTED → CONFIRMED → COMPLETED
+ *   ※ TxTransitionBridge가 'transition' 이벤트를 받아 세 테이블을 cascade 업데이트
+ *
+ * 10가지 시나리오:
+ *   [1] NORMAL      : 정상 발행 → Issued 이벤트 → CONFIRMED
+ *                     + processed_events 기록 + audit_log(ISSUANCE_CONFIRMED) 검증
+ *   [2] REVERT      : TX revert → VASPServer 500 → issuance_requests FAILED
+ *   [3] NO_EMIT     : mint 성공, 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
+ *   [4] PENDING     : 자연 발생 mempool pending 구간 포착 (blockNumber=null 확인) → CONFIRMED
+ *   [5] REORG       : DB 상태 직접 주입 → tx_mint_requests REORGED → 상태머신 동작 검증
+ *   [stream-2]      : 동일 requestId 두 번 XADD → IdempotencyGuard → creditNFT 1회
+ *   [stream-3]      : _retryCount >= 3 → DLQ 이동 (AlwaysFailProcessor 사용)
+ *   [stream-4]      : CRASH_CONSUMER XREADGROUP without XACK → PEL 잔류
+ *                     → minIdleMs(200ms) 초과 → NEW_CONSUMER XAUTOCLAIM 재수신
+ *   [poll-1]        : NO_EMIT → SUBMITTED → DB PENDING 조작(-11분)
+ *                     → pollStaleRequests → GET /transfers/:txHash → VASPServer 'completed'
+ *                     → handleMined → handleConfirmed → CONFIRMED
+ *   [reconcile-1]   : NO_EMIT → user_nft_holdings 미기록 상태에서 pollStaleRequests → CONFIRMED
+ *                     → runManualReconcile → ONCHAIN_ONLY 불일치
+ *                     → reconcile_history(MANUAL, mismatch_count=1)
+ *                     + audit_log(RECONCILE_MANUAL_TRIGGER, RECONCILE_MISMATCH_DETECTED)
+ *
+ * Sepolia 제약 및 대체 구현 (Anvil과 차이점):
+ *   [4] PENDING     — evm_setAutomine 불가 → 자연 발생 mempool pending 구간 포착으로 대체
+ *   [5] REORG       — evm_snapshot/evm_revert 불가 → DB 상태 직접 주입으로 대체
+ *   TOKEN_ID        — Date.now() 사용 (이전 실행 잔액과 충돌 방지)
+ *   ChainEventListener — Alchemy eth_getLogs 10블록 범위 제한 준수
+ *   minIdleMs       — 300_000ms (5분): 이전 테스트 PEL 잔류 메시지의 의도치 않은
+ *                     XAUTOCLAIM 재시도로 추가 Sepolia TX 발생하는 것을 방지
+ *   beforeEach      — vaspServer.resetNonce() 로 NonceManager 내부 카운터 재동기화
+ *                     (Sepolia TX 완료 후 카운터가 체인 nonce와 어긋날 수 있음)
  *
  * 인프라:
  *   - Sepolia 테스트넷 (SEPOLIA_RPC_URL 환경변수)
  *   - MockVASP 고정 주소 (SEPOLIA_MOCK_VASP_ADDR 환경변수)
+ *   - VASPServer (HTTP, 포트 19877) — 서명·브로드캐스트·콜백·NonceManager
+ *   - Java internal-ledger 컨테이너 — recordNftHolding / recordAuditLog (운영과 동일 경로)
  *   - PostgreSQL — @testcontainers/postgresql
  *   - Redis — testcontainers GenericContainer
+ *
+ * 주의:
+ *   - PgHybridCoreBankingAdapter: 테스트 전용 클래스
+ *     getUserAccount()만 로컬 DB(user_wallet_mapping) 조회로 우회,
+ *     recordNftHolding / recordAuditLog는 Java 컨테이너 경유 (운영과 동일)
  */
 
 import { readFileSync }                 from 'fs';
@@ -270,7 +307,7 @@ class ProcessedEventHandler implements IEventHandler {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('issuer-service Sepolia 통합 테스트 — 9가지 시나리오', () => {
+describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', () => {
 
   // ── beforeAll ──────────────────────────────────────────────────────────────
 
