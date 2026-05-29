@@ -77,9 +77,11 @@ export class VASPServer {
 
   // NonceManager를 체인 현재 상태와 재동기화한다.
   // beforeEach에서 호출해 이전 테스트의 TX로 인한 nonce 불일치를 방지한다.
-  resetNonce(): void {
+  async resetNonce(): Promise<void> {
     if (this.signer instanceof NonceManager) {
       (this.signer as NonceManager).reset();
+      // reset()은 캐시만 지우고 lazy fetch → 즉시 chain에서 pre-fetch해 타이밍 경쟁 방지
+      await (this.signer as NonceManager).getNonce('latest');
     }
   }
 
