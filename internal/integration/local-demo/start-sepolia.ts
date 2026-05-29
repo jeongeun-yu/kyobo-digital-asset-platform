@@ -275,6 +275,18 @@ async function main() {
   if (existingAddr) {
     mockVaspAddr = existingAddr;
     console.log(`[4] MockVASP 기존 컨트랙트 재사용: ${mockVaspAddr}`);
+    // 이전 세션에서 NO_EMIT/REVERT 모드가 남아있을 수 있으므로 NORMAL로 강제 초기화
+    try {
+      const { ethers: _e } = await import('ethers');
+      const _artifact = JSON.parse(readFileSync(ARTIFACT_PATH, 'utf-8'));
+      const _signer   = new _e.Wallet(OPERATOR_PRIVATE_KEY, new _e.JsonRpcProvider(SEPOLIA_RPC_URL));
+      const _contract = new _e.Contract(mockVaspAddr, _artifact.abi, _signer);
+      const tx = await (_contract['setMode'] as Function)(0); // 0 = NORMAL
+      await tx.wait();
+      console.log('  [init] MockVASP mode → NORMAL (이전 세션 상태 초기화)');
+    } catch (e) {
+      console.warn('  [warn] MockVASP mode 초기화 실패 — 수동으로 확인 필요:', e);
+    }
   } else {
     console.log('[4] MockVASP 컨트랙트 배포 (Sepolia)...');
     mockVaspAddr = await deployMockVASP();
