@@ -27,7 +27,7 @@
  *
  * 11가지 시나리오:
  *   [1] NORMAL      : 정상 발행 → NFT_ISSUED 콜백 → Redis Stream → ledger + CONFIRMED
- *                     + processed_events 기록 + audit_log(ISSUANCE_CONFIRMED) 검증
+ *                     + processed_events 기록 + audit_log(CONFIRMED) 검증
  *   [2] REVERT      : TX revert → VASPServer 500 → ExternalVASPAdapter throws → FAILED
  *   [3] NO_EMIT     : mint 성공, Issued 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
  *   [4] PENDING     : evm_setAutomine(false) → TX mempool 체류 → mineBlock → 콜백 → CONFIRMED
@@ -596,17 +596,17 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
     await waitFor(async () => {
       const { rows } = await pool.query(
         `SELECT actor, action FROM audit_log
-         WHERE resource_type = 'issuance_request' AND actor = 'user-mock-001' AND action = 'ISSUANCE_CONFIRMED'`,
+         WHERE resource_type = 'issuance_request' AND actor = 'user-mock-001' AND action = 'CONFIRMED'`,
       );
       return rows.length > 0;
     }, 5_000, 'audit_log');
     const { rows: auditRows } = await pool.query(
       `SELECT actor, action FROM audit_log
-       WHERE resource_type = 'issuance_request' AND actor = 'user-mock-001' AND action = 'ISSUANCE_CONFIRMED'
+       WHERE resource_type = 'issuance_request' AND actor = 'user-mock-001' AND action = 'CONFIRMED'
        ORDER BY event_time DESC LIMIT 1`,
     );
     expect(auditRows[0].actor).toBe('user-mock-001');
-    expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
+    expect(auditRows[0].action).toBe('CONFIRMED');
     console.log('  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → coreBanking.recordAuditLog)');
   });
 

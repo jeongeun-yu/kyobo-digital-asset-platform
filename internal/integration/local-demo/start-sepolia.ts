@@ -404,9 +404,9 @@ async function main() {
 ╚═══════════════════════════════════════════════════════════════╝
 `);
 
-  // ── 11. DB 상태 폴러 (5초마다 현재 파이프라인 상태 출력) ────────────────────
+  // ── 11. DB 상태 폴러 — issuance_requests.status 또는 user_nft_holdings 변경 시에만 출력 ──
   const dbPoller = new Pool({ connectionString: PG_URL });
-  let lastSnapshot = '';
+  let lastChangeKey = '';
 
   const pollInterval = setInterval(async () => {
     try {
@@ -420,17 +420,22 @@ async function main() {
 
       if (issuance.rows.length === 0) return;
 
-      const snapshot = JSON.stringify({ issuance: issuance.rows, mint: mint.rows, tx: tx.rows, holdings: holdings.rows, auditLog: auditLog.rows });
-      if (snapshot === lastSnapshot) return;
-      lastSnapshot = snapshot;
+      // 변경 감지 키: issuance status/tx_hash + holdings 행 수만 사용
+      const changeKey = JSON.stringify({
+        issuance: issuance.rows.map((r: any) => ({ id: r.id, status: r.status, tx: r.tx_hash })),
+        holdingsCount: holdings.rows.length,
+        holdingsLatest: holdings.rows[0]?.on_chain_tx ?? null,
+      });
+      if (changeKey === lastChangeKey) return;
+      lastChangeKey = changeKey;
 
       console.log('\n─── DB 상태 스냅샷 (Sepolia) ───────────────────────────────────');
       for (const r of issuance.rows) {
         console.log(`  [issuance_requests]  status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…  user=${r.user_id}`);
         if (r.fail_reason) console.log(`                       fail_reason=${r.fail_reason}`);
       }
-      for (const r of mint.rows)     console.log(`  [mint_requests]      status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
-      for (const r of tx.rows)       console.log(`  [tx_mint_requests]   status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
+      for (const r of mint.rows)      console.log(`  [mint_requests]      status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
+      for (const r of tx.rows)        console.log(`  [tx_mint_requests]   status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
       for (const r of holdings.rows) console.log(`  [user_nft_holdings]  userId=${r.user_id}  tokenId=${r.token_id}  amount=${r.amount}  tx=${String(r.on_chain_tx).slice(0, 12)}…`);
       for (const r of auditLog.rows) console.log(`  [audit_log]          actor=${r.actor}  action=${r.action}  ${r.resource_type}/${String(r.resource_id).slice(0, 10)}…  checksum=${String(r.checksum).slice(0, 12)}…  chained=${r.prev_checksum ? 'Y' : 'N(first)'}`);
       console.log('─────────────────────────────────────────────────────────────────\n');

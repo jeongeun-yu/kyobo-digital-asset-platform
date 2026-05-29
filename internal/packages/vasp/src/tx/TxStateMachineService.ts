@@ -89,6 +89,7 @@ export interface TxTransitionEvent {
   from:      TxStatus;
   to:        TxStatus;
   req:       MintRequest;
+  source?:   string;  // 전이 트리거 경로 (예: 'WEBHOOK' | 'POLLING' | 'POLL_STALE')
 }
 
 // ── 의존 인터페이스 ────────────────────────────────────────────────────────
@@ -251,11 +252,11 @@ export class TxStateMachineService extends EventEmitter {
    * 호출 경로: VASP Webhook, ChainEventListener Issued 이벤트, pollStaleRequests confirmed
    * PENDING 또는 SUBMITTED 상태에서만 전이 (그 외 상태는 early return)
    */
-  async handleMined(requestId: string, blockNumber: number): Promise<void> {
+  async handleMined(requestId: string, blockNumber: number, source?: string): Promise<void> {
     const req = await this._getOrThrow(requestId);
     if (req.status !== 'PENDING' && req.status !== 'SUBMITTED') return;
 
-    await this._transition(req, 'MINED', { blockNumber });
+    await this._transition(req, 'MINED', { blockNumber }, source);
   }
 
   /**
@@ -265,11 +266,11 @@ export class TxStateMachineService extends EventEmitter {
    * MINED 상태에서만 전이.
    * CONFIRMED 전이 후 LedgerService.recordHolding(+1)
    */
-  async handleConfirmed(requestId: string): Promise<void> {
+  async handleConfirmed(requestId: string, source?: string): Promise<void> {
     const req = await this._getOrThrow(requestId);
     if (req.status !== 'MINED') return;
 
-    await this._transition(req, 'CONFIRMED');
+    await this._transition(req, 'CONFIRMED', undefined, source);
   }
 
   /**
@@ -381,8 +382,8 @@ export class TxStateMachineService extends EventEmitter {
         switch (result.status) {
           case 'confirmed':
             // PENDING → MINED → CONFIRMED (직접 PENDING→CONFIRMED 전이 없음)
-            await this.handleMined(req.id, result.blockNumber ?? 0);
-            await this.handleConfirmed(req.id);
+            await this.handleMined(req.id, result.blockNumber ?? 0, 'POLL_STALE');
+            await this.handleConfirmed(req.id, 'POLL_STALE');
             break;
           case 'failed':
             await this.handleFailed(req.id, result.revertReason ?? 'failed');
@@ -416,9 +417,10 @@ export class TxStateMachineService extends EventEmitter {
 
   /** 상태 전이 + Observer 이벤트 방출 */
   private async _transition(
-    req: MintRequest,
-    to: TxStatus,
+    req:    MintRequest,
+    to:     TxStatus,
     extra?: Partial<MintRequest>,
+    source?: string,
   ): Promise<void> {
     const from = req.status;
     if (!VALID_TRANSITIONS[from].includes(to)) {
@@ -427,7 +429,7 @@ export class TxStateMachineService extends EventEmitter {
     await this.repo.updateStatus(req.id, to, extra);
     const updated: MintRequest = { ...req, status: to, ...extra, updatedAt: new Date() };
     console.log(`[TxStateMachine] ${from}(${TX_STATUS_LAYER[from]}) → ${to}(${TX_STATUS_LAYER[to]})  id=${req.id.slice(0, 8)}…`);
-    this.emit('transition', { requestId: req.id, from, to, req: updated } satisfies TxTransitionEvent);
+    this.emit('transition', { requestId: req.id, from, to, req: updated, source } satisfies TxTransitionEvent);
   }
 }
 

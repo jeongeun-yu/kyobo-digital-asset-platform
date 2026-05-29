@@ -47,7 +47,7 @@ export class IssuanceConfirmHandler implements IEventHandler {
 
     if (txReq.status === 'SUBMITTED' || txReq.status === 'PENDING') {
       console.log(`[IssuanceConfirmHandler] handleMined() 호출 → tx_mint_requests (SUBMITTED|PENDING) → MINED`);
-      await this.txStateMachine.handleMined(txReq.id, event.blockNumber);
+      await this.txStateMachine.handleMined(txReq.id, event.blockNumber, 'POLLING');
     }
     if (txReq.status !== 'FAILED') {
       console.log(`[IssuanceConfirmHandler] handleConfirmed() 호출 → tx_mint_requests MINED → CONFIRMED`);

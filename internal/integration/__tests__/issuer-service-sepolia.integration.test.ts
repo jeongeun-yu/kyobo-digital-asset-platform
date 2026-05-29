@@ -26,7 +26,7 @@
  *
  * 10가지 시나리오:
  *   [1] NORMAL      : 정상 발행 → Issued 이벤트 → CONFIRMED
- *                     + processed_events 기록 + audit_log(ISSUANCE_CONFIRMED) 검증
+ *                     + processed_events 기록 + audit_log(CONFIRMED) 검증
  *   [2] REVERT      : TX revert → VASPServer 500 → issuance_requests FAILED
  *   [3] NO_EMIT     : mint 성공, 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
  *   [4] PENDING     : 자연 발생 mempool pending 구간 포착 (blockNumber=null 확인) → CONFIRMED
@@ -680,7 +680,7 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
       "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request' ORDER BY id DESC LIMIT 1",
     );
     expect(auditRows[0].actor).toBe('user-sepolia-001');
-    expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
+    expect(auditRows[0].action).toBe('CONFIRMED');
     console.log(`  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → coreBanking.recordAuditLog)`);
 
     console.log(`\n  ✔ [1] NORMAL 전체 완료 (총 ${elapsed(t0)})`);

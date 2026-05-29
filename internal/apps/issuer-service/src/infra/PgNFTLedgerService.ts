@@ -65,9 +65,9 @@ export class PgNFTLedgerService implements NFTLedgerService {
     const req = await this.txRepo.findById(requestId);
     if (!req || req.status === 'CONFIRMED' || req.status === 'FINALIZED' || req.status === 'FAILED') return;
     if (req.status === 'SUBMITTED' || req.status === 'PENDING') {
-      await this.txStateMachine.handleMined(requestId, blockNumber ?? 0);
+      await this.txStateMachine.handleMined(requestId, blockNumber ?? 0, 'WEBHOOK');
     }
-    await this.txStateMachine.handleConfirmed(requestId);
+    await this.txStateMachine.handleConfirmed(requestId, 'WEBHOOK');
   }
 
   private async _resolveUserId(walletAddr: string): Promise<string | null> {

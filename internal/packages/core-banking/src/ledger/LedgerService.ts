@@ -100,14 +100,6 @@ export class LedgerService {
       [requestId, userId, policyId, now.toISOString()],
     );
 
-    await this.coreBanking.recordAuditLog({
-      actor:        'system',
-      action:       'MINT_REQUESTED',
-      resourceType: 'MintRequest',
-      resourceId:   requestId,
-      afterState:   { userId, policyId, status: 'REQUESTED' },
-    });
-
     return { id: requestId, userId, policyId, status: 'REQUESTED', createdAt: now, updatedAt: now };
   }
 
@@ -178,15 +170,6 @@ export class LedgerService {
         requestId,
       ],
     );
-
-    await this.coreBanking.recordAuditLog({
-      actor:        'system',
-      action:       `STATUS_${patch.status}`,
-      resourceType: 'MintRequest',
-      resourceId:   requestId,
-      beforeState:  current,
-      afterState:   { ...current, ...patch, updatedAt: now },
-    });
 
     return { ...current, ...patch, updatedAt: now };
   }
