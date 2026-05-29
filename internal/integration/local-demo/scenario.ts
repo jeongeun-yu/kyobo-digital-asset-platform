@@ -399,6 +399,7 @@ async function scenarioBurst(_userId: string) {
   const start = Date.now();
 
   console.log(`[scenario] ${COUNT}개 웹훅 동시 전송...`);
+  const burstAt = new Date();
   const statuses = await Promise.all(users.map(u => sendWebhook({ userId: u })));
   statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
 
@@ -412,8 +413,8 @@ async function scenarioBurst(_userId: string) {
     while (Date.now() < deadline) {
       const { rows } = await pool.query(
         `SELECT user_id, status FROM issuance_requests
-         WHERE user_id = ANY($1) ORDER BY created_at DESC`,
-        [users],
+         WHERE user_id = ANY($1) AND created_at >= $2 ORDER BY created_at DESC`,
+        [users, burstAt],
       );
       const done = rows.filter(r => ['CONFIRMED', 'FAILED'].includes(r.status as string));
       console.log(`  [+${((Date.now() - start) / 1000).toFixed(1)}s] ${done.length}/${COUNT} 완료`);

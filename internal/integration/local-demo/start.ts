@@ -141,6 +141,23 @@ async function waitForRpc(url: string, label: string, maxMs = 60_000): Promise<v
   throw new Error(`Timeout waiting for ${label} RPC`);
 }
 
+async function waitForPg(connectionString: string, label: string, maxMs = 30_000): Promise<void> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    const p = new Pool({ connectionString, max: 1 });
+    try {
+      await p.query('SELECT 1');
+      await p.end();
+      console.log(`  [ready] ${label} (accepting queries)`);
+      return;
+    } catch {
+      await p.end().catch(() => {});
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  throw new Error(`Timeout waiting for ${label}`);
+}
+
 async function waitHttp(url: string, label: string, maxMs = 60_000): Promise<void> {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
@@ -202,11 +219,11 @@ async function main() {
   await waitPort('localhost', HARDHAT_PORT, 'Hardhat');
   await waitForRpc(RPC_URL, 'Hardhat');
   await waitPort('localhost', PG_PORT,      'PostgreSQL');
+  await waitForPg(PG_URL, 'PostgreSQL');
   await waitPort('localhost', REDIS_PORT,   'Redis');
 
   // ── 3. DB 스키마 + 시드 ──────────────────────────────────────────────────────
   console.log('[3] DB 스키마 적용 및 시드...');
-  await new Promise(r => setTimeout(r, 1000));
   const pool = new Pool({ connectionString: PG_URL });
   await pool.query(readFileSync(SCHEMA_PATH, 'utf-8'));
   await pool.query(
