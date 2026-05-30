@@ -39,20 +39,15 @@ export interface ChainVASPAdapterConfig {
 
 export abstract class ChainVASPAdapterBase implements IVASPAdapter {
   protected readonly provider:      ethers.JsonRpcProvider;
-  protected readonly signer:        ethers.NonceManager;
+  protected readonly signer:        ethers.Wallet;
   protected readonly mockVasp:      ethers.Contract;
   protected readonly confirmations: number;
 
   constructor(config: ChainVASPAdapterConfig) {
     this.provider      = new ethers.JsonRpcProvider(config.rpcUrl);
-    this.signer        = new ethers.NonceManager(new ethers.Wallet(config.privateKey, this.provider));
+    this.signer        = new ethers.Wallet(config.privateKey, this.provider);
     this.mockVasp      = new ethers.Contract(config.mockVaspAddr, MOCK_VASP_ABI, this.signer);
     this.confirmations = config.confirmations ?? 1;
-  }
-
-  async resetNonce(): Promise<void> {
-    this.signer.reset();
-    await this.signer.getNonce('latest');
   }
 
   // ── IVASPAdapter ──────────────────────────────────────────────────────────

@@ -506,8 +506,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
     await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log, reconcile_history');
 
     // evm_revert 이후 NonceManager 내부 카운터가 체인과 어긋날 수 있으므로 재동기화
-    // controlVasp(DEPLOYER_KEY)도 동기화 — 느린 PC에서 tx.wait() 직후 stale nonce 방지
-    await Promise.all([vaspServer.resetNonce(), controlVasp.resetNonce()]);
+    await vaspServer.resetNonce();
   }, 20_000);
 
   // ── [1] NORMAL ──────────────────────────────────────────────────────────────
@@ -1098,7 +1097,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
       return rows[0]?.status === 'CONFIRMED';
-    }, 90_000, 'CONFIRMED');
+    }, 40_000, 'CONFIRMED');
     console.log('  · CONFIRMED 확인');
 
     // user_nft_holdings 기록 대기 (NFTIssuedProcessor → PgNFTLedgerService.creditNFT)
