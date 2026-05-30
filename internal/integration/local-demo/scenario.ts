@@ -520,6 +520,14 @@ async function scenarioReconcile(userId: string) {
   console.log('[scenario] reconcile 결과:');
   console.log(JSON.stringify(result, null, 2));
 
+  const discrepancies = result['discrepancies'] as Array<{ userId: string; tokenId: string; type: string }>;
+  if (discrepancies.length > 0) {
+    console.log('\n[scenario] /admin/credit-nft 보정 명령:');
+    for (const d of discrepancies) {
+      console.log(`  Invoke-RestMethod -Method Post -Uri http://localhost:${ADMIN_PORT}/admin/credit-nft \`\n    -ContentType "application/json" \`\n    -Body '{"userId":"${d.userId}","tokenId":"${d.tokenId}","amount":1,"txHash":"<txHash>"}'`);
+    }
+  }
+
   printDbHint([
     `SELECT user_id, token_id, discrepancy_type, checked_at FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
     `SELECT user_id, token_id, amount FROM user_nft_holdings WHERE user_id = '${userId}';`,
