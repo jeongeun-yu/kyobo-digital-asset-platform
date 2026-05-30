@@ -417,7 +417,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
       coreBanking,
       pool,
     });
-    const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
+    const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc, mockVaspAddr, 31337);
     const { issuerService } = factoryResult;
     confirmHandler = factoryResult.confirmHandler;
     txStateMachine = factoryResult.txStateMachine;

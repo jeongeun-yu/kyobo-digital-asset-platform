@@ -435,7 +435,7 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
       pool,
     });
 
-    const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
+    const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc, mockVaspAddr, 11155111);
     const { issuerService } = factoryResult;
     confirmHandler  = factoryResult.confirmHandler;
     txStateMachine  = factoryResult.txStateMachine;
