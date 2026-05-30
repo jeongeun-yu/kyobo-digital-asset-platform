@@ -2,6 +2,21 @@ import type { IBlockchainAdapter, ChainEvent } from '@kyobo/chain-adapters';
 import type { IEventHandler } from '../interfaces/IEventHandler';
 
 /**
+ * ReorgWatcher — 체인 재조직 감지 콜백 인터페이스
+ *
+ * ChainEventListener가 MINED/CONFIRMED TX를 주기적으로 조회해
+ * getReceipt()가 null을 반환하면 reorg로 판단하고 onReorg()를 호출한다.
+ *
+ * 구현체: issuer-service의 IssuanceReorgHandler
+ */
+export interface ReorgWatcher {
+  /** 현재 감시할 TX 목록 — MINED·CONFIRMED 상태 */
+  getWatchedTxHashes(): Promise<Array<{ txHash: string; requestId: string }>>;
+  /** reorg 확인된 requestId에 대한 처리 위임 */
+  onReorg(requestId: string): Promise<void>;
+}
+
+/**
  * ChainEventListener — 온체인 이벤트 구독 → 이벤트 파이프라인 입구
  *
  * 동작 방식:
@@ -24,9 +39,9 @@ export class ChainEventListener {
   private running = false;
 
   constructor(
-    private readonly adapter:   IBlockchainAdapter,
-    private readonly handlers:  IEventHandler[],
-    private readonly contracts: Array<{
+    private readonly adapter:      IBlockchainAdapter,
+    private readonly handlers:     IEventHandler[],
+    private readonly contracts:    Array<{
       addr:       string;
       abi:        unknown[];
       eventNames: string[];
@@ -35,6 +50,8 @@ export class ChainEventListener {
       getLastProcessedBlock(): Promise<number>;
       setLastProcessedBlock(block: number): Promise<void>;
     },
+    private readonly reorgWatcher?: ReorgWatcher,
+    private readonly reorgPollMs:   number = 5_000,
   ) {}
 
   async start(): Promise<void> {
@@ -63,6 +80,11 @@ export class ChainEventListener {
       );
       this.unsubscribers.push(unsub);
     }
+
+    // REORG 감지 폴링 (ReorgWatcher 주입 시에만)
+    if (this.reorgWatcher) {
+      this._pollReorg();
+    }
   }
 
   async stop(): Promise<void> {
@@ -88,6 +110,24 @@ export class ChainEventListener {
           start = end + 1;
         }
       }
+    }
+  }
+
+  private async _pollReorg(): Promise<void> {
+    while (this.running) {
+      try {
+        const watched = await this.reorgWatcher!.getWatchedTxHashes();
+        for (const { txHash, requestId } of watched) {
+          const receipt = await this.adapter.getReceipt(txHash);
+          if (receipt === null) {
+            console.log(`[ChainEventListener] reorg detected: txHash=${txHash.slice(0, 10)}…  requestId=${requestId.slice(0, 8)}…`);
+            await this.reorgWatcher!.onReorg(requestId);
+          }
+        }
+      } catch (err) {
+        // 폴링 오류는 루프 유지 — 다음 주기에 재시도
+      }
+      await new Promise(r => setTimeout(r, this.reorgPollMs));
     }
   }
 

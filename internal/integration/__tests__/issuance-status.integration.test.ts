@@ -27,7 +27,7 @@ import {
 import { IssuanceConfirmHandler }  from '../../apps/issuer-service/src/handlers/IssuanceConfirmHandler';
 import { PgTxRepository }          from '../../apps/issuer-service/src/infra/PgTxRepository';
 import { TxStateMachineService }   from '../../packages/vasp/src/tx/TxStateMachineService';
-import { TxTransitionBridge }      from '../../apps/issuer-service/src/services/TxTransitionBridge';
+import { TxTransitionBridge }      from '../../packages/core-banking/src/tx/TxTransitionBridge';
 import { LedgerService }           from '../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }        from '../../apps/issuer-service/src/infra/PgDatabaseClient';
 import { StubCoreBankingAdapter }  from '@kyobo/core-banking';
@@ -79,7 +79,7 @@ describe('IssuanceStatus 상태 전이 — PgIssuanceRequestRepository', () => {
     };
     txStateMachine = new TxStateMachineService(txRepo, stubVasp);
     const ledgerService  = new LedgerService(new PgDatabaseClient(pool), new StubCoreBankingAdapter());
-    const bridge         = new TxTransitionBridge(ledgerService, repo);
+    const bridge         = new TxTransitionBridge(ledgerService);
     bridge.attach(txStateMachine);
     handler = new IssuanceConfirmHandler('0xCONTRACT', txRepo, txStateMachine);
   });

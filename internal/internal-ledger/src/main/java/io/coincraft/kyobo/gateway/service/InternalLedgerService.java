@@ -44,7 +44,7 @@ public class InternalLedgerService {
                     String beforeJson = String.format(
                         "{\"userId\":\"%s\",\"tokenId\":%d,\"contractAddr\":\"%s\",\"chainId\":%d,\"amount\":%d}",
                         userId, request.tokenId(), request.contractAddr(), request.chainId(), before);
-                    auditLogService.log("system", "NFT_AMOUNT_INCREMENTED", "NftHolding",
+                    auditLogService.log("system", "CREDITED", "NftHolding",
                         request.contractAddr() + ":" + request.tokenId(), beforeJson, afterJson);
                     log.info("[Ledger] NFT 보유량 누적: userId={}, tokenId={}, {}→{}", userId, request.tokenId(), before, existing.getAmount());
                 },

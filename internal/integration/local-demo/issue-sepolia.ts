@@ -13,7 +13,7 @@ import http           from 'http';
 import crypto         from 'crypto';
 import { randomUUID } from 'crypto';
 
-const WEBHOOK_PORT    = 19877;
+const WEBHOOK_PORT    = 19887;
 const WEBHOOK_SECRET  = 'sepolia-demo-webhook-secret-32ch!!';
 const TEST_EVENT_TYPE = 'WALK_GOAL_MET';
 

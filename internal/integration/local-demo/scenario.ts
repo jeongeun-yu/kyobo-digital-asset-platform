@@ -8,13 +8,14 @@
  *
  * 시나리오 목록:
  *   revert        MockVASP TX revert → issuance_requests FAILED
- *   no-emit       mint 성공 + Issued 이벤트 없음 → ChainEventListener 폴백
+ *   no-emit       mint 성공 + Issued 이벤트 없음 → SUBMITTED 스턱 (복구: reconcile 또는 서비스 재시작)
  *   invalid-hmac  HMAC 서명 위조 → WebhookServer 401
  *   unknown-user  wallet mapping 없는 userId → 발행 FAILED
  *   pending       evm_setAutomine(false) → TX mempool 체류 → 30초 후 자동 복원
  *   reorg         정상 발행 후 evm_revert로 체인 롤백 → REORGED 상태 검증
- *   reconcile     정상 발행 후 /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지
+ *   reconcile     POST /admin/reconcile/run → 온체인 vs 원장 불일치 감지 (no-emit 세트: no-emit → reconcile → /admin/credit-nft → reconcile)
  *   reset         MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구용)
+ *   db-reset      DB 전체 초기화 + MockVASP NORMAL (시나리오 간 상태 격리)
  */
 
 import http           from 'http';
@@ -29,6 +30,7 @@ import { resolve }    from 'path';
 const HARDHAT_PORT    = 8545;
 const WEBHOOK_PORT    = 19877;
 const ADMIN_PORT      = 19870;
+const VASP_PORT       = 19876;
 const WEBHOOK_SECRET  = 'local-demo-webhook-secret-32ch!!';
 const OPERATOR_KEY    = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const DEPLOYER_ADDR   = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
@@ -69,10 +71,27 @@ async function verifyContractDeployed(): Promise<void> {
   }
 }
 
+// VASPServer의 /admin/mode 엔드포인트를 경유해 모드를 변경한다.
+// 직접 컨트랙트 호출(raw Wallet)을 사용하면 VASPServer NonceManager와 nonce가 어긋나
+// 이후 TX 제출 시 "nonce already used" 오류가 발생하므로 반드시 이 함수를 사용한다.
+const MODE_NAME: Record<MintModeValue, string> = { 0: 'NORMAL', 1: 'REVERT', 2: 'NO_EMIT' };
 async function setMode(mode: MintModeValue, label: string): Promise<void> {
-  const contract = getMockVasp();
-  const tx = await (contract['setMode'] as Function)(mode);
-  await tx.wait();
+  const body = JSON.stringify({ mode: MODE_NAME[mode] });
+  await new Promise<void>((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: 'localhost',
+        port:     VASP_PORT,
+        method:   'POST',
+        path:     '/admin/mode',
+        headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      res => { res.resume(); res.on('end', resolve); },
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
   console.log(`[scenario] MockVASP.mode → ${label}`);
 }
 
@@ -135,6 +154,22 @@ function sleep(ms: number) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+/**
+ * 특정 userId의 비터미널 발행 레코드만 제거한다.
+ * 터미널 상태(CONFIRMED/FAILED)·NFT 보유 이력(user_nft_holdings)은 건드리지 않는다.
+ * 동일 시나리오를 db-reset 없이 반복 실행할 수 있도록 하기 위한 self-cleanup.
+ */
+async function clearNonTerminalIssuanceState(userId: string, pool: import('pg').Pool): Promise<void> {
+  await pool.query(
+    `DELETE FROM tx_mint_requests WHERE user_id = $1 AND status IN ('REQUESTED','SUBMITTED','PENDING','MINED')`,
+    [userId],
+  );
+  await pool.query(
+    `DELETE FROM issuance_requests WHERE user_id = $1 AND status IN ('REQUESTED','SUBMITTED')`,
+    [userId],
+  );
+}
+
 function printDbHint(queries: string[]) {
   console.log('\n[scenario] 확인 명령:');
   for (const q of queries) {
@@ -171,7 +206,8 @@ async function scenarioNoEmit(userId: string) {
   console.log('\n=== NO_EMIT: Issued 이벤트 없음 시나리오 ===');
   console.log('  ERC-1155 mint()는 성공하지만 Issued 이벤트를 emit하지 않는다.');
   console.log('  → ChainEventListener가 이벤트를 수신하지 못해 CONFIRMED 전이 없음.');
-  console.log('  → issuance_requests.status가 SUBMITTED에서 멈춤\n');
+  console.log('  → tx_mint_requests.status가 SUBMITTED에서 멈춤.');
+  console.log('  복구: reconcile 시나리오(온체인 잔고 불일치 감지) 또는 서비스 재시작(블록 재스캔)\n');
 
   await verifyContractDeployed();
   await setMode(MintMode.NO_EMIT, 'NO_EMIT');
@@ -184,6 +220,7 @@ async function scenarioNoEmit(userId: string) {
   const pool = new PgPool({ connectionString: pgUrl });
 
   try {
+    await clearNonTerminalIssuanceState(userId, pool);
     const status = await sendWebhook({ userId });
     console.log(`[scenario] HTTP ${status} — NO_EMIT TX 채굴 대기 중...`);
 
@@ -192,12 +229,13 @@ async function scenarioNoEmit(userId: string) {
     let confirmed = false;
     while (Date.now() < deadline) {
       const { rows } = await pool.query(
-        `SELECT tx_hash FROM tx_mint_requests
+        `SELECT tx_hash, token_id FROM tx_mint_requests
          WHERE tx_hash IS NOT NULL AND created_at > NOW() - INTERVAL '30 seconds'
          ORDER BY created_at DESC LIMIT 1`,
       );
       if (rows[0]?.tx_hash) {
         console.log(`[scenario] NO_EMIT TX 채굴 확인: ${String(rows[0].tx_hash).slice(0, 16)}…`);
+        console.log(`[scenario] 실제 tokenId: ${rows[0].token_id}  ← credit-nft에 이 값 사용`);
         confirmed = true;
         break;
       }
@@ -249,7 +287,7 @@ async function scenarioPending(userId: string) {
   const PENDING_SEC = 30;
   console.log('\n=== PENDING: TX mempool 체류 시나리오 ===');
   console.log('  evm_setAutomine(false) → 블록 채굴 중단 → TX가 mempool에서 체류.');
-  console.log(`  ${PENDING_SEC}초 후 자동으로 evm_setAutomine(true) 복원.\n`);
+  console.log(`  ${PENDING_SEC}초 후 evm_setAutomine(true) 복원 → 정상 확정 경로 확인.\n`);
 
   await verifyContractDeployed();
 
@@ -270,9 +308,18 @@ async function scenarioPending(userId: string) {
   } finally {
     console.log('[scenario] Hardhat automining ON (복원)...');
     await hardhatRpc('evm_setAutomine', [true]);
-    // 쌓인 TX 처리를 위해 블록 한 개 강제 채굴
     await hardhatRpc('evm_mine', []);
-    console.log('[scenario] 블록 채굴 재개 — TX가 이제 확정됨');
+    // NonceManager가 mempool 대기 중 nonce를 선점한 상태일 수 있으므로 체인과 재동기화
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(
+        { hostname: 'localhost', port: VASP_PORT, method: 'POST', path: '/admin/reset-nonce' },
+        res => { res.resume(); res.on('end', resolve); },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    console.log('[scenario] VASPServer nonce 재동기화 완료');
+    console.log('[scenario] 완료');
   }
 }
 
@@ -319,9 +366,9 @@ async function scenarioReorg(userId: string) {
 
 async function scenarioPollStale(userId: string) {
   console.log('\n=== POLL_STALE: pollStaleRequests — PENDING 10분 초과 TX 강제 복구 ===');
-  console.log('  NO_EMIT 모드로 TX 확정 + Issued 이벤트 없음 → tx_mint_requests SUBMITTED 유지');
+  console.log('  NO_EMIT 모드로 TX 채굴 완료 + Issued 이벤트 없음 → tx_mint_requests SUBMITTED 유지');
   console.log('  DB 조작: SUBMITTED → PENDING + created_at -11분');
-  console.log('  → POST /admin/poll-stale → findPendingOlderThan(10) → getTransferStatus → CONFIRMED\n');
+  console.log('  → POST /admin/poll-stale → findPendingOlderThan(10) → getStatus → CONFIRMED\n');
 
   const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
   const { Pool: PgPool } = await import('pg');
@@ -331,10 +378,10 @@ async function scenarioPollStale(userId: string) {
   await setMode(MintMode.NO_EMIT, 'NO_EMIT');
 
   try {
+    await clearNonTerminalIssuanceState(userId, pool);
     const status = await sendWebhook({ userId });
     console.log(`[scenario] HTTP ${status} — SUBMITTED 대기 중...`);
 
-    // SUBMITTED + txHash 확보
     const deadline = Date.now() + 20_000;
     let txHash = '';
     while (Date.now() < deadline) {
@@ -347,16 +394,13 @@ async function scenarioPollStale(userId: string) {
     if (!txHash) { console.error('[scenario] SUBMITTED 전이 타임아웃'); return; }
     console.log(`[scenario] tx_hash=${txHash.slice(0, 16)}…`);
 
-    // Hardhat: TX 즉시 채굴 → VASPServer txStatuses='completed' 설정 여유
     await sleep(2000);
 
-    // DB 조작: SUBMITTED → PENDING + created_at -11분
     await pool.query(
       "UPDATE tx_mint_requests SET status='PENDING', created_at=NOW()-INTERVAL '11 minutes' WHERE status='SUBMITTED'",
     );
     console.log('[scenario] tx_mint_requests → PENDING (created_at -11분 조작)');
 
-    // POST /admin/poll-stale → pollStaleRequests() 트리거
     console.log('[scenario] POST /admin/poll-stale...');
     const result = await new Promise<{ processed: number }>((resolve, reject) => {
       const req = http.request(
@@ -372,7 +416,6 @@ async function scenarioPollStale(userId: string) {
     });
     console.log(`[scenario] pollStaleRequests processed=${result.processed}`);
 
-    // issuance_requests CONFIRMED 확인
     await sleep(1000);
     const { rows } = await pool.query('SELECT status FROM issuance_requests ORDER BY created_at DESC LIMIT 1');
     console.log(`[scenario] issuance_requests.status = ${rows[0]?.status}`);
@@ -398,15 +441,23 @@ async function scenarioBurst(_userId: string) {
   const users = Array.from({ length: COUNT }, (_, i) => `demo-user-${String(i + 1).padStart(3, '0')}`);
   const start = Date.now();
 
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  try {
+    for (const u of users) await clearNonTerminalIssuanceState(u, pool);
+  } catch (e) {
+    await pool.end();
+    throw e;
+  }
+
   console.log(`[scenario] ${COUNT}개 웹훅 동시 전송...`);
   const burstAt = new Date();
   const statuses = await Promise.all(users.map(u => sendWebhook({ userId: u })));
   statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
 
   console.log('\n[scenario] 전체 CONFIRMED 대기 중...');
-  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
-  const { Pool: PgPool } = await import('pg');
-  const pool = new PgPool({ connectionString: pgUrl });
 
   try {
     const deadline = Date.now() + 60_000;
@@ -437,93 +488,41 @@ async function scenarioBurst(_userId: string) {
 }
 
 async function scenarioReconcile(userId: string) {
-  console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 시나리오 ===');
-  console.log('  1. 정상 발행(CONFIRMED) → user_nft_holdings에 기록됨');
-  console.log('  2. user_nft_holdings 레코드를 수동 삭제 → 원장에서만 사라짐');
-  console.log('  3. POST /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지');
-  console.log('  4. GET /admin/reconcile/history → 결과 확인\n');
-
-  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
-  const { Pool: PgPool } = await import('pg');
-  const pool = new PgPool({ connectionString: pgUrl });
+  console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 ===');
+  console.log('  POST /admin/reconcile/run → 온체인 잔고 vs user_nft_holdings 비교');
+  console.log('  no-emit 이후: 온체인에 NFT 있지만 원장 미기록 → ONCHAIN_ONLY 감지 예상');
+  console.log('  credit-nft 이후: 불일치 해소 확인\n');
 
   await verifyContractDeployed();
 
-  try {
-    // ① 정상 발행
-    const status = await sendWebhook({ userId });
-    console.log(`[scenario] HTTP ${status} — CONFIRMED 대기 중...`);
-
-    const deadline = Date.now() + 30_000;
-    let confirmed = false;
-    while (Date.now() < deadline) {
-      const { rows } = await pool.query(
-        `SELECT status FROM issuance_requests
-         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-        [userId],
-      );
-      if (rows[0]?.status === 'CONFIRMED') { confirmed = true; break; }
-      await sleep(1000);
-    }
-    if (!confirmed) { console.error('[scenario] CONFIRMED 타임아웃'); return; }
-    console.log('[scenario] issuance_requests → CONFIRMED');
-
-    // ② user_nft_holdings 삭제 → 원장 누락 시뮬레이션 (ReconcileService는 이 테이블을 원장으로 사용)
-    const { rowCount } = await pool.query(
-      `DELETE FROM user_nft_holdings
-       WHERE user_id = $1
-         AND acquired_at > NOW() - INTERVAL '5 minutes'`,
-      [userId],
+  // POST /admin/reconcile/run
+  console.log(`[scenario] POST /admin/reconcile/run  userId=${userId}...`);
+  const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+    const body = JSON.stringify({ userId, operator: 'demo-admin' });
+    const req = http.request(
+      {
+        hostname: 'localhost',
+        port:     ADMIN_PORT,
+        method:   'POST',
+        path:     '/admin/reconcile/run',
+        headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      res => {
+        let buf = '';
+        res.on('data', d => { buf += d; });
+        res.on('end', () => resolve(JSON.parse(buf)));
+      },
     );
-    console.log(`[scenario] user_nft_holdings ${rowCount}건 삭제 (원장 누락 시뮬레이션)`);
-
-    // ③ POST /admin/reconcile/run
-    console.log('[scenario] POST /admin/reconcile/run...');
-    const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-      const body = JSON.stringify({ userId, operator: 'demo-admin' });
-      const req = http.request(
-        {
-          hostname: 'localhost',
-          port:     ADMIN_PORT,
-          method:   'POST',
-          path:     '/admin/reconcile/run',
-          headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-        },
-        res => {
-          let buf = '';
-          res.on('data', d => { buf += d; });
-          res.on('end', () => resolve(JSON.parse(buf)));
-        },
-      );
-      req.on('error', reject);
-      req.write(body);
-      req.end();
-    });
-    console.log('[scenario] reconcile 결과:');
-    console.log(JSON.stringify(result, null, 2));
-
-    // ④ GET /admin/reconcile/history
-    const history = await new Promise<unknown[]>((resolve, reject) => {
-      const req = http.request(
-        { hostname: 'localhost', port: ADMIN_PORT, method: 'GET', path: '/admin/reconcile/history?limit=3' },
-        res => {
-          let buf = '';
-          res.on('data', d => { buf += d; });
-          res.on('end', () => resolve(JSON.parse(buf)));
-        },
-      );
-      req.on('error', reject);
-      req.end();
-    });
-    console.log('[scenario] reconcile_history (최근 3건):');
-    console.log(JSON.stringify(history, null, 2));
-  } finally {
-    await pool.end();
-  }
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+  console.log('[scenario] reconcile 결과:');
+  console.log(JSON.stringify(result, null, 2));
 
   printDbHint([
-    `SELECT user_id, token_id, discrepancy_type FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
-    `SELECT status FROM issuance_requests WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 3;`,
+    `SELECT user_id, token_id, discrepancy_type, checked_at FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
+    `SELECT user_id, token_id, amount FROM user_nft_holdings WHERE user_id = '${userId}';`,
   ]);
 }
 
@@ -533,6 +532,39 @@ async function scenarioReset() {
   await setMode(MintMode.NORMAL, 'NORMAL');
   const current = await (getMockVasp()['mode'] as Function)();
   console.log(`[scenario] 현재 mode=${current} (0=NORMAL, 1=REVERT, 2=NO_EMIT)`);
+}
+
+async function scenarioDbReset() {
+  console.log('\n=== DB-RESET: 데모 DB 초기화 ===');
+  console.log('  issuance_requests / tx_mint_requests / mint_requests / audit_log / user_nft_holdings TRUNCATE');
+  console.log('  MockVASP mode → NORMAL, Hardhat automining → ON\n');
+
+  const pgUrl = process.env['POSTGRES_URL'] ?? `postgresql://postgres:demo@localhost:15432/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+
+  try {
+    await pool.query(`
+      TRUNCATE TABLE
+        audit_log,
+        user_nft_holdings,
+        mint_requests,
+        tx_mint_requests,
+        issuance_requests
+      RESTART IDENTITY CASCADE
+    `);
+    console.log('[db-reset] 테이블 초기화 완료');
+
+    await setMode(MintMode.NORMAL, 'NORMAL');
+    console.log('[db-reset] MockVASP mode → NORMAL');
+
+    await hardhatRpc('evm_setAutomine', [true]);
+    console.log('[db-reset] Hardhat automining → ON');
+  } finally {
+    await pool.end();
+  }
+
+  console.log('\n시나리오를 다시 실행할 수 있습니다.');
 }
 
 // ── 엔트리포인트 ──────────────────────────────────────────────────────────────
@@ -548,6 +580,7 @@ const SCENARIOS: Record<string, (userId: string) => Promise<void>> = {
   'burst':        scenarioBurst,
   'reconcile':    scenarioReconcile,
   'reset':        () => scenarioReset(),
+  'db-reset':     () => scenarioDbReset(),
 };
 
 const scenarioName = process.argv[2];
@@ -559,15 +592,17 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
 
 시나리오:
   revert        MockVASP TX revert → issuance_requests FAILED
-  no-emit       mint 성공 + Issued 이벤트 없음 → ChainEventListener 폴백
+  no-emit       mint 성공 + Issued 이벤트 없음 → SUBMITTED 스턱 (복구: reconcile 또는 서비스 재시작)
   invalid-hmac  HMAC 서명 위조 → WebhookServer 401
   unknown-user  wallet mapping 없는 userId → 발행 FAILED
-  pending       evm_setAutomine(false) → TX mempool 체류 (30초 후 자동 복원)
+  pending       evm_setAutomine(false) → TX mempool 체류 → 30초 후 자동 복원
   reorg         정상 발행 후 evm_revert → 체인 롤백 → REORGED 상태
   poll-stale    NO_EMIT → PENDING 조작 → pollStaleRequests() → CONFIRMED
   burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
-  reconcile     정상 발행 후 mint_requests 삭제 → reconcile/run → ONCHAIN_ONLY 감지
+  reconcile     POST /admin/reconcile/run → 온체인 vs 원장 불일치 감지
+                세트: no-emit → reconcile → /admin/credit-nft → reconcile
   reset         MockVASP mode → NORMAL 복원 (비정상 종료 후 수동 복구)
+  db-reset      DB 전체 초기화 + MockVASP NORMAL (시나리오 간 상태 격리)
 `);
   process.exit(1);
 }

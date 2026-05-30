@@ -9,14 +9,14 @@
  *
  * 기동 순서:
  *   1. Docker 네트워크 생성 (kyobo-sepolia-net) + 기존 컨테이너 정리
- *   2. Docker — PostgreSQL(15432) + Redis(16379)
+ *   2. Docker — PostgreSQL(15442) + Redis(16389)
  *   3. DB 스키마 적용 + 시드
  *   4. MockVASP — SEPOLIA_MOCK_VASP_ADDR 이미 설정 시 재사용, 없으면 신규 배포
- *   5. Java internal-ledger 컨테이너 기동 (19875) — 실제 원장 서비스
+ *   5. Java internal-ledger 컨테이너 기동 (19885) — 실제 원장 서비스
  *   6. 현재 Sepolia 블록 번호 조회 (CHAIN_START_BLOCK)
- *   7. VASPServer 기동 (19876) — Sepolia RPC + 신규 배포 MockVASP 주소
+ *   7. VASPServer 기동 (19886) — Sepolia RPC + 신규 배포 MockVASP 주소
  *   8. Redis Stream + Consumer Group 초기화
- *   9. issuer-service 기동 (WebhookServer :19877)
+ *   9. issuer-service 기동 (WebhookServer :19887)
  *  10. READY 배너 출력 (블록 확정 ~12s 안내)
  *
  * 종료: Ctrl+C → 컨테이너 자동 정리
@@ -49,12 +49,12 @@ const DEPLOYER_PRIVATE_KEY = process.env['DEPLOYER_PRIVATE_KEY'] ?? OPERATOR_PRI
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
-const PG_PORT        = 15432;
-const REDIS_PORT     = 16379;
-const JAVA_PORT      = 19875;
-const VASP_PORT      = 19876;
-const WEBHOOK_PORT   = 19877;
-const ADMIN_PORT     = 19870;
+const PG_PORT        = 15442;
+const REDIS_PORT     = 16389;
+const JAVA_PORT      = 19885;
+const VASP_PORT      = 19886;
+const WEBHOOK_PORT   = 19887;
+const ADMIN_PORT     = 19880;
 const CHAIN_ID       = 11155111; // Sepolia
 
 const WEBHOOK_SECRET   = 'sepolia-demo-webhook-secret-32ch!!';

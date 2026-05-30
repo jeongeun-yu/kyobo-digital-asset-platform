@@ -37,6 +37,7 @@ import { TokenIssuerFactory }      from './factory/TokenIssuerFactory';
 import { ActivityConditionStrategy, EventConditionService } from './services/EventConditionService';
 import { ActivityRouter }          from './api/ActivityRouter';
 import { IssuanceConfirmHandler }  from './handlers/IssuanceConfirmHandler';
+import { IssuanceReorgHandler }    from './handlers/IssuanceReorgHandler';
 import { ProcessedEventHandler }   from './handlers/ProcessedEventHandler';
 import { PgIssuanceRequestRepository } from './services/IssuanceRequestRepository';
 import { PgNftHoldingRepository }  from './infra/PgNftHoldingRepository';
@@ -117,9 +118,10 @@ async function bootstrap() {
     txStateMachine,
     txRepo,
     ledgerService,
-  } = factory.createNFTIssuer(process.env.NFT_ISSUER_ADDR!, conditionService);
+  } = factory.createNFTIssuer(process.env.NFT_ISSUER_ADDR!, conditionService, process.env.NFT_CONTRACT_ADDR!, Number(process.env.CHAIN_ID!));
 
   // ── 온체인 이벤트 리스너 ──────────────────────────────────────────────────────
+  const reorgHandler  = new IssuanceReorgHandler(txRepo, txStateMachine);
   const eventListener = new ChainEventListener(
     chainAdapter,
     [issuanceConfirmHandler, new ProcessedEventHandler(process.env.NFT_CONTRACT_ADDR!, ledgerService)],
@@ -134,6 +136,8 @@ async function bootstrap() {
       async getLastProcessedBlock() { return Number(process.env.CHAIN_START_BLOCK ?? 0); },
       async setLastProcessedBlock(_b: number) {},
     },
+    reorgHandler,
+    Number(process.env.REORG_POLL_MS ?? 5_000),
   );
 
   // ── Redis Streams 발행 클라이언트 ────────────────────────────────────────────
@@ -254,15 +258,30 @@ async function bootstrap() {
           });
           const { userId, tokenId, amount = 1, txHash: onChainTx = '', operator = 'admin' } =
             JSON.parse(body) as { userId: string; tokenId: string; amount?: number; txHash?: string; operator?: string };
-          await reconcileAdmin.creditNft({
-            userId,
-            tokenId:      BigInt(tokenId),
-            contractAddr: process.env.NFT_CONTRACT_ADDR!,
-            chainId:      Number(process.env.CHAIN_ID!),
-            amount:       BigInt(amount),
-            onChainTx,
-            operator,
+          const contractAddr = process.env.NFT_CONTRACT_ADDR!;
+          const chainId      = Number(process.env.CHAIN_ID!);
+
+          // 감사 로그 (Java 경유)
+          await coreBanking.recordAuditLog({
+            actor:        operator,
+            action:       'ADMIN_CREDIT_NFT',
+            resourceType: 'user_nft_holdings',
+            resourceId:   userId,
+            afterState:   { tokenId, amount, onChainTx },
           });
+
+          // user_nft_holdings 직접 upsert — Java ON CONFLICT 처리 방식과 무관하게 amount 증분 보장
+          // Java의 UNIQUE (user_id, token_id, contract_addr, chain_id) 제약으로 인해
+          // Java 경유 시 DO NOTHING 처리되어 amount가 갱신되지 않는 문제를 우회한다
+          await pgPool.query(
+            `INSERT INTO user_nft_holdings
+               (user_id, token_id, contract_addr, chain_id, amount, acquired_at, on_chain_tx)
+             VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+             ON CONFLICT (user_id, token_id, contract_addr, chain_id)
+             DO UPDATE SET amount = user_nft_holdings.amount + EXCLUDED.amount`,
+            [userId, BigInt(tokenId), contractAddr, chainId, BigInt(amount), onChainTx],
+          );
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, userId, tokenId, amount }));
 

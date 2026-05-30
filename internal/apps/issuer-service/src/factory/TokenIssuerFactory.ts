@@ -57,7 +57,7 @@ export class TokenIssuerFactory {
    * @param nftIssuerAddr   배포된 NFTIssuer 컨트랙트 주소
    * @param conditionService 전략이 등록된 EventConditionService 인스턴스
    */
-  createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService): {
+  createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService, contractAddr: string, chainId: number): {
     issuerService:       IssuerService;
     confirmHandler:      IssuanceConfirmHandler;
     txStateMachine:      TxStateMachineService;
@@ -82,7 +82,7 @@ export class TokenIssuerFactory {
     bridge.attach(txStateMachine);
 
     // IssuanceTransitionBridge (issuer-service): TxStatus 전이 → IssuanceStatus 동기화
-    const issuanceBridge = new IssuanceTransitionBridge(issuanceRepo, this.deps.coreBanking);
+    const issuanceBridge = new IssuanceTransitionBridge(issuanceRepo, this.deps.coreBanking, contractAddr, chainId);
     issuanceBridge.attach(txStateMachine);
 
     // IssuanceConfirmHandler: 온체인 이벤트 → TxStateMachineService 경유 전이

@@ -22,6 +22,7 @@ export interface ReconcileRunResult {
   targetCount:     number;
   mismatchCount:   number;
   mismatchUserIds: string[];
+  discrepancies:   Array<{ userId: string; tokenId: string; type: 'LEDGER_ONLY' | 'ONCHAIN_ONLY' }>;
   durationMs:      number;
 }
 
@@ -160,23 +161,25 @@ export class ReconcileAdminService {
     runAt:    Date,
   ): Promise<ReconcileRunResult> {
     const mismatchUserIds: string[] = [];
+    const allDiscrepancies: ReconcileRunResult['discrepancies'] = [];
 
     for (const userId of userIds) {
       try {
         const result = await this.reconcileService.reconcileNftHoldings(userId);
         if (!result.isHealthy) {
           mismatchUserIds.push(userId);
+          const mapped = result.discrepancies.map(d => ({
+            userId,
+            tokenId: String(d.tokenId),
+            type:    d.type,
+          }));
+          allDiscrepancies.push(...mapped);
           await this.auditLog.recordAuditLog({
             actor:        'SYSTEM',
             action:       'RECONCILE_MISMATCH_DETECTED',
             resourceId:   userId,
             resourceType: 'USER',
-            afterState: {
-              discrepancies: result.discrepancies.map(d => ({
-                ...d,
-                tokenId: String(d.tokenId),
-              })),
-            },
+            afterState:   { discrepancies: mapped },
           });
         }
       } catch (err) {
@@ -191,6 +194,7 @@ export class ReconcileAdminService {
       targetCount:    userIds.length,
       mismatchCount:  mismatchUserIds.length,
       mismatchUserIds,
+      discrepancies:  allDiscrepancies,
       durationMs,
     };
 

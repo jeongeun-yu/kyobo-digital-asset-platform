@@ -138,6 +138,10 @@ export class InMemoryTxRepository implements TxRepository {
   async findPendingOlderThan(_minutes: number): Promise<MintRequest[]> {
     return [];
   }
+
+  async findMinedOrConfirmed(): Promise<MintRequest[]> {
+    return [...this.store.values()].filter(r => r.status === 'MINED' || r.status === 'CONFIRMED');
+  }
 }
 
 // ── MockWalletResolver (TxStateMachineService 의존성) ─────────────────────

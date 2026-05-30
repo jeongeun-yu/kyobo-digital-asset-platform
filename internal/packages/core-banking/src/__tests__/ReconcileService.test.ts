@@ -35,10 +35,13 @@ function makeOnchain(
     async getCustodyAccountBalance() { return bankBalance; },
     async balanceOf(address: string, tokenId: bigint): Promise<bigint> {
       const tokens = onchainHoldings.get(address) ?? [];
-      return tokens.includes(tokenId) ? 1n : 0n;
+      // 배열 내 중복 항목 수 = 온체인 잔고 (동일 tokenId 2회 민팅 시 balance=2)
+      return BigInt(tokens.filter(t => t === tokenId).length);
     },
     async getNftHoldings(address: string): Promise<bigint[]> {
-      return onchainHoldings.get(address) ?? [];
+      // balance > 0인 고유 tokenId 반환 (실제 EVMAdapter와 동일)
+      const tokens = onchainHoldings.get(address) ?? [];
+      return [...new Set(tokens.map(String))].map(BigInt);
     },
     async getBlockNumber() { return currentBlock; },
   };
@@ -48,6 +51,10 @@ function makeLedger(ledgerHoldings: Map<string, bigint[]> = new Map()) {
   return {
     async getHoldings(userId: string): Promise<bigint[]> {
       return ledgerHoldings.get(userId) ?? [];
+    },
+    async getHoldingAmount(userId: string, tokenId: bigint): Promise<bigint> {
+      const holdings = ledgerHoldings.get(userId) ?? [];
+      return BigInt(holdings.filter(t => t === tokenId).length);
     },
     async getAllUserIds(): Promise<string[]> {
       return [...ledgerHoldings.keys()];
@@ -208,6 +215,24 @@ describe('ReconcileService.reconcileNftHoldings()', () => {
     expect(result.discrepancies).toHaveLength(1);
     expect(result.discrepancies[0]!.type).toBe('ONCHAIN_ONLY');
     expect(result.discrepancies[0]!.tokenId).toBe(2001n);
+  });
+
+  it('원장 있지만 온체인 잔고 > 원장 합계 → ONCHAIN_ONLY (no-emit 중복 민팅 케이스)', async () => {
+    // 온체인: tokenId=1001 balance=2 (pending 1회 + no-emit 1회)
+    // 원장:   tokenId=1001 amount=1  (pending CREDITED 1회만 반영)
+    const onchainH = new Map([[ADDR, [1001n, 1001n]]]);  // 중복 = balance 2
+    const ledgerH  = new Map([['user-1', [1001n]]]);      // 원장 합계 1
+    const svc = new ReconcileService(
+      makeCoreBanking(ADDR),
+      makeOnchain(0n, 0n, onchainH),
+      makeLedger(ledgerH),
+      makeAlerter(),
+    );
+    const result = await svc.reconcileNftHoldings('user-1');
+    expect(result.isHealthy).toBe(false);
+    expect(result.discrepancies).toHaveLength(1);
+    expect(result.discrepancies[0]!.type).toBe('ONCHAIN_ONLY');
+    expect(result.discrepancies[0]!.tokenId).toBe(1001n);
   });
 
   it('지갑 주소 없는 사용자 → Error throw', async () => {

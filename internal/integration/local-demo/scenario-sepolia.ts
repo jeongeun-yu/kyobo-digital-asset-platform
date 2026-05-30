@@ -6,7 +6,7 @@
  *
  * start-sepolia.ts가 실행 중인 상태에서 실행한다.
  *
- * ⚠ setMode TX가 Sepolia에 브로드캐스트되므로 실제 Sepolia ETH 소모됨
+ * ⚠ setMode는 VASPServer HTTP(/admin/mode) 경유 — Sepolia ETH 소모 없음
  * ⚠ 블록 확정 ~12s — 결과 확인까지 20~30초 소요 정상
  *
  * 사용 가능한 시나리오:
@@ -16,7 +16,7 @@
  *   unknown-user  wallet mapping 없는 userId → 발행 FAILED
  *   poll-stale    NO_EMIT → SUBMITTED 10분 초과 → pollStaleRequests() → CONFIRMED
  *   burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
- *   reconcile     정상 발행 후 원장 삭제 → /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지
+ *   reconcile     온체인 vs 원장 불일치 감지 → userId·tokenId 출력 (no-emit 이후 실행 권장)
  *   reset         MockVASP mode → NORMAL 복원
  */
 
@@ -45,8 +45,10 @@ const OPERATOR_PRIVATE_KEY = requireEnv('SEPOLIA_OPERATOR_KEY');
 
 // ── 상수 (start-sepolia.ts와 동일) ───────────────────────────────────────────
 
-const WEBHOOK_PORT   = 19877;
-const ADMIN_PORT     = 19870;
+const WEBHOOK_PORT   = 19887;
+const VASP_PORT      = 19886;
+const ADMIN_PORT     = 19880;
+const DEMO_PG_PORT   = 15442;
 const WEBHOOK_SECRET = 'sepolia-demo-webhook-secret-32ch!!';
 const TEST_EVENT_TYPE = 'WALK_GOAL_MET';
 
@@ -81,14 +83,26 @@ async function verifyContractDeployed(): Promise<void> {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const MODE_NAME: Record<MintModeValue, string> = { 0: 'NORMAL', 1: 'REVERT', 2: 'NO_EMIT' };
+
 async function setMode(mode: MintModeValue, label: string): Promise<void> {
-  const contract = getMockVasp();
-  console.log(`[scenario-sepolia] MockVASP.setMode(${label}) 브로드캐스트 중...`);
-  const tx = await (contract['setMode'] as Function)(mode);
-  console.log(`[scenario-sepolia] TX hash: ${tx.hash}`);
-  console.log(`[scenario-sepolia] 블록 확정 대기 (~12s)...`);
-  await tx.wait(1);
-  console.log(`[scenario-sepolia] MockVASP.mode → ${label} 확정`);
+  const body = JSON.stringify({ mode: MODE_NAME[mode] });
+  await new Promise<void>((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: 'localhost',
+        port:     VASP_PORT,
+        method:   'POST',
+        path:     '/admin/mode',
+        headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      res => { res.resume(); res.on('end', resolve); },
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+  console.log(`[scenario-sepolia] MockVASP.mode → ${label}`);
 }
 
 // ── 웹훅 전송 ─────────────────────────────────────────────────────────────────
@@ -158,7 +172,7 @@ async function scenarioRevert(userId: string) {
 
   await verifyContractDeployed();
 
-  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
+  const pgUrl = 'postgresql://postgres:demo@localhost:15442/postgres';
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
 
@@ -212,7 +226,7 @@ async function scenarioNoEmit(userId: string) {
   // sendWebhook() 직후 즉시 NORMAL로 복원하면 파이프라인이 VASPServer를 호출하기 전에
   // 모드가 바뀌어 TX가 NORMAL로 브로드캐스트된다. tx_hash 등록 = TX 브로드캐스트 완료이므로
   // DB에서 tx_hash가 나타날 때까지 대기한 뒤 모드를 복원한다.
-  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
+  const pgUrl = 'postgresql://postgres:demo@localhost:15442/postgres';
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
   const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
@@ -288,8 +302,8 @@ async function scenarioPollStale(userId: string) {
   console.log('  Sepolia TX 채굴 확인 후 DB 조작: SUBMITTED → PENDING + created_at -11분');
   console.log('  → POST /admin/poll-stale → getTransferStatus(VASPServer) → CONFIRMED\n');
 
-  // 시나리오 스크립트는 호스트에서 실행 → Docker 노출 포트(15432) 고정
-  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
+  // 시나리오 스크립트는 호스트에서 실행 → Docker 노출 포트(15442) 고정
+  const pgUrl = 'postgresql://postgres:demo@localhost:15442/postgres';
 
   const { Pool: PgPool } = await import('pg');
   const pool = new PgPool({ connectionString: pgUrl });
@@ -350,29 +364,8 @@ async function scenarioPollStale(userId: string) {
     );
     console.log(`[scenario-sepolia] issuance_requests.status = ${rows[0]?.status}`);
 
-    // user_nft_holdings +1 (임시 admin API — poll-stale 경로에서 원장 미반영 보정)
-    if (rows[0]?.status === 'CONFIRMED') {
-      const tokenId = String(rows[0].token_id);
-      const creditResult = await new Promise<{ ok: boolean }>((resolve, reject) => {
-        const body = JSON.stringify({ userId, tokenId, amount: 1, txHash });
-        const req2 = http.request(
-          {
-            hostname: 'localhost', port: ADMIN_PORT,
-            method: 'POST', path: '/admin/credit-nft',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-          },
-          res => {
-            let buf = '';
-            res.on('data', d => { buf += d; });
-            res.on('end', () => resolve(JSON.parse(buf)));
-          },
-        );
-        req2.on('error', reject);
-        req2.write(body);
-        req2.end();
-      });
-      console.log(`[scenario-sepolia] /admin/credit-nft → ${JSON.stringify(creditResult)}`);
-    }
+    // IssuanceTransitionBridge(source='POLL_STALE')가 recordNftHolding → CREDITED를 자동 처리하므로
+    // 별도 /admin/credit-nft 호출 불필요
   } finally {
     await setMode(MintMode.NORMAL, 'NORMAL');
     await pool.end();
@@ -385,6 +378,23 @@ async function scenarioPollStale(userId: string) {
   ]);
 }
 
+async function clearNonTerminalIssuanceState(users: string[]): Promise<void> {
+  const pgUrl = `postgresql://postgres:demo@localhost:${DEMO_PG_PORT}/postgres`;
+  const { Pool: PgPool } = await import('pg');
+  const pool = new PgPool({ connectionString: pgUrl });
+  try {
+    await pool.query(
+      `DELETE FROM issuance_requests
+       WHERE user_id = ANY($1)
+         AND status NOT IN ('CONFIRMED', 'FAILED')`,
+      [users],
+    );
+    console.log('[scenario-sepolia] 비완료 issuance_requests 초기화 완료');
+  } finally {
+    await pool.end();
+  }
+}
+
 async function scenarioBurst(_userId: string) {
   const COUNT = 5;
   console.log(`\n=== BURST: ${COUNT}개 발행 요청 동시 전송 (Sepolia) ===`);
@@ -395,6 +405,8 @@ async function scenarioBurst(_userId: string) {
   await verifyContractDeployed();
 
   const users = Array.from({ length: COUNT }, (_, i) => `demo-user-${String(i + 1).padStart(3, '0')}`);
+  await clearNonTerminalIssuanceState(users);
+
   const start = Date.now();
 
   console.log(`[scenario-sepolia] ${COUNT}개 웹훅 동시 전송...`);
@@ -402,9 +414,7 @@ async function scenarioBurst(_userId: string) {
   statuses.forEach((s, i) => console.log(`  ${users[i]} → HTTP ${s}`));
 
   console.log('\n[scenario-sepolia] 전체 CONFIRMED 대기 중 (최대 3분)...');
-  // POSTGRES_URL 명시 시 우선 사용, 없으면 start-sepolia.ts 기본 데모 DB로 fallback
-  const DEMO_PG_URL = 'postgresql://postgres:demo@localhost:15432/postgres';
-  const pgUrl = process.env['POSTGRES_URL'] ?? DEMO_PG_URL;
+  const pgUrl = `postgresql://postgres:demo@localhost:${DEMO_PG_PORT}/postgres`;
   console.log(`[scenario-sepolia] DB 연결 중... (${pgUrl.replace(/:\/\/[^@]+@/, '://*@')})`);
 
   const { Pool: PgPool } = await import('pg');
@@ -445,90 +455,49 @@ async function scenarioBurst(_userId: string) {
 }
 
 async function scenarioReconcile(userId: string) {
-  console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 시나리오 (Sepolia) ===');
-  console.log('  정상 발행(CONFIRMED) → user_nft_holdings 수동 삭제 → /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지\n');
+  console.log('\n=== RECONCILE: 온체인 ↔ 원장 불일치 감지 (Sepolia) ===');
+  console.log('  POST /admin/reconcile/run → 온체인 잔고 vs user_nft_holdings 비교');
+  console.log('  no-emit 이후 실행 시: 온체인에 NFT 있지만 원장 미기록 → ONCHAIN_ONLY 감지');
+  console.log('  불일치 발견 시 표시된 userId + tokenId로 /admin/credit-nft 호출하여 보정\n');
 
   await verifyContractDeployed();
 
-  const pgUrl = 'postgresql://postgres:demo@localhost:15432/postgres';
-  const { Pool: PgPool } = await import('pg');
-  const pool = new PgPool({ connectionString: pgUrl });
-
-  try {
-    // ① 정상 발행 → CONFIRMED 대기 (Sepolia 블록 ~12s, 최대 120초)
-    const status = await sendWebhook({ userId });
-    console.log(`[scenario-sepolia] HTTP ${status} — CONFIRMED 대기 중 (최대 120초)...`);
-
-    const deadline = Date.now() + 180_000;
-    let confirmed = false;
-    while (Date.now() < deadline) {
-      const { rows } = await pool.query(
-        `SELECT status FROM issuance_requests
-         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-        [userId],
-      );
-      if (rows[0]?.status === 'CONFIRMED') { confirmed = true; break; }
-      await sleep(3_000);
-    }
-    if (!confirmed) { console.error('[scenario-sepolia] CONFIRMED 타임아웃'); return; }
-    console.log('[scenario-sepolia] issuance_requests → CONFIRMED');
-
-    // ② user_nft_holdings 삭제 → 원장 누락 시뮬레이션 (ReconcileService는 이 테이블을 원장으로 사용)
-    const { rowCount } = await pool.query(
-      `DELETE FROM user_nft_holdings
-       WHERE user_id = $1
-         AND acquired_at > NOW() - INTERVAL '5 minutes'`,
-      [userId],
+  console.log(`[scenario-sepolia] POST /admin/reconcile/run  userId=${userId}...`);
+  const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+    const body = JSON.stringify({ userId, operator: 'demo-admin' });
+    const req = http.request(
+      {
+        hostname: 'localhost',
+        port:     ADMIN_PORT,
+        method:   'POST',
+        path:     '/admin/reconcile/run',
+        headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      res => {
+        let buf = '';
+        res.on('data', d => { buf += d; });
+        res.on('end', () => resolve(JSON.parse(buf)));
+      },
     );
-    console.log(`[scenario-sepolia] user_nft_holdings ${rowCount}건 삭제 (원장 누락 시뮬레이션)`);
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
 
-    // ③ POST /admin/reconcile/run
-    console.log('[scenario-sepolia] POST /admin/reconcile/run...');
-    const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-      const body = JSON.stringify({ userId, operator: 'demo-admin' });
-      const req = http.request(
-        {
-          hostname: 'localhost',
-          port:     ADMIN_PORT,
-          method:   'POST',
-          path:     '/admin/reconcile/run',
-          headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-        },
-        res => {
-          let buf = '';
-          res.on('data', d => { buf += d; });
-          res.on('end', () => resolve(JSON.parse(buf)));
-        },
-      );
-      req.on('error', reject);
-      req.write(body);
-      req.end();
-    });
-    console.log('[scenario-sepolia] reconcile 결과:');
-    console.log(JSON.stringify(result, null, 2));
+  console.log('[scenario-sepolia] reconcile 결과:');
+  console.log(JSON.stringify(result, null, 2));
 
-    // ④ GET /admin/reconcile/history
-    const history = await new Promise<unknown[]>((resolve, reject) => {
-      const req = http.request(
-        { hostname: 'localhost', port: ADMIN_PORT, method: 'GET', path: '/admin/reconcile/history?limit=3' },
-        res => {
-          let buf = '';
-          res.on('data', d => { buf += d; });
-          res.on('end', () => resolve(JSON.parse(buf)));
-        },
-      );
-      req.on('error', reject);
-      req.end();
-    });
-    console.log('[scenario-sepolia] reconcile_history (최근 3건):');
-    console.log(JSON.stringify(history, null, 2));
-  } finally {
-    await pool.end();
+  const discrepancies = result['discrepancies'] as Array<{ userId: string; tokenId: string; type: string }>;
+  if (discrepancies.length > 0) {
+    console.log('\n[scenario-sepolia] /admin/credit-nft 보정 명령:');
+    for (const d of discrepancies) {
+      console.log(`  Invoke-RestMethod -Method Post -Uri http://localhost:${ADMIN_PORT}/admin/credit-nft \`\n    -ContentType "application/json" \`\n    -Body '{"userId":"${d.userId}","tokenId":"${d.tokenId}","amount":1,"txHash":"<txHash>"}'`);
+    }
   }
 
   printDbHint([
-    `SELECT user_id, token_id, discrepancy_type FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
-    `SELECT status FROM issuance_requests WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 3;`,
+    `SELECT user_id, token_id, discrepancy_type, checked_at FROM reconcile_history ORDER BY checked_at DESC LIMIT 5;`,
+    `SELECT user_id, token_id, amount FROM user_nft_holdings WHERE user_id = '${userId}';`,
   ]);
 }
 
@@ -578,7 +547,7 @@ if (!scenarioName || !SCENARIOS[scenarioName]) {
   unknown-user  wallet mapping 없는 userId → 발행 FAILED
   poll-stale    NO_EMIT → SUBMITTED 10분 초과 → pollStaleRequests() → CONFIRMED
   burst         5개 요청 동시 전송 → NonceManager nonce 충돌 없이 전체 CONFIRMED
-  reconcile     정상 발행 후 원장 삭제 → /admin/reconcile/run → ONCHAIN_ONLY 불일치 감지
+  reconcile     온체인 vs 원장 불일치 감지 → userId·tokenId 출력 (no-emit 이후 실행 권장)
   reset         MockVASP mode → NORMAL 복원
 
 ⚠ setMode TX는 실제 Sepolia에 브로드캐스트됨 (Sepolia ETH 소모)

@@ -104,6 +104,7 @@ export interface TxRepository {
     extra?: Partial<MintRequest>,
   ): Promise<void>;
   findPendingOlderThan(minutes: number): Promise<MintRequest[]>;
+  findMinedOrConfirmed(): Promise<MintRequest[]>;
 }
 
 /**
@@ -164,7 +165,7 @@ export const VALID_TRANSITIONS: Record<TxStatus, TxStatus[]> = {
   SUBMITTED: ['PENDING',   'MINED', 'FAILED'],
   PENDING:   ['MINED',     'FAILED'],
   MINED:     ['CONFIRMED', 'REORGED', 'FAILED'],
-  CONFIRMED: ['FINALIZED'],
+  CONFIRMED: ['FINALIZED', 'REORGED'],
   FINALIZED: [],   // 종단 — PoS 절대 불변
   FAILED:    [],   // 종단
   REORGED:   ['MINED', 'FAILED'],
@@ -348,6 +349,18 @@ export class TxStateMachineService extends EventEmitter {
     } else {
       await this._transition(reorgedReq, 'FAILED', { failReason: 'reorg: tx not found after wait' });
     }
+  }
+
+  /**
+   * 체인 이벤트 리스너가 직접 감지한 REORG → 즉시 REORGED 전이
+   * MINED 또는 CONFIRMED 상태에서만 전이. 대기·VASP 재조회 없음.
+   * ChainEventListener.ReorgWatcher 경로에서 호출.
+   */
+  async handleReorgDetected(requestId: string): Promise<void> {
+    const req = await this._getOrThrow(requestId);
+    if (req.status !== 'MINED' && req.status !== 'CONFIRMED') return;
+    if (!req.txHash) return;
+    await this._transition(req, 'REORGED');
   }
 
   private async _waitBlocks(blocks: number): Promise<void> {

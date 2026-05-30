@@ -127,6 +127,15 @@ export class PgTxRepository implements TxRepository {
     return res.rows.map(r => this._toModel(r));
   }
 
+  /** MINED·CONFIRMED 상태이면서 txHash가 있는 행 조회 — ReorgWatcher 감시 대상 */
+  async findMinedOrConfirmed(): Promise<MintRequest[]> {
+    const res = await this.pool.query<DbRow>(
+      `SELECT * FROM tx_mint_requests
+       WHERE status IN ('MINED', 'CONFIRMED') AND tx_hash IS NOT NULL`,
+    );
+    return res.rows.map(r => this._toModel(r));
+  }
+
   private _toModel(row: DbRow): MintRequest {
     return {
       id:           row.id,

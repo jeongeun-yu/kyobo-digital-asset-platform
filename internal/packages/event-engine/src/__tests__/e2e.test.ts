@@ -45,6 +45,11 @@ class MockRedisStream implements RedisStreamClient, RedisConsumerClient {
   async xautoclaim(): Promise<{ nextId: string; messages: StreamMessage[] }> {
     return { nextId: '0-0', messages: [] };
   }
+
+  private kv = new Map<string, string>();
+  async set(key: string, value: string): Promise<unknown> { this.kv.set(key, value); return 'OK'; }
+  async get(key: string): Promise<string | null> { return this.kv.get(key) ?? null; }
+  async del(key: string): Promise<number> { return this.kv.delete(key) ? 1 : 0; }
 }
 
 function makeDLQ() {
