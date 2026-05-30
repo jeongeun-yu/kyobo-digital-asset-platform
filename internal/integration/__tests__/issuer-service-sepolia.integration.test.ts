@@ -1341,6 +1341,15 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     }, 30_000, 'VASPServer txStatuses=completed');
     console.log(`  · VASPServer txStatuses=completed 확인 (${elapsed(t0)})`);
 
+    // user_nft_holdings 기록 없음 확인 — pollStaleRequests 실행 전에 체크해야 한다.
+    // pollStaleRequests → handleConfirmed → NFT_ISSUED 이벤트 → NFTIssuedProcessor → creditNFT
+    // 경로가 비동기로 실행되므로 이후에 확인하면 느린 PC에서 race condition 발생.
+    const { rows: emptyHoldings } = await pool.query(
+      'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
+    );
+    expect(emptyHoldings.length).toBe(0);
+    console.log('  · user_nft_holdings 비어 있음 확인 (NO_EMIT 시뮬 — pollStaleRequests 전)');
+
     // pollStaleRequests로 CONFIRMED 전이
     await pool.query(
       "UPDATE tx_mint_requests SET status = 'PENDING', created_at = NOW() - INTERVAL '11 minutes' WHERE status = 'SUBMITTED'",
@@ -1354,12 +1363,10 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     }, 15_000, 'issuance_requests CONFIRMED');
     console.log(`  · issuance_requests CONFIRMED (${elapsed(t0)})`);
 
-    // user_nft_holdings 기록 없음 확인 (NO_EMIT → 콜백 없음 → NFTIssuedProcessor 미실행)
-    const { rows: emptyHoldings } = await pool.query(
-      'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
-    );
-    expect(emptyHoldings.length).toBe(0);
-    console.log('  · user_nft_holdings 비어 있음 확인 (NO_EMIT 시뮬)');
+    // ONCHAIN_ONLY 시나리오 확정: pollStaleRequests → handleConfirmed → NFT_ISSUED →
+    // NFTIssuedProcessor → creditNFT 가 비동기로 실행될 수 있으므로
+    // user_nft_holdings를 직접 삭제해 "원장 누락" 상태를 확정적으로 만든다.
+    await pool.query('DELETE FROM user_nft_holdings WHERE user_id = $1', [userId]);
 
     // ③ Reconcile 실행
     const holdingRepo = new PgNftHoldingRepository(pool);
