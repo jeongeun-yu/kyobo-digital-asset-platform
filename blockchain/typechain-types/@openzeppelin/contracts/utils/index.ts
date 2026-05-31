@@ -9,3 +9,4 @@ export type { Address } from "./Address";
 export type { Errors } from "./Errors";
 export type { Pausable } from "./Pausable";
 export type { ReentrancyGuard } from "./ReentrancyGuard";
+export type { Strings } from "./Strings";

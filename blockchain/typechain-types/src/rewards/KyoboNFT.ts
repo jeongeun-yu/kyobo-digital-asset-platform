@@ -52,6 +52,7 @@ export interface KyoboNFTInterface extends Interface {
       | "safeBatchTransferFrom"
       | "safeTransferFrom"
       | "setApprovalForAll"
+      | "setBaseURI"
       | "supportsInterface"
       | "unpause"
       | "upgradeToAndCall"
@@ -177,6 +178,7 @@ export interface KyoboNFTInterface extends Interface {
     functionFragment: "setApprovalForAll",
     values: [AddressLike, boolean]
   ): string;
+  encodeFunctionData(functionFragment: "setBaseURI", values: [string]): string;
   encodeFunctionData(
     functionFragment: "supportsInterface",
     values: [BytesLike]
@@ -262,6 +264,7 @@ export interface KyoboNFTInterface extends Interface {
     functionFragment: "setApprovalForAll",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "setBaseURI", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "supportsInterface",
     data: BytesLike
@@ -638,6 +641,8 @@ export interface KyoboNFT extends BaseContract {
     "nonpayable"
   >;
 
+  setBaseURI: TypedContractMethod<[newBaseURI: string], [void], "nonpayable">;
+
   supportsInterface: TypedContractMethod<
     [interfaceId: BytesLike],
     [boolean],
@@ -652,7 +657,7 @@ export interface KyoboNFT extends BaseContract {
     "payable"
   >;
 
-  uri: TypedContractMethod<[arg0: BigNumberish], [string], "view">;
+  uri: TypedContractMethod<[tokenId: BigNumberish], [string], "view">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
@@ -809,6 +814,9 @@ export interface KyoboNFT extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "setBaseURI"
+  ): TypedContractMethod<[newBaseURI: string], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "supportsInterface"
   ): TypedContractMethod<[interfaceId: BytesLike], [boolean], "view">;
   getFunction(
@@ -823,7 +831,7 @@ export interface KyoboNFT extends BaseContract {
   >;
   getFunction(
     nameOrSignature: "uri"
-  ): TypedContractMethod<[arg0: BigNumberish], [string], "view">;
+  ): TypedContractMethod<[tokenId: BigNumberish], [string], "view">;
 
   getEvent(
     key: "ApprovalForAll"

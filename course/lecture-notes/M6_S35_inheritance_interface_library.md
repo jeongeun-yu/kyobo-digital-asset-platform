@@ -9,7 +9,11 @@
 
 ## 강의 파트 (50분)
 
-### 1. 상속 — `is` 키워드와 `virtual` / `override`
+> M7(KyoboNFT 직접 구현)의 전제가 되는 핵심 개념. 오늘 배운 세 개념(상속·인터페이스·라이브러리)이 OpenZeppelin에서 전부 등장한다.
+
+---
+
+## 1. 상속 — `is` 키워드와 `virtual` / `override`
 
 Solidity는 컨트랙트 상속을 지원한다. 부모 컨트랙트의 상태변수·함수·modifier·이벤트가 자식 컨트랙트에 포함된다.
 
@@ -32,7 +36,8 @@ contract Base {
 }
 
 contract Child is Base {
-    // Base의 owner, constructor, onlyOwner modifier 모두 자동 포함
+    // Base의 owner(상태변수)·onlyOwner(modifier) 상속
+    // Child엔 constructor가 없어 Base의 constructor가 실행됨 → owner = (Child 배포자)
 
     function greet() public override returns (string memory) {
         return "Hello from Child";
@@ -44,27 +49,40 @@ contract Child is Base {
 }
 ```
 
+```solidity
+function greet() public virtual  returns (...)   // 부모: "이 함수는 자식이 덮어써도 됨" (재정의 허용)
+function greet() public override returns (...)   // 자식: "부모 걸 덮어쓴다" (재정의 명시)
+```
+
+**`virtual` / `override`의 의미:**
+- `virtual`(부모) = "이 함수는 자식이 재정의(override)해도 된다"는 허락 표시
+- `override`(자식) = "부모의 그 함수를 내가 덮어쓴다"는 의도 명시
+- **0.6.0부터 둘 다 의무.** 부모에 `virtual` 없으면 자식이 못 덮어쓰고, 자식에 `override` 없으면 컴파일 오류
+- 이유: 실수로 부모의 핵심 함수를 덮어쓰는 사고를 문법 차원에서 막기 위함 (배포 후 수정 불가 + 자금 사고 방지)
+
+> "덮어쓴다"는 부모 코드를 지우는 게 아니다. 부모 코드는 그대로 있고, **같은 이름이 둘일 때 자식 것이 우선 실행**될 뿐이다. `Child` 인스턴스에서 `greet()`를 부르면 `"Hello from Child"`가 나온다.
+
 **핵심 규칙:**
 - 부모 함수에 `virtual` 없으면 자식이 `override` 불가 → 컴파일 오류
 - 자식에서 부모 함수를 명시적으로 호출: `super.greet()`
 - 생성자 인자가 있는 부모: `constructor() Base(arg) {}` 형태로 전달
 
-**super 활용:**
+**super 활용 — 가려진 부모 함수 꺼내 쓰기:**
 
 ```solidity
 contract Child is Base {
     function greet() public override returns (string memory) {
         string memory parentMsg = super.greet();   // "Hello from Base"
-        return string.concat(parentMsg, " + Child");
+        return string.concat(parentMsg, " + Child");  // "Hello from Base + Child"
     }
 }
 ```
 
-OpenZeppelin 컨트랙트에서 `super._beforeTokenTransfer(...)` 패턴이 이것이다. 부모 로직을 먼저 실행한 뒤 자식 로직을 추가한다.
+OpenZeppelin 컨트랙트에서 `super._update(...)` 패턴이 이것이다. 부모 로직을 먼저 실행한 뒤 자식 로직을 추가한다.
 
 ---
 
-### 2. 다중 상속 — MRO(Method Resolution Order)
+## 2. 다중 상속 — MRO(Method Resolution Order)
 
 Solidity는 다중 상속을 지원하고 C3 선형화(MRO)로 Diamond 문제를 해결한다.
 
@@ -79,14 +97,41 @@ contract C is A {
     function who() public virtual override returns (string memory) { return "C"; }
 }
 
-// 다중 상속: is 목록에서 오른쪽 → 왼쪽 순으로 MRO 적용
+// 다중 상속 규칙: is B, C 에서 super는 "뒤에 쓴 것부터" 부른다 (C → B → A)
+// 선형화 순서: D → C → B → A
 contract D is B, C {
-    // override(B, C): 두 부모 모두 나열해야 컴파일 가능
     function who() public override(B, C) returns (string memory) {
-        return super.who();  // C.who() 호출됨 (가장 오른쪽)
+        return super.who();  // D의 다음 = C → "C" 반환
     }
 }
 ```
+
+**상황: D가 B와 C를 둘 다 물려받았다.** D 입장에선 `who()`가 여러 군데(A, B, C) 있다. 누가 `super.who()`를 부르면 뭘 부를지 순서를 정해야 한다 — 그 순서가 "선형화(linearization)"다. 마름모를 한 줄로 펴는 것.
+
+```
+        A          ← 맨 위 조상
+       / \
+      B   C        ← A를 각각 물려받음
+       \ /
+        D          ← B랑 C를 둘 다 물려받음
+```
+
+**한 줄로 펴는 규칙 (이것만 기억):**
+
+```
+D → C → B → A
+(나) (가까운 조상) ... (먼 조상)
+
+contract D is B, C
+                 ↑
+        super는 여기(C)부터, 그 다음 B, 그 다음 A
+```
+
+- `is B, C` 목록을 **거꾸로** 읽으면 가까운 순서다 → C, B
+- `super`는 이 줄에서 **내 바로 다음 칸**을 부른다 → D의 다음 = C
+- 결과: `super.who()` → `"C"`
+
+> 한 줄 요약: **super는 `is` 목록의 뒤(오른쪽)부터 부른다.**
 
 **KyoboNFT 다중 상속 구조:**
 
@@ -103,9 +148,11 @@ contract KyoboNFT is
 
 이 구조를 M7에서 직접 작성한다. 오늘 다중 상속을 이해하는 것이 전제다.
 
+> **M7에서 반드시 마주칠 충돌:** ERC1155와 AccessControl이 **둘 다** `supportsInterface`를 가져서 Diamond 충돌이 터진다. 이때 `override(ERC1155Upgradeable, AccessControlUpgradeable)`로 두 부모를 모두 나열해야 컴파일된다. 앞의 `override(B, C)`가 실전에서 이렇게 나타난다.
+
 ---
 
-### 3. 추상 컨트랙트 — `abstract`
+## 3. 추상 컨트랙트 — `abstract`
 
 인터페이스와 일반 컨트랙트의 중간 형태다. 구현된 함수와 미구현 함수를 함께 가질 수 있다.
 
@@ -139,17 +186,19 @@ contract KyoboToken is BaseToken {
 }
 ```
 
-`abstract` 컨트랙트는 직접 배포 불가. 반드시 상속해서 미구현 함수를 채워야 배포 가능하다. OpenZeppelin의 `ERC1155.sol` 자체가 abstract다.
+`abstract` 컨트랙트는 직접 배포 불가. 반드시 상속해서 미구현 함수를 채워야 배포 가능하다.
+
+> **OpenZeppelin의 `ERC1155.sol` 자체가 `abstract`다** (v5.x 기준, `ERC1155Upgradeable`도 동일). 단, 모든 함수가 구현돼 있는데도 abstract인데 — 이는 미구현 함수 때문이 아니라 "직접 배포하지 말고 상속해서 mint 등을 추가하라"는 **의도**로 abstract를 붙인 케이스다. 그래서 우리가 ERC1155를 상속받아 mint 로직을 더해 쓰는 것이다.
 
 ---
 
-### 4. 인터페이스 — `interface`
+## 4. 인터페이스 — `interface`
 
 인터페이스는 **구현 없이 함수 시그니처와 이벤트만** 선언한다. ERC 표준이 이 방식으로 정의된다.
 
 ```solidity
 interface IERC20 {
-    // 함수: 구현 없음, 모두 external
+    // 함수: 구현 없음, 모두 external, 암묵적으로 virtual
     function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 amount) external returns (bool);
@@ -170,6 +219,7 @@ contract MyToken is IERC20 {
     mapping(address => uint256) private _bal;
     uint256 private _total;
 
+    // 인터페이스 함수는 암묵적으로 virtual → 구현하는 쪽이 override를 단다
     function totalSupply() external view override returns (uint256) { return _total; }
     function balanceOf(address a) external view override returns (uint256) { return _bal[a]; }
     function transfer(address to, uint256 amt) external override returns (bool) {
@@ -206,7 +256,7 @@ token.transfer(recipient, 100);              // 전송
 
 ---
 
-### 5. 라이브러리 — `library`
+## 5. 라이브러리 — `library`
 
 라이브러리는 상태를 갖지 않는 재사용 가능한 함수 집합이다.
 
@@ -239,7 +289,7 @@ contract TokenURI {
     function uri(uint256 tokenId) public pure returns (string memory) {
         return string.concat(
             "https://api.kyobo.com/nft/",
-            tokenId.toString()   // Strings.toString(tokenId)와 동일
+            tokenId.toString()   // Strings.toString(tokenId)와 동일 — 점 앞의 값이 첫 인자가 됨
         );
     }
 }
@@ -263,13 +313,17 @@ external 함수 있는 라이브러리
 
 ---
 
-### 6. receive() / fallback() — ETH 수신 처리
+## 6. receive() / fallback() — ETH 수신 처리
 
 컨트랙트가 ETH를 직접 받을 때 실행되는 특수 함수다.
 
 ```solidity
 contract Vault {
+    address public owner;
     event Received(address sender, uint256 amount);
+
+    constructor() { owner = msg.sender; }
+    modifier onlyOwner() { require(msg.sender == owner, "Not owner"); _; }
 
     // 순수 ETH 전송 (data 없음) 시 실행
     receive() external payable {
@@ -281,17 +335,22 @@ contract Vault {
         revert("Unknown function");
     }
 
-    function withdraw(uint256 amt) public {
-        payable(msg.sender).transfer(amt);
+    // ⚠️ 반드시 권한 검사 — 없으면 누구나 잔고를 빼갈 수 있다
+    function withdraw(uint256 amt) public onlyOwner {
+        // .transfer()는 2300 gas만 넘겨 스마트컨트랙트 지갑 상대로 깨질 수 있음 → .call 사용
+        (bool ok, ) = payable(msg.sender).call{value: amt}("");
+        require(ok, "Withdraw failed");
     }
 }
 ```
+
+> **출금 함수엔 권한 검사가 필수다.** `withdraw`에 `onlyOwner`가 없으면 외부 누구나 호출해 컨트랙트 잔고를 전부 빼갈 수 있다. 또한 ETH 전송은 `.transfer()`보다 `.call{value:}("")` + 성공 여부 `require`가 현재 권장 방식이다.
 
 KyoboNFT는 ETH를 직접 수신하지 않으므로 이 함수들이 없다. 하지만 Gnosis Safe(M9)가 ETH를 보관하므로 그때 다시 등장한다.
 
 ---
 
-### 7. Phase 1 연결 — OpenZeppelin은 이 세 가지의 조합
+## 7. Phase 1 연결 — OpenZeppelin은 이 세 가지의 조합
 
 ```
 KyoboNFT.sol
@@ -314,6 +373,18 @@ VASP 서버
       → uri(tokenId) = "https://.../"+tokenId.toString() (라이브러리)
       → emit NFTIssued(to, tokenId, amount)
 ```
+
+**M7에서 직접 마주칠 두 가지 (미리 알아둘 것):**
+
+1. `supportsInterface`는 ERC1155·AccessControl 양쪽에 있어 충돌 → `override(ERC1155Upgradeable, AccessControlUpgradeable)`로 해결
+2. UUPS는 `_authorizeUpgrade`를 **반드시** 구현해야 하고, 권한을 걸지 않으면 누구나 컨트랙트를 갈아치울 수 있다 → AccessControl과 묶어 관리자만 허용:
+
+```solidity
+function _authorizeUpgrade(address newImpl)
+    internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+```
+
+3. `Upgradeable` 컨트랙트는 constructor 대신 `initialize()`에서 각 부모의 `__X_init()`을 호출 (M7에서 상세)
 
 M7에서 직접 이 구조를 구현한다. 오늘 배운 세 개념이 전부 등장한다.
 
@@ -377,7 +448,7 @@ contract SimpleToken is BaseOwnable, ISimpleToken {
 ```
 ① mint(Account2, 500) → 정상
 ② balanceOf(Account2) → 500
-③ Account2로 전환 → transfer(Account3, 200) → Transfer 이벤트 확인
+③ Account2로 전환 → transfer(Account3, 200) → Transfer 이벤트 확인 (Account2 잔액 300)
 ④ 배포 주소 복사 → At Address에 붙여넣기, 컨트랙트 타입 ISimpleToken으로 변경
    → balanceOf/transfer만 보임 (mint 없음) ← 인터페이스 ABI 제한 확인
 ```
@@ -414,11 +485,11 @@ contract C is A {
     }
 }
 
-// MRO: D → C → B → A (is B, C 에서 오른쪽이 우선)
+// MRO: D → C → B → A (is B, C 에서 뒤에 쓴 C부터 호출)
 contract D is B, C {
     function ping() public override(B, C) {
         emit Log("D.ping - before super");
-        super.ping();   // C.ping() 호출 → C 안에서 super.ping() → B.ping() → B 안에서 super.ping() → A.ping()
+        super.ping();   // C.ping() → C의 super.ping() → B.ping() → B의 super.ping() → A.ping()
         emit Log("D.ping - after super");
     }
 }
@@ -451,7 +522,7 @@ contract TokenReader {
     }
 
     function readBalance(address who) public view returns (uint256) {
-        return token.balanceOf(who);   // CALL opcode 발생
+        return token.balanceOf(who);   // 외부 호출 (view 함수라 STATICCALL)
     }
 }
 ```
@@ -473,6 +544,7 @@ contract TokenReader {
 - [ ] `using Strings for uint256` → `tokenId.toString()` 작동 원리 설명 가능
 - [ ] "KyoboNFT가 ERC1155·AccessControl·UUPS를 동시에 상속하는 이유" 설명 가능
 - [ ] 다이아몬드 상속에서 super 호출 순서 (D→C→B→A) 설명 가능
+- [ ] ETH 수신 컨트랙트의 출금 함수에 권한 검사가 필요한 이유 설명 가능
 
 ---
 

@@ -474,7 +474,7 @@ Hardhat 프로젝트에서는 `npm install @openzeppelin/contracts` 후 동일�
 가장 단순한 접근 제어. owner 1명이 관리하는 컨트랙트에 사용한다.
 
 ```solidity
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";표
 
 contract MyContract is Ownable {
     // OZ v5: Ownable 생성자에 initialOwner 필수
