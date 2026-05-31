@@ -501,7 +501,7 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
         "SELECT COUNT(*) AS cnt FROM issuance_requests WHERE status NOT IN ('CONFIRMED','FAILED')",
       );
       return parseInt(rows[0].cnt, 10) === 0;
-    }, 3_000, 'drain previous test').catch(() => {});
+    }, 10_000, 'drain previous test').catch(() => {});
 
     await pool.query('TRUNCATE issuance_requests, tx_mint_requests, mint_requests, processed_events, user_nft_holdings, audit_log, reconcile_history');
 
@@ -710,13 +710,10 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
       data: { userId: 'user-mock-001', activityId: randomUUID(), eventType: TEST_EVENT_TYPE, eventCode: 1, data: { steps: 15_000 } },
     }));
 
-    // TX가 mempool에 들어갈 시간 확보
-    await new Promise(r => setTimeout(r, 2_000));
-
     await waitFor(async () => {
       const { rows } = await pool.query('SELECT status FROM issuance_requests');
       return rows.length > 0 && rows[0].status === 'SUBMITTED';
-    }, 10_000, 'SUBMITTED (pre-mine)');
+    }, 15_000, 'SUBMITTED (pre-mine)');
     console.log('  · SUBMITTED 확인 (블록 채굴 전)');
 
     const blockDuring = await provider.getBlockNumber();
@@ -863,7 +860,13 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
     await redisAdapter.xadd(idemKey, fields);
 
     await waitFor(() => creditCount >= 1, 15_000, 'first credit');
-    await new Promise(r => setTimeout(r, 500));
+
+    // 두 메시지 모두 처리(ACK)될 때까지 대기 → PEL이 비면 idempotency guard가 두 번 모두 완료한 것
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await waitFor(async () => {
+      const pending = await (redis as any).xpending(idemKey, idemGroup, '-', '+', 10);
+      return pending.length === 0;
+    }, 10_000, 'PEL empty (both messages processed)');
 
     expect(creditCount).toBe(1);
     console.log('  ✔ creditNFT 호출 횟수:', creditCount, '(1이어야 함)');
@@ -973,8 +976,14 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
     expect(readResult[0]?.messages.length).toBe(1);
     console.log('  · CRASH_CONSUMER 읽기 완료 (XACK 없음 → PEL 잔류)');
 
-    // ③ minIdleMs(200ms) 초과 대기
-    await new Promise(r => setTimeout(r, 600));
+    // ③ minIdleMs(200ms) 초과 확인 — XPENDING으로 실제 idle 시간을 폴링
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await waitFor(async () => {
+      const pending = await (redis as any).xpending(claimKey, claimGroup, '-', '+', 1);
+      if (!pending || pending.length === 0) return false;
+      const idleMs = pending[0][2] as number;
+      return idleMs > 200;
+    }, 5_000, 'PEL message idle > minIdleMs(200)');
 
     // ④ NEW_CONSUMER로 ConsumerGroupPool 기동 — XAUTOCLAIM으로 PEL 재수신
     const claimDlq  = new DLQHandler(redisAdapter, { async sendAlert() {} }, claimKey);
@@ -1027,8 +1036,13 @@ describe('issuer-service 통합 테스트 — VASPServer + Redis Stream + 11가�
     }, 20_000, 'SUBMITTED in tx_mint_requests');
     console.log(`  · tx_hash=${txHash.slice(0, 18)}…`);
 
-    // VASPServer _waitAndNotify 완료 대기 (receipt 처리 → txStatuses='completed')
-    await new Promise(r => setTimeout(r, 2_000));
+    // VASPServer _waitAndNotify 완료 확인 — GET /transfers/:txHash가 'completed'를 반환할 때까지 폴링
+    await waitFor(async () => {
+      const res = await fetch(`http://localhost:${VASP_PORT}/transfers/${txHash}`);
+      if (!res.ok) return false;
+      const body = await res.json() as { status: string };
+      return body.status === 'completed';
+    }, 10_000, 'VASPServer txStatuses=completed');
 
     // DB 조작: SUBMITTED → PENDING + created_at을 11분 전으로 설정
     // (실제로는 mempool 체류 시나리오를 재현)
