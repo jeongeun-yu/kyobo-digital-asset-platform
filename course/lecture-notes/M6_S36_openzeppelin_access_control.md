@@ -441,7 +441,13 @@ Compound는 `Timelock` 컨트랙트가 admin이다. 모든 파라미터 변경�
 
 ## 강의 파트 (50분)
 
-### 1. OpenZeppelin이란
+# OpenZeppelin — 접근 제어 · 긴급 정지 · 업그레이드 패턴
+
+> S34에서 직접 만든 `onlyOwner`를 OpenZeppelin의 감사된 구현으로 대체한다. M7(KyoboNFT 구현)에서 이 컨트랙트들을 상속해 쓴다.
+
+---
+
+## 1. OpenZeppelin이란
 
 OpenZeppelin은 스마트컨트랙트 표준 구현체 라이브러리다. ERC-20·ERC-721·ERC-1155 표준, 접근 제어, 업그레이드 패턴 등을 **감사(audit)된 코드**로 제공한다.
 
@@ -453,8 +459,19 @@ modifier onlyOwner()        → Ownable: onlyOwner + transferOwnership + 엣지�
 (없음)                      → AccessControl: 역할 기반 + 역할별 admin + 이벤트
 ```
 
-**왜 직접 짜지 않는가?**  
-The DAO(2016, $60M), Parity Wallet(2017년 두 사건: 1차 $30M 도난 + 2차 $280M 동결), Bancor(2018, $23.5M) — 세 사건 모두 직접 구현한 접근 제어 로직의 실수였다. OpenZeppelin은 2015년 보안 감사 회사로 시작해, 반복되는 취약점 패턴을 표준화한 결과물이다. 수십 개 외부 감사를 통과하고 수백만 달러 버그바운티를 운영한다. **상속받아 그대로 쓰는 것**이 직접 구현보다 안전하다.
+**왜 직접 짜지 않는가?**
+접근 제어 로직의 작은 실수가 대형 사고로 이어진 사례가 반복됐다.
+
+| 사건 | 시점 | 손실 (당시 기준) | 원인 |
+|---|---|---|---|
+| The DAO | 2016 | 약 $60M (재진입) | 재진입(reentrancy) |
+| Parity Wallet 1차 | 2017.7 | 약 $32M 도난 | multisig 초기화 취약점 |
+| Parity Wallet 2차 | 2017.11 | 약 513,743 ETH 동결 (당시 ~$150M) | 라이브러리 self-destruct |
+| Bancor | 2018 | 보도 기준 약 $23.5M | 업그레이드 권한 지갑 탈취 |
+
+> **수치 주의:** 손실액은 "도난·동결 시점의 ETH 가치" 기준이다. Parity 2차는 이후 ETH 가격 상승으로 $280M+로 인용되기도 하나, 이는 평가 시점이 다른 것이다. 강의에선 "동결 시점 약 $150M, 이후 평가액은 더 큼"으로 설명하는 것이 정확하다.
+
+세 사건 모두 직접 구현한 권한/업그레이드 로직의 실수였다. OpenZeppelin은 반복되는 취약점 패턴을 표준화하고, 수십 개 외부 감사와 버그바운티를 거친 결과물이다. **상속받아 그대로 쓰는 것**이 직접 구현보다 안전하다.
 
 **Remix에서 import 방법:**
 
@@ -467,14 +484,16 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 Hardhat 프로젝트에서는 `npm install @openzeppelin/contracts` 후 동일하게 import.
 
+> **버전 주의:** 이 노트는 **OZ v5 기준**이다. v4와 v5는 에러 처리(문자열 → custom error), 생성자 시그니처 등이 다르므로, 구버전 튜토리얼을 참고할 때 주의한다.
+
 ---
 
-### 2. Ownable — 단일 소유자 패턴
+## 2. Ownable — 단일 소유자 패턴
 
 가장 단순한 접근 제어. owner 1명이 관리하는 컨트랙트에 사용한다.
 
 ```solidity
-import "@openzeppelin/contracts/access/Ownable.sol";표
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MyContract is Ownable {
     // OZ v5: Ownable 생성자에 initialOwner 필수
@@ -486,12 +505,14 @@ contract MyContract is Ownable {
 }
 ```
 
+> **생성자 인자, 왜 두 가지 형태가 있나:** `Ownable(initialOwner)`에 외부 주소를 받으면 "배포자가 아닌 다른 주소"를 초기 owner로 지정할 수 있다(예: 멀티시그). `Ownable(msg.sender)`로 고정하면 배포자가 owner가 된다. 둘 다 유효하며, 유연성이 필요하면 인자로 받는 쪽을 쓴다.
+
 **Ownable이 제공하는 것:**
 
 | 함수 / modifier | 설명 |
 |---|---|
 | `owner()` | 현재 소유자 주소 반환 |
-| `onlyOwner` | owner가 아니면 revert |
+| `onlyOwner` | owner가 아니면 revert (`OwnableUnauthorizedAccount` custom error, v5) |
 | `transferOwnership(newOwner)` | 소유권 즉시 이전 (오타 시 복구 불가) |
 | `renounceOwnership()` | 소유권 영구 포기 (address(0) 설정) |
 | `OwnershipTransferred` 이벤트 | 소유권 변경 시 기록 |
@@ -504,19 +525,19 @@ contract MyContract is Ownable {
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 contract SafeContract is Ownable2Step {
-    constructor() Ownable(msg.sender) {}
+    constructor() Ownable(msg.sender) {}   // Ownable2Step도 Ownable 생성자를 호출
 }
 // 1단계: transferOwnership(newOwner) → pendingOwner 설정 (즉시 이전 안 됨)
 // 2단계: newOwner가 acceptOwnership() 직접 호출해야 완료
 // 취소: 현재 owner가 transferOwnership(currentOwner) 다시 호출
 ```
 
-**Ownable의 한계:**  
+**Ownable의 한계:**
 소유자가 1명뿐이다. 교보 시스템처럼 발행자·일시정지 담당자·감사자가 분리되어야 하면 AccessControl이 필요하다.
 
 ---
 
-### 3. Pausable — 긴급 정지 (Circuit Breaker)
+## 3. Pausable — 긴급 정지 (Circuit Breaker)
 
 운영 중 발생하는 사고(해킹 탐지, 규제 요청, 버그 발견)에 즉시 대응하는 패턴이다. 블록체인의 Circuit Breaker — 이상 신호 감지 시 즉시 차단한다.
 
@@ -537,7 +558,7 @@ contract KyoboBase is Ownable, Pausable {
     }
 
     // 정지 중에도 조회는 가능 (whenNotPaused 없음)
-    function balanceOf(address who) public view returns (uint256) { ... }
+    function balanceOf(address who) public view returns (uint256) { /* ... */ }
 }
 ```
 
@@ -545,26 +566,30 @@ contract KyoboBase is Ownable, Pausable {
 
 | modifier / 함수 | 설명 |
 |---|---|
-| `whenNotPaused` | paused이면 revert ("EnforcedPause") |
-| `whenPaused` | paused일 때만 통과 |
-| `_pause()` | 내부 정지 상태 전환 |
-| `_unpause()` | 내부 재개 상태 전환 |
+| `whenNotPaused` | paused이면 revert (v5: `EnforcedPause()` / v4: `"Pausable: paused"`) |
+| `whenPaused` | paused일 때만 통과 (v5: `ExpectedPause()`) |
+| `_pause()` | 내부 정지 상태 전환 (internal — 외부 노출 시 권한 modifier 필수) |
+| `_unpause()` | 내부 재개 상태 전환 (internal) |
 | `paused()` | 현재 상태 조회 |
 | `Paused` / `Unpaused` 이벤트 | 상태 변경 시 기록 |
 
-**KyoboNFT에서 `_update` 훅을 선택한 이유:**  
-ERC-1155의 `_update`는 mint·transfer·burn 모두의 공통 진입점이다. 여기 하나에만 `whenNotPaused`를 걸면 모든 토큰 이동이 통제된다. `mint()`에만 달면 `safeTransferFrom()`은 paused 상태에서도 작동한다.
+> **`_pause()`는 internal이다.** 그대로 두면 외부에서 못 부른다. 위 코드처럼 `pause()` public 함수로 감싸되 **반드시 권한 modifier**(`onlyOwner` / `onlyRole`)를 붙여야 한다. 안 붙이면 누구나 컨트랙트를 멈출 수 있다.
 
-**Phase 1 적용:**  
+**KyoboNFT에서 `_update` 훅을 선택한 이유:**
+ERC-1155의 `_update`는 mint·transfer·burn 모두의 공통 진입점이다(v5에서 `_beforeTokenTransfer`가 `_update`로 통합됨). 여기 하나에만 `whenNotPaused`를 걸면 모든 토큰 이동이 통제된다. `mint()`에만 달면 `safeTransferFrom()`은 paused 상태에서도 작동한다.
+
+**Phase 1 적용:**
 규제 기관 요청이나 해킹 탐지 시 `pause()`로 KyoboNFT 발행을 즉시 중단한다. 정지 중에는 `mint()` 호출이 모두 revert된다. 이 기능은 ISMS·금융감독원 보안 요건에서도 요구한다.
 
 ---
 
-### 4. AccessControl — 역할 기반 접근 제어
+## 4. AccessControl — 역할 기반 접근 제어
 
 Ownable의 "1인 소유자" 한계를 극복한다. **역할(Role)** 을 정의하고 여러 주소에 부여한다.
 
-내부 핵심 구조: `mapping(bytes32 role => RoleData)`. role ID는 `keccak256` 해시(bytes32) — 문자열 비교보다 gas 효율적이고, 충돌 확률은 사실상 0.
+내부 핵심 구조: `mapping(bytes32 role => RoleData)`. role ID는 `keccak256` 해시(bytes32) — 문자열 비교보다 gas 효율적이다.
+
+> **충돌에 대하여:** role ID는 keccak256 출력 **전체(256비트)**를 쓰므로 서로 다른 역할 문자열이 같은 ID를 가질 확률은 사실상 0이다. (함수 선택자는 앞 4바이트만 잘라 써서 충돌이 가능했던 것과 대조된다 — 차이는 "자르느냐, 전체를 쓰느냐"다.)
 
 ```solidity
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -586,28 +611,36 @@ contract KyoboNFTController is AccessControl {
         // MINTER_ROLE 보유자만 발행
     }
 
-    function pause()   public onlyRole(PAUSER_ROLE) { ... }
-    function unpause() public onlyRole(PAUSER_ROLE) { ... }
+    function pause()   public onlyRole(PAUSER_ROLE) { /* _pause(); */ }
+    function unpause() public onlyRole(PAUSER_ROLE) { /* _unpause(); */ }
 
-    function getAuditLog() public view onlyRole(AUDITOR_ROLE) returns (bytes memory) { ... }
+    function getAuditLog() public view onlyRole(AUDITOR_ROLE) returns (bytes memory) { /* ... */ }
 }
 ```
+
+> **`_grantRole` vs `grantRole` — 헷갈리기 쉬운 핵심:**
+> - `_grantRole` (internal): 권한 검사 **없이** 부여. constructor·초기 설정 전용. 아직 admin이 없는 배포 시점에 초기 권한을 심을 때 쓴다.
+> - `grantRole` (external): 해당 역할의 adminRole 보유자만 호출 가능. **운영 중** 부여는 이걸 쓴다.
+>
+> 운영 코드에서 `_grantRole`을 외부 함수로 노출하면 권한 검사를 건너뛰는 보안 구멍이 된다.
 
 **AccessControl이 제공하는 것:**
 
 | 함수 / modifier | 설명 |
 |---|---|
-| `onlyRole(role)` | 역할 없으면 revert |
+| `onlyRole(role)` | 역할 없으면 revert (v5: `AccessControlUnauthorizedAccount(account, neededRole)` custom error) |
 | `hasRole(role, account)` | 역할 보유 여부 조회 |
 | `grantRole(role, account)` | 역할 부여 (해당 역할의 adminRole 보유자만 가능) |
-| `revokeRole(role, account)` | 역할 회수 (adminRole 보유자만 가능) |
-| `renounceRole(role, account)` | 자기 역할 스스로 반납 |
-| `getRoleAdmin(role)` | 해당 역할의 admin 역할 반환 |
+| `revokeRole(role, account)` | 역할 회수 (`onlyRole(getRoleAdmin(role))` — adminRole 보유자만) |
+| `renounceRole(role, callerConfirmation)` | 자기 역할 스스로 반납 (v5: 본인 주소 확인 인자 필요) |
+| `getRoleAdmin(role)` | 그 역할을 부여·회수할 수 있는 관리 역할의 해시값(bytes32) 반환 |
 | `RoleGranted` / `RoleRevoked` 이벤트 | 역할 변경 시 기록 |
+
+> **v5 에러 형태:** 권한 없이 호출하면 v4의 긴 문자열(`"AccessControl: account 0x... is missing role 0x..."`)이 아니라, custom error `AccessControlUnauthorizedAccount(account, neededRole)`가 발생한다. Remix Logs에서 이 형태로 보인다.
 
 ---
 
-### 5. AccessControl 역할 체계 설계
+## 5. AccessControl 역할 체계 설계
 
 **기본 역할 구조:**
 
@@ -627,7 +660,7 @@ bytes32 public constant ADMIN_ROLE   = keccak256("ADMIN_ROLE");
 bytes32 public constant MINTER_ROLE  = keccak256("MINTER_ROLE");
 bytes32 public constant PAUSER_ROLE  = keccak256("PAUSER_ROLE");
 
-constructor() {
+constructor(address admin_address) {
     _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     _grantRole(ADMIN_ROLE, admin_address);
 
@@ -658,7 +691,7 @@ constructor() {
 
 ---
 
-### 6. Ownable vs AccessControl — 선택 기준
+## 6. Ownable vs AccessControl — 선택 기준
 
 | | Ownable | Ownable2Step | AccessControl |
 |---|---|---|---|
@@ -671,7 +704,7 @@ constructor() {
 
 ---
 
-### 7. AccessControlEnumerable — 역할 멤버 조회
+## 7. AccessControlEnumerable — 역할 멤버 조회
 
 표준 AccessControl은 역할 멤버를 열거할 수 없다. (매핑은 단방향 — 주소 → bool). 조회가 필요하면 Enumerable 버전을 사용한다.
 
@@ -701,13 +734,13 @@ contract KyoboNFT is AccessControlEnumerable {
 - 관리자 UI에서 "현재 MINTER_ROLE 보유자 목록" 표시 필요 시
 - 감사 보고서용 역할 보유자 온체인 조회
 
-**트레이드오프:** `grantRole`/`revokeRole` 시 gas가 약간 더 든다. 목록 조회가 불필요하면 기본 AccessControl로 충분하다.
+**트레이드오프:** `grantRole`/`revokeRole` 시 멤버 목록을 유지하느라 gas가 약간 더 든다. 목록 조회가 불필요하면 기본 AccessControl로 충분하다.
 
-**감사(audit) 시 유용:** "현재 MINTER_ROLE을 가진 주소가 몇 개인가?" 를 온체인에서 바로 조회할 수 있다. 규제 요건 대응에 필요하다.
+**감사(audit) 시 유용:** "현재 MINTER_ROLE을 가진 주소가 몇 개인가?"를 온체인에서 바로 조회할 수 있다. 규제 요건 대응에 필요하다.
 
 ---
 
-### 8. Phase 1 전체 접근 제어 흐름
+## 8. Phase 1 전체 접근 제어 흐름
 
 ```
 배포 시:
@@ -726,6 +759,8 @@ contract KyoboNFT is AccessControlEnumerable {
     → grantRole(MINTER_ROLE, NEW_VASP)
     → 이벤트: RoleRevoked, RoleGranted (온체인 감사 기록)
 ```
+
+> **순서가 중요하다:** `revokeRole(DEFAULT_ADMIN_ROLE, deployer)`를 **반드시 마지막에** 한다. Gnosis Safe에 DEFAULT_ADMIN을 먼저 부여하기 전에 deployer 권한을 회수하면, 아무도 admin이 없는 상태로 컨트랙트가 영구 잠긴다.
 
 ---
 
@@ -773,9 +808,10 @@ contract KyoboMintController is AccessControl, Pausable {
 ① grantRole(MINTER_ROLE, Account2주소) → Account2 발행 가능
 ② Account2로 전환 → mint(Account3, 1, 100) → NFTMinted 이벤트 확인
 ③ Account1로 전환 → pause() → paused() = true
-④ Account2 → mint() → "EnforcedPause" revert 확인
+④ Account2 → mint() → EnforcedPause custom error revert 확인 (v5)
 ⑤ Account1 → unpause() → Account2 mint 다시 성공
-⑥ Account3(역할 없음) → mint() → AccessControl 오류 확인
+⑥ Account3(역할 없음) → mint() → AccessControlUnauthorizedAccount custom error 확인
+   (v4의 "missing role" 문자열이 아니라 custom error 형태)
 ```
 
 ---
@@ -848,7 +884,7 @@ contract TwoStepDemo is Ownable2Step {
 ③ Account1 → sensitiveAction() → 성공 (아직 Account1이 owner)
 ④ Account3 → acceptOwnership() → 실패 (pendingOwner 아님)
 ⑤ Account2 → acceptOwnership() → 성공 → owner() = Account2
-⑥ Account1 → sensitiveAction() → 실패
+⑥ Account1 → sensitiveAction() → 실패 (OwnableUnauthorizedAccount)
 ```
 
 ---
@@ -857,14 +893,17 @@ contract TwoStepDemo is Ownable2Step {
 
 - [ ] `@openzeppelin/contracts` import → 컴파일 성공
 - [ ] `DEFAULT_ADMIN_ROLE` / `MINTER_ROLE` / `PAUSER_ROLE` 역할 체계 설명 가능
+- [ ] `_grantRole`(internal, 검사 없음) vs `grantRole`(external, admin 검사) 차이 설명 가능
 - [ ] `grantRole` / `revokeRole` / `hasRole` 직접 실행 확인
-- [ ] `pause()` 후 `mint()` → "EnforcedPause" revert 확인
-- [ ] 역할 없는 계정 → AccessControl 오류 메시지 확인
+- [ ] `pause()` 후 `mint()` → `EnforcedPause` custom error revert 확인 (v5)
+- [ ] 역할 없는 계정 → `AccessControlUnauthorizedAccount` custom error 확인
 - [ ] "DEFAULT_ADMIN_ROLE을 단일 EOA에 두면 안 되는 이유" 설명 가능
 - [ ] "KyoboNFT에서 MINTER_ROLE을 VASP 주소에만 부여하는 이유" 설명 가능
 - [ ] `_setRoleAdmin(MINTER_ROLE, ADMIN_ROLE)`의 의미와 효과 설명 가능
 - [ ] Ownable2Step의 2단계 이전 흐름 설명 가능
 - [ ] AccessControlEnumerable과 기본 AccessControl의 차이점 설명 가능
+- [ ] 배포 흐름에서 `revokeRole(DEFAULT_ADMIN_ROLE, deployer)`를 마지막에 하는 이유 설명 가능
+
 
 ---
 
