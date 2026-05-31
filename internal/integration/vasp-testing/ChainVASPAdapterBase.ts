@@ -107,14 +107,31 @@ export abstract class ChainVASPAdapterBase implements IVASPAdapter {
     const fn = this.mockVasp['setMode'] as (
       m: number, overrides?: { nonce?: number }
     ) => Promise<ethers.ContractTransactionResponse>;
-    await (await fn(MINT_MODE_INDEX[mode], { nonce: await this._nonce() })).wait();
+    await this._sendWithRetry(nonce => fn(MINT_MODE_INDEX[mode], { nonce }));
   }
 
   async setRevertReason(reason: string): Promise<void> {
     const fn = this.mockVasp['setRevertReason'] as (
       r: string, overrides?: { nonce?: number }
     ) => Promise<ethers.ContractTransactionResponse>;
-    await (await fn(reason, { nonce: await this._nonce() })).wait();
+    await this._sendWithRetry(nonce => fn(reason, { nonce }));
+  }
+
+  // NONCE_EXPIRED 시 nonce를 재조회해 1회 재시도한다.
+  // slow machine에서 Hardhat automine 직후 getTransactionCount가 stale 값을 반환할 수 있어
+  // Math.max(latest, pending) 으로도 해결 안 되는 경우를 커버한다.
+  private async _sendWithRetry(
+    send: (nonce: number) => Promise<ethers.ContractTransactionResponse>,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await (await send(await this._nonce())).wait();
+        return;
+      } catch (err) {
+        if (attempt < 2 && (err as any)?.code === 'NONCE_EXPIRED') continue;
+        throw err;
+      }
+    }
   }
 
   async getMode(): Promise<MintMode> {
