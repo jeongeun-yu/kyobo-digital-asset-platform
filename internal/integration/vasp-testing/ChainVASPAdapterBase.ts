@@ -91,11 +91,16 @@ export abstract class ChainVASPAdapterBase implements IVASPAdapter {
 
   // ── MockVASP 시나리오 제어 (Anvil·Sepolia 공통) ──────────────────────────
 
-  // nonce를 'latest' 태그로 직접 조회해 override로 전달한다.
-  // ethers Wallet의 'pending' nonce 쿼리가 Hardhat automine 환경에서
-  // 직전 tx 상태를 반영하지 못하는 타이밍 이슈를 방지하기 위함.
+  // 'latest'와 'pending' 중 더 높은 nonce를 override로 전달한다.
+  // slow machine에서 automine 직후 'latest'가 아직 갱신되지 않아 stale 값을 반환할 수 있으므로
+  // 'pending'(mempool 포함)과 비교해 높은 값을 채택해 NONCE_EXPIRED를 방지한다.
   private async _nonce(): Promise<number> {
-    return this.provider.getTransactionCount(await this.signer.getAddress(), 'latest');
+    const addr = await this.signer.getAddress();
+    const [latest, pending] = await Promise.all([
+      this.provider.getTransactionCount(addr, 'latest'),
+      this.provider.getTransactionCount(addr, 'pending'),
+    ]);
+    return Math.max(latest, pending);
   }
 
   async setMode(mode: MintMode): Promise<void> {
