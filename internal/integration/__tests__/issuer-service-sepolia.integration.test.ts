@@ -1243,7 +1243,14 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     // provider.waitForTransaction: 블록 채굴까지 대기 (Sepolia ~12s/block)
     console.log('  · Sepolia TX 채굴 대기 중…');
     await provider.waitForTransaction(txHash, 1, 60_000);
-    await new Promise(r => setTimeout(r, 2_000)); // txStatuses 설정 여유
+    // VASPServer._waitAndNotify(tx.wait(1)) 완료 대기 — provider.waitForTransaction과
+    // VASPServer 내부 tx.wait(1)은 독립 폴링이므로 sleep 대신 명시적으로 확인한다.
+    await waitFor(async () => {
+      const res = await fetch(`http://localhost:${VASP_PORT}/transfers/${txHash}`);
+      if (!res.ok) return false;
+      const body = await res.json() as { status: string };
+      return body.status === 'completed';
+    }, 30_000, 'VASPServer txStatuses=completed');
     console.log('  · TX 채굴 확인 + txStatuses=completed 설정 완료');
 
     // DB 조작: SUBMITTED → PENDING + created_at을 11분 전으로 설정
