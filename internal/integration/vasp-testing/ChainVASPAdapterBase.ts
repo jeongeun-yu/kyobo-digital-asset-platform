@@ -91,14 +91,25 @@ export abstract class ChainVASPAdapterBase implements IVASPAdapter {
 
   // ── MockVASP 시나리오 제어 (Anvil·Sepolia 공통) ──────────────────────────
 
+  // nonce를 'latest' 태그로 직접 조회해 override로 전달한다.
+  // ethers Wallet의 'pending' nonce 쿼리가 Hardhat automine 환경에서
+  // 직전 tx 상태를 반영하지 못하는 타이밍 이슈를 방지하기 위함.
+  private async _nonce(): Promise<number> {
+    return this.provider.getTransactionCount(await this.signer.getAddress(), 'latest');
+  }
+
   async setMode(mode: MintMode): Promise<void> {
-    const fn = this.mockVasp['setMode'] as (m: number) => Promise<ethers.ContractTransactionResponse>;
-    await (await fn(MINT_MODE_INDEX[mode])).wait();
+    const fn = this.mockVasp['setMode'] as (
+      m: number, overrides?: { nonce?: number }
+    ) => Promise<ethers.ContractTransactionResponse>;
+    await (await fn(MINT_MODE_INDEX[mode], { nonce: await this._nonce() })).wait();
   }
 
   async setRevertReason(reason: string): Promise<void> {
-    const fn = this.mockVasp['setRevertReason'] as (r: string) => Promise<ethers.ContractTransactionResponse>;
-    await (await fn(reason)).wait();
+    const fn = this.mockVasp['setRevertReason'] as (
+      r: string, overrides?: { nonce?: number }
+    ) => Promise<ethers.ContractTransactionResponse>;
+    await (await fn(reason, { nonce: await this._nonce() })).wait();
   }
 
   async getMode(): Promise<MintMode> {
