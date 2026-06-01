@@ -50,6 +50,10 @@ export abstract class ChainVASPAdapterBase implements IVASPAdapter {
     this.confirmations = config.confirmations ?? 1;
   }
 
+  // Wallet queries chain nonce on every tx — no counter state to reset.
+  // Kept for API compatibility with beforeEach callers.
+  async resetNonce(): Promise<void> {}
+
   // ── IVASPAdapter ──────────────────────────────────────────────────────────
 
   async submitTransaction(params: SubmitTransactionParams): Promise<VASPTransactionReceipt> {
@@ -87,14 +91,47 @@ export abstract class ChainVASPAdapterBase implements IVASPAdapter {
 
   // ── MockVASP 시나리오 제어 (Anvil·Sepolia 공통) ──────────────────────────
 
+  // 'latest'와 'pending' 중 더 높은 nonce를 override로 전달한다.
+  // slow machine에서 automine 직후 'latest'가 아직 갱신되지 않아 stale 값을 반환할 수 있으므로
+  // 'pending'(mempool 포함)과 비교해 높은 값을 채택해 NONCE_EXPIRED를 방지한다.
+  private async _nonce(): Promise<number> {
+    const addr = await this.signer.getAddress();
+    const [latest, pending] = await Promise.all([
+      this.provider.getTransactionCount(addr, 'latest'),
+      this.provider.getTransactionCount(addr, 'pending'),
+    ]);
+    return Math.max(latest, pending);
+  }
+
   async setMode(mode: MintMode): Promise<void> {
-    const fn = this.mockVasp['setMode'] as (m: number) => Promise<ethers.ContractTransactionResponse>;
-    await (await fn(MINT_MODE_INDEX[mode])).wait();
+    const fn = this.mockVasp['setMode'] as (
+      m: number, overrides?: { nonce?: number }
+    ) => Promise<ethers.ContractTransactionResponse>;
+    await this._sendWithRetry(nonce => fn(MINT_MODE_INDEX[mode], { nonce }));
   }
 
   async setRevertReason(reason: string): Promise<void> {
-    const fn = this.mockVasp['setRevertReason'] as (r: string) => Promise<ethers.ContractTransactionResponse>;
-    await (await fn(reason)).wait();
+    const fn = this.mockVasp['setRevertReason'] as (
+      r: string, overrides?: { nonce?: number }
+    ) => Promise<ethers.ContractTransactionResponse>;
+    await this._sendWithRetry(nonce => fn(reason, { nonce }));
+  }
+
+  // NONCE_EXPIRED 시 nonce를 재조회해 1회 재시도한다.
+  // slow machine에서 Hardhat automine 직후 getTransactionCount가 stale 값을 반환할 수 있어
+  // Math.max(latest, pending) 으로도 해결 안 되는 경우를 커버한다.
+  private async _sendWithRetry(
+    send: (nonce: number) => Promise<ethers.ContractTransactionResponse>,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await (await send(await this._nonce())).wait();
+        return;
+      } catch (err) {
+        if (attempt < 2 && (err as any)?.code === 'NONCE_EXPIRED') continue;
+        throw err;
+      }
+    }
   }
 
   async getMode(): Promise<MintMode> {

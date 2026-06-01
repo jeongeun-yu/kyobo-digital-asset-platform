@@ -140,16 +140,23 @@ export class EVMAdapter implements IBlockchainAdapter {
     contractAddr: string,
     address: string,
     fromBlock = 0,
+    blockChunkSize = 9,
   ): Promise<bigint[]> {
     const currentBlock = await this.provider.getBlockNumber();
     const iface    = new Interface(TRANSFER_SINGLE_ABI);
     const contract = new Contract(contractAddr, iface, this.provider);
 
-    const logs = await contract.queryFilter(
-      contract.getEvent('TransferSingle'),
-      fromBlock,
-      currentBlock,
-    ) as EventLog[];
+    const allLogs: EventLog[] = [];
+    for (let start = fromBlock; start <= currentBlock; start += blockChunkSize + 1) {
+      const end = Math.min(start + blockChunkSize, currentBlock);
+      const chunk = await contract.queryFilter(
+        contract.getEvent('TransferSingle'),
+        start,
+        end,
+      ) as EventLog[];
+      allLogs.push(...chunk);
+    }
+    const logs = allLogs;
 
     const addrLower = address.toLowerCase();
     const tokenIds  = new Set<string>();

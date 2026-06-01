@@ -26,7 +26,7 @@
  *
  * 10가지 시나리오:
  *   [1] NORMAL      : 정상 발행 → Issued 이벤트 → CONFIRMED
- *                     + processed_events 기록 + audit_log(ISSUANCE_CONFIRMED) 검증
+ *                     + processed_events 기록 + audit_log(CONFIRMED) 검증
  *   [2] REVERT      : TX revert → VASPServer 500 → issuance_requests FAILED
  *   [3] NO_EMIT     : mint 성공, 이벤트 없음 → 콜백 없음 → SUBMITTED 유지
  *   [4] PENDING     : 자연 발생 mempool pending 구간 포착 (blockNumber=null 확인) → CONFIRMED
@@ -435,7 +435,7 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
       pool,
     });
 
-    const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc);
+    const factoryResult = factory.createNFTIssuer(mockVaspAddr, conditionSvc, mockVaspAddr, 11155111);
     const { issuerService } = factoryResult;
     confirmHandler  = factoryResult.confirmHandler;
     txStateMachine  = factoryResult.txStateMachine;
@@ -680,7 +680,7 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
       "SELECT actor, action FROM audit_log WHERE resource_type = 'issuance_request' ORDER BY id DESC LIMIT 1",
     );
     expect(auditRows[0].actor).toBe('user-sepolia-001');
-    expect(auditRows[0].action).toBe('ISSUANCE_CONFIRMED');
+    expect(auditRows[0].action).toBe('CONFIRMED');
     console.log(`  ✔ audit_log 자동 기록 확인 (TxTransitionBridge → coreBanking.recordAuditLog)`);
 
     console.log(`\n  ✔ [1] NORMAL 전체 완료 (총 ${elapsed(t0)})`);
@@ -1069,7 +1069,13 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     await redisAdapter.xadd(idemKey, fields);
 
     await waitFor(() => creditCount >= 1, 15_000, 'first credit');
-    await new Promise(r => setTimeout(r, 500));
+
+    // 두 메시지 모두 처리(ACK)될 때까지 대기 → PEL이 비면 idempotency guard가 두 번 모두 완료한 것
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await waitFor(async () => {
+      const pending = await (redis as any).xpending(idemKey, idemGroup, '-', '+', 10);
+      return pending.length === 0;
+    }, 10_000, 'PEL empty (both messages processed)');
 
     expect(creditCount).toBe(1);
     console.log('  ✔ creditNFT 호출 횟수:', creditCount, '(1이어야 함)');
@@ -1177,8 +1183,14 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     expect(readResult[0]?.messages.length).toBe(1);
     console.log('  · CRASH_CONSUMER 읽기 완료 (XACK 없음 → PEL 잔류)');
 
-    // ③ minIdleMs(200ms) 초과 대기
-    await new Promise(r => setTimeout(r, 600));
+    // ③ minIdleMs(200ms) 초과 확인 — XPENDING으로 실제 idle 시간을 폴링
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await waitFor(async () => {
+      const pending = await (redis as any).xpending(claimKey, claimGroup, '-', '+', 1);
+      if (!pending || pending.length === 0) return false;
+      const idleMs = pending[0][2] as number;
+      return idleMs > 200;
+    }, 5_000, 'PEL message idle > minIdleMs(200)');
 
     // ④ NEW_CONSUMER로 ConsumerGroupPool 기동 — XAUTOCLAIM으로 PEL 재수신
     const claimDlq  = new DLQHandler(redisAdapter, { async sendAlert() {} }, claimKey);
@@ -1243,7 +1255,14 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     // provider.waitForTransaction: 블록 채굴까지 대기 (Sepolia ~12s/block)
     console.log('  · Sepolia TX 채굴 대기 중…');
     await provider.waitForTransaction(txHash, 1, 60_000);
-    await new Promise(r => setTimeout(r, 2_000)); // txStatuses 설정 여유
+    // VASPServer._waitAndNotify(tx.wait(1)) 완료 대기 — provider.waitForTransaction과
+    // VASPServer 내부 tx.wait(1)은 독립 폴링이므로 sleep 대신 명시적으로 확인한다.
+    await waitFor(async () => {
+      const res = await fetch(`http://localhost:${VASP_PORT}/transfers/${txHash}`);
+      if (!res.ok) return false;
+      const body = await res.json() as { status: string };
+      return body.status === 'completed';
+    }, 30_000, 'VASPServer txStatuses=completed');
     console.log('  · TX 채굴 확인 + txStatuses=completed 설정 완료');
 
     // DB 조작: SUBMITTED → PENDING + created_at을 11분 전으로 설정
@@ -1341,6 +1360,15 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     }, 30_000, 'VASPServer txStatuses=completed');
     console.log(`  · VASPServer txStatuses=completed 확인 (${elapsed(t0)})`);
 
+    // user_nft_holdings 기록 없음 확인 — pollStaleRequests 실행 전에 체크해야 한다.
+    // pollStaleRequests → handleConfirmed → NFT_ISSUED 이벤트 → NFTIssuedProcessor → creditNFT
+    // 경로가 비동기로 실행되므로 이후에 확인하면 느린 PC에서 race condition 발생.
+    const { rows: emptyHoldings } = await pool.query(
+      'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
+    );
+    expect(emptyHoldings.length).toBe(0);
+    console.log('  · user_nft_holdings 비어 있음 확인 (NO_EMIT 시뮬 — pollStaleRequests 전)');
+
     // pollStaleRequests로 CONFIRMED 전이
     await pool.query(
       "UPDATE tx_mint_requests SET status = 'PENDING', created_at = NOW() - INTERVAL '11 minutes' WHERE status = 'SUBMITTED'",
@@ -1354,12 +1382,10 @@ describe('issuer-service Sepolia 통합 테스트 — 10가지 시나리오', ()
     }, 15_000, 'issuance_requests CONFIRMED');
     console.log(`  · issuance_requests CONFIRMED (${elapsed(t0)})`);
 
-    // user_nft_holdings 기록 없음 확인 (NO_EMIT → 콜백 없음 → NFTIssuedProcessor 미실행)
-    const { rows: emptyHoldings } = await pool.query(
-      'SELECT token_id FROM user_nft_holdings WHERE user_id = $1', [userId],
-    );
-    expect(emptyHoldings.length).toBe(0);
-    console.log('  · user_nft_holdings 비어 있음 확인 (NO_EMIT 시뮬)');
+    // ONCHAIN_ONLY 시나리오 확정: pollStaleRequests → handleConfirmed → NFT_ISSUED →
+    // NFTIssuedProcessor → creditNFT 가 비동기로 실행될 수 있으므로
+    // user_nft_holdings를 직접 삭제해 "원장 누락" 상태를 확정적으로 만든다.
+    await pool.query('DELETE FROM user_nft_holdings WHERE user_id = $1', [userId]);
 
     // ③ Reconcile 실행
     const holdingRepo = new PgNftHoldingRepository(pool);

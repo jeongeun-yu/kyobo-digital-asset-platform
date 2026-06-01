@@ -66,10 +66,12 @@ export class NFTIssuedProcessor implements EventProcessor {
     console.log(`[NFTIssuedProcessor] NFT_ISSUED 수신  to=${payload.to?.slice(0, 10)}…  tokenId=${payload.tokenId}  txHash=${txHash?.slice(0, 10)}…  msgId=${message.id}`);
 
     const processed = await this.idempotency.run(idempotencyKey, async () => {
+      // TX 상태 전이(MINED→CONFIRMED) → IssuanceTransitionBridge가 CONFIRMED 기록
+      // 이후 creditNFT → CREDITED 순서
+      await this.ledger.updateMintRequestConfirmed?.(requestId, payload.blockNumber);
       console.log(`[NFTIssuedProcessor] creditNFT 호출 → owner=${payload.to?.slice(0, 10)}…  tokenId=${payload.tokenId}`);
       await this.ledger.creditNFT(payload.to, payload.tokenId, 1, txHash);
       console.log(`[NFTIssuedProcessor] creditNFT 완료 → user_nft_holdings 기록`);
-      await this.ledger.updateMintRequestConfirmed?.(requestId, payload.blockNumber);
     });
 
     if (!processed) {

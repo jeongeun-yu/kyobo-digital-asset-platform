@@ -105,4 +105,16 @@ export class IoRedisAdapter implements RedisConsumerClient, DLQRedisClient, Redi
   async ping(): Promise<string> {
     return this.r.ping();
   }
+
+  async set(key: string, value: string, expiryMode: string, time: number): Promise<unknown> {
+    return this.r.set(key, value, expiryMode as 'EX', time);
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.r.get(key);
+  }
+
+  async del(key: string): Promise<number> {
+    return this.r.del(key);
+  }
 }

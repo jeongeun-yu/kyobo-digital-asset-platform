@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title KyoboNFT
@@ -37,12 +38,18 @@ contract KyoboNFT is
     PausableUpgradeable,
     UUPSUpgradeable
 {
+    // tokenId(uint256)에 .toString() 메서드를 붙여 URI 문자열 조합에 사용
+    using Strings for uint256;
+
     bytes32 public constant MINTER_ROLE   = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE   = keccak256("PAUSER_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     /// tokenId 인코딩: productCode는 상위 64비트
     uint8 public constant PRODUCT_CODE_SHIFT = 64;
+
+    /// 메타데이터 베이스 URI — uri() 반환값의 앞부분
+    string private _baseURIStorage;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -62,6 +69,25 @@ contract KyoboNFT is
         _grantRole(MINTER_ROLE,        admin);
         _grantRole(PAUSER_ROLE,        admin);
         _grantRole(UPGRADER_ROLE,      admin);
+    }
+
+    // ── URI ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice 베이스 URI 설정 — DEFAULT_ADMIN_ROLE 전용
+     * @param newBaseURI "https://metadata.kyobo.io/nft/" 형태. 끝에 "/" 포함
+     */
+    function setBaseURI(string calldata newBaseURI) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _baseURIStorage = newBaseURI;
+    }
+
+    /**
+     * @notice tokenId → 메타데이터 URI 반환
+     * @dev    using Strings for uint256 덕분에 tokenId.toString() 사용 가능
+     *         결과: "https://metadata.kyobo.io/nft/12345678.json"
+     */
+    function uri(uint256 tokenId) public view override returns (string memory) {
+        return string.concat(_baseURIStorage, tokenId.toString(), ".json");
     }
 
     // ── tokenId 인코딩 / 디코딩 ─────────────────────────────────────────

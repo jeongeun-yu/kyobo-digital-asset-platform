@@ -80,13 +80,13 @@ export class IssuerService {
       txHash:     null,
       failReason: null,
     });
-    this.deps.coreBanking.recordAuditLog({
+    await this.deps.coreBanking.recordAuditLog({
       actor:        userId,
-      action:       'ISSUANCE_REQUESTED',
+      action:       'REQUESTED',
       resourceType: 'issuance_request',
       resourceId:   req.id,
       afterState:   { status: 'REQUESTED', eventType: event.eventType, tokenId: String(policy.tokenId) },
-    }).catch(err => console.error('[IssuerService] audit-log 오류:', err));
+    });
     const ledgerReq  = await this.deps.ledgerService.createMintRequest(userId, String(policy.id));
 
     // ── ⑤ 지갑 조회 — 실패 → FAILED + throw ────────────────────────────
@@ -103,7 +103,7 @@ export class IssuerService {
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
       this.deps.coreBanking.recordAuditLog({
         actor:        userId,
-        action:       'ISSUANCE_FAILED',
+        action:       'FAILED',
         resourceType: 'issuance_request',
         resourceId:   req.id,
         beforeState:  { status: 'REQUESTED' },
@@ -131,10 +131,9 @@ export class IssuerService {
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'SUBMITTED', txHash });
       this.deps.coreBanking.recordAuditLog({
         actor:        userId,
-        action:       'ISSUANCE_SUBMITTED',
+        action:       'SUBMITTED',
         resourceType: 'issuance_request',
         resourceId:   req.id,
-        beforeState:  { status: 'REQUESTED' },
         afterState:   { status: 'SUBMITTED', txHash },
       }).catch(e => console.error('[IssuerService] audit-log 오류:', e));
     } catch (err) {
@@ -143,7 +142,7 @@ export class IssuerService {
       await this.deps.ledgerService.updateMintRequest(ledgerReq.id, { status: 'FAILED', errorMsg: failReason });
       this.deps.coreBanking.recordAuditLog({
         actor:        userId,
-        action:       'ISSUANCE_FAILED',
+        action:       'FAILED',
         resourceType: 'issuance_request',
         resourceId:   req.id,
         beforeState:  { status: 'REQUESTED' },
@@ -183,7 +182,7 @@ export class IssuerService {
     await this.deps.issuanceRepo.updateStatus(req.id, 'FAILED', { failReason });
     this.deps.coreBanking.recordAuditLog({
       actor:        req.userId,
-      action:       'ISSUANCE_FAILED',
+      action:       'FAILED',
       resourceType: 'issuance_request',
       resourceId:   params.txHash,
       beforeState:  { status: 'SUBMITTED', txHash: params.txHash },

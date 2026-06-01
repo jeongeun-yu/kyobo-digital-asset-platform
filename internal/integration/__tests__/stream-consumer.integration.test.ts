@@ -26,6 +26,7 @@ class InMemoryRedis {
     lastId: string;
     pel:    Map<string, { consumer: string; deliveredAt: number; fields: string[] }>;
   }>();
+  private kv  = new Map<string, string>();
   private seq = 0;
 
   private genId(): string {
@@ -134,9 +135,19 @@ class InMemoryRedis {
     return 'OK';
   }
 
+  async set(key: string, value: string, _exMode?: string, _ttl?: number): Promise<unknown> {
+    this.kv.set(key, value);
+    return 'OK';
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.kv.get(key) ?? null;
+  }
+
   async del(...keys: string[]): Promise<number> {
     let n = 0;
     for (const key of keys) {
+      if (this.kv.delete(key)) n++;
       if (this.streams.delete(key)) n++;
       for (const gk of this.groups.keys()) {
         if (gk.startsWith(`${key}:`)) this.groups.delete(gk);
@@ -248,6 +259,18 @@ class TestRedisAdapter implements RedisConsumerClient {
 
   async xdel(key: string, ...ids: string[]): Promise<number> {
     return this.r.xdel(key, ...ids);
+  }
+
+  async set(key: string, value: string, expiryMode: string, time: number): Promise<unknown> {
+    return this.r.set(key, value, expiryMode as 'EX', time);
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.r.get(key);
+  }
+
+  async del(key: string): Promise<number> {
+    return this.r.del(key);
   }
 
   private _parseFields(flat: string[]): Record<string, string> {

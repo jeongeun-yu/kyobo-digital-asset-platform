@@ -9,14 +9,14 @@
  *
  * 기동 순서:
  *   1. Docker 네트워크 생성 (kyobo-sepolia-net) + 기존 컨테이너 정리
- *   2. Docker — PostgreSQL(15432) + Redis(16379)
+ *   2. Docker — PostgreSQL(15442) + Redis(16389)
  *   3. DB 스키마 적용 + 시드
  *   4. MockVASP — SEPOLIA_MOCK_VASP_ADDR 이미 설정 시 재사용, 없으면 신규 배포
- *   5. Java internal-ledger 컨테이너 기동 (19875) — 실제 원장 서비스
+ *   5. Java internal-ledger 컨테이너 기동 (19885) — 실제 원장 서비스
  *   6. 현재 Sepolia 블록 번호 조회 (CHAIN_START_BLOCK)
- *   7. VASPServer 기동 (19876) — Sepolia RPC + 신규 배포 MockVASP 주소
+ *   7. VASPServer 기동 (19886) — Sepolia RPC + 신규 배포 MockVASP 주소
  *   8. Redis Stream + Consumer Group 초기화
- *   9. issuer-service 기동 (WebhookServer :19877)
+ *   9. issuer-service 기동 (WebhookServer :19887)
  *  10. READY 배너 출력 (블록 확정 ~12s 안내)
  *
  * 종료: Ctrl+C → 컨테이너 자동 정리
@@ -49,12 +49,12 @@ const DEPLOYER_PRIVATE_KEY = process.env['DEPLOYER_PRIVATE_KEY'] ?? OPERATOR_PRI
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 
-const PG_PORT        = 15432;
-const REDIS_PORT     = 16379;
-const JAVA_PORT      = 19875;
-const VASP_PORT      = 19876;
-const WEBHOOK_PORT   = 19877;
-const ADMIN_PORT     = 19870;
+const PG_PORT        = 15442;
+const REDIS_PORT     = 16389;
+const JAVA_PORT      = 19885;
+const VASP_PORT      = 19886;
+const WEBHOOK_PORT   = 19887;
+const ADMIN_PORT     = 19880;
 const CHAIN_ID       = 11155111; // Sepolia
 
 const WEBHOOK_SECRET   = 'sepolia-demo-webhook-secret-32ch!!';
@@ -404,9 +404,9 @@ async function main() {
 ╚═══════════════════════════════════════════════════════════════╝
 `);
 
-  // ── 11. DB 상태 폴러 (5초마다 현재 파이프라인 상태 출력) ────────────────────
+  // ── 11. DB 상태 폴러 — issuance_requests.status 또는 user_nft_holdings 변경 시에만 출력 ──
   const dbPoller = new Pool({ connectionString: PG_URL });
-  let lastSnapshot = '';
+  let lastChangeKey = '';
 
   const pollInterval = setInterval(async () => {
     try {
@@ -420,17 +420,22 @@ async function main() {
 
       if (issuance.rows.length === 0) return;
 
-      const snapshot = JSON.stringify({ issuance: issuance.rows, mint: mint.rows, tx: tx.rows, holdings: holdings.rows, auditLog: auditLog.rows });
-      if (snapshot === lastSnapshot) return;
-      lastSnapshot = snapshot;
+      // 변경 감지 키: issuance status/tx_hash + holdings 행 수만 사용
+      const changeKey = JSON.stringify({
+        issuance: issuance.rows.map((r: any) => ({ id: r.id, status: r.status, tx: r.tx_hash })),
+        holdingsCount: holdings.rows.length,
+        holdingsLatest: holdings.rows[0]?.on_chain_tx ?? null,
+      });
+      if (changeKey === lastChangeKey) return;
+      lastChangeKey = changeKey;
 
       console.log('\n─── DB 상태 스냅샷 (Sepolia) ───────────────────────────────────');
       for (const r of issuance.rows) {
         console.log(`  [issuance_requests]  status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…  user=${r.user_id}`);
         if (r.fail_reason) console.log(`                       fail_reason=${r.fail_reason}`);
       }
-      for (const r of mint.rows)     console.log(`  [mint_requests]      status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
-      for (const r of tx.rows)       console.log(`  [tx_mint_requests]   status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
+      for (const r of mint.rows)      console.log(`  [mint_requests]      status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
+      for (const r of tx.rows)        console.log(`  [tx_mint_requests]   status=${r.status.padEnd(10)}  tx=${(r.tx_hash ?? 'null').slice(0, 12)}…`);
       for (const r of holdings.rows) console.log(`  [user_nft_holdings]  userId=${r.user_id}  tokenId=${r.token_id}  amount=${r.amount}  tx=${String(r.on_chain_tx).slice(0, 12)}…`);
       for (const r of auditLog.rows) console.log(`  [audit_log]          actor=${r.actor}  action=${r.action}  ${r.resource_type}/${String(r.resource_id).slice(0, 10)}…  checksum=${String(r.checksum).slice(0, 12)}…  chained=${r.prev_checksum ? 'Y' : 'N(first)'}`);
       console.log('─────────────────────────────────────────────────────────────────\n');

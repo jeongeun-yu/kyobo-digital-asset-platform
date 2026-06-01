@@ -55,6 +55,8 @@ export class ReconcileService implements IReconcileService {
     private readonly ledger: {
       /** 내부 원장 기준 사용자 NFT 보유 tokenId 목록 */
       getHoldings(userId: string): Promise<bigint[]>;
+      /** 특정 tokenId의 원장 누적 수량 (amount 합계) */
+      getHoldingAmount(userId: string, tokenId: bigint): Promise<bigint>;
       /** 전체 사용자 ID 목록 (reconcileAllNftHoldings 배치용) */
       getAllUserIds(): Promise<string[]>;
     },
@@ -144,11 +146,20 @@ export class ReconcileService implements IReconcileService {
       }
     }
 
-    // 온체인에만 있는 토큰 확인
+    // 온체인에만 있는 토큰 확인 (원장 미등록 또는 온체인 잔고 > 원장 합계)
     const ledgerSet = new Set(ledgerTokens.map(String));
     for (const tokenId of onchainTokens) {
       if (!ledgerSet.has(String(tokenId))) {
         discrepancies.push({ userId, tokenId, type: 'ONCHAIN_ONLY' });
+      } else {
+        // tokenId가 양쪽에 있어도 온체인 잔고가 원장 합계보다 크면 미반영 민팅이 있는 것
+        const [onchainBalance, ledgerAmount] = await Promise.all([
+          this.onchain.balanceOf(account.walletAddr, tokenId),
+          this.ledger.getHoldingAmount(userId, tokenId),
+        ]);
+        if (onchainBalance > ledgerAmount) {
+          discrepancies.push({ userId, tokenId, type: 'ONCHAIN_ONLY' });
+        }
       }
     }
 

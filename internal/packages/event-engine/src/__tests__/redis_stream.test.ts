@@ -89,6 +89,10 @@ function makeWorker(options: { messages: StreamMessage[]; processor: EventProces
       return ids.length;
     },
     async xautoclaim() { return { nextId: '0-0', messages: [] }; },
+    _kv: new Map<string, string>(),
+    async set(key: string, value: string) { (this._kv as Map<string,string>).set(key, value); return 'OK'; },
+    async get(key: string) { return (this._kv as Map<string,string>).get(key) ?? null; },
+    async del(key: string) { return (this._kv as Map<string,string>).delete(key) ? 1 : 0; },
   };
 
   const worker = new ConsumerGroupWorker(
@@ -229,33 +233,17 @@ describe('ConsumerGroupWorker', () => {
     expect(xackCalls).toContain(msg.id);
   });
 
-  it('_retryCount >= 3이면 DLQ로 이동하고 xack', async () => {
+  it('processor가 throw하면 즉시 DLQ로 이동하고 xack', async () => {
     const processor: EventProcessor = {
       eventTypes: ['NFT_ISSUED'],
       async process() { throw new Error('처리 실패'); },
     };
-    const msg = makeMessage({ _retryCount: '3' });
+    const msg = makeMessage();
     const { dlq, moveCalls } = makeDLQ();
     const { worker, xackCalls } = makeWorker({ messages: [msg], processor, dlq });
     await runWorkerUntilIdle(worker);
     expect(moveCalls).toHaveLength(1);
     expect(moveCalls[0]!.messageId).toBe(msg.id);
     expect(xackCalls).toContain(msg.id);
-  });
-
-  it('processor가 throw하면 _retryCount가 증가한다', async () => {
-    let retryCount = 0;
-    const processor: EventProcessor = {
-      eventTypes: ['NFT_ISSUED'],
-      async process(msg) {
-        retryCount = parseInt(msg.fields['_retryCount'] ?? '0', 10);
-        throw new Error('일시적 실패');
-      },
-    };
-    const msg = makeMessage({ _retryCount: '1' });
-    const { worker } = makeWorker({ messages: [msg], processor });
-    await runWorkerUntilIdle(worker);
-    expect(retryCount).toBe(1);
-    expect(msg.fields['_retryCount']).toBe('2');
   });
 });

@@ -14,8 +14,9 @@ import { PgTxRepository }           from '../infra/PgTxRepository';
 import { VaspTxClientAdapter }      from '../../../../packages/vasp/src/tx/VaspTxClientAdapter';
 import { LedgerService }            from '../../../../packages/core-banking/src/ledger/LedgerService';
 import { PgDatabaseClient }         from '../infra/PgDatabaseClient';
-import { TxTransitionBridge }       from '../services/TxTransitionBridge';
-import { IssuanceConfirmHandler }   from '../handlers/IssuanceConfirmHandler';
+import { TxTransitionBridge }          from '@kyobo/core-banking';
+import { IssuanceTransitionBridge }    from '../services/IssuanceTransitionBridge';
+import { IssuanceConfirmHandler }      from '../handlers/IssuanceConfirmHandler';
 
 /**
  * TokenIssuerFactory — 토큰 유형별 IssuerService 생성 팩토리
@@ -56,7 +57,7 @@ export class TokenIssuerFactory {
    * @param nftIssuerAddr   배포된 NFTIssuer 컨트랙트 주소
    * @param conditionService 전략이 등록된 EventConditionService 인스턴스
    */
-  createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService): {
+  createNFTIssuer(nftIssuerAddr: string, conditionService: EventConditionService, contractAddr: string, chainId: number): {
     issuerService:       IssuerService;
     confirmHandler:      IssuanceConfirmHandler;
     txStateMachine:      TxStateMachineService;
@@ -76,9 +77,13 @@ export class TokenIssuerFactory {
     const dbClient       = new PgDatabaseClient(this.deps.pool);
     const ledgerService  = new LedgerService(dbClient, this.deps.coreBanking);
 
-    // TxTransitionBridge: TxStatus 전이 → MintStatus·IssuanceStatus 동기화
-    const bridge         = new TxTransitionBridge(ledgerService, issuanceRepo, this.deps.coreBanking);
+    // TxTransitionBridge (core-banking): TxStatus 전이 → MintStatus 동기화
+    const bridge = new TxTransitionBridge(ledgerService);
     bridge.attach(txStateMachine);
+
+    // IssuanceTransitionBridge (issuer-service): TxStatus 전이 → IssuanceStatus 동기화
+    const issuanceBridge = new IssuanceTransitionBridge(issuanceRepo, this.deps.coreBanking, contractAddr, chainId);
+    issuanceBridge.attach(txStateMachine);
 
     // IssuanceConfirmHandler: 온체인 이벤트 → TxStateMachineService 경유 전이
     const confirmHandler = new IssuanceConfirmHandler(nftIssuerAddr, txRepo, txStateMachine);

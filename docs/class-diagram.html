@@ -327,7 +327,7 @@ D.full = `classDiagram
   class TxStateMachineService:::vasp {
     +submitMintRequest(req)
     +handleMined(requestId, blockNumber)
-    +handleConfirmed(requestId)
+    +handleConfirmed(requestId, source?)
     +handleFinalized(requestId)
     +handleFailed(requestId, reason)
     +pollStaleRequests()
@@ -525,6 +525,7 @@ D.full = `classDiagram
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> TxStateMachineService : creates
   TokenIssuerFactory ..> TxTransitionBridge : creates
+  TokenIssuerFactory ..> IssuanceTransitionBridge : creates
   TokenIssuerFactory ..> LedgerService : creates
   TokenIssuerFactory ..> IssuanceConfirmHandler : creates
   TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
@@ -891,7 +892,7 @@ D.vasp = `classDiagram
     -wallet? WalletResolver
     +submitMintRequest(req)
     +handleMined(requestId, blockNumber)
-    +handleConfirmed(requestId)
+    +handleConfirmed(requestId, source?)
     +handleFinalized(requestId)
     +handleFailed(requestId, reason)
     +handleTimeout(requestId)
@@ -1072,6 +1073,11 @@ D.cb = `classDiagram
   InternalLedgerService *-- AuditLogService
   BlockchainGatewayController *-- InternalLedgerService
   BlockchainGatewayController *-- AuditLogService
+  class TxTransitionBridge:::cb {
+    -ledgerService LedgerService
+    +attach(txStateMachine)
+  }
+  TxTransitionBridge *-- LedgerService
   IReconcileService <|.. ReconcileService
   LedgerService *-- DatabaseClient
   LedgerService *-- ICoreBankingAdapter
@@ -1153,7 +1159,7 @@ D.issuer = `classDiagram
     -wallet? WalletResolver
     +submitMintRequest(req)
     +handleMined(requestId, blockNumber)
-    +handleConfirmed(requestId)
+    +handleConfirmed(requestId, source?)
     +handleFinalized(requestId)
     +handleFailed(requestId, reason)
     +handleTimeout(requestId)
@@ -1213,8 +1219,11 @@ D.issuer = `classDiagram
   class ProcessedEventHandler:::is {
     +handle(event)
   }
-  class TxTransitionBridge:::is {
+  class TxTransitionBridge:::cb {
     -ledgerService LedgerService
+    +attach(txStateMachine)
+  }
+  class IssuanceTransitionBridge:::is {
     -issuanceRepo IIssuanceRequestRepository
     -coreBanking ICoreBankingAdapter
     +attach(txStateMachine)
@@ -1259,9 +1268,10 @@ D.issuer = `classDiagram
   VaspTxClientAdapter *-- IVASPAdapter
   TxStateMachineService *-- VaspTxClient
   TxTransitionBridge ..> TxStateMachineService : listens transition
+  IssuanceTransitionBridge ..> TxStateMachineService : listens transition
   TxTransitionBridge *-- LedgerService
-  TxTransitionBridge *-- IIssuanceRequestRepository
-  TxTransitionBridge *-- ICoreBankingAdapter
+  IssuanceTransitionBridge *-- IIssuanceRequestRepository
+  IssuanceTransitionBridge *-- ICoreBankingAdapter
   PgNFTLedgerService *-- ICoreBankingAdapter
   IIssuancePolicyRepository <|.. PgIssuancePolicyRepository
   IIssuanceRequestRepository <|.. PgIssuanceRequestRepository
@@ -1272,6 +1282,7 @@ D.issuer = `classDiagram
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> TxStateMachineService : creates
   TokenIssuerFactory ..> TxTransitionBridge : creates
+  TokenIssuerFactory ..> IssuanceTransitionBridge : creates
   TokenIssuerFactory ..> LedgerService : creates
   TokenIssuerFactory ..> IssuanceConfirmHandler : creates
   TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
@@ -1448,7 +1459,7 @@ D.tx = `classDiagram
     -wallet? WalletResolver
     +submitMintRequest(req)
     +handleMined(requestId, blockNumber)
-    +handleConfirmed(requestId)
+    +handleConfirmed(requestId, source?)
     +handleFinalized(requestId)
     +handleFailed(requestId, reason)
     +handleTimeout(requestId)
@@ -1513,8 +1524,11 @@ D.tx = `classDiagram
     +updateStatus(id, status)
     +findByTxHash(txHash)
   }
-  class TxTransitionBridge:::is {
+  class TxTransitionBridge:::cb {
     -ledgerService LedgerService
+    +attach(txStateMachine)
+  }
+  class IssuanceTransitionBridge:::is {
     -issuanceRepo IIssuanceRequestRepository
     -coreBanking ICoreBankingAdapter
     +attach(txStateMachine)
@@ -1564,9 +1578,10 @@ D.tx = `classDiagram
   TxStateMachineService *-- VaspTxClient
   TxStateMachineService o-- WalletResolver
   TxStateMachineService --> TxTransitionBridge : emits events
+  TxStateMachineService --> IssuanceTransitionBridge : emits events
   TxTransitionBridge *-- LedgerService
-  TxTransitionBridge *-- IIssuanceRequestRepository
-  TxTransitionBridge *-- ICoreBankingAdapter
+  IssuanceTransitionBridge *-- IIssuanceRequestRepository
+  IssuanceTransitionBridge *-- ICoreBankingAdapter
   VaspTxClientAdapter *-- IVASPAdapter
   KyoboCoreBankingAdapter *-- InternalGatewayClient
   InternalGatewayClient *-- CircuitBreaker
@@ -1717,6 +1732,7 @@ D.boot = `classDiagram
   KyoboCoreBankingAdapter --> TokenIssuerFactory : injected
   TokenIssuerFactory ..> IssuerService : creates
   TokenIssuerFactory ..> IssuanceConfirmHandler : creates
+  TokenIssuerFactory ..> IssuanceTransitionBridge : creates
   TokenIssuerFactory ..> LedgerService : creates
   TokenIssuerFactory ..> PgIssuanceRequestRepository : creates
   TokenIssuerFactory ..> PgIssuancePolicyRepository : creates

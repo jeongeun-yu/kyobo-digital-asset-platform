@@ -99,6 +99,9 @@ export class VASPServer {
       await this._handleSetMode(body, res);
     } else if (req.method === 'GET' && req.url === '/admin/mode') {
       await this._handleGetMode(res);
+    } else if (req.method === 'POST' && req.url === '/admin/reset-nonce') {
+      await this.resetNonce();
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true }));
     } else if (req.method === 'GET' && req.url?.startsWith('/aml/screen/')) {
       const address = req.url.split('/').pop() ?? '';
       res.writeHead(200, { 'Content-Type': 'application/json' })

@@ -64,6 +64,10 @@ export interface RedisConsumerClient {
     startId: string,
     count: number,
   ): Promise<{ nextId: string; messages: StreamMessage[] }>;
+
+  set(key: string, value: string, expiryMode: string, time: number): Promise<unknown>;
+  get(key: string): Promise<string | null>;
+  del(key: string): Promise<number>;
 }
 
 export interface EventProcessor {
@@ -158,56 +162,49 @@ export class ConsumerGroupWorker {
     }
   }
 
-  // ── 처리 + 재시도 ────────────────────────────────────────────────────
+  // ── 처리 ────────────────────────────────────────────────────────────
 
   private async _handleWithRetry(msg: StreamMessage): Promise<void> {
-    const eventType  = msg.fields['eventType'] ?? '';
-    const retryCount = parseInt(msg.fields['_retryCount'] ?? '0', 10);
+    const eventType = msg.fields['eventType'] ?? '';
 
     logger.info('message received', {
       consumer:  this.config.consumerId,
       group:     this.config.groupName,
       messageId: msg.id,
       eventType,
-      attempt:   retryCount + 1,
     });
-
-    if (retryCount >= this.MAX_RETRIES) {
-      // 3회 초과 → DLQ
-      await this.dlq.move({
-        messageId: msg.id,
-        streamKey: this.config.streamKey,
-        groupName: this.config.groupName,
-        event:     msg.fields,
-        reason:    `max retries (${this.MAX_RETRIES}) exceeded`,
-        failedAt:  new Date(),
-      });
-      await this.redis.xack(this.config.streamKey, this.config.groupName, msg.id);
-      return;
-    }
 
     const processors = this.processors.filter(p => p.eventTypes.includes(eventType));
 
     if (processors.length === 0) {
-      // 처리자 없음 → ACK (무시)
       await this.redis.xack(this.config.streamKey, this.config.groupName, msg.id);
       return;
     }
 
     try {
       await Promise.all(processors.map(p => p.process(msg)));
-      // 성공 → ACK
       await this.redis.xack(this.config.streamKey, this.config.groupName, msg.id);
     } catch (err) {
       if (err instanceof DeferredProcessingError) {
-        // 처리 보류 — XACK 없음, retryCount 증가 없음 → PEL 잔류 → 나중에 재수신
+        // 처리 보류 — XACK 없음, PEL 잔류 → 나중에 재수신
         logger.info('message deferred', { messageId: msg.id, reason: (err as Error).message });
         return;
       }
-      // 실패 → 재시도 카운터 증가 (DLQ 조건 다음 루프에서 판단)
-      // NOTE: Redis Streams는 자동 재시도 없음 — PEL에 남아있다가 _reclaimPending에서 재수신
-      msg.fields['_retryCount'] = String(retryCount + 1);
-      logger.warn('message processing failed', { messageId: msg.id, attempt: retryCount + 1, error: (err as Error).message });
+
+      // 실패 → 즉시 DLQ + XACK
+      const reason = (err as Error).message;
+      logger.warn('message processing failed, moving to DLQ', { messageId: msg.id, error: reason });
+      console.log(`[ConsumerGroupWorker] 처리 실패 → DLQ 이동 — messageId=${msg.id}  error=${reason}`);
+
+      await this.dlq.move({
+        messageId: msg.id,
+        streamKey: this.config.streamKey,
+        groupName: this.config.groupName,
+        event:     msg.fields,
+        reason,
+        failedAt:  new Date(),
+      });
+      await this.redis.xack(this.config.streamKey, this.config.groupName, msg.id);
     }
   }
 
